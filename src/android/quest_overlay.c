@@ -169,6 +169,8 @@ void qo_muzzle(float out[3])
 
 static GLuint prog_gun, prog_spot, prog_panel, vao_gun, vbo_gun, vao_spot, vbo_spot,
               vao_quad, vbo_quad, panel_tex;
+static GLuint prog_ret;                  /* the sight's glass with its reticle */
+static GLint u_ret_mvp, u_ret_color, u_ret_tint, u_ret_c, u_ret_r;
 static GLint u_gun_mvp, u_gun_model, u_spot_mvp, u_spot_color, u_spot_shape,
              u_panel_mvp, u_panel_tex;
 
@@ -232,14 +234,33 @@ int qo_init(void)
         "          : clamp(1.0 - d, 0.0, 1.0);\n"
         "  a = color.a * (shape.x < 0.0 ? 1.0 : a * a);\n"
         "  o = vec4(color.rgb * a, a); }\n");      /* premultiplied */
+    /* The glass: a faint tint, and the reticle where the eye's line to the
+     * target crosses it (t: glass coordinates in metres, c: that point,
+     * r: dot radius, ring radius, ring half-width). Premultiplied. */
+    prog_ret = program(
+        "#version 300 es\nlayout(location=0) in vec3 p; layout(location=1) in vec2 uv;\n"
+        "uniform mat4 mvp; out vec2 t; void main() { t = uv; gl_Position = mvp * vec4(p, 1.0); }\n",
+        "#version 300 es\nprecision highp float; in vec2 t; uniform vec4 color, tint;\n"
+        "uniform vec2 c; uniform vec3 r; out vec4 o;\n"
+        "void main() { float d = length(t - c);\n"
+        "  float dotA = 1.0 - smoothstep(r.x * 0.55, r.x, d);\n"
+        "  float ringA = r.y > 0.0 ? 1.0 - smoothstep(r.z * 0.4, r.z, abs(d - r.y)) : 0.0;\n"
+        "  float a = max(dotA, ringA) * color.a;\n"
+        "  float ta = tint.a * (1.0 - a);\n"
+        "  o = vec4(color.rgb * a + tint.rgb * ta, a + ta); }\n");
     prog_panel = program(
         "#version 300 es\nlayout(location=0) in vec2 p; uniform mat4 mvp; out vec2 t;\n"
         "void main() { t = vec2(p.x * 0.5 + 0.5, 0.5 - p.y * 0.5);\n"
         "  gl_Position = mvp * vec4(p, 0.0, 1.0); }\n",
         "#version 300 es\nprecision mediump float; in vec2 t; uniform sampler2D tex; out vec4 o;\n"
         "void main() { vec4 c = texture(tex, t); o = vec4(c.rgb * c.a, c.a); }\n");
-    if (!prog_gun || !prog_spot || !prog_panel)
+    if (!prog_gun || !prog_spot || !prog_panel || !prog_ret)
         return 0;
+    u_ret_mvp = glGetUniformLocation(prog_ret, "mvp");
+    u_ret_color = glGetUniformLocation(prog_ret, "color");
+    u_ret_tint = glGetUniformLocation(prog_ret, "tint");
+    u_ret_c = glGetUniformLocation(prog_ret, "c");
+    u_ret_r = glGetUniformLocation(prog_ret, "r");
     u_gun_mvp = glGetUniformLocation(prog_gun, "mvp");
     u_gun_model = glGetUniformLocation(prog_gun, "model");
     u_spot_mvp = glGetUniformLocation(prog_spot, "mvp");
@@ -390,19 +411,61 @@ static void spot(const float *vp, const float eye[3], const float p[3], float ra
     spot_draw(vp, (const float (*)[5])q, r, g, b, alpha, ring, thick);
 }
 
-/* The sight's glass, in gun space through model. */
-static void glass(const float *vp, const float *model, int sight, float r, float g, float b, float a)
+/* p (LOCAL) into the gun's space through the rigid model matrix m. */
+static void unapply(const float *m, const float p[3], float o[3])
+{
+    float d[3] = { p[0] - m[12], p[1] - m[13], p[2] - m[14] };
+    int i;
+    for (i = 0; i < 3; i++)
+        o[i] = m[4 * i] * d[0] + m[4 * i + 1] * d[1] + m[4 * i + 2] * d[2];
+}
+
+/* The sight's glass, in gun space through model, with its reticle on it:
+ * where this eye's line to the target crosses the glass, sized by angle --
+ * so it sits over the target from any head position (collimated), and
+ * only inside the window, as part of the gun. */
+static void glass_reticle(const float *vp, const float *model, int sight, const float eye[3],
+                          const float target[3])
 {
     static const float c[6][2] = { { -1, -1 }, { 1, -1 }, { 1, 1 }, { -1, -1 }, { 1, 1 }, { -1, 1 } };
     const float *gz = GLASS[sight];
-    float q[6][5];
+    float q[6][5], e[3], t[3], cx = 1e3f, cy = 1e3f, r[3] = { 0, 0, 0 };
     int k;
     for (k = 0; k < 6; k++) {
         float lp[3] = { c[k][0] * gz[1], SIGHT_Y[sight] + c[k][1] * gz[2], gz[0] };
         apply(model, lp, q[k]);
-        q[k][3] = q[k][4] = 0;
+        q[k][3] = c[k][0] * gz[1];
+        q[k][4] = c[k][1] * gz[2];
     }
-    spot_draw(vp, (const float (*)[5])q, r, g, b, a, -1, 0);
+    unapply(model, eye, e);
+    unapply(model, target, t);
+    if (fabsf(t[2] - e[2]) > 1e-5f) {
+        float sc = (gz[0] - e[2]) / (t[2] - e[2]);
+        if (sc > 0) {
+            float px = e[0] + sc * (t[0] - e[0]), py = e[1] + sc * (t[1] - e[1]);
+            float L = sqrtf((px - e[0]) * (px - e[0]) + (py - e[1]) * (py - e[1])
+                            + (gz[0] - e[2]) * (gz[0] - e[2]));
+            cx = px;
+            cy = py - SIGHT_Y[sight];
+            if (sight == QO_SIGHT_RED_DOT) {
+                r[0] = 0.0025f * L;                 /* a dot about 0.3 degrees across */
+            } else {                                /* a ring of 1.2 degrees, a small dot */
+                r[0] = 0.0016f * L;
+                r[1] = 0.0105f * L;
+                r[2] = 0.0012f * L;
+            }
+        }
+    }
+    glUseProgram(prog_ret);
+    glBindBuffer(GL_ARRAY_BUFFER, vbo_spot);
+    glBufferData(GL_ARRAY_BUFFER, 6 * 5 * sizeof(float), q, GL_DYNAMIC_DRAW);
+    glUniformMatrix4fv(u_ret_mvp, 1, GL_FALSE, vp);
+    glUniform4f(u_ret_color, 1.0f, 0.09f, 0.05f, 1.0f);
+    glUniform4f(u_ret_tint, 0.55f, 0.75f, 0.85f, 0.10f);
+    glUniform2f(u_ret_c, cx, cy);
+    glUniform3f(u_ret_r, r[0], r[1], r[2]);
+    glDrawArrays(GL_TRIANGLES, 0, 6);
+    glUseProgram(prog_spot);
 }
 
 /* ── Per eye ──────────────────────────────────────────────────────────── */
@@ -469,26 +532,13 @@ void qo_draw(const QoFrame *f, const float viewproj[16], const float eye[3])
     glEnable(GL_BLEND);
     glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
 
-    /* The optic's reticle: where the shot lands, seen only through the
-     * glass. The glass marks depth 1 where all else was cleared to 0; the
-     * reticle is drawn where the depth is 1. */
+    /* The optic's glass with its reticle, part of the gun: depth-tested
+     * against the gun (the hood in front of it hides it), not written. */
     if (f->gun_valid && f->show_gun && sight != QO_SIGHT_IRON) {
-        glClearDepthf(0);
-        glDepthMask(GL_TRUE);
-        glClear(GL_DEPTH_BUFFER_BIT);
         glEnable(GL_DEPTH_TEST);
-        glDepthRangef(1, 1);
-        glDepthFunc(GL_ALWAYS);
-        glass(viewproj, slide, sight, 0.55f, 0.75f, 0.85f, 0.10f);    /* a faint tint */
+        glDepthFunc(GL_LEQUAL);
         glDepthMask(GL_FALSE);
-        glDepthFunc(GL_EQUAL);
-        if (sight == QO_SIGHT_RED_DOT)                  /* a 3 MOA dot */
-            spot(viewproj, eye, f->end, 0.0018f * dist, 1.0f, 0.08f, 0.05f, 1.0f, 0, 0);
-        else {                                          /* 65 MOA ring, 1 MOA dot */
-            spot(viewproj, eye, f->end, 0.0105f * dist, 1.0f, 0.10f, 0.06f, 0.95f, 0.90f, 0.08f);
-            spot(viewproj, eye, f->end, 0.0010f * dist, 1.0f, 0.10f, 0.06f, 1.0f, 0, 0);
-        }
-        glDepthRangef(0, 1);
+        glass_reticle(viewproj, slide, sight, eye, f->end);
     }
 
     /* laser, dot and flash over everything */
