@@ -34,9 +34,29 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 #include "nv2a_backend.h"
 #include "../d3d/d3d8_swizzle.h"   /* relative to src/kernel, as the executor */
+
+/* getenv, looked up once per name: several debug switches are tested per
+ * draw, and getenv walks the whole environment each time. They do not change
+ * while the game runs, and this all runs on the executor thread. */
+static const char *genv(const char *name)
+{
+    static struct { const char *name, *value; } cache[32];
+    static int n;
+    int i;
+    for (i = 0; i < n; i++)
+        if (!strcmp(cache[i].name, name))
+            return cache[i].value;
+    if (n < (int)(sizeof cache / sizeof cache[0])) {
+        cache[n].name = name;
+        cache[n].value = getenv(name);
+        return cache[n++].value;
+    }
+    return getenv(name);
+}
 
 extern ptrdiff_t xbox_GetMemoryOffset(void);
 
@@ -348,11 +368,11 @@ static int gl_ready(void)
         glUniform1i(glGetUniformLocation(s_prog, "u_t2"), 2);
         glUniform1i(glGetUniformLocation(s_prog, "u_t3"), 3);
         glUniform1i(glGetUniformLocation(s_prog, "u_adbg"),
-                    getenv("VC3_GL_ADBG") ? atoi(getenv("VC3_GL_ADBG")) : 0);
+                    genv("VC3_GL_ADBG") ? atoi(genv("VC3_GL_ADBG")) : 0);
         glUniform1i(glGetUniformLocation(s_prog, "u_nofog"),
-                    getenv("VC3_GL_NOFOG") != NULL);
+                    genv("VC3_GL_NOFOG") != NULL);
         glUniform1i(glGetUniformLocation(s_prog, "u_rcdbg"),
-                    getenv("VC3_GL_RCDBG") ? atoi(getenv("VC3_GL_RCDBG")) : 0);
+                    genv("VC3_GL_RCDBG") ? atoi(genv("VC3_GL_RCDBG")) : 0);
         u_rc = glGetUniformLocation(s_prog, "u_rc");
         u_cicw = glGetUniformLocation(s_prog, "u_cicw");
         u_aicw = glGetUniformLocation(s_prog, "u_aicw");
@@ -770,7 +790,7 @@ static void apply_state(const Nv2aRenderState *rs)
     uint32_t m = rs->color_mask;
 
     if (cull_mode < 0) {
-        const char *e = getenv("VC3_GL_CULL");
+        const char *e = genv("VC3_GL_CULL");
         cull_mode = e ? atoi(e) : 0;
     }
     if (rs->blend_enable) {
@@ -814,7 +834,7 @@ static void apply_state(const Nv2aRenderState *rs)
     } else {
         glDisable(GL_CULL_FACE);
     }
-    glUniform1i(u_atest, rs->alpha_test_enable && !getenv("VC3_GL_NOATEST") ? 1 : 0);
+    glUniform1i(u_atest, rs->alpha_test_enable && !genv("VC3_GL_NOATEST") ? 1 : 0);
     glUniform1i(u_afunc, (GLint)rs->alpha_func);
     glUniform1f(u_aref, (float)(rs->alpha_ref & 0xFF));
     {
@@ -990,7 +1010,7 @@ static void bind_combiners(const Surf *f, const Nv2aBatch *b)
         int i, known = 0;
         for (i = 0; i < nseen; i++)
             if (seen[i] == h) known = 1;
-        if (!known && nseen < 64 && getenv("VC3_GL_RCDBG")) {
+        if (!known && nseen < 64 && genv("VC3_GL_RCDBG")) {
             seen[nseen++] = h;
             fprintf(stderr, "[GL]   rc setup %02X%02X%02X: prog %05X fin %08X %08X "
                     "s0 %08X/%08X s1 %08X/%08X spec %08X tex %08X/%08X\n",
@@ -1001,7 +1021,7 @@ static void bind_combiners(const Surf *f, const Nv2aBatch *b)
                     b->stage[1] ? b->stage[1]->offset : 0);
         }
         glUniform3f(glGetUniformLocation(s_prog, "u_dbgcol"), r, g, bl);
-        if (getenv("VC3_GL_RCDBG") && atoi(getenv("VC3_GL_RCDBG")) >= 6)
+        if (genv("VC3_GL_RCDBG") && atoi(genv("VC3_GL_RCDBG")) >= 6)
             glDisable(GL_BLEND);     /* exact colours, so a pixel names its setup */
     }
 
@@ -1112,7 +1132,7 @@ static void gl_draw(const Nv2aSurface *s, const Nv2aBatch *b)
                         b->ext[k].tex[0][2], b->ext[k].tex[0][3]);
         }
     }
-    if (getenv("VC3_GL_RCCHECK"))
+    if (genv("VC3_GL_RCCHECK"))
         rc_check(b);
     if (b->rc && b->ext && s_use_rc)
         bind_combiners(f, b);
@@ -1169,7 +1189,7 @@ static void gl_draw(const Nv2aSurface *s, const Nv2aBatch *b)
     } else {
         glDrawArrays(GL_TRIANGLES, 0, (GLsizei)b->count);
     }
-    if (getenv("VC3_GL_RCCHECK") && b->rc && b->ext && s_use_rc
+    if (genv("VC3_GL_RCCHECK") && b->rc && b->ext && s_use_rc
         && b->state->alpha_test_enable && (b->state->alpha_ref & 0xFF) == 0x80
         && b->rc->alpha_icw[1] == 0x191C0000u) {
         /* The GPU's own values for this batch, read back at the centre of
@@ -1210,7 +1230,7 @@ static void gl_draw(const Nv2aSurface *s, const Nv2aBatch *b)
             glUniform1i(loc, 12);
             glDrawArrays(GL_TRIANGLES, 0, 3);
             glReadPixels((GLint)cx, (GLint)cy, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, px12);
-            glUniform1i(loc, getenv("VC3_GL_RCDBG") ? atoi(getenv("VC3_GL_RCDBG")) : 0);
+            glUniform1i(loc, genv("VC3_GL_RCDBG") ? atoi(genv("VC3_GL_RCDBG")) : 0);
             fprintf(stderr, "[RCGPU] at %.0f,%.0f: v_col.a %u on0 %u on1 %u | comb.a %u t0.a %u t1.a %u"
                     " | diffuse[0] %08X\n", cx, cy, px13[0], px13[1], px13[2],
                     px12[0], px12[1], px12[2], b->vertices[0].diffuse);
@@ -1229,8 +1249,8 @@ static void gl_flip(void)
     if (s_ftr == 1) {
         s_ftr = 2;
         fprintf(stderr, "[GLTR] end of frame\n");
-    } else if (s_ftr == 0 && getenv("VC3_GL_FTRACE")) {
-        FILE *fl = fopen(getenv("VC3_GL_FTRACE"), "rb");
+    } else if (s_ftr == 0 && genv("VC3_GL_FTRACE")) {
+        FILE *fl = fopen(genv("VC3_GL_FTRACE"), "rb");
         if (fl) {
             fclose(fl);
             s_ftr = 1;
@@ -1246,7 +1266,7 @@ static void gl_flip(void)
         static int all = -1;
         uint32_t shown = nv2a_backend_presented_va();
         if (all < 0)
-            all = getenv("VC3_GL_READBACK_ALL") != NULL;
+            all = genv("VC3_GL_READBACK_ALL") != NULL;
         for (i = 0; i < s_nsurfs; i++) {
             if (!s_surfs[i].dirty)
                 continue;
@@ -1257,6 +1277,21 @@ static void gl_flip(void)
         }
     }
     s_frame++;
+    if (genv("VC3_FPS_LOG")) {            /* wall-clock flips per second */
+        static struct timespec t0;
+        static uint32_t f0;
+        struct timespec t;
+        clock_gettime(CLOCK_MONOTONIC, &t);
+        if (!t0.tv_sec) {
+            t0 = t;
+            f0 = s_frame;
+        } else if (t.tv_sec - t0.tv_sec >= 1) {
+            double dt = (double)(t.tv_sec - t0.tv_sec) + (t.tv_nsec - t0.tv_nsec) / 1e9;
+            fprintf(stderr, "[FPS] %.1f\n", (s_frame - f0) / dt);
+            t0 = t;
+            f0 = s_frame;
+        }
+    }
     if (s_st.on && s_frame % 300 == 0) {
         fprintf(stderr, "[GL] %u flips: %u draws (%u tris), %u textured, %u "
                 "no texture, %u from surfaces, %u uploads; surfaces:",
@@ -1283,14 +1318,14 @@ static const Nv2aBackend s_gl_backend = { gl_clear, gl_draw, gl_flip };
 /* Register unless VC3_GL=0 (the executor's software rasteriser then draws). */
 void vc3_gl_backend_register(void)
 {
-    const char *e = getenv("VC3_GL");
+    const char *e = genv("VC3_GL");
 
     if (e && e[0] == '0') {
         fprintf(stderr, "[GL] off (VC3_GL=0): software rasteriser\n");
         return;
     }
-    s_st.on = getenv("VC3_GL_STATS") != NULL;
-    e = getenv("VC3_GL_COMBINERS");
+    s_st.on = genv("VC3_GL_STATS") != NULL;
+    e = genv("VC3_GL_COMBINERS");
     s_use_rc = e && e[0] == '1';
     nv2a_backend_register(&s_gl_backend);
     fprintf(stderr, "[GL] OpenGL back end registered\n");
