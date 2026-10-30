@@ -89,9 +89,14 @@ static void es_bgra(GLenum target);
  * while the game runs, and this all runs on the executor thread. */
 static const char *genv(const char *name)
 {
-    static struct { const char *name, *value; } cache[32];
+    /* Called per draw in places: the names are literals, so a pointer
+     * compare finds them; past 32 names each call was a getenv scan. */
+    static struct { const char *name, *value; } cache[128];
     static int n;
     int i;
+    for (i = 0; i < n; i++)
+        if (cache[i].name == name)
+            return cache[i].value;
     for (i = 0; i < n; i++)
         if (!strcmp(cache[i].name, name))
             return cache[i].value;
@@ -136,8 +141,101 @@ typedef struct {
      * projection, on / 1 / pz. */
     GLint immvp, gp, gw;
     GLint st2, eye2, immvp2;     /* one-pass stereo */
+    /* the fixed-function state last sent to this program (raw_uniforms) */
+    Nv2aFixedState ff_last;
+    int ff_valid;
+    /* every uniform's last value sent from the draw path (cu*): a value
+     * sent again is not sent -- each one is driver work at the draw */
+    struct UCache *uc;
 } Prog;
-static Prog s_pcpu, s_praw, *U = &s_pcpu;
+/* Two of each: the plain fragment shader (texture * colour, the lightmap,
+ * the alpha test) for nearly every batch, and the one with the register
+ * combiners (RC) for the few that need them. One shader with both had the
+ * combiners' registers on every pixel: half the GPU time of the mission
+ * intro's thousand draws on the Quest. */
+static Prog s_pcpu, s_praw, s_pcpu_rc, s_praw_rc, *U = &s_pcpu;
+
+/* ── Uniforms sent only when they change ──────────────────────────────────
+   The draw path sets some thirty uniforms a batch, most of them the same as
+   the batch before; on the Quest's driver each call is work at the next
+   draw (a thousand draws a frame in the mission intro). cu*() are glUniform*
+   with the same arguments that keep, per program, the bytes last sent for
+   each location and skip a call that would send them again. Anything that
+   sets the current program's uniforms another way calls uc_reset. */
+#define UC_SLOTS 128
+#define UC_BYTES 640                    /* the largest: 40 light vec4s */
+struct UCache {
+    struct { GLint loc; uint16_t n; uint8_t v[UC_BYTES]; } e[UC_SLOTS];
+};
+
+static void uc_reset(Prog *p)
+{
+    if (p->uc)
+        memset(p->uc, 0xFF, sizeof *p->uc);    /* loc -1 everywhere: empty */
+}
+
+/* 1 if loc already holds these bytes (or is not a uniform); else records them. */
+static int uc_same(GLint loc, const void *d, size_t n)
+{
+    struct UCache *c;
+    unsigned h, k;
+    static int off = -1;
+    if (loc < 0)
+        return 1;
+    if (off < 0)
+        off = genv("VC3_UCACHE") && genv("VC3_UCACHE")[0] == '0';
+    if (n > UC_BYTES || off)
+        return 0;
+    if (!U->uc) {
+        U->uc = (struct UCache *)malloc(sizeof *U->uc);
+        if (!U->uc)
+            return 0;
+        uc_reset(U);
+    }
+    c = U->uc;
+    h = ((unsigned)loc * 2654435761u) >> 25;  /* 0..127 */
+    for (k = 0; k < UC_SLOTS; k++) {
+        unsigned i = (h + k) & (UC_SLOTS - 1);
+        if (c->e[i].loc == loc) {
+            if (c->e[i].n == n && !memcmp(c->e[i].v, d, n))
+                return 1;
+            c->e[i].n = (uint16_t)n;
+            memcpy(c->e[i].v, d, n);
+            return 0;
+        }
+        if (c->e[i].loc == -1) {
+            c->e[i].loc = loc;
+            c->e[i].n = (uint16_t)n;
+            memcpy(c->e[i].v, d, n);
+            return 0;
+        }
+    }
+    return 0;                               /* full: send */
+}
+
+static void cu1i(GLint l, GLint a) { if (!uc_same(l, &a, sizeof a)) glUniform1i(l, a); }
+static void cu1ui(GLint l, GLuint a) { if (!uc_same(l, &a, sizeof a)) glUniform1ui(l, a); }
+static void cu1f(GLint l, GLfloat a) { if (!uc_same(l, &a, sizeof a)) glUniform1f(l, a); }
+static void cu2f(GLint l, GLfloat a, GLfloat b)
+{ GLfloat v[2] = { a, b }; if (!uc_same(l, v, sizeof v)) glUniform2f(l, a, b); }
+static void cu3f(GLint l, GLfloat a, GLfloat b, GLfloat c)
+{ GLfloat v[3] = { a, b, c }; if (!uc_same(l, v, sizeof v)) glUniform3f(l, a, b, c); }
+static void cu4f(GLint l, GLfloat a, GLfloat b, GLfloat c, GLfloat d)
+{ GLfloat v[4] = { a, b, c, d }; if (!uc_same(l, v, sizeof v)) glUniform4f(l, a, b, c, d); }
+static void cu2i(GLint l, GLint a, GLint b)
+{ GLint v[2] = { a, b }; if (!uc_same(l, v, sizeof v)) glUniform2i(l, a, b); }
+static void cu1iv(GLint l, GLsizei n, const GLint *p)
+{ if (!uc_same(l, p, (size_t)n * 4)) glUniform1iv(l, n, p); }
+static void cu1uiv(GLint l, GLsizei n, const GLuint *p)
+{ if (!uc_same(l, p, (size_t)n * 4)) glUniform1uiv(l, n, p); }
+static void cu2fv(GLint l, GLsizei n, const GLfloat *p)
+{ if (!uc_same(l, p, (size_t)n * 8)) glUniform2fv(l, n, p); }
+static void cu4fv(GLint l, GLsizei n, const GLfloat *p)
+{ if (!uc_same(l, p, (size_t)n * 16)) glUniform4fv(l, n, p); }
+static void cu4uiv(GLint l, GLsizei n, const GLuint *p)
+{ if (!uc_same(l, p, (size_t)n * 16)) glUniform4uiv(l, n, p); }
+static void cuMatrix4fv(GLint l, GLsizei n, GLboolean t, const GLfloat *p)
+{ if (!uc_same(l, p, (size_t)n * 64)) glUniformMatrix4fv(l, n, t, p); }
 static uint32_t s_frame = 1;
 /* What the draw path last bound; anything else that binds a program or a
  * vertex array (the frame interpolator) zeroes these. */
@@ -376,6 +474,7 @@ static const char *VS_FF =
     "  vec4 d0 = u_lighting != 0 ? lit_color(pos, nrm, col)\n"
     "          : (u_hascol != 0 ? col : vec4(1.0));\n"
     "  d0 = clamp(d0, 0.0, 1.0);\n"
+
     "  float elen = length(en);\n"
     "  if (elen > 1e-8) en /= elen;\n"
     "  for (int st = 0; st < 4; st++) {\n"
@@ -575,6 +674,8 @@ static const char *FS =
     "}\n"
     "void main() {\n"
     "  vec4 c = v_col;\n"
+
+    "#ifdef RC\n"
     "  if (u_rc != 0) c = combiners();\n"
     "  if (u_rc != 0 && u_dbgon != 0 && u_rcdbg == 1) c = vec4(texture(u_tex, stage_uv(0, v_tc0)).rgb, 1.0);\n"
     "  if (u_rc != 0 && u_dbgon != 0 && u_rcdbg == 2) c = vec4(fract(stage_uv(0, v_tc0)), float(u_on[0]), 1.0);\n"
@@ -587,7 +688,9 @@ static const char *FS =
     "  if (u_rc != 0 && u_dbgon != 0 && u_rcdbg == 13) c = vec4(v_col.a, float(u_on[0]), float(u_on[1]), 1.0);\n"
     "  if (u_rc != 0 && u_dbgon != 0 && u_rcdbg == 3 && gl_FragCoord.x < u_surf.x * 0.5)\n"
     "    c = v_col * (u_textured != 0 ? texture(u_tex, sbs(0, v_uv)) : vec4(1.0));\n"
-    "  else if (u_textured != 0) {\n"
+    "  else\n"
+    "#endif\n"
+    "  if (u_textured != 0) {\n"
     "    c *= texture(u_tex, sbs(0, v_uv));\n"
     "    if (u_lmap != 0) c.rgb *= texture(u_t1, stage_uv(1, v_tc1)).rgb;\n"
     "  }\n"
@@ -651,6 +754,8 @@ static const char *es_source(const char *src, char **owned)
 }
 #endif
 
+static const char *s_compile_defs = "";  /* lines after #version (compile) */
+
 static GLuint compile(GLenum type, const char *src)
 {
     GLuint s = glCreateShader(type);
@@ -661,6 +766,20 @@ static GLuint compile(GLenum type, const char *src)
     src = es_source(src, &owned);
 #endif
 
+    {   /* s_compile_defs after the #version line (the RC variant) */
+        const char *nl = strchr(src, '\n');
+        if (*s_compile_defs && nl) {
+            static char buf[200000];
+            size_t k = (size_t)(nl - src) + 1;
+            int n;
+            memcpy(buf, src, k);
+            n = snprintf(buf + k, sizeof buf - k, "%s", s_compile_defs);
+            if (k + (size_t)n + strlen(nl + 1) < sizeof buf) {
+                strcpy(buf + k + n, nl + 1);
+                src = buf;
+            }
+        }
+    }
     glShaderSource(s, 1, &src, NULL);
 #if defined(VC3_GLES)
     free(owned);
@@ -957,6 +1076,16 @@ static int gl_ready(void)
         /* Without it every batch is transformed on the CPU, as before. */
         if (!prog_link(&s_praw, compile(GL_VERTEX_SHADER, VS_FF), fs, 1))
             fprintf(stderr, "[GL] fixed-function shader failed; raw draws declined\n");
+        /* the same with the register combiners */
+        s_compile_defs = "#define RC\n";
+        {
+            GLuint fs_rc = compile(GL_FRAGMENT_SHADER, FS);
+            if (!prog_link(&s_pcpu_rc, compile(GL_VERTEX_SHADER, VS), fs_rc, 0))
+                s_pcpu_rc = s_pcpu;
+            if (s_praw.prog && !prog_link(&s_praw_rc, compile(GL_VERTEX_SHADER, VS_FF), fs_rc, 1))
+                s_praw_rc = s_praw;
+        }
+        s_compile_defs = "";
 
         /* The CPU path's layout; pointers are set per draw, as each batch
          * lands at a different place in the stream. */
@@ -1179,6 +1308,8 @@ static Surf *surf_find(uint32_t va)
 #endif
 #define GT_RING 512
 static struct { uint32_t draws, tris, declined; } s_rst;   /* fixed-function draws */
+static uint32_t s_zp_frame;              /* visibility tests (GPU time log) */
+static uint32_t s_sw_frame;              /* surface switches (GPU time log) */
 static int s_gt_on = -1;
 static GLuint s_gt_q[GT_RING];
 static uint32_t s_gt_va[GT_RING];
@@ -1230,6 +1361,7 @@ static void gt_surface(uint32_t va)
     }
     if (!s_gt_on || (s_gt_open && va == s_gt_cur_va))
         return;
+    s_sw_frame++;
     gt_close();
     gt_poll();
     if (s_gt_head - s_gt_tail >= GT_RING - 1)
@@ -1262,11 +1394,14 @@ static void gt_flip(void)
     {
         char line[512];
         int n = snprintf(line, sizeof line, "[GPUTIME] %.1f ms/frame over %u frames"
-                         " (fixed-function %u draws, %u triangles a frame):",
+                         " (fixed-function %u draws, %u triangles, %u visibility tests, %u surface switches a frame):",
                          s_gt_frames ? s_gt_total / s_gt_frames : 0.0, s_gt_frames,
                          s_gt_frames ? s_rst.draws / s_gt_frames : 0,
-                         s_gt_frames ? s_rst.tris / s_gt_frames : 0);
+                         s_gt_frames ? s_rst.tris / s_gt_frames : 0,
+                         s_gt_frames ? s_zp_frame / s_gt_frames : 0,
+                         s_gt_frames ? s_sw_frame / s_gt_frames : 0);
         s_rst.draws = s_rst.tris = 0;
+        s_zp_frame = s_sw_frame = 0;
         for (j = 0; j < GT_SURFS && s_gt_sum[j].va && n < (int)sizeof line - 40; j++)
             if (s_gt_sum[j].ms / s_gt_frames >= 0.3) {
                 const Surf *q = surf_find(s_gt_sum[j].va);
@@ -2194,6 +2329,10 @@ static void apply_state(const Nv2aRenderState *rs)
         const char *e = genv("VC3_GL_CULL");
         cull_mode = e ? atoi(e) : 0;
     }
+    static const Prog *rs_prog;
+    if (rs_prog != U)
+        s_rs_valid = 0;                 /* its uniforms are per program */
+    rs_prog = U;
     if (s_rs_valid && !memcmp(&s_rs_last, rs, sizeof *rs))
         goto uniforms;
     s_rs_last = *rs;
@@ -2240,16 +2379,16 @@ static void apply_state(const Nv2aRenderState *rs)
         glDisable(GL_CULL_FACE);
     }
 uniforms:
-    glUniform1i(U->atest, rs->alpha_test_enable && !genv("VC3_GL_NOATEST") ? 1 : 0);
-    glUniform1i(U->afunc, (GLint)rs->alpha_func);
-    glUniform1f(U->aref, (float)(rs->alpha_ref & 0xFF));
+    cu1i(U->atest, rs->alpha_test_enable && !genv("VC3_GL_NOATEST") ? 1 : 0);
+    cu1i(U->afunc, (GLint)rs->alpha_func);
+    cu1f(U->aref, (float)(rs->alpha_ref & 0xFF));
     {
         float dmin = rs->depth_min, dmax = rs->depth_max;
         if (!(dmax > dmin)) {
             dmin = 0.0f;
             dmax = 16777215.0f;
         }
-        glUniform2f(U->depth, dmin, dmax);
+        cu2f(U->depth, dmin, dmax);
     }
 }
 
@@ -2395,29 +2534,29 @@ static void bind_combiners(const Surf *f, const Nv2aBatch *b)
         nv2a_rc_unpack(rc->factor0[k], &f0[k * 4]);
         nv2a_rc_unpack(rc->factor1[k], &f1[k * 4]);
     }
-    glUniform1i(U->rc, 1);
-    glUniform1uiv(U->cicw, 8, rc->color_icw);
-    glUniform1uiv(U->aicw, 8, rc->alpha_icw);
-    glUniform1uiv(U->cocw, 8, rc->color_ocw);
-    glUniform1uiv(U->aocw, 8, rc->alpha_ocw);
-    glUniform4fv(U->f0, 8, f0);
-    glUniform4fv(U->f1, 8, f1);
-    glUniform1ui(U->fin0, rc->final0);
-    glUniform1ui(U->fin1, rc->final1);
-    glUniform1ui(U->ctl, rc->control);
-    glUniform1ui(U->sprog, rc->stage_program);
+    cu1i(U->rc, 1);
+    cu1uiv(U->cicw, 8, rc->color_icw);
+    cu1uiv(U->aicw, 8, rc->alpha_icw);
+    cu1uiv(U->cocw, 8, rc->color_ocw);
+    cu1uiv(U->aocw, 8, rc->alpha_ocw);
+    cu4fv(U->f0, 8, f0);
+    cu4fv(U->f1, 8, f1);
+    cu1ui(U->fin0, rc->final0);
+    cu1ui(U->fin1, rc->final1);
+    cu1ui(U->ctl, rc->control);
+    cu1ui(U->sprog, rc->stage_program);
     nv2a_rc_unpack(rc->final_c0, c);
-    glUniform4fv(U->fc0, 1, c);
+    cu4fv(U->fc0, 1, c);
     nv2a_rc_unpack(rc->final_c1, c);
-    glUniform4fv(U->fc1, 1, c);
+    cu4fv(U->fc1, 1, c);
     /* FOG_COLOR is R in bits 0-7, the reverse of a D3DCOLOR. */
     nv2a_rc_unpack(b->fog_color, c);
-    glUniform3f(U->fogc, c[2], c[1], c[0]);
-    glUniform1iv(U->on, 4, on);
-    glUniform1iv(U->iscube, 4, cube);
-    glUniform1i(U->dbgon,
+    cu3f(U->fogc, c[2], c[1], c[0]);
+    cu1iv(U->on, 4, on);
+    cu1iv(U->iscube, 4, cube);
+    cu1i(U->dbgon,
                 !(b->stage[0] && surf_find(b->stage[0]->offset)));
-    glUniform2fv(U->ts, 4, ts);
+    cu2fv(U->ts, 4, ts);
     {
         /* RCDBG 6: a colour per (stage program, final combiner, stage 0-1
          * inputs), logged once each, so a pixel names the setup that drew it. */
@@ -2440,7 +2579,7 @@ static void bind_combiners(const Surf *f, const Nv2aBatch *b)
                     b->stage[0] ? b->stage[0]->offset : 0,
                     b->stage[1] ? b->stage[1]->offset : 0);
         }
-        glUniform3f(U->dbgcol, r, g, bl);
+        cu3f(U->dbgcol, r, g, bl);
         if (genv("VC3_GL_RCDBG") && atoi(genv("VC3_GL_RCDBG")) >= 6)
             glDisable(GL_BLEND);     /* exact colours, so a pixel names its setup */
             s_rs_valid = 0;
@@ -2597,9 +2736,9 @@ static int raw_attribs(const Nv2aRawGeometry *g, const int slot[8])
             glEnableVertexAttribArray(loc);
         }
     }
-    glUniform4fv(U->ascale, 8, &scale[0][0]);
-    glUniform1i(U->packed, packed);
-    glUniform1i(U->bgra, bgra);
+    cu4fv(U->ascale, 8, &scale[0][0]);
+    cu1i(U->packed, packed);
+    cu1i(U->bgra, bgra);
     return 1;
 }
 
@@ -2607,19 +2746,20 @@ static int raw_attribs(const Nv2aRawGeometry *g, const int slot[8])
  * batches of one mesh share nearly all of it. */
 static void raw_uniforms(const Nv2aRawGeometry *g)
 {
-    static Nv2aFixedState last;
-    static int valid;
+    Nv2aFixedState *lastp = &U->ff_last;
+#define last (*lastp)
+#define valid (U->ff_valid)
     const Nv2aFixedState *ff = g->ff;
     GLint lk[8], tg[4], tm[4], i;
     GLuint gen[16];
 
-    glUniform2f(U->aa, g->aa_sx, g->aa_sy);
-    glUniform1f(U->vpz, g->vp_off_z);
-    glUniform1i(U->nearz, (GLint)g->near_z);
-    glUniform1i(U->fogen, (GLint)g->fog_enable);
-    glUniform1ui(U->fogmode, g->fog_mode);
-    glUniform2f(U->fogp, g->fog_param[0], g->fog_param[1]);
-    glUniform2f(U->uvs0, g->uv_scale0[0], g->uv_scale0[1]);
+    cu2f(U->aa, g->aa_sx, g->aa_sy);
+    cu1f(U->vpz, g->vp_off_z);
+    cu1i(U->nearz, (GLint)g->near_z);
+    cu1i(U->fogen, (GLint)g->fog_enable);
+    cu1ui(U->fogmode, g->fog_mode);
+    cu2f(U->fogp, g->fog_param[0], g->fog_param[1]);
+    cu2f(U->uvs0, g->uv_scale0[0], g->uv_scale0[1]);
     {   /* the game's projection for this batch, when its matrices changed */
         static float last_aa[2];
         if (!(valid && !memcmp(&last, ff, sizeof last)) || last_aa[0] != g->aa_sx
@@ -2639,32 +2779,34 @@ static void raw_uniforms(const Nv2aRawGeometry *g)
         return;
     last = *ff;
     valid = 1;
-    glUniformMatrix4fv(U->comp, 1, GL_TRUE, ff->composite);
-    glUniformMatrix4fv(U->mv, 4, GL_TRUE, &ff->mv[0][0]);
-    glUniformMatrix4fv(U->proj, 1, GL_TRUE, ff->proj);
-    glUniformMatrix4fv(U->tm, 4, GL_TRUE, &ff->texmat[0][0]);
-    glUniform4fv(U->c59, 1, ff->c59);
-    glUniform1ui(U->skin, ff->skin_mode);
-    glUniform1i(U->usecomp, (GLint)ff->use_composite);
-    glUniform1i(U->lighting, (GLint)ff->lighting);
-    glUniform2i(U->colmat, (GLint)ff->colmat_amb, (GLint)ff->colmat_dif);
-    glUniform1i(U->flipn, (GLint)ff->flip_normals);
-    glUniform1i(U->hasnrm, (GLint)ff->has_normal);
-    glUniform1i(U->hascol, (GLint)ff->has_color);
-    glUniform4fv(U->samb, 1, ff->scene_amb);
-    glUniform1f(U->matalpha, ff->mat_alpha);
+    cuMatrix4fv(U->comp, 1, GL_TRUE, ff->composite);
+    cuMatrix4fv(U->mv, 4, GL_TRUE, &ff->mv[0][0]);
+    cuMatrix4fv(U->proj, 1, GL_TRUE, ff->proj);
+    cuMatrix4fv(U->tm, 4, GL_TRUE, &ff->texmat[0][0]);
+    cu4fv(U->c59, 1, ff->c59);
+    cu1ui(U->skin, ff->skin_mode);
+    cu1i(U->usecomp, (GLint)ff->use_composite);
+    cu1i(U->lighting, (GLint)ff->lighting);
+    cu2i(U->colmat, (GLint)ff->colmat_amb, (GLint)ff->colmat_dif);
+    cu1i(U->flipn, (GLint)ff->flip_normals);
+    cu1i(U->hasnrm, (GLint)ff->has_normal);
+    cu1i(U->hascol, (GLint)ff->has_color);
+    cu4fv(U->samb, 1, ff->scene_amb);
+    cu1f(U->matalpha, ff->mat_alpha);
     for (i = 0; i < 8; i++)
         lk[i] = (GLint)ff->light_kind[i];
-    glUniform1iv(U->lkind, 8, lk);
-    glUniform4fv(U->light, 40, &ff->light[0][0]);
+    cu1iv(U->lkind, 8, lk);
+    cu4fv(U->light, 40, &ff->light[0][0]);
     for (i = 0; i < 4; i++) {
         tg[i] = (GLint)ff->texgen_on[i];
         tm[i] = (GLint)ff->texmat_on[i];
     }
     memcpy(gen, ff->texgen, sizeof gen);
-    glUniform4uiv(U->texgen, 4, gen);
-    glUniform1iv(U->tgon, 4, tg);
-    glUniform1iv(U->tmon, 4, tm);
+    cu4uiv(U->texgen, 4, gen);
+    cu1iv(U->tgon, 4, tg);
+    cu1iv(U->tmon, 4, tm);
+#undef last
+#undef valid
 }
 
 static GLenum raw_mode(uint32_t prim)
@@ -2796,6 +2938,32 @@ static void hud_bind(const Surf *f, const Nv2aRenderState *rs)
         glBlendFuncSeparate(rs->blend_src, rs->blend_dst, GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
 }
 
+/* Whether a batch is drawn through the register combiners (below, at
+ * has_cube / rt_pass): decided first, for the program. */
+static int batch_needs_rc(const Surf *f, const Nv2aBatch *b, int raw)
+{
+    const int has_ext = raw ? b->rc != NULL : (b->rc && b->ext);
+    int st;
+    if (!has_ext)
+        return 0;
+    if (s_use_rc)
+        return 1;
+    if (genv("VC3_GL_CUBE_RC"))
+        for (st = 0; st < 4; st++)
+            if (b->stage[st] && b->stage[st]->cube
+                && ((b->rc->stage_program >> (st * 5)) & 0x1F) == 3)
+                return 1;
+    if (!raw && b->texture && b->count && (b->vertices[0].diffuse & 0x00FFFFFFu) == 0) {
+        const Surf *rt = surf_find(b->texture->offset);
+        if (rt && rt->fbo && !rt->cpu_owned)
+            return 1;
+    }
+    if (genv("VC3_GL_RC_SURF")
+        && f->va == (uint32_t)strtoul(genv("VC3_GL_RC_SURF"), NULL, 16))
+        return 1;
+    return 0;
+}
+
 static void gl_draw(const Nv2aSurface *s, const Nv2aBatch *b)
 {
     const Nv2aRawGeometry *raw = b->raw;
@@ -2808,7 +2976,8 @@ static void gl_draw(const Nv2aSurface *s, const Nv2aBatch *b)
 
     if ((!raw && !b->count) || !gl_ready() || !(f = surf_bind(s)))
         return;
-    U = raw ? &s_praw : &s_pcpu;
+    U = raw ? (batch_needs_rc(f, b, raw != NULL) ? &s_praw_rc : &s_praw)
+            : (batch_needs_rc(f, b, raw != NULL) ? &s_pcpu_rc : &s_pcpu);
     memset(s_sbs, 0, sizeof s_sbs);
     {
         /* Consecutive batches mostly share program and layout. */
@@ -2825,11 +2994,11 @@ static void gl_draw(const Nv2aSurface *s, const Nv2aBatch *b)
     TM(0);
     apply_state(b->state);
     TM(1);
-    glUniform2f(U->surf, (float)f->w, (float)f->h);
+    cu2f(U->surf, (float)f->w, (float)f->h);
     {
         float xs, xo;
         surf_xform(f, b, &xs, &xo);
-        glUniform2f(U->xs, xs, xo);
+        cu2f(U->xs, xs, xo);
         if (s_ftr == 1 && f->wide)
             fprintf(stderr, "[GLTR]   16:9 x scale %.3f offset %+.3f\n", xs, xo);
     }
@@ -2932,8 +3101,8 @@ static void gl_draw(const Nv2aSurface *s, const Nv2aBatch *b)
         s_st.untex++;
     if (!textured)
         glBindTexture(GL_TEXTURE_2D, s_white);
-    glUniform1i(U->textured, textured);
-    glUniform2f(U->texsize, tw, th);
+    cu1i(U->textured, textured);
+    cu2f(U->texsize, tw, th);
     if (!raw && b->rc && b->ext && s_use_rc && s_st.on && s_st.rc_logged < 4) {
         const Nv2aVertexEx *e = &b->ext[0];
         s_st.rc_logged++;
@@ -2992,8 +3161,8 @@ static void gl_draw(const Nv2aSurface *s, const Nv2aBatch *b)
             need_ext = 1;
         } else {
             int lmap = has_ext && lightmap_batch(b);
-            glUniform1i(U->rc, 0);
-            glUniform1i(U->lmap, 0);
+            cu1i(U->rc, 0);
+            cu1i(U->lmap, 0);
             if (lmap && textured) {
                 /* VC3's walls: stage 1 multiplies by a lightmap (t1 * r0).
                  * Drawn as texture * diffuse * lightmap, keeping the texture
@@ -3007,9 +3176,9 @@ static void gl_draw(const Nv2aSurface *s, const Nv2aBatch *b)
                     GLfloat ts[8] = { 1, 1, 1, 1, 1, 1, 1, 1 };
                     ts[2] = (norm ? (float)t->width : 1.0f) / sw;
                     ts[3] = (norm ? (float)t->height : 1.0f) / sh;
-                    glUniform2fv(U->ts, 4, ts);
-                    glUniform1ui(U->sprog, b->rc->stage_program);
-                    glUniform1i(U->lmap, 1);
+                    cu2fv(U->ts, 4, ts);
+                    cu1ui(U->sprog, b->rc->stage_program);
+                    cu1i(U->lmap, 1);
                     need_ext = 1;
                 }
                 active_tex(0);
@@ -3055,8 +3224,9 @@ static void gl_draw(const Nv2aSurface *s, const Nv2aBatch *b)
     }
     if (b->zpass_out) {
         GLfloat sb0[8] = { 0 };
-        glUniform4fv(U->sbs, 2, sb0);
-        glUniform2f(U->eye, 0.0f, s_st_depth);
+        cu1i(U->st2, 0);
+        cu4fv(U->sbs, 2, sb0);
+        cu2f(U->eye, 0.0f, s_st_depth);
         /* A visibility test: count the pixels that pass, for GET_REPORT.
          * Reading the result waits for the GPU, but only test batches pay. */
         static GLuint q;
@@ -3073,6 +3243,7 @@ static void gl_draw(const Nv2aSurface *s, const Nv2aBatch *b)
         glGetQueryObjectuiv(q, GL_QUERY_RESULT, &passed);
         *b->zpass_out += passed;
         s_st.zpass_batches++;
+        s_zp_frame++;
         s_st.zpass_pixels += passed;
     } else {
         TM(4);
@@ -3129,10 +3300,10 @@ static void gl_draw(const Nv2aSurface *s, const Nv2aBatch *b)
         }
         if (imm3d) {
             const VrGameProj *g = raw ? &s_bgp : f->gp_ok ? &f->gp : &s_gp;
-            glUniform4f(U->gp, g->kx, g->ky, g->cx, g->cy);
-            glUniform2f(U->gw, 1.0f, g->inv_pz);
+            cu4f(U->gp, g->kx, g->ky, g->cx, g->cy);
+            cu2f(U->gw, 1.0f, g->inv_pz);
         } else {
-            glUniform2f(U->gw, 0.0f, 0.0f);
+            cu2f(U->gw, 0.0f, 0.0f);
         }
         if (hud) {
             hud_bind(f, b->state);
@@ -3153,15 +3324,15 @@ static void gl_draw(const Nv2aSurface *s, const Nv2aBatch *b)
                 sb[2 * k] = s_sbs[k];
                 sb[2 * k + 1] = 0.0f;
             }
-            glUniform4fv(U->sbs, 2, sb);
+            cu4fv(U->sbs, 2, sb);
             e2[0] = s_imm ? 0.0f : 0.5f * s_st_sep;
             e2[1] = s_st_depth;
             e2[2] = s_imm ? 0.0f : -0.5f * s_st_sep;
             e2[3] = s_st_depth;
-            glUniform2fv(U->eye2, 2, e2);
+            cu2fv(U->eye2, 2, e2);
             if (imm3d)
-                glUniformMatrix4fv(U->immvp2, 2, GL_FALSE, &s_view.vp[0][0]);
-            glUniform1i(U->st2, 1);
+                cuMatrix4fv(U->immvp2, 2, GL_FALSE, &s_view.vp[0][0]);
+            cu1i(U->st2, 1);
             glViewport(0, 0, 2 * f->pw, f->ph);
             glEnable(cd);
             if (raw)
@@ -3170,13 +3341,14 @@ static void gl_draw(const Nv2aSurface *s, const Nv2aBatch *b)
             else
                 glDrawArraysInstanced(GL_TRIANGLES, 0, (GLsizei)b->count, 2);
             glDisable(cd);
-            glUniform1i(U->st2, 0);
             glViewport(0, 0, f->pw, f->ph);
         }
         /* Stereo: the same draw for each eye, in its half. */
         int eye, eyes = f->st && !hud ? 2 : 1;
         if (f->st && !hud && one_pass && s_has_clip)
             eyes = 0;                       /* drawn above */
+        else
+            cu1i(U->st2, 0);
         for (eye = 0; eye < eyes; eye++) {
             GLfloat sb[8];
             int k;
@@ -3184,17 +3356,17 @@ static void gl_draw(const Nv2aSurface *s, const Nv2aBatch *b)
                 sb[2 * k] = s_sbs[k];
                 sb[2 * k + 1] = 0.5f * (GLfloat)eye;
             }
-            glUniform4fv(U->sbs, 2, sb);
+            cu4fv(U->sbs, 2, sb);
             if (hud) {
-                glUniform2f(U->eye, 0.0f, s_st_depth);
+                cu2f(U->eye, 0.0f, s_st_depth);
             } else if (f->st) {
                 glViewport(eye * f->pw, 0, f->pw, f->ph);
                 if (imm3d)
-                    glUniformMatrix4fv(U->immvp, 1, GL_FALSE, s_view.vp[eye]);
-                glUniform2f(U->eye, s_imm ? 0.0f : eye ? -0.5f * s_st_sep : 0.5f * s_st_sep,
+                    cuMatrix4fv(U->immvp, 1, GL_FALSE, s_view.vp[eye]);
+                cu2f(U->eye, s_imm ? 0.0f : eye ? -0.5f * s_st_sep : 0.5f * s_st_sep,
                             s_st_depth);
             } else {
-                glUniform2f(U->eye, 0.0f, s_st_depth);
+                cu2f(U->eye, 0.0f, s_st_depth);
             }
             if (raw)
                 glDrawElements(raw_mode(raw->prim), (GLsizei)raw->index_count,
@@ -3259,6 +3431,7 @@ static void gl_draw(const Nv2aSurface *s, const Nv2aBatch *b)
             glDrawArrays(GL_TRIANGLES, 0, 3);
             glReadPixels((GLint)cx, (GLint)cy, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, px12);
             glUniform1i(loc, genv("VC3_GL_RCDBG") ? atoi(genv("VC3_GL_RCDBG")) : 0);
+            uc_reset(U);
             fprintf(stderr, "[RCGPU] at %.0f,%.0f: v_col.a %u on0 %u on1 %u | comb.a %u t0.a %u t1.a %u"
                     " | diffuse[0] %08X\n", cx, cy, px13[0], px13[1], px13[2],
                     px12[0], px12[1], px12[2], b->vertices[0].diffuse);
