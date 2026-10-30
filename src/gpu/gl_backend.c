@@ -135,6 +135,7 @@ typedef struct {
     /* The immersive view (vr_view.h): this eye's matrix, the game's
      * projection, on / 1 / pz. */
     GLint immvp, gp, gw;
+    GLint st2, eye2, immvp2;     /* one-pass stereo */
 } Prog;
 static Prog s_pcpu, s_praw, *U = &s_pcpu;
 static uint32_t s_frame = 1;
@@ -175,6 +176,10 @@ static const char *VS =
     "uniform mat4 u_immvp;\n"                 /* immersive: this eye's matrix */
     "uniform vec4 u_gp;\n"                    /* the game's projection kx ky cx cy */
     "uniform vec2 u_gw;\n"                    /* immersive on, 1 / pz */
+    "uniform int u_st2;\n"                   /* both eyes in one draw: instance = eye */
+    "uniform vec2 u_eye2[2];\n"
+    "uniform mat4 u_immvp2[2];\n"
+    "flat out int v_eye;\n"
     "uniform vec2 u_depth;\n"                 /* clip min, max */
     "uniform vec2 u_texsize;\n"
     "out vec4 v_col;\n"
@@ -184,20 +189,29 @@ static const char *VS =
     "out vec4 v_tc0, v_tc1, v_tc2, v_tc3;\n"
     "void main() {\n"
     "  float w = (a_pos.w > 0.0 && a_pos.w < 1e30) ? 1.0 / a_pos.w : 1.0;\n"
+    "  int seye = u_st2 != 0 ? gl_InstanceID : 0;\n"
+    "  vec2 ueye = u_st2 != 0 ? u_eye2[seye] : u_eye;\n"
+    "  mat4 ivp = u_st2 != 0 ? u_immvp2[seye] : u_immvp;\n"
     "  vec2 ndc = a_pos.xy / u_surf * 2.0 - 1.0;\n"
     /* stereo, 3D only: rhw 1 is 2D, on the screen */
-    "  if (u_eye.x != 0.0 && a_pos.w != 1.0 && a_pos.w > 0.0)\n"
-    "    ndc.x += u_eye.x * (min(u_eye.y * a_pos.w, 4.0) - 1.0);\n"
+    "  if (ueye.x != 0.0 && a_pos.w != 1.0 && a_pos.w > 0.0)\n"
+    "    ndc.x += ueye.x * (min(ueye.y * a_pos.w, 4.0) - 1.0);\n"
     "  ndc.x = ndc.x * u_xs.x + u_xs.y;\n"
     "  float z = clamp((a_pos.z - u_depth.x) / (u_depth.y - u_depth.x), 0.0, 1.0) * 2.0 - 1.0;\n"
     /* immersive, 3D: the game eye position back from the screen and w,
      * then through this eye (vr_math.h, vr_unproject_gl) */
     "  if (u_gw.x != 0.0 && a_pos.w != 1.0 && a_pos.w > 0.0) {\n"
     "    float ez = w * u_gw.y;\n"
-    "    gl_Position = u_immvp * vec4((a_pos.x - u_gp.z) / u_gp.x * ez,\n"
-    "                                 (a_pos.y - u_gp.w) / u_gp.y * ez, -w * abs(u_gw.y), 1.0);\n"
+    "    gl_Position = ivp * vec4((a_pos.x - u_gp.z) / u_gp.x * ez,\n"
+    "                             (a_pos.y - u_gp.w) / u_gp.y * ez, -w * abs(u_gw.y), 1.0);\n"
     "  } else\n"
     "    gl_Position = vec4(ndc * w, z * w, w);\n"
+    "  v_eye = seye;\n"
+    "  if (u_st2 != 0)\n"
+    "    gl_Position.x = gl_Position.x * 0.5 + (seye == 0 ? -0.5 : 0.5) * gl_Position.w;\n"
+    "#if !defined(GL_ES) || defined(GL_EXT_clip_cull_distance)\n"
+    "  gl_ClipDistance[0] = u_st2 != 0 ? (seye == 0 ? -gl_Position.x : gl_Position.x) : 1.0;\n"
+    "#endif\n"
     "  v_col = a_col.zyxw;\n"
     "  v_uv = a_uv / u_texsize;\n"
     "  v_spec = a_spec.zyxw;\n"
@@ -234,6 +248,10 @@ static const char *VS_FF =
     "uniform mat4 u_immvp;\n"
     "uniform vec4 u_gp;\n"
     "uniform vec2 u_gw;\n"
+    "uniform int u_st2;\n"                   /* both eyes in one draw: instance = eye */
+    "uniform vec2 u_eye2[2];\n"
+    "uniform mat4 u_immvp2[2];\n"
+    "flat out int v_eye;\n"
     "uniform vec4 u_c59;\n"
     "uniform uint u_skin;\n"
     "uniform int u_usecomp, u_lighting, u_flipn, u_hasnrm, u_hascol;\n"
@@ -375,9 +393,12 @@ static const char *VS_FF =
      * w = 1e-3 and at the near plane z = c59.z; so do the clip distances. A
      * vertex the CPU could not place (w = 0, or not finite) takes every
      * triangle touching it with it. */
+    "  int seye = u_st2 != 0 ? gl_InstanceID : 0;\n"
+    "  vec2 ueye = u_st2 != 0 ? u_eye2[seye] : u_eye;\n"
+    "  mat4 ivp = u_st2 != 0 ? u_immvp2[seye] : u_immvp;\n"
     "  vec2 ndc = s.xy / u_surf * 2.0 - 1.0;\n"
-    "  if (u_eye.x != 0.0 && w > 0.0)\n"
-    "    ndc.x += u_eye.x * (min(u_eye.y / w, 4.0) - 1.0);\n"
+    "  if (ueye.x != 0.0 && w > 0.0)\n"
+    "    ndc.x += ueye.x * (min(ueye.y / w, 4.0) - 1.0);\n"
     "  ndc.x = ndc.x * u_xs.x + u_xs.y;\n"
     "  float zn = (s.z - u_depth.x) / (u_depth.y - u_depth.x) * 2.0 - 1.0;\n"
     "  bool bad = abs(w) <= 1e-6 || any(isnan(o_screen)) || any(isinf(o_screen));\n"
@@ -385,12 +406,18 @@ static const char *VS_FF =
      * headset's frustum clips (the game's planes no longer apply) */
     "  bool imm = u_gw.x != 0.0;\n"
     "  float iez = w * u_gw.y;\n"
-    "  vec4 ipos = u_immvp * vec4((s.x - u_gp.z) / u_gp.x * iez, (s.y - u_gp.w) / u_gp.y * iez,\n"
+    "  vec4 ipos = ivp * vec4((s.x - u_gp.z) / u_gp.x * iez, (s.y - u_gp.w) / u_gp.y * iez,\n"
     "                             -w * abs(u_gw.y), 1.0);\n"
     "  gl_Position = bad ? vec4(0.0, 0.0, 0.0, 1.0) : (imm ? ipos : vec4(ndc * w, zn * w, w));\n"
     "#if !defined(GL_ES) || defined(GL_EXT_clip_cull_distance)\n"
     "  gl_ClipDistance[0] = bad ? -1e30 : (imm ? 1.0 : w - 1e-3);\n"
     "  gl_ClipDistance[1] = bad ? -1e30 : (!imm && u_nearz != 0 ? (s.z - u_vpz) * w : 1.0);\n"
+    "#endif\n"
+    "  v_eye = seye;\n"
+    "  if (u_st2 != 0)\n"
+    "    gl_Position.x = gl_Position.x * 0.5 + (seye == 0 ? -0.5 : 0.5) * gl_Position.w;\n"
+    "#if !defined(GL_ES) || defined(GL_EXT_clip_cull_distance)\n"
+    "  gl_ClipDistance[2] = u_st2 != 0 ? (seye == 0 ? -gl_Position.x : gl_Position.x) : 1.0;\n"
     "#endif\n"
     "}\n";
 
@@ -428,6 +455,7 @@ static const char *FS =
     "uniform int u_on[4];\n"                  /* stage has a usable texture */
     "uniform vec2 u_ts[4];\n"                 /* coordinate -> GL [0,1] scale */
     "uniform vec4 u_sbs[2];\n"                /* per stage: stereo surface?, eye's half */
+    "flat in int v_eye;\n"                    /* one-pass stereo: the eye */
     "out vec4 o_col;\n"
     "vec4 R[16];\n"
     "float map_in(float x, uint b) {\n"
@@ -470,7 +498,7 @@ static const char *FS =
     "}\n"
     "vec2 sbs(int st, vec2 uv) {\n"
     "  vec2 e = st == 0 ? u_sbs[0].xy : st == 1 ? u_sbs[0].zw : st == 2 ? u_sbs[1].xy : u_sbs[1].zw;\n"
-    "  return e.x != 0.0 ? vec2(clamp(uv.x, 0.0, 1.0) * 0.5 + e.y, uv.y) : uv;\n"
+    "  return e.x != 0.0 ? vec2(clamp(uv.x, 0.0, 1.0) * 0.5 + e.y + 0.5 * float(v_eye), uv.y) : uv;\n"
     "}\n"
     "vec2 stage_uv(int st, vec4 tc) {\n"
     "  uint mode = (u_sprog >> uint(st * 5)) & 31u;\n"
@@ -681,6 +709,7 @@ static int prog_link(Prog *p, GLuint vs, GLuint fs, int feedback)
     LOC(surf, "u_surf"); LOC(depth, "u_depth"); LOC(texsize, "u_texsize");
     LOC(xs, "u_xs"); LOC(eye, "u_eye"); LOC(sbs, "u_sbs");
     LOC(immvp, "u_immvp"); LOC(gp, "u_gp"); LOC(gw, "u_gw");
+    LOC(st2, "u_st2"); LOC(eye2, "u_eye2"); LOC(immvp2, "u_immvp2");
     if (genv("VC3_IMM_LOG"))
         fprintf(stderr, "[IMM] program %u: immvp %d gp %d gw %d\n", p->prog, p->immvp, p->gp, p->gw);
     LOC(textured, "u_textured"); LOC(atest, "u_atest"); LOC(afunc, "u_afunc");
@@ -2998,8 +3027,45 @@ static void gl_draw(const Nv2aSurface *s, const Nv2aBatch *b)
             hud_bind(f, b->state);
             s_rs_valid = 0;                 /* the blend's alpha was changed */
         }
+        /* Stereo in one pass: one instanced draw, instance = eye, each in its
+         * half of a double-wide viewport, the other half clipped -- one draw
+         * call and one set of uniforms for both eyes. VC3_STEREO_1PASS=0
+         * draws each eye on its own (as where clip distances are missing). */
+        static int one_pass = -1;
+        if (one_pass < 0)
+            one_pass = !(genv("VC3_STEREO_1PASS") && genv("VC3_STEREO_1PASS")[0] == '0');
+        if (f->st && !hud && one_pass && s_has_clip) {
+            GLfloat sb[8], e2[4];
+            GLenum cd = raw ? GL_CLIP_DISTANCE0 + 2 : GL_CLIP_DISTANCE0;
+            int k;
+            for (k = 0; k < 4; k++) {
+                sb[2 * k] = s_sbs[k];
+                sb[2 * k + 1] = 0.0f;
+            }
+            glUniform4fv(U->sbs, 2, sb);
+            e2[0] = s_imm ? 0.0f : 0.5f * s_st_sep;
+            e2[1] = s_st_depth;
+            e2[2] = s_imm ? 0.0f : -0.5f * s_st_sep;
+            e2[3] = s_st_depth;
+            glUniform2fv(U->eye2, 2, e2);
+            if (imm3d)
+                glUniformMatrix4fv(U->immvp2, 2, GL_FALSE, &s_view.vp[0][0]);
+            glUniform1i(U->st2, 1);
+            glViewport(0, 0, 2 * f->pw, f->ph);
+            glEnable(cd);
+            if (raw)
+                glDrawElementsInstanced(raw_mode(raw->prim), (GLsizei)raw->index_count,
+                                        GL_UNSIGNED_SHORT, (void *)ioff, 2);
+            else
+                glDrawArraysInstanced(GL_TRIANGLES, 0, (GLsizei)b->count, 2);
+            glDisable(cd);
+            glUniform1i(U->st2, 0);
+            glViewport(0, 0, f->pw, f->ph);
+        }
         /* Stereo: the same draw for each eye, in its half. */
         int eye, eyes = f->st && !hud ? 2 : 1;
+        if (f->st && !hud && one_pass && s_has_clip)
+            eyes = 0;                       /* drawn above */
         for (eye = 0; eye < eyes; eye++) {
             GLfloat sb[8];
             int k;
