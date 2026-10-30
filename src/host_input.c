@@ -382,6 +382,24 @@ void host_input_poll(chihiro_input_t *in)
     gun_reading(ux, uy, &in->analog[0], &in->analog[1]);
     in->screen_x[0] = in->analog[0];
     in->screen_y[0] = in->analog[1];
+    /* One line per trigger pull: what the mouse reported, the window in
+     * points and pixels, where that lands in the picture, and the gun
+     * reading sent -- enough to tell a host mapping problem from the game's. */
+    {
+        static int fire_was;
+        if (fire && !fire_was && !reload) {
+            SDL_Window *w = s_mwin ? SDL_GetWindowFromID(s_mwin) : NULL;
+            int ww = 0, wh = 0, pw = 0, ph = 0;
+            if (w) {
+                SDL_GetWindowSize(w, &ww, &wh);
+                SDL_GetWindowSizeInPixels(w, &pw, &ph);
+            }
+            fprintf(stderr, "[AIM] mouse %d,%d window %dx%d (%dx%d px) -> %.3f,%.3f"
+                    " -> gun %02X,%02X\n", mx, my, ww, wh, pw, ph, ux, uy,
+                    in->analog[0] >> 8, in->analog[1] >> 8);
+        }
+        fire_was = fire;
+    }
     /* Off the picture, or reloading: the gun sees no screen. */
     if (reload || ux < 0.0) {
         in->analog[0] = in->analog[1] = 0xFFFF;
