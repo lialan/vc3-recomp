@@ -947,6 +947,54 @@ static int fmt_has_alpha(uint32_t fmt)
     }
 }
 
+/* Sampling state lives in sampler objects, one per (filter, wrap) pair the
+ * titles use, bound per unit: setting filter and wrap on the texture at
+ * every bind -- five glTexParameteri per draw -- made the Metal-backed driver
+ * rebuild its sampler and texture state for nearly every draw. The alpha
+ * swizzle is a texture parameter and is set only when it changes. */
+static int s_unit;
+static GLuint s_unit_sampler[8];
+
+static void active_tex(int unit)
+{
+    if (unit != s_unit) {
+        glActiveTexture(GL_TEXTURE0 + (GLenum)unit);
+        s_unit = unit;
+    }
+}
+
+static GLint gl_wrap(uint32_t mode);
+
+static void tex_sampling(GLuint tex, const Nv2aTexture *t)
+{
+    static GLuint samplers[2][2][3][3];
+    static GLint swz[16384];               /* by texture name; 0: unknown */
+    uint32_t mag = (t->filter >> 24) & 0xF, min = (t->filter >> 16) & 0xFF;
+    GLint wu = gl_wrap(t->addr_u), wv = gl_wrap(t->addr_v);
+    int iu = wu == GL_REPEAT ? 0 : wu == GL_MIRRORED_REPEAT ? 1 : 2;
+    int iv = wv == GL_REPEAT ? 0 : wv == GL_MIRRORED_REPEAT ? 1 : 2;
+    GLuint *sm = &samplers[mag == 1][min == 1][iu][iv];
+    GLint a = fmt_has_alpha(t->color) ? GL_ALPHA : GL_ONE;
+
+    if (!*sm) {
+        glGenSamplers(1, sm);
+        /* SET_TEXTURE_FILTER: 1 is point sampling, anything else filters. */
+        glSamplerParameteri(*sm, GL_TEXTURE_MAG_FILTER, mag == 1 ? GL_NEAREST : GL_LINEAR);
+        glSamplerParameteri(*sm, GL_TEXTURE_MIN_FILTER, min == 1 ? GL_NEAREST : GL_LINEAR);
+        glSamplerParameteri(*sm, GL_TEXTURE_WRAP_S, wu);
+        glSamplerParameteri(*sm, GL_TEXTURE_WRAP_T, wv);
+    }
+    if (s_unit_sampler[s_unit] != *sm) {
+        glBindSampler((GLuint)s_unit, *sm);
+        s_unit_sampler[s_unit] = *sm;
+    }
+    if (tex >= 16384 || swz[tex] != a) {
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_SWIZZLE_A, a);
+        if (tex < 16384)
+            swz[tex] = a;
+    }
+}
+
 static GLint gl_wrap(uint32_t mode)
 {
     switch (mode) {
@@ -1041,9 +1089,9 @@ static int tex_bind(const Nv2aTexture *t, float *sw, float *sh)
 {
     const uint8_t *mem = (const uint8_t *)xbox_GetMemoryOffset();
     Surf *rt = surf_find(t->offset);
-    uint32_t mag = (t->filter >> 24) & 0xF, min = (t->filter >> 16) & 0xFF;
     size_t slot, i;
     TexEntry *e = NULL;
+    GLuint bound;
 
     s_st.fmt[t->color & 0xFF]++;
     if (rt && rt->fbo && !rt->cpu_owned) {
@@ -1060,6 +1108,7 @@ static int tex_bind(const Nv2aTexture *t, float *sw, float *sh)
     if (rt && rt->fbo && !rt->cpu_owned) {
         s_st.rt++;
         glBindTexture(GL_TEXTURE_2D, rt->color);
+        bound = rt->color;
         *sw = (float)rt->w;
         *sh = (float)rt->h;
     } else {
@@ -1095,6 +1144,7 @@ static int tex_bind(const Nv2aTexture *t, float *sw, float *sh)
             e->checked = 0;
         }
         glBindTexture(GL_TEXTURE_2D, e->tex);
+        bound = e->tex;
         /* Full check once a frame; within a frame, whenever the sampled hash
          * says the memory now holds something else. */
         uint64_t q = hash_sampled(mem + t->offset, tex_bytes(t));
@@ -1161,15 +1211,7 @@ static int tex_bind(const Nv2aTexture *t, float *sw, float *sh)
         *sw = (float)t->width;
         *sh = (float)t->height;
     }
-    /* SET_TEXTURE_FILTER: 1 is point sampling, anything else filters. */
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER,
-                    mag == 1 ? GL_NEAREST : GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER,
-                    min == 1 ? GL_NEAREST : GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, gl_wrap(t->addr_u));
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, gl_wrap(t->addr_v));
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_SWIZZLE_A,
-                    fmt_has_alpha(t->color) ? GL_ALPHA : GL_ONE);
+    tex_sampling(bound, t);
     return 1;
 }
 
@@ -1185,8 +1227,6 @@ static GLsizei s_self_w, s_self_h;
 
 static int tex_bind_for(const Surf *f, const Nv2aTexture *t, float *sw, float *sh)
 {
-    uint32_t mag = (t->filter >> 24) & 0xF, min = (t->filter >> 16) & 0xFF;
-
     if (t->offset != f->va)
         return tex_bind(t, sw, sh);
     if (!s_self_tex)
@@ -1200,18 +1240,17 @@ static int tex_bind_for(const Surf *f, const Nv2aTexture *t, float *sw, float *s
     }
     glBindFramebuffer(GL_READ_FRAMEBUFFER, f->fbo);
     glCopyTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 0, 0, f->w, f->h);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER,
-                    mag == 1 ? GL_NEAREST : GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER,
-                    min == 1 ? GL_NEAREST : GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, gl_wrap(t->addr_u));
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, gl_wrap(t->addr_v));
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_SWIZZLE_A,
-                    fmt_has_alpha(t->color) ? GL_ALPHA : GL_ONE);
+    tex_sampling(s_self_tex, t);
     *sw = (float)f->w;
     *sh = (float)f->h;
     return 1;
 }
+
+/* The fixed-function state last set by apply_state; anything else that
+ * changes it (a clear, the debug probes) clears s_rs_valid. Runs of batches
+ * share it, and the driver revalidates its pipeline on every call. */
+static Nv2aRenderState s_rs_last;
+static int s_rs_valid;
 
 static void apply_state(const Nv2aRenderState *rs)
 {
@@ -1222,6 +1261,10 @@ static void apply_state(const Nv2aRenderState *rs)
         const char *e = genv("VC3_GL_CULL");
         cull_mode = e ? atoi(e) : 0;
     }
+    if (s_rs_valid && !memcmp(&s_rs_last, rs, sizeof *rs))
+        goto uniforms;
+    s_rs_last = *rs;
+    s_rs_valid = 1;
     if (rs->blend_enable) {
         glEnable(GL_BLEND);
         glBlendFunc(rs->blend_src, rs->blend_dst);
@@ -1263,6 +1306,7 @@ static void apply_state(const Nv2aRenderState *rs)
     } else {
         glDisable(GL_CULL_FACE);
     }
+uniforms:
     glUniform1i(U->atest, rs->alpha_test_enable && !genv("VC3_GL_NOATEST") ? 1 : 0);
     glUniform1i(U->afunc, (GLint)rs->alpha_func);
     glUniform1f(U->aref, (float)(rs->alpha_ref & 0xFF));
@@ -1288,6 +1332,7 @@ static void gl_clear(const Nv2aSurface *s, const Nv2aRenderState *rs,
     if (!gl_ready() || !(f = surf_bind(s)))
         return;
     glDisable(GL_SCISSOR_TEST);
+    s_rs_valid = 0;                    /* masks change below */
     if (flags & 0xF0) {
         glColorMask((flags & 0x10) != 0, (flags & 0x20) != 0,
                     (flags & 0x40) != 0, (flags & 0x80) != 0);
@@ -1393,15 +1438,15 @@ static void bind_combiners(const Surf *f, const Nv2aBatch *b)
         ts[st * 2] = ts[st * 2 + 1] = 1.0f;
         /* A cube map goes on unit 4 + stage, sampled by direction. */
         if (t && t->cube) {
-            glActiveTexture(GL_TEXTURE4 + st);
+            active_tex(4 + st);
             if (tex_bind_cube(t)) {
                 on[st] = cube[st] = 1;
-                glActiveTexture(GL_TEXTURE0 + st);
+                active_tex(st);
                 glBindTexture(GL_TEXTURE_2D, s_white);
                 continue;
             }
         }
-        glActiveTexture(GL_TEXTURE0 + st);
+        active_tex(st);
         if (t && !t->cube && tex_bind_for(f, t, &sw, &sh)) {
             int norm = d3d8_format_is_swizzled(t->color)
                     || d3d8_format_dxt_block_bytes(t->color);
@@ -1412,7 +1457,7 @@ static void bind_combiners(const Surf *f, const Nv2aBatch *b)
             glBindTexture(GL_TEXTURE_2D, s_white);
         }
     }
-    glActiveTexture(GL_TEXTURE0);
+    active_tex(0);
     for (k = 0; k < 8; k++) {
         nv2a_rc_unpack(rc->factor0[k], &f0[k * 4]);
         nv2a_rc_unpack(rc->factor1[k], &f1[k * 4]);
@@ -1465,6 +1510,7 @@ static void bind_combiners(const Surf *f, const Nv2aBatch *b)
         glUniform3f(U->dbgcol, r, g, bl);
         if (genv("VC3_GL_RCDBG") && atoi(genv("VC3_GL_RCDBG")) >= 6)
             glDisable(GL_BLEND);     /* exact colours, so a pixel names its setup */
+            s_rs_valid = 0;
     }
 
 }
@@ -1728,11 +1774,22 @@ static void gl_draw(const Nv2aSurface *s, const Nv2aBatch *b)
     if ((!raw && !b->count) || !gl_ready() || !(f = surf_bind(s)))
         return;
     U = raw ? &s_praw : &s_pcpu;
-    glUseProgram(U->prog);
-    glBindVertexArray(raw ? s_vao_raw : s_vao);
+    {
+        /* Consecutive batches mostly share program and layout. */
+        static GLuint cur_prog, cur_vao;
+        GLuint vao = raw ? s_vao_raw : s_vao;
+        if (cur_prog != U->prog) {
+            glUseProgram(U->prog);
+            cur_prog = U->prog;
+        }
+        if (cur_vao != vao) {
+            glBindVertexArray(vao);
+            cur_vao = vao;
+        }
+    }
     apply_state(b->state);
     glUniform2f(U->surf, (float)f->w, (float)f->h);
-    glActiveTexture(GL_TEXTURE0);
+    active_tex(0);
     if (b->texture)
         textured = tex_bind_for(f, b->texture, &tw, &th);
     if (s_st.on) {
@@ -1882,7 +1939,7 @@ static void gl_draw(const Nv2aSurface *s, const Nv2aBatch *b)
                  * * diffuse alpha its alpha test needs. */
                 float sw = 1.0f, sh = 1.0f;
                 const Nv2aTexture *t = b->stage[1];
-                glActiveTexture(GL_TEXTURE1);
+                active_tex(1);
                 if (tex_bind_for(f, t, &sw, &sh)) {
                     int norm = d3d8_format_is_swizzled(t->color)
                             || d3d8_format_dxt_block_bytes(t->color);
@@ -1894,7 +1951,7 @@ static void gl_draw(const Nv2aSurface *s, const Nv2aBatch *b)
                     glUniform1i(U->lmap, 1);
                     need_ext = 1;
                 }
-                glActiveTexture(GL_TEXTURE0);
+                active_tex(0);
             }
         }
         if (raw) {
@@ -1972,6 +2029,7 @@ static void gl_draw(const Nv2aSurface *s, const Nv2aBatch *b)
             GLint loc = U->rcdbg;
             unsigned char px13[4], px12[4];
             probes++;
+            s_rs_valid = 0;
             glDisable(GL_DEPTH_TEST);
             glDisable(GL_BLEND);
             glDisable(GL_STENCIL_TEST);
@@ -2006,7 +2064,7 @@ static void gl_draw(const Nv2aSurface *s, const Nv2aBatch *b)
                     px12[0], px12[1], px12[2], b->vertices[0].diffuse);
         }
     }
-    glActiveTexture(GL_TEXTURE0);
+    active_tex(0);
     f->dirty = 1;
     f->memq_valid = 0;
     f->cpu_owned = 0;
