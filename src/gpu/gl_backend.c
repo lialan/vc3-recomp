@@ -57,6 +57,7 @@ static int s_ftr;
 static struct {
     int on;
     uint32_t draws, tris, textured, rt, uploads, untex, rt_logged, rc_logged;
+    uint32_t zpass_batches, zpass_pixels;
     uint32_t fail[256];        /* failed decodes by format code */
     uint32_t fmt[256];         /* textured batches by format code */
 } s_st;
@@ -116,6 +117,7 @@ static const char *FS =
     "uniform vec3 u_fogc;\n"
     "uniform int u_nofog;\n"                  /* VC3_GL_NOFOG=1: debug */
     "uniform int u_rcdbg;\n"                  /* VC3_GL_RCDBG: 1 texel, 2 uv, 3 split */
+    "uniform int u_adbg;\n"                   /* VC3_GL_ADBG: force an alpha input to 1 */
     "uniform vec3 u_dbgcol;\n"                /* RCDBG 6: colour per combiner setup */
     "uniform vec2 u_surf;\n"
     "uniform int u_on[4];\n"                  /* stage has a usable texture */
@@ -173,7 +175,10 @@ static const char *FS =
     "  uint n = min(u_ctl & 0xFFu, 8u), flags = u_ctl >> 8;\n"
     "  for (int i = 0; i < 16; i++) R[i] = vec4(0.0);\n"
     "  R[3] = vec4(u_fogc, u_nofog != 0 ? 1.0 : v_fog);\n"
+    "  if (u_adbg == 1) t1.a = 1.0;\n"
+    "  if (u_adbg == 2) t0.a = 1.0;\n"
     "  R[4] = v_col; R[5] = v_spec;\n"
+    "  if (u_adbg == 3) R[4].a = 1.0;\n"
     "  R[8] = t0; R[9] = t1; R[10] = t2; R[11] = t3;\n"
     "  R[12].a = ((u_sprog & 31u) != 0u) ? t0.a : 1.0;\n"
     "  for (uint s = 0u; s < 8u; s++) {\n"
@@ -237,11 +242,16 @@ static const char *FS =
     "  if (u_rc != 0 && u_rcdbg == 2) c = vec4(fract(stage_uv(0, v_tc0)), float(u_on[0]), 1.0);\n"
     "  if (u_rc != 0 && u_rcdbg == 6) c = vec4(u_dbgcol, 1.0);\n"
     "  if (u_rc != 0 && u_rcdbg == 7) c = vec4(vec3(v_fog), 1.0);\n"
+    "  if (u_rc != 0 && u_rcdbg == 8) c = vec4(texture(u_t1, stage_uv(1, v_tc1)).rgb, 1.0);\n"
+    "  if (u_rc != 0 && u_rcdbg == 9) c = vec4(vec3(texture(u_t1, stage_uv(1, v_tc1)).a), 1.0);\n"
+    "  if (u_rc != 0 && u_rcdbg == 10) c = vec4(vec3(combiners().a), 1.0);\n"
     "  if (u_rc != 0 && u_rcdbg == 3 && gl_FragCoord.x < u_surf.x * 0.5)\n"
     "    c = v_col * (u_textured != 0 ? texture(u_tex, v_uv) : vec4(1.0));\n"
     "  else if (u_textured != 0) c *= texture(u_tex, v_uv);\n"
     "  if (u_atest != 0) {\n"
-    "    float a = c.a; bool pass = true;\n"
+    /* In 8 bits, as the hardware and the software rasteriser compare: a
+     * modulated 0x80 lands at 0.5, below 128/255 as a float. */
+    "    float a = floor(clamp(c.a, 0.0, 1.0) * 255.0 + 0.5); bool pass = true;\n"
     "    int f = u_afunc - 0x200;\n"
     "    if (f == 0) pass = false;\n"
     "    else if (f == 1) pass = a <  u_aref;\n"
@@ -329,6 +339,8 @@ static int gl_ready(void)
         glUniform1i(glGetUniformLocation(s_prog, "u_t1"), 1);
         glUniform1i(glGetUniformLocation(s_prog, "u_t2"), 2);
         glUniform1i(glGetUniformLocation(s_prog, "u_t3"), 3);
+        glUniform1i(glGetUniformLocation(s_prog, "u_adbg"),
+                    getenv("VC3_GL_ADBG") ? atoi(getenv("VC3_GL_ADBG")) : 0);
         glUniform1i(glGetUniformLocation(s_prog, "u_nofog"),
                     getenv("VC3_GL_NOFOG") != NULL);
         glUniform1i(glGetUniformLocation(s_prog, "u_rcdbg"),
@@ -556,8 +568,13 @@ static GLint gl_wrap(uint32_t mode)
 {
     switch (mode) {
     case 2:  return GL_MIRRORED_REPEAT;
-    case 3:  return GL_CLAMP_TO_EDGE;
-    case 4:  return GL_CLAMP_TO_BORDER;
+    /* 4 is BORDER, but the border colour applies only when the format word
+     * asks for it (Texture.border_color, not passed to back ends); otherwise
+     * the hardware clamps, as the software sampler's wrap_coord does. A
+     * transparent GL border zeroed lightmap alpha, and VC3's alpha test then
+     * threw away every lightmapped wall. */
+    case 3:
+    case 4:  return GL_CLAMP_TO_EDGE;
     default: return GL_REPEAT;
     }
 }
@@ -738,9 +755,9 @@ static void apply_state(const Nv2aRenderState *rs)
     } else {
         glDisable(GL_CULL_FACE);
     }
-    glUniform1i(u_atest, rs->alpha_test_enable ? 1 : 0);
+    glUniform1i(u_atest, rs->alpha_test_enable && !getenv("VC3_GL_NOATEST") ? 1 : 0);
     glUniform1i(u_afunc, (GLint)rs->alpha_func);
-    glUniform1f(u_aref, (float)(rs->alpha_ref & 0xFF) / 255.0f);
+    glUniform1f(u_aref, (float)(rs->alpha_ref & 0xFF));
     {
         float dmin = rs->depth_min, dmax = rs->depth_max;
         if (!(dmax > dmin)) {
@@ -788,8 +805,11 @@ static void gl_clear(const Nv2aSurface *s, const Nv2aRenderState *rs,
     f->dirty = 1;
 }
 
-/* VC3_GL_COMBINERS=0 falls back to texture * diffuse for every batch. */
-static int s_use_rc = 1;
+/* VC3_GL_COMBINERS=1 evaluates the register combiners. Off by default: their
+ * alpha comes out 0 for VC3's lightmapped walls (alpha-tested GEQUAL 0x80),
+ * so combat lost the whole room, while texture * diffuse draws every scene
+ * correctly once render targets read no-alpha formats as alpha 1. */
+static int s_use_rc = 0;
 
 
 /* Combiner state and inputs for a batch that carries them (Nv2aBatch.rc):
@@ -922,8 +942,12 @@ static void gl_draw(const Nv2aSurface *s, const Nv2aBatch *b)
             if (q->z < z0) z0 = q->z;
             if (q->z > z1) z1 = q->z;
         }
-        fprintf(stderr, "[GLTR]   depth func %X z %.6g..%.6g clip %.6g..%.6g\n",
-                b->state->depth_func, z0, z1, b->state->depth_min, b->state->depth_max);
+        fprintf(stderr, "[GLTR]   depth func %X z %.6g..%.6g clip %.6g..%.6g | atest %u func %X ref %02X"
+                " | aicw0 %08X aicw1 %08X fin1 %08X\n",
+                b->state->depth_func, z0, z1, b->state->depth_min, b->state->depth_max,
+                b->state->alpha_test_enable, b->state->alpha_func, b->state->alpha_ref & 0xFF,
+                b->rc ? b->rc->alpha_icw[0] : 0, b->rc ? b->rc->alpha_icw[1] : 0,
+                b->rc ? b->rc->final1 : 0);
         fprintf(stderr, "[GLTR] %s surf %08X n %u box %.0f..%.0f x %.0f..%.0f diff %08X "
                 "tex %08X%s s1 %08X blend %u %X/%X z %u/%u sprog %05X fin %08X fog %.2f\n",
                 b->rc ? "RC " : "FF ", f->va, b->count, x0, x1, y0, y1,
@@ -973,7 +997,23 @@ static void gl_draw(const Nv2aSurface *s, const Nv2aBatch *b)
     glBindBuffer(GL_ARRAY_BUFFER, s_vbo);
     glBufferData(GL_ARRAY_BUFFER, (GLsizeiptr)(b->count * sizeof(Nv2aVertex)),
                  b->vertices, GL_STREAM_DRAW);
-    glDrawArrays(GL_TRIANGLES, 0, (GLsizei)b->count);
+    if (b->zpass_out) {
+        /* A visibility test: count the pixels that pass, for GET_REPORT.
+         * Reading the result waits for the GPU, but only test batches pay. */
+        static GLuint q;
+        GLuint passed = 0;
+        if (!q)
+            glGenQueries(1, &q);
+        glBeginQuery(GL_SAMPLES_PASSED, q);
+        glDrawArrays(GL_TRIANGLES, 0, (GLsizei)b->count);
+        glEndQuery(GL_SAMPLES_PASSED);
+        glGetQueryObjectuiv(q, GL_QUERY_RESULT, &passed);
+        *b->zpass_out += passed;
+        s_st.zpass_batches++;
+        s_st.zpass_pixels += passed;
+    } else {
+        glDrawArrays(GL_TRIANGLES, 0, (GLsizei)b->count);
+    }
     glActiveTexture(GL_TEXTURE0);
     f->dirty = 1;
 }
@@ -1007,6 +1047,7 @@ static void gl_flip(void)
         for (i = 0; i < s_nsurfs; i++)
             fprintf(stderr, " %08X/%dx%d", s_surfs[i].va, s_surfs[i].w,
                     s_surfs[i].h);
+        fprintf(stderr, "\n[GL]   visibility tests: %u batches, %u pixels passed", s_st.zpass_batches, s_st.zpass_pixels);
         fprintf(stderr, "\n[GL]   formats:");
         for (i = 0; i < 256; i++)
             if (s_st.fmt[i])
@@ -1032,7 +1073,7 @@ void vc3_gl_backend_register(void)
     }
     s_st.on = getenv("VC3_GL_STATS") != NULL;
     e = getenv("VC3_GL_COMBINERS");
-    s_use_rc = !(e && e[0] == '0');
+    s_use_rc = e && e[0] == '1';
     nv2a_backend_register(&s_gl_backend);
     fprintf(stderr, "[GL] OpenGL back end registered\n");
 }

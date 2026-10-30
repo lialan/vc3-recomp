@@ -104,7 +104,8 @@ folder), which should reuse `src/chihiro/`.
 
 Playable end to end on Apple Silicon: boot, region warning, attract, coin,
 START, Mission Select, mission briefing, combat (hits score, ammo and lives
-count down), CONTINUE?. Runs at about 45 fps through the GL back end.
+count down), CONTINUE?, with the stage, enemies and HUD all drawn. Runs
+at about 45 fps through the GL back end.
 
 What it took, beyond the phase 0-3 setup:
 
@@ -128,12 +129,10 @@ What it took, beyond the phase 0-3 setup:
 
 Known issues:
 
-* **Combat views lack most of the room geometry**: the HUD, enemies, effects
-  and some set pieces draw, but walls do not land on screen, so the clear
-  colour (0x404080, darkened by the tint passes) shows. Transform (composite
-  matrix checked by hand), depth, fog, combiners and compositing have been
-  ruled out one by one; next is a same-frame comparison of the executor's
-  batches against the software rasteriser (`VC3_GL=0`) and xemu.
+* The register-combiner path (`VC3_GL_COMBINERS=1`) computes alpha 0 for the
+  lightmapped walls, which VC3 alpha-tests (GEQUAL 0x80), so it loses the room
+  in combat; texture * diffuse is the default and draws every scene. Lighting
+  through the lightmaps is therefore not applied.
 * The attract background is white (probably the Sofdec movie
   `vc3_title2_100mh.sfd`, not decoded).
 * Sound is untested (muted by default; `VC3_SOUND=1`).
