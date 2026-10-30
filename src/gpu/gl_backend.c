@@ -2517,7 +2517,7 @@ static void gl_draw(const Nv2aSurface *s, const Nv2aBatch *b)
          * look a cube up by. Opt-in (VC3_GL_CUBE_RC=1) while the combiner path
          * is not yet right: routed by default, VC3's monitor-room walls went
          * flat grey. */
-        int has_cube = 0, need_ext = 0;
+        int has_cube = 0, need_ext = 0, rt_pass = 0;
         if (has_ext && genv("VC3_GL_CUBE_RC")) {
             int st;
             for (st = 0; st < 4; st++)
@@ -2525,7 +2525,23 @@ static void gl_draw(const Nv2aSurface *s, const Nv2aBatch *b)
                     && ((b->rc->stage_program >> (st * 5)) & 0x1F) == 3)
                     has_cube = 1;
         }
-        if (has_ext && (s_use_rc || has_cube)) {
+        /* A screen pass that samples a render target with a black diffuse:
+         * texture * diffuse can only draw black, so the combiners must be
+         * what makes its colour. VC3's E.S. mode (the pedal's slow motion)
+         * redraws the 3D view through ~40 such distortion meshes; drawn the
+         * default way, the whole scene went black for as long as the pedal
+         * was held. */
+        if (has_ext && !raw && b->texture && b->count
+            && (b->vertices[0].diffuse & 0x00FFFFFFu) == 0) {
+            const Surf *rt = surf_find(b->texture->offset);
+            rt_pass = rt && rt->fbo && !rt->cpu_owned;
+        }
+        /* VC3_GL_RC_SURF=<hex va>: every batch drawn into that surface
+         * through the combiners (comparing one scene both ways). */
+        if (has_ext && genv("VC3_GL_RC_SURF")
+            && f->va == (uint32_t)strtoul(genv("VC3_GL_RC_SURF"), NULL, 16))
+            rt_pass = 1;
+        if (has_ext && (s_use_rc || has_cube || rt_pass)) {
             bind_combiners(f, b);
             need_ext = 1;
         } else {
