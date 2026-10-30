@@ -50,6 +50,28 @@ found and is only needed for the fallback.
 | 0x00105190 | `JvsScReceiveRs323c`, `JvsScReceiveMidi` |
 | 0x000F4310 | `JammaFirmwareLoad`, 0x13ED50, 0x13ED70 |
 
+### Recovered signatures (cdecl, status in eax)
+
+| Function | Signature | Transport |
+|---|---|---|
+| `JvsNodeSendPacket` 0x13E110 | `(u8 *frame, u8 *payload, u32 len)` | `0x13C750(0, a0, a1, a2, h, 0x0B, 0x20, &st, 0, 0)` |
+| `JvsNodeReceivePacket` 0x13E030 | `(u8 *buf, u32 *out_len, u32 flags)` | `0x13CB10(0, -1, a0, a2, 3, h, 0x19, &st, out_len, 0)` |
+| `JVS_SendCommand` 0x13C430 | `(h, cmd, 0, 0, 0, &st, &x, 0, 0)` | called by 0x104F80 with cmd `0x15` |
+
+`h` is the baseboard handle in `[0x13577C]`. The status convention is the same
+for all of them: `>= 0` is done; `0xFF0000xx` is busy, so the library spins
+and retries; `< 0` is an error, recorded in `[0x135784]` with the message pair at
+`[0x135788]`/`[0x13578C]`.
+
+The game builds JVS request frames itself (0x104C70: per-node packets, `F0`
+reset / `F2` set-address are special-cased). It parses replies per node through
+0x104470. **Phase 4 seam:** replace `JvsNodeSendPacket`/`JvsNodeReceivePacket`
+with a software JVS I/O board that answers the standard command set (`10`
+identify, `11`–`15` revisions/capabilities, `20` switches, `21` coins, `22`
+analog, `25` screen position, `30`–`32` coin/output). The game's own JVS
+logic then runs unmodified. `JvsEEPROM_*`/`JvsBACKUP_*`/`JvsRTC_Read` get file-
+and clock-backed replacements of the same shape.
+
 ## Game logic that consumes I/O
 
 | VA | What |

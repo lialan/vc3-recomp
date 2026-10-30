@@ -58,3 +58,7 @@ game/
 *.squashfs
 *.iso
 .claude/
+build.log
+build-configure.log
+run*.log
+xbox_kernel.log

@@ -100,6 +100,21 @@ Later and out of scope here: a 2P (second gun) mapping, a Quest VR build like th
 Lindbergh ports, and Ghost Squad / HOTD3 (also on Chihiro, in the same Batocera
 folder), which should reuse `src/chihiro/`.
 
+## Status (2026-10-29)
+
+* Phases 0–3 are done. `cmake -S . -B build -G Ninja && cmake --build build` gives an
+  arm64 `build/vc3`. `scripts/run-test.sh` boots it muted, with a watchdog.
+* What booting needed so far:
+  * a 128 MB contiguous window (submodule branch `vc3-chihiro`, `XBOX_CONTIG_SIZE`);
+  * `RECOMP_HEAP_RECLAIM=1`, because the boot memory probe at 0x34F60
+    allocates and frees blocks up to 256 MB, and without reclaim the frees are
+    dropped.
+* Where it gets to: D3D init (framebuffer allocated, vblank ISR vector 3
+  connected), the baseboard interrupt connected (vector 1 → 0x13A3F4), and
+  partition1 TDATA/UDATA created. It then spins in backup-data validation
+  (0x1E780) → `JvsBACKUP_Read`/`Write`, waiting on the absent baseboard.
+  **That is where phase 4 starts.**
+
 ## Risks
 
 * **The JVS transport is still unknown.** If the high-level `Jvs*` functions are
