@@ -129,9 +129,12 @@ What it took, beyond the phase 0-3 setup:
 
 Known issues:
 
-* The full register-combiner path (`VC3_GL_COMBINERS=1`) still rejects the
-  lightmapped walls in its alpha test; the default draws texture * diffuse,
-  times the stage-1 lightmap where a batch uses one (VC3's walls).
+* The full register-combiner path (`VC3_GL_COMBINERS=1`) no longer loses
+  the walls: since texture BORDER wrap maps to clamp, the toolkit's C
+  reference (`VC3_GL_RCCHECK=1`) gives the lightmapped walls alpha 1.0 and
+  combat renders. It is still opt-in because its scenes come out much darker
+  than the default (texture * diffuse, times the stage-1 lightmap), and which
+  matches the arcade needs a comparison against real footage.
 * Fixed: the white attract background. The attract-item task's init and
   update (0x11BD0, 0x123C0), a callback (0xB1840) and a thread entry
   (0x10232F) were never lifted, so every attract item failed and the movie
