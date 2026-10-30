@@ -885,14 +885,19 @@ static int tex_bind(const Nv2aTexture *t, float *sw, float *sh)
                  * shading. */
                 char want[16];
                 snprintf(want, sizeof want, "%08X", t->offset);
+                if (s_ftr == 1)
+                    fprintf(stderr, "[GLTR]   upload %08X %ux%u fmt %02X\n", t->offset,
+                            t->width, t->height, t->color & 0xFF);
                 if (genv("VC3_GL_TEXDUMP") && strstr(genv("VC3_GL_TEXDUMP"), want)) {
                     char name[64];
                     FILE *o;
                     size_t n = (size_t)t->width * t->height, p;
                     int a;
                     for (a = 0; a < 2; a++) {
-                        snprintf(name, sizeof name, "texdump_%08X%s.ppm", t->offset,
-                                 a ? "_alpha" : "");
+                        /* In the traced frame, a separate name: what the
+                         * frame actually drew with, not the run's last. */
+                        snprintf(name, sizeof name, "texdump_%08X%s%s.ppm", t->offset,
+                                 s_ftr == 1 ? "_ftr" : "", a ? "_alpha" : "");
                         if (!(o = fopen(name, "wb")))
                             continue;
                         fprintf(o, "P6\n%u %u\n255\n", t->width, t->height);
@@ -1315,6 +1320,31 @@ static void gl_draw(const Nv2aSurface *s, const Nv2aBatch *b)
                 b->state->blend_src, b->state->blend_dst, b->state->depth_test_enable,
                 b->state->depth_write, b->rc ? b->rc->stage_program : 0,
                 b->rc ? b->rc->final0 : 0, b->ext && b->rc ? b->ext[0].fog : -1.0f);
+        if (b->texture) {
+            /* What stage 0 samples: the texture's shape and the coordinate
+             * ranges the default path (u,v) and the program (tex[0]) give. */
+            float u0 = 1e30f, u1 = -1e30f, v0 = 1e30f, v1 = -1e30f;
+            float s0 = 1e30f, s1 = -1e30f, t0 = 1e30f, t1 = -1e30f;
+            uint32_t k;
+            for (k = 0; k < b->count; k++) {
+                const Nv2aVertex *q = &b->vertices[k];
+                if (q->u < u0) u0 = q->u;
+                if (q->u > u1) u1 = q->u;
+                if (q->v < v0) v0 = q->v;
+                if (q->v > v1) v1 = q->v;
+                if (b->ext) {
+                    const float *tc = b->ext[k].tex[0];
+                    if (tc[0] < s0) s0 = tc[0];
+                    if (tc[0] > s1) s1 = tc[0];
+                    if (tc[1] < t0) t0 = tc[1];
+                    if (tc[1] > t1) t1 = tc[1];
+                }
+            }
+            fprintf(stderr, "[GLTR]   tex0 %ux%u fmt %02X pitch %u | uv %.3g..%.3g x %.3g..%.3g"
+                    " | st %.3g..%.3g x %.3g..%.3g\n",
+                    b->texture->width, b->texture->height, b->texture->color & 0xFF,
+                    b->texture->pitch, u0, u1, v0, v1, s0, s1, t0, t1);
+        }
     }
     s_st.draws++;
     s_st.tris += b->count / 3;
