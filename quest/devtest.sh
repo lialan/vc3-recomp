@@ -45,7 +45,10 @@ if $A shell dumpsys window | grep mCurrentFocus | grep -q $PKG; then
     echo "the game is in focus on the headset -- the player may be in it; not starting"
     exit 1
 fi
-trap cleanup EXIT INT TERM
+# Clean up once, on exit; a signal exits rather than returning into the loop
+# (which would push the next scenario's env.txt after the cleanup).
+trap cleanup EXIT
+trap 'exit 130' INT TERM HUP
 
 echo "installing $APK"
 $A install -r "$APK" | tail -1
