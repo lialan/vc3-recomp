@@ -32,11 +32,22 @@ add_executable(vc3
     src/chihiro/baseboard.c
     src/d3d_fence.c
     src/host_input.c
+    src/display_rate.c
     src/gpu/gl_backend.c
     ${RECOMP_GEN_SOURCES}
 )
 
 target_link_libraries(vc3 PRIVATE xboxrecomp "-framework OpenGL")
+
+# The Display menu (frame rate) in the menu bar SDL builds; Cocoa, so macOS
+# only. Elsewhere there is no menu and VC3_FPS / F10 / the settings file
+# still set the rate.
+if(APPLE)
+    enable_language(OBJC)
+    target_sources(vc3 PRIVATE src/macos_menu.m)
+    target_compile_definitions(vc3 PRIVATE VC3_MACOS_MENU=1)
+    target_link_libraries(vc3 PRIVATE "-framework Cocoa")
+endif()
 target_include_directories(vc3 PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src
     ${CMAKE_CURRENT_SOURCE_DIR}/src/recomp/gen

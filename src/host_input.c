@@ -11,6 +11,7 @@
  *   5 / 6            coin, slot 1 / 2
  *   1 / 2            start, player 1 / 2
  *   F2               test       F1   service
+ *   F10              display 60 <-> 120 fps (display_rate.c; not the board)
  *
  * VC3_AUTOKEYS scripts presses for unattended runs: "t:key,t:key", with t in
  * seconds since the first poll and key one of test, service, coin, start,
@@ -27,6 +28,7 @@
 #include <SDL.h>
 
 #include "chihiro/chihiro.h"
+#include "display_rate.h"
 
 #define AUTO_MAX     32
 #define AUTO_HOLD_MS 500   /* > one poll at the current frame rate */
@@ -112,6 +114,9 @@ static int SDLCALL input_watch(void *ud, SDL_Event *e)
     case SDL_KEYUP:
         if (e->key.keysym.scancode < SDL_NUM_SCANCODES)
             s_keys[e->key.keysym.scancode] = e->type == SDL_KEYDOWN;
+        if (e->type == SDL_KEYDOWN && !e->key.repeat
+                && e->key.keysym.scancode == SDL_SCANCODE_F10)
+            vc3_fps_toggle();
         break;
     case SDL_WINDOWEVENT:
         if (e->window.event == SDL_WINDOWEVENT_LEAVE)

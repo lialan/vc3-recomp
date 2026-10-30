@@ -30,6 +30,7 @@
 #include "recomp_types.h"
 #include "kernel.h"
 #include "xbox_memory_layout.h"
+#include "display_rate.h"
 
 #define VC3_ENTRY_POINT 0x000B6407 /* XBE entry, debug-key decoded */
 #define VC3_XBE_NAME    "vc3.xbe"
@@ -191,6 +192,8 @@ void vc3_relaunch(void)
 /* ── Boot (on the guest thread) ────────────────────────────── */
 
 extern int xbox_HostWindowMain(int (*guest_main)(void));
+extern void xbox_HostWindowOnOpen(void (*fn)(void));
+extern void vc3_menu_install(void);          /* src/macos_menu.m */
 
 static char s_game_dir[PATH_MAX], s_save_dir[PATH_MAX];
 static void *s_xbe;
@@ -316,6 +319,13 @@ int main(int argc, char **argv)
     }
     printf("=== Virtua Cop 3 (recomp) ===\ngame: %s\nsave: %s\n",
            game_dir, save_dir);
+
+    /* Shown frames per game frame (VC3_FPS, else the saved setting); the
+     * Display menu changes it from the window. */
+    vc3_fps_init();
+#if defined(VC3_MACOS_MENU)
+    xbox_HostWindowOnOpen(vc3_menu_install);
+#endif
 
     rc = xbox_HostWindowMain(guest_main);
     free(s_xbe);

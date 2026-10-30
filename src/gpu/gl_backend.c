@@ -37,6 +37,7 @@
 #include <time.h>
 
 #include "nv2a_backend.h"
+#include "../display_rate.h"
 #include "../d3d/d3d8_swizzle.h"   /* relative to src/kernel, as the executor */
 
 /* getenv, looked up once per name: several debug switches are tested per
@@ -82,6 +83,9 @@ typedef struct {
 } Prog;
 static Prog s_pcpu, s_praw, *U = &s_pcpu;
 static uint32_t s_frame = 1;
+/* What the draw path last bound; anything else that binds a program or a
+ * vertex array (the frame interpolator) zeroes these. */
+static GLuint s_cur_prog, s_cur_vao;
 
 /* VC3_GL_FTRACE=<flag file>: once the file exists, log every clear and batch
  * of the next frame (0 idle, 1 tracing, 2 done). */
@@ -782,10 +786,26 @@ typedef struct {
     GLuint pbo;
     GLsizeiptr cap;
     uint32_t va, bytes;          /* where and how much, 0 when none pending */
+    /* VC3_FPS > 60: the frames made between this one and the one before,
+     * read back alongside it (nmid of them), and what the window needs to
+     * show the group. group is set when it goes to the window as one. */
+    GLuint mid_pbo[VC3_FPS_MAX / 60 - 1];
+    GLsizeiptr mid_cap;
+    int nmid, group;
+    int cut;                     /* VC3_FPS_DEBUG: made as a scene cut */
+    uint32_t pitch, bpp;
+    GLsizei w, h;
 } Readback;
 
 static Readback s_rb[2];
 static int s_rb_next;
+
+static int interp_make(const Surf *f, GLuint *pbos, int n);
+static void interp_dump(const void *const *px, int n, uint32_t pitch,
+                        uint32_t bpp, GLsizei w, GLsizei h, int cut);
+static int s_ip_last_cut;
+extern void xbox_FramebufferWindowPresentFrames(const void *const *frames, int n,
+                                                uint32_t pitch, uint32_t bpp);
 
 static void surf_readback_async(Surf *f)
 {
@@ -808,7 +828,34 @@ static void surf_readback_async(Surf *f)
     glPixelStorei(GL_PACK_ROW_LENGTH, 0);
     r->va = f->va;
     r->bytes = (uint32_t)bytes;
+    r->pitch = f->pitch;
+    r->bpp = f->bpp;
+    r->w = f->w;
+    r->h = f->h;
+    r->nmid = 0;
+    r->group = 0;
     f->dirty = 0;
+
+    /* Above 60 fps: make the in-between frames for this one now, so they
+     * come back with it at the next flip. */
+    {
+        int fps = vc3_fps_get(), n = fps / 60 - 1, i;
+        if (n > 0) {
+            if (r->mid_cap < bytes) {
+                for (i = 0; i < VC3_FPS_MAX / 60 - 1; i++) {
+                    if (!r->mid_pbo[i])
+                        glGenBuffers(1, &r->mid_pbo[i]);
+                    glBindBuffer(GL_PIXEL_PACK_BUFFER, r->mid_pbo[i]);
+                    glBufferData(GL_PIXEL_PACK_BUFFER, bytes, NULL, GL_STREAM_READ);
+                }
+                r->mid_cap = bytes;
+            }
+            s_ip_last_cut = 0;
+            r->nmid = interp_make(f, r->mid_pbo, n);
+            r->cut = s_ip_last_cut;
+            r->group = 1;
+        }
+    }
 
     if (prev->pbo && prev->bytes) {
         const void *src;
@@ -819,6 +866,32 @@ static void surf_readback_async(Surf *f)
             memcpy((uint8_t *)xbox_GetMemoryOffset() + prev->va, src, prev->bytes);
             if (pf)
                 pf->memq_valid = 0;
+            /* The group: made frames, then this real one. A frame read
+             * at 60 fps (group 0) is left to the window's plain copy. */
+            if (prev->group && vc3_fps_get() > 60) {
+                const void *px[VC3_FPS_MAX / 60];
+                int nm = 0, i;
+                for (i = 0; i < prev->nmid; i++) {
+                    glBindBuffer(GL_PIXEL_PACK_BUFFER, prev->mid_pbo[i]);
+                    px[nm] = glMapBufferRange(GL_PIXEL_PACK_BUFFER, 0, prev->bytes,
+                                              GL_MAP_READ_BIT);
+                    if (!px[nm])
+                        break;
+                    nm++;
+                }
+                if (nm == prev->nmid) {
+                    px[nm] = src;
+                    xbox_FramebufferWindowPresentFrames(px, nm + 1, prev->pitch,
+                                                        prev->bpp);
+                    interp_dump(px, nm + 1, prev->pitch, prev->bpp, prev->w, prev->h,
+                                prev->cut);
+                }
+                for (i = 0; i < nm; i++) {
+                    glBindBuffer(GL_PIXEL_PACK_BUFFER, prev->mid_pbo[i]);
+                    glUnmapBuffer(GL_PIXEL_PACK_BUFFER);
+                }
+                glBindBuffer(GL_PIXEL_PACK_BUFFER, prev->pbo);
+            }
             glUnmapBuffer(GL_PIXEL_PACK_BUFFER);
         }
         prev->bytes = 0;
@@ -1776,15 +1849,14 @@ static void gl_draw(const Nv2aSurface *s, const Nv2aBatch *b)
     U = raw ? &s_praw : &s_pcpu;
     {
         /* Consecutive batches mostly share program and layout. */
-        static GLuint cur_prog, cur_vao;
         GLuint vao = raw ? s_vao_raw : s_vao;
-        if (cur_prog != U->prog) {
+        if (s_cur_prog != U->prog) {
             glUseProgram(U->prog);
-            cur_prog = U->prog;
+            s_cur_prog = U->prog;
         }
-        if (cur_vao != vao) {
+        if (s_cur_vao != vao) {
             glBindVertexArray(vao);
-            cur_vao = vao;
+            s_cur_vao = vao;
         }
     }
     apply_state(b->state);
@@ -2089,6 +2161,520 @@ static int gl_draw_raw(const Nv2aSurface *s, const Nv2aBatch *b)
     return 1;
 }
 
+/* ── Display frame interpolation (VC3_FPS > 60) ────────────── */
+
+/* At 120 fps the window shows a made frame between each pair of real ones;
+ * the game still renders and flips at 60 (display_rate.c). It is made here,
+ * on the GPU, from the presented surface of this flip and the last:
+ *
+ *   1. Each flip copies the presented surface into a history texture and a
+ *      luma texture with mipmaps (1, 1/2, 1/4, 1/8 size).
+ *   2. A motion field, one vector per 8x8 block, is found by symmetric block
+ *      matching: v such that prev(p - v/2) matches cur(p + v/2), which puts
+ *      the field on the in-between frame's own grid -- no splatting, no
+ *      holes. Coarse to fine: a wide search at 1/8 size (+-64 px), then
+ *      +-1 step refinements at 1/4, 1/2 and full size around the block's
+ *      own vector and its four neighbours'. Every level adds a cost per
+ *      pixel of motion and gives the zero vector a head start, so a block
+ *      whose match is about as good standing still stays still.
+ *   3. Each output pixel takes, of its block's and the eight neighbours'
+ *      vectors and zero, the one with the least colour error over a 3x3
+ *      patch (sharp motion edges), samples prev at p - t v and cur at
+ *      p + (1 - t) v and blends them. Where even the best error is large
+ *      (occlusion, transparency, a flash) it falls back to the nearer real
+ *      frame, unwarped; a pixel equal in both frames is copied exactly, so
+ *      the HUD and anything else static stays bit-identical; and when the
+ *      mean block error says the two frames are unrelated (a cut), the
+ *      whole frame is the nearer real one, i.e. a repeat.
+ *
+ * The made frames are read back like the real one, without waiting, and at
+ * the next flip go to the window as a group with it: made frames first,
+ * then the real frame, which the window spreads over the flip interval. A
+ * real frame thus reaches the screen one display frame (8.3 ms at 120)
+ * later than at 60 fps; nothing else waits. All of it is queued GL on this
+ * thread: a few draws and a read per flip, no CPU-side wait. */
+
+#define INTERP_MAX  (VC3_FPS_MAX / 60 - 1)    /* in-between frames per flip */
+#define INTERP_BLK  8
+
+extern uint64_t xbox_FramebufferWindowPresentCount(void);
+extern int  xbox_FramebufferWindowOpen(void);
+
+static const char *VS_QUAD =
+    "#version 410\n"
+    "void main() {\n"
+    "  vec2 p = vec2((gl_VertexID << 1) & 2, gl_VertexID & 2);\n"
+    "  gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0);\n"
+    "}\n";
+
+static const char *FS_LUMA =
+    "#version 410\n"
+    "uniform sampler2D u_img;\n"
+    "out float o;\n"
+    "void main() {\n"
+    "  vec3 c = texelFetch(u_img, ivec2(gl_FragCoord.xy), 0).rgb;\n"
+    "  o = dot(c, vec3(0.299, 0.587, 0.114));\n"
+    "}\n";
+
+/* One fragment per 8x8 block. Output: vector (full-size pixels), the luma
+ * error of the chosen vector (mean absolute difference), 0. */
+static const char *FS_SEARCH =
+    "#version 410\n"
+    "uniform sampler2D u_la, u_lb, u_prev;\n"
+    "uniform vec2 u_size;\n"
+    "uniform float u_lod, u_lambda, u_zbias;\n"
+    "uniform int u_win, u_range, u_coarse;\n"
+    "uniform ivec2 u_fsize;\n"
+    "out vec4 o;\n"
+    "float cost(vec2 c, vec2 v, float s) {\n"
+    "  vec2 h = 0.5 * v;\n"
+    "  float sum = 0.0;\n"
+    "  for (int j = -u_win; j < u_win; j++)\n"
+    "    for (int i = -u_win; i < u_win; i++) {\n"
+    "      vec2 q = c + (vec2(i, j) + 0.5) * s;\n"
+    "      sum += abs(textureLod(u_la, (q - h) / u_size, u_lod).r\n"
+    "               - textureLod(u_lb, (q + h) / u_size, u_lod).r);\n"
+    "    }\n"
+    "  return sum / float(4 * u_win * u_win);\n"
+    "}\n"
+    "void main() {\n"
+    "  ivec2 bc = ivec2(gl_FragCoord.xy);\n"
+    "  vec2 c = (vec2(bc) + 0.5) * 8.0;\n"
+    "  float s = exp2(u_lod);\n"
+    "  float raw0 = cost(c, vec2(0.0), s);\n"
+    "  float best = raw0 - u_zbias, braw = raw0;\n"
+    "  vec2 bv = vec2(0.0);\n"
+    "  vec2 cand[5];\n"
+    "  int n = 1;\n"
+    "  cand[0] = vec2(0.0);\n"
+    "  if (u_coarse == 0) {\n"
+    "    ivec2 hi = u_fsize - 1;\n"
+    "    cand[0] = texelFetch(u_prev, bc, 0).xy;\n"
+    "    cand[1] = texelFetch(u_prev, clamp(bc + ivec2(-1, 0), ivec2(0), hi), 0).xy;\n"
+    "    cand[2] = texelFetch(u_prev, clamp(bc + ivec2( 1, 0), ivec2(0), hi), 0).xy;\n"
+    "    cand[3] = texelFetch(u_prev, clamp(bc + ivec2(0, -1), ivec2(0), hi), 0).xy;\n"
+    "    cand[4] = texelFetch(u_prev, clamp(bc + ivec2(0,  1), ivec2(0), hi), 0).xy;\n"
+    "    n = 5;\n"
+    "  }\n"
+    "  for (int k = 0; k < n; k++) {\n"
+    "    if (k > 0 && cand[k] == cand[0]) continue;\n"
+    "    for (int dy = -u_range; dy <= u_range; dy++)\n"
+    "      for (int dx = -u_range; dx <= u_range; dx++) {\n"
+    "        vec2 v = clamp(cand[k] + vec2(dx, dy) * s, vec2(-128.0), vec2(128.0));\n"
+    "        if (v == vec2(0.0)) continue;\n"
+    "        float r = cost(c, v, s);\n"
+    "        float e = r + u_lambda * length(v);\n"
+    "        if (e < best) { best = e; braw = r; bv = v; }\n"
+    "      }\n"
+    "  }\n"
+    "  o = vec4(bv, braw, 0.0);\n"
+    "}\n";
+
+/* One fragment per output pixel, at time u_t between prev (A) and cur (B). */
+static const char *FS_MIX =
+    "#version 410\n"
+    "uniform sampler2D u_a, u_b, u_field;\n"
+    "uniform vec2 u_size;\n"
+    "uniform ivec2 u_fsize;\n"
+    "uniform float u_t, u_flod, u_cut, u_lo, u_hi, u_zbias;\n"
+    "out vec4 o;\n"
+    "vec3 A(vec2 p) { return textureLod(u_a, p / u_size, 0.0).rgb; }\n"
+    "vec3 B(vec2 p) { return textureLod(u_b, p / u_size, 0.0).rgb; }\n"
+    "float perr(vec2 p, vec2 v) {\n"
+    "  vec2 da = -u_t * v, db = (1.0 - u_t) * v;\n"
+    "  vec3 e = vec3(0.0);\n"
+    "  for (int j = -1; j <= 1; j++)\n"
+    "    for (int i = -1; i <= 1; i++) {\n"
+    "      vec2 q = p + vec2(i, j);\n"
+    "      e += abs(A(q + da) - B(q + db));\n"
+    "    }\n"
+    "  return (e.r + e.g + e.b) / 9.0;\n"
+    "}\n"
+    "void main() {\n"
+    "  vec2 p = gl_FragCoord.xy;\n"
+    "  ivec2 pi = ivec2(p);\n"
+    "  vec4 a0 = texelFetch(u_a, pi, 0), b0 = texelFetch(u_b, pi, 0);\n"
+    "  vec4 near0 = u_t < 0.5 ? a0 : b0;\n"
+    /* A cut: the frames have nothing to interpolate. */
+    "  if (textureLod(u_field, vec2(0.5), u_flod).z > u_cut) { o = near0; return; }\n"
+    /* Unchanged here: exactly as it is (HUD, text, still background). */
+    "  if (all(lessThan(abs(a0.rgb - b0.rgb), vec3(1.5 / 255.0)))) { o = near0; return; }\n"
+    "  ivec2 bc = clamp(pi / 8, ivec2(0), u_fsize - 1);\n"
+    "  float best = perr(p, vec2(0.0)) - u_zbias;\n"
+    "  vec2 bv = vec2(0.0);\n"
+    "  for (int j = -1; j <= 1; j++)\n"
+    "    for (int i = -1; i <= 1; i++) {\n"
+    "      vec2 v = texelFetch(u_field, clamp(bc + ivec2(i, j), ivec2(0), u_fsize - 1), 0).xy;\n"
+    "      if (v == vec2(0.0)) continue;\n"
+    "      float e = perr(p, v);\n"
+    "      if (e < best) { best = e; bv = v; }\n"
+    "    }\n"
+    "  vec3 a = bv == vec2(0.0) ? a0.rgb : A(p - u_t * bv);\n"
+    "  vec3 b = bv == vec2(0.0) ? b0.rgb : B(p + (1.0 - u_t) * bv);\n"
+    "  if (bv == vec2(0.0)) best += u_zbias;\n"
+    "  float w = 1.0 - smoothstep(u_lo, u_hi, best);\n"
+    "  o = vec4(mix(near0.rgb, mix(a, b, u_t), w), 1.0);\n"
+    "}\n";
+
+typedef struct {
+    GLuint prog;
+    GLint la, lb, prev, size, lod, lambda, zbias, win, range, coarse, fsize;
+} SearchProg;
+
+static struct {
+    int state;                       /* 0 not set up, 1 ready, -1 failed */
+    GLuint vao;
+    GLuint p_luma, p_mix;
+    GLint luma_img;
+    GLint m_a, m_b, m_field, m_size, m_fsize, m_t, m_flod, m_cut, m_lo, m_hi, m_zbias;
+    SearchProg s;
+    GLsizei w, h, fw, fh;            /* surface, field size */
+    GLuint hist[2], hist_fbo[2];     /* RGBA8 copies of the last two frames */
+    GLuint luma[2], luma_fbo[2];     /* their luma, with mipmaps */
+    uint32_t hist_frame[2];          /* s_frame each was taken at */
+    int cur;                         /* the newest of the two */
+    GLuint field[2], field_fbo[2];   /* RGBA16F motion fields, ping-pong */
+    GLint field_levels;
+    GLuint mid, mid_fbo;             /* the frame being made */
+    uint64_t made;                   /* in-between frames made, for the log */
+    float cut, lo, hi;               /* VC3_FPS_TUNE overrides */
+} s_ip;
+
+static GLuint link_quad(const char *fs_src)
+{
+    GLuint vs = compile(GL_VERTEX_SHADER, VS_QUAD), fs = compile(GL_FRAGMENT_SHADER, fs_src);
+    GLuint p;
+    GLint ok = 0;
+    char log[1024];
+
+    if (!vs || !fs)
+        return 0;
+    p = glCreateProgram();
+    glAttachShader(p, vs);
+    glAttachShader(p, fs);
+    glLinkProgram(p);
+    glDeleteShader(vs);
+    glDeleteShader(fs);
+    glGetProgramiv(p, GL_LINK_STATUS, &ok);
+    if (!ok) {
+        glGetProgramInfoLog(p, sizeof log, NULL, log);
+        fprintf(stderr, "[GL] interpolator link failed: %s\n", log);
+        glDeleteProgram(p);
+        return 0;
+    }
+    return p;
+}
+
+static int interp_setup(void)
+{
+    GLuint p;
+
+    if (s_ip.state)
+        return s_ip.state > 0;
+    s_ip.state = -1;
+    s_ip.p_luma = link_quad(FS_LUMA);
+    s_ip.p_mix = link_quad(FS_MIX);
+    s_ip.s.prog = p = link_quad(FS_SEARCH);
+    if (!s_ip.p_luma || !s_ip.p_mix || !p) {
+        fprintf(stderr, "[GL] frame interpolation unavailable; showing real frames\n");
+        return 0;
+    }
+    s_ip.luma_img = glGetUniformLocation(s_ip.p_luma, "u_img");
+#define SL(f, n) s_ip.s.f = glGetUniformLocation(p, n)
+    SL(la, "u_la"); SL(lb, "u_lb"); SL(prev, "u_prev"); SL(size, "u_size");
+    SL(lod, "u_lod"); SL(lambda, "u_lambda"); SL(zbias, "u_zbias"); SL(win, "u_win");
+    SL(range, "u_range"); SL(coarse, "u_coarse"); SL(fsize, "u_fsize");
+#undef SL
+    p = s_ip.p_mix;
+#define ML(f, n) s_ip.f = glGetUniformLocation(p, n)
+    ML(m_a, "u_a"); ML(m_b, "u_b"); ML(m_field, "u_field"); ML(m_size, "u_size");
+    ML(m_fsize, "u_fsize"); ML(m_t, "u_t"); ML(m_flod, "u_flod"); ML(m_cut, "u_cut");
+    ML(m_lo, "u_lo"); ML(m_hi, "u_hi"); ML(m_zbias, "u_zbias");
+#undef ML
+    glGenVertexArrays(1, &s_ip.vao);
+    /* Thresholds, tuned on combat footage: mean block luma error above
+     * `cut` is a scene cut; per-pixel colour error (sum of channels, 3x3
+     * mean) from `lo` to `hi` fades from interpolated to the real frame.
+     * VC3_FPS_TUNE=cut,lo,hi overrides them. */
+    s_ip.cut = 0.10f;
+    s_ip.lo = 0.06f;
+    s_ip.hi = 0.20f;
+    if (genv("VC3_FPS_TUNE"))
+        sscanf(genv("VC3_FPS_TUNE"), "%f,%f,%f", &s_ip.cut, &s_ip.lo, &s_ip.hi);
+    s_ip.state = 1;
+    return 1;
+}
+
+static void tex_image(GLuint *tex, GLenum ifmt, GLenum fmt, GLenum type,
+                      GLsizei w, GLsizei h, int mips, GLenum filter)
+{
+    if (!*tex)
+        glGenTextures(1, tex);
+    glBindTexture(GL_TEXTURE_2D, *tex);
+    glTexImage2D(GL_TEXTURE_2D, 0, (GLint)ifmt, w, h, 0, fmt, type, NULL);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER,
+                    mips ? (filter == GL_LINEAR ? GL_LINEAR_MIPMAP_NEAREST
+                                                : GL_NEAREST_MIPMAP_NEAREST)
+                         : (GLint)filter);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, (GLint)filter);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    if (mips)
+        glGenerateMipmap(GL_TEXTURE_2D);
+}
+
+static void fbo_for(GLuint *fbo, GLuint tex)
+{
+    if (!*fbo)
+        glGenFramebuffers(1, fbo);
+    glBindFramebuffer(GL_FRAMEBUFFER, *fbo);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, tex, 0);
+}
+
+/* (Re)size every target for a w x h surface. */
+static void interp_alloc(GLsizei w, GLsizei h)
+{
+    int i;
+    GLsizei m;
+
+    s_ip.w = w;
+    s_ip.h = h;
+    s_ip.fw = (w + INTERP_BLK - 1) / INTERP_BLK;
+    s_ip.fh = (h + INTERP_BLK - 1) / INTERP_BLK;
+    for (i = 0; i < 2; i++) {
+        tex_image(&s_ip.hist[i], GL_RGBA8, GL_BGRA, GL_UNSIGNED_INT_8_8_8_8_REV,
+                  w, h, 0, GL_LINEAR);
+        fbo_for(&s_ip.hist_fbo[i], s_ip.hist[i]);
+        tex_image(&s_ip.luma[i], GL_R16F, GL_RED, GL_FLOAT, w, h, 1, GL_LINEAR);
+        fbo_for(&s_ip.luma_fbo[i], s_ip.luma[i]);
+        tex_image(&s_ip.field[i], GL_RGBA16F, GL_RGBA, GL_FLOAT, s_ip.fw, s_ip.fh,
+                  1, GL_NEAREST);
+        fbo_for(&s_ip.field_fbo[i], s_ip.field[i]);
+        s_ip.hist_frame[i] = 0;
+    }
+    /* The field's 1x1 level holds the mean block error. */
+    for (s_ip.field_levels = 0, m = s_ip.fw > s_ip.fh ? s_ip.fw : s_ip.fh; m > 1; m >>= 1)
+        s_ip.field_levels++;
+    tex_image(&s_ip.mid, GL_RGBA8, GL_BGRA, GL_UNSIGNED_INT_8_8_8_8_REV, w, h, 0,
+              GL_NEAREST);
+    fbo_for(&s_ip.mid_fbo, s_ip.mid);
+}
+
+static void bind_tex(int unit, GLuint tex)
+{
+    active_tex(unit);
+    glBindTexture(GL_TEXTURE_2D, tex);
+    if (s_unit_sampler[unit]) {        /* the texture's own parameters */
+        glBindSampler((GLuint)unit, 0);
+        s_unit_sampler[unit] = 0;
+    }
+}
+
+static void quad_into(GLuint fbo, GLsizei w, GLsizei h)
+{
+    glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+    glViewport(0, 0, w, h);
+    glDrawArrays(GL_TRIANGLES, 0, 3);
+}
+
+/* One matching level, from field[dst ^ 1] (the level before) into
+ * field[dst]. */
+static void search_pass(int coarse, float lod, int win, int range, int dst)
+{
+    const SearchProg *sp = &s_ip.s;
+    int a = s_ip.cur ^ 1, b = s_ip.cur;
+
+    bind_tex(0, s_ip.luma[a]);
+    bind_tex(1, s_ip.luma[b]);
+    bind_tex(2, s_ip.field[dst ^ 1]);
+    glUniform1i(sp->la, 0);
+    glUniform1i(sp->lb, 1);
+    glUniform1i(sp->prev, 2);
+    glUniform2f(sp->size, (float)s_ip.w, (float)s_ip.h);
+    glUniform2i(sp->fsize, s_ip.fw, s_ip.fh);
+    glUniform1f(sp->lod, lod);
+    /* A pixel of motion costs 1/2500 of luma range; zero starts 1/250
+     * ahead. Small enough not to hold back real motion, large enough that
+     * flat or static areas keep zero. */
+    glUniform1f(sp->lambda, 0.0004f);
+    glUniform1f(sp->zbias, 0.004f);
+    glUniform1i(sp->win, win);
+    glUniform1i(sp->range, range);
+    glUniform1i(sp->coarse, coarse);
+    quad_into(s_ip.field_fbo[dst], s_ip.fw, s_ip.fh);
+}
+
+/* Copy the presented surface into the history and, when the frame before
+ * it is there too, make the in-between frames into the readback's buffers.
+ * Returns how many were made. */
+static int interp_make(const Surf *f, GLuint *pbos, int n)
+{
+    int prev, i;
+    GLsizei w = f->w, h = f->h;
+
+    if (n < 1 || !interp_setup())
+        return 0;
+    if (w != s_ip.w || h != s_ip.h)
+        interp_alloc(w, h);
+
+    s_ip.cur ^= 1;
+    prev = s_ip.cur ^ 1;
+    glDisable(GL_SCISSOR_TEST);
+    glDisable(GL_BLEND);
+    glDisable(GL_DEPTH_TEST);
+    glDisable(GL_STENCIL_TEST);
+    glDisable(GL_CULL_FACE);
+    glColorMask(1, 1, 1, 1);
+    s_rs_valid = 0;
+
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, f->fbo);
+    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, s_ip.hist_fbo[s_ip.cur]);
+    glBlitFramebuffer(0, 0, w, h, 0, 0, w, h, GL_COLOR_BUFFER_BIT, GL_NEAREST);
+    s_ip.hist_frame[s_ip.cur] = s_frame;
+
+    glBindVertexArray(s_ip.vao);
+    s_cur_vao = 0;
+    glUseProgram(s_ip.p_luma);
+    s_cur_prog = 0;
+    bind_tex(0, s_ip.hist[s_ip.cur]);
+    glUniform1i(s_ip.luma_img, 0);
+    quad_into(s_ip.luma_fbo[s_ip.cur], w, h);
+    glBindTexture(GL_TEXTURE_2D, s_ip.luma[s_ip.cur]);
+    glGenerateMipmap(GL_TEXTURE_2D);
+
+    /* Only between consecutive flips: after a gap (no readback, a mode
+     * switch) the older copy is not the frame before. */
+    if (s_ip.hist_frame[prev] + 1 != s_frame) {
+        active_tex(0);
+        return 0;
+    }
+
+    glUseProgram(s_ip.s.prog);
+    search_pass(1, 3.0f, 2, 8, 0);   /* 1/8: 32x32 window, +-64 px */
+    search_pass(0, 2.0f, 3, 1, 1);   /* 1/4: 24x24, +-4 px around */
+    search_pass(0, 1.0f, 4, 1, 0);   /* 1/2: 16x16, +-2 px */
+    search_pass(0, 0.0f, 6, 1, 1);   /* 1:   12x12, +-1 px */
+    glBindTexture(GL_TEXTURE_2D, s_ip.field[1]);
+    glGenerateMipmap(GL_TEXTURE_2D);
+
+    glUseProgram(s_ip.p_mix);
+    bind_tex(0, s_ip.hist[prev]);
+    bind_tex(1, s_ip.hist[s_ip.cur]);
+    bind_tex(2, s_ip.field[1]);
+    glUniform1i(s_ip.m_a, 0);
+    glUniform1i(s_ip.m_b, 1);
+    glUniform1i(s_ip.m_field, 2);
+    glUniform2f(s_ip.m_size, (float)w, (float)h);
+    glUniform2i(s_ip.m_fsize, s_ip.fw, s_ip.fh);
+    glUniform1f(s_ip.m_flod, (float)s_ip.field_levels);
+    glUniform1f(s_ip.m_cut, s_ip.cut);
+    glUniform1f(s_ip.m_lo, s_ip.lo);
+    glUniform1f(s_ip.m_hi, s_ip.hi);
+    glUniform1f(s_ip.m_zbias, 0.01f);
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, s_ip.mid_fbo);
+    glPixelStorei(GL_PACK_ROW_LENGTH, (GLint)(f->pitch / f->bpp));
+    for (i = 0; i < n; i++) {
+        glUniform1f(s_ip.m_t, (float)(i + 1) / (float)(n + 1));
+        quad_into(s_ip.mid_fbo, w, h);
+        glBindBuffer(GL_PIXEL_PACK_BUFFER, pbos[i]);
+        if (f->bpp == 2)
+            glReadPixels(0, 0, w, h, GL_RGB, GL_UNSIGNED_SHORT_5_6_5, NULL);
+        else
+            glReadPixels(0, 0, w, h, GL_BGRA, GL_UNSIGNED_INT_8_8_8_8_REV, NULL);
+    }
+    glPixelStorei(GL_PACK_ROW_LENGTH, 0);
+    glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
+    active_tex(0);
+    if (genv("VC3_FPS_DEBUG")) {
+        /* The scene-cut measure, read back now (a stall; debug only). */
+        {
+            float mean[4] = { 0 };
+            GLuint tmp = 0;
+            glGenFramebuffers(1, &tmp);
+            glBindFramebuffer(GL_READ_FRAMEBUFFER, tmp);
+            glFramebufferTexture2D(GL_READ_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
+                                   GL_TEXTURE_2D, s_ip.field[1], s_ip.field_levels);
+            glReadPixels(0, 0, 1, 1, GL_RGBA, GL_FLOAT, mean);
+            glDeleteFramebuffers(1, &tmp);
+            fprintf(stderr, "[INTERP] flip %u: mean block error %.4f%s\n", s_frame,
+                    mean[2], mean[2] > s_ip.cut ? " (cut)" : "");
+            s_ip_last_cut = mean[2] > s_ip.cut;
+        }
+    }
+    s_ip.made += (uint64_t)n;
+    return n;
+}
+
+/* VC3_FPS_DUMP=<prefix>: write each group the window gets as BMPs,
+ * <prefix><flip>_<k>.bmp with k the frame's place in the group (the last is
+ * the real one), while VC3_FPS_DUMP_FLIPS names a file that exists (or is
+ * "1"; "cuts", with VC3_FPS_DEBUG, writes only groups made as scene cuts).
+ * For checking made frames headless, where nothing is shown. */
+static void interp_dump(const void *const *px, int n, uint32_t pitch,
+                        uint32_t bpp, GLsizei w, GLsizei h, int cut)
+{
+    const char *prefix = genv("VC3_FPS_DUMP"), *flag = genv("VC3_FPS_DUMP_FLIPS");
+    char path[600];
+    uint8_t hdr[54];
+    uint32_t row = (uint32_t)w * 3, pad = (4 - (row & 3)) & 3;
+    uint32_t filesz = 54 + (row + pad) * (uint32_t)h, uw = (uint32_t)w, uh = (uint32_t)h;
+    uint8_t *line;
+    int k;
+    GLsizei x, y;
+
+    if (!prefix)
+        return;
+    if (flag && !strcmp(flag, "cuts")) {
+        if (!cut)
+            return;
+    } else if (flag && strcmp(flag, "1")) {
+        FILE *fl = fopen(flag, "rb");
+        if (!fl)
+            return;
+        fclose(fl);
+    }
+    line = (uint8_t *)malloc(row + pad);
+    if (!line)
+        return;
+    memset(hdr, 0, sizeof hdr);
+    hdr[0] = 'B'; hdr[1] = 'M';
+    memcpy(hdr + 2, &filesz, 4);
+    hdr[10] = 54;
+    hdr[14] = 40;
+    memcpy(hdr + 18, &uw, 4);
+    memcpy(hdr + 22, &uh, 4);
+    hdr[26] = 1;
+    hdr[28] = 24;
+    for (k = 0; k < n; k++) {
+        FILE *fo;
+        snprintf(path, sizeof path, "%s%05u_%d.bmp", prefix, s_frame, k);
+        fo = fopen(path, "wb");
+        if (!fo)
+            continue;
+        fwrite(hdr, 1, sizeof hdr, fo);
+        memset(line, 0, row + pad);
+        for (y = h; y-- > 0; ) {
+            const uint8_t *src = (const uint8_t *)px[k] + (size_t)y * pitch;
+            for (x = 0; x < w; x++) {
+                uint8_t *d = line + x * 3;
+                if (bpp == 4) {
+                    d[0] = src[x * 4];
+                    d[1] = src[x * 4 + 1];
+                    d[2] = src[x * 4 + 2];
+                } else {
+                    uint16_t v = (uint16_t)(src[x * 2] | src[x * 2 + 1] << 8);
+                    d[0] = (uint8_t)((v & 0x1F) << 3);
+                    d[1] = (uint8_t)(((v >> 5) & 0x3F) << 2);
+                    d[2] = (uint8_t)(((v >> 11) & 0x1F) << 3);
+                }
+            }
+            fwrite(line, 1, row + pad, fo);
+        }
+        fclose(fo);
+    }
+    free(line);
+}
+
 static void gl_flip(void)
 {
     int i;
@@ -2132,19 +2718,33 @@ static void gl_flip(void)
         extern uint32_t xbox_VblankCount(void);
         static struct timespec t0;
         static uint32_t f0, v0;
+        static uint64_t p0, m0;
         struct timespec t;
         clock_gettime(CLOCK_MONOTONIC, &t);
         if (!t0.tv_sec) {
             t0 = t;
             f0 = s_frame;
             v0 = xbox_VblankCount();
+            p0 = xbox_FramebufferWindowPresentCount();
+            m0 = s_ip.made;
         } else if (t.tv_sec - t0.tv_sec >= 1) {
             double dt = (double)(t.tv_sec - t0.tv_sec) + (t.tv_nsec - t0.tv_nsec) / 1e9;
             uint32_t v = xbox_VblankCount();
-            fprintf(stderr, "[FPS] %.1f vblank %.1f\n", (s_frame - f0) / dt, (v - v0) / dt);
+            uint64_t p = xbox_FramebufferWindowPresentCount();
+            int fps = vc3_fps_get();
+            /* With the window up, what it put on screen; above 60 fps, the
+             * in-between frames made (headless shows nothing). */
+            fprintf(stderr, "[FPS] %.1f vblank %.1f", (s_frame - f0) / dt, (v - v0) / dt);
+            if (xbox_FramebufferWindowOpen())
+                fprintf(stderr, " shown %.1f", (double)(p - p0) / dt);
+            if (fps > 60)
+                fprintf(stderr, " made %.1f (display %d)", (double)(s_ip.made - m0) / dt, fps);
+            fprintf(stderr, "\n");
             t0 = t;
             f0 = s_frame;
             v0 = v;
+            p0 = p;
+            m0 = s_ip.made;
         }
     }
     if (s_st.on && s_frame % 300 == 0) {
