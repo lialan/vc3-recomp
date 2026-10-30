@@ -132,28 +132,11 @@ Known issues:
 * The full register-combiner path (`VC3_GL_COMBINERS=1`) still rejects the
   lightmapped walls in its alpha test; the default draws texture * diffuse,
   times the stage-1 lightmap where a batch uses one (VC3's walls).
-* The attract background is white, identically on the GL backend and the
-  software rasteriser, so it is not a renderer bug. The game opens all seven
-  movies under `media/movie/` at boot (valid MPEG-PS, `00 00 01 BA`), but no
-  `[READ]` ever returns movie data and none is asynchronous: the Sofdec player
-  never starts streaming. No YUV textures are bound during attract, no thread
-  entry is missing and no kernel call is unimplemented.
-  Traced further: Sofdec init (`mwPlyInitSfdFx` 0xC80A0) succeeds, but
-  play-movie (0x823C0: sets flags |= 6 at 0x373288, movie index at 0x37328C,
-  then 0x82290 creates the player via `mwPlyCreate` 0xC8EE0) is never called,
-  nor are any of its seven callers. The white is the movie surface itself:
-  `media/movie_xpr.gz` (a 16-byte `VCGZ` header, then gzip of `tex.xpr`) is a
-  640x480 LIN_X8R8G8B8 texture, every pixel white, that decoded frames would
-  be converted into. The title-movie object is type 0x27 in the object-type
-  table at 0x1533B8 (20-byte entries {id, init, update, destroy, extra}):
-  init 0x14710 (plays movie 4, looping), update 0x147A0, destroy 0x14780.
-  The lookup `0x159D0(id, which)` (sole caller 0x1D760) is never called
-  during boot or attract (checked with an entry hook), so no object from this
-  table is created there. The attract sequence may be stuck on a placeholder
-  screen rather than cycling title movie / demo / ranking. Next: find what
-  normally starts 0x1D760 from the attract scene.
-  (`vc3_title2_100mh.sfd`, `demo_100mh.sfd` and `bonfire.sfd` are unused
-  strings; those files do not ship.)
+* Fixed: the white attract background. The attract-item task's init and
+  update (0x11BD0, 0x123C0), a callback (0xB1840) and a thread entry
+  (0x10232F) were never lifted, so every attract item failed and the movie
+  surface stayed white. Seeded via `tools.seed_from_log`; the attract now
+  plays its movies. Check `Failed to resolve VA` in run logs after changes.
 * Input is verified from SDL's event queue onward (`VC3_INPUT_SELFTEST=1`:
   coin, start, aim, fire, reload through the emulated JVS board). Play with a
   physical mouse is not yet confirmed by a person; `scripts/real-input.swift`
