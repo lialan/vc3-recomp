@@ -537,6 +537,21 @@ static uint64_t hash_bytes(const uint8_t *p, size_t n)
     return h;
 }
 
+/* Formats with no alpha channel read alpha as 1. A render target sampled
+ * through one -- VC3 composites its X8R8G8B8 3D frame onto the screen with
+ * source-alpha blending -- must too, whatever alpha the passes left in the
+ * framebuffer, or the blend keeps the clear colour and the world vanishes. */
+static int fmt_has_alpha(uint32_t fmt)
+{
+    switch (fmt) {
+    case 0x03: case 0x05: case 0x07:     /* SZ_X1R5G5B5, SZ_R5G6B5, SZ_X8R8G8B8 */
+    case 0x11: case 0x1C: case 0x1E:     /* LIN_R5G6B5, LIN_X1R5G5B5, LIN_X8R8G8B8 */
+        return 0;
+    default:
+        return 1;
+    }
+}
+
 static GLint gl_wrap(uint32_t mode)
 {
     switch (mode) {
@@ -628,6 +643,8 @@ static int tex_bind(const Nv2aTexture *t, float *sw, float *sh)
                     min == 1 ? GL_NEAREST : GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, gl_wrap(t->addr_u));
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, gl_wrap(t->addr_v));
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_SWIZZLE_A,
+                    fmt_has_alpha(t->color) ? GL_ALPHA : GL_ONE);
     return 1;
 }
 
@@ -664,6 +681,8 @@ static int tex_bind_for(const Surf *f, const Nv2aTexture *t, float *sw, float *s
                     min == 1 ? GL_NEAREST : GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, gl_wrap(t->addr_u));
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, gl_wrap(t->addr_v));
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_SWIZZLE_A,
+                    fmt_has_alpha(t->color) ? GL_ALPHA : GL_ONE);
     *sw = (float)f->w;
     *sh = (float)f->h;
     return 1;
