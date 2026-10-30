@@ -22,15 +22,13 @@
  * layer's swapchain. Nothing is read back to the CPU, and neither thread
  * ever waits for the other.
  *
- * The gun is the controller: its aim ray meets the screen, and that point in
- * the game's 4:3 picture is where the gun reads (host_input.c), with a dot
- * drawn there. Trigger fires; pulled with the gun off the screen, or the
- * grip, reloads, as pointing a light gun away does. The other hand's grip
- * is the cabinet's foot pedal. A / X: coin and start;
- * B / Y: coin; left menu button: the cabinet's test switch. The other
- * hand's thumbstick moves the screen (up/down: nearer/farther; left/right:
- * smaller/larger); thumbstick clicks: stereo 3D on/off (left), aspect
- * 4:3/16:9 (right). All of it is saved in the settings file.
+ * The gun is a handgun in the player's hand (quest_overlay.c, drawn in a
+ * transparent layer over the screen), with iron sights, a red dot or a
+ * holographic sight: the line its sight looks along meets the screen, and
+ * that point in the game's 4:3 picture is where the gun reads
+ * (host_input.c). The controls and the settings panel are The House of the
+ * Dead 4 VR's -- see gun_frame and the panel's notes below. All of it is
+ * saved in the settings file.
  *
  * Stereo 3D (on by default here): the back end draws the 3D view once per
  * eye, side by side in one frame (gl_backend.c), with depth around the
@@ -65,6 +63,10 @@
 
 #include "display_settings.h"
 #include "host_input.h"
+#include "quest_menu.h"
+#include "quest_overlay.h"
+
+void vc3_quest_restart(void);       /* below: a fresh process */
 
 #ifndef GL_FRAMEBUFFER_SRGB_EXT
 #define GL_FRAMEBUFFER_SRGB_EXT 0x8DB9
@@ -195,12 +197,33 @@ static Frame *take_frame(int *is_new)
     return f;
 }
 
-/* ── Settings: where the screen is ────────────────────────────────────── */
+/* ── Settings: the screen, the gun ────────────────────────────────────── */
 
 static float s_dist = 2.6f, s_height = 1.9f;    /* metres */
 #define EYE_DISTANCE 0.064f                       /* metres */
 
 void vc3_gl_stereo_separation(float ndc);         /* gl_backend.c */
+
+enum { LASER_ON, LASER_DOT, LASER_OFF };
+static const char *const SIGHT_KEY[QO_SIGHT_COUNT] = { "iron", "reddot", "holo" };
+static const char *const LASER_KEY[3] = { "laser", "dot", "off" };
+
+static struct {
+    int sight;          /* QO_SIGHT_* */
+    int laser;          /* LASER_* */
+    int show_gun;
+    int left_handed;
+    int auto_coins;     /* a coin at start-up and with every Start */
+} s_vr = { QO_SIGHT_IRON, LASER_DOT, 1, 0, 1 };
+
+static int key_index(const char *v, const char *const *keys, int n, int dflt)
+{
+    int i;
+    for (i = 0; v && i < n; i++)
+        if (!strcmp(v, keys[i]))
+            return i;
+    return dflt;
+}
 
 static void screen_load(void)
 {
@@ -209,6 +232,15 @@ static void screen_load(void)
         s_dist = (float)atof(v);
     if ((v = vc3_setting_get("vr_height=")) && atof(v) > 0.3)
         s_height = (float)atof(v);
+    s_vr.sight = key_index(vc3_setting_get("vr_sight="), SIGHT_KEY, QO_SIGHT_COUNT,
+                           QO_SIGHT_IRON);
+    s_vr.laser = key_index(vc3_setting_get("vr_laser="), LASER_KEY, 3, LASER_DOT);
+    if ((v = vc3_setting_get("vr_gun=")))
+        s_vr.show_gun = strcmp(v, "off") != 0;
+    if ((v = vc3_setting_get("vr_hand=")))
+        s_vr.left_handed = !strcmp(v, "left");
+    if ((v = vc3_setting_get("vr_coins=")))
+        s_vr.auto_coins = strcmp(v, "manual") != 0;
 }
 
 static void screen_save(void)
@@ -218,6 +250,16 @@ static void screen_save(void)
     vc3_setting_put("vr_distance=", b);
     snprintf(b, sizeof b, "%.2f", s_height);
     vc3_setting_put("vr_height=", b);
+}
+
+static void vr_save(void)
+{
+    vc3_setting_put("vr_sight=", SIGHT_KEY[s_vr.sight]);
+    vc3_setting_put("vr_laser=", LASER_KEY[s_vr.laser]);
+    vc3_setting_put("vr_gun=", s_vr.show_gun ? "on" : "off");
+    vc3_setting_put("vr_hand=", s_vr.left_handed ? "left" : "right");
+    vc3_setting_put("vr_coins=", s_vr.auto_coins ? "auto" : "manual");
+    screen_save();
 }
 
 /* ── OpenXR ───────────────────────────────────────────────────────────── */
@@ -562,19 +604,309 @@ static void qrot(XrQuaternionf q, const float v[3], float o[3])
     o[2] = v[2] + q.w * tz + (q.x * ty - q.y * tx);
 }
 
-/* Where the gun points: on the picture (u, v in 0..1 from its top-left),
- * and in the game's 4:3 part of it (ux, uy; negative when off it). */
+/* ── Views, the anchor, the overlay layer ─────────────────────────────── */
+
+static XrView s_views[2];
+static int s_views_ok;
+
+/* Where the screen hangs: straight ahead of the anchor, s_dist away, its
+ * centre at the anchor's height. The anchor is the LOCAL origin until
+ * "Recentre view" puts it where the head is, facing where it faces. */
+static float s_anchor_p[3], s_anchor_yaw;
+
+static void yaw_rot(float yaw, const float v[3], float o[3])
+{
+    float c = cosf(yaw), s = sinf(yaw);
+    o[0] = c * v[0] + s * v[2];
+    o[1] = v[1];
+    o[2] = -s * v[0] + c * v[2];
+}
+
+static void head_pose(float p[3], float *yaw)
+{
+    static const float back[3] = { 0, 0, -1 };
+    float f[3];
+    int i;
+    for (i = 0; i < 3; i++)
+        p[i] = 0.5f * ((&s_views[0].pose.position.x)[i] + (&s_views[1].pose.position.x)[i]);
+    qrot(s_views[0].pose.orientation, back, f);
+    *yaw = atan2f(-f[0], -f[2]);
+}
+
+static void recentre(void)
+{
+    if (!s_views_ok)
+        return;
+    head_pose(s_anchor_p, &s_anchor_yaw);
+    fprintf(stderr, "[xr] recentred: %.2f %.2f %.2f, yaw %.0f deg\n", s_anchor_p[0],
+            s_anchor_p[1], s_anchor_p[2], s_anchor_yaw * 57.2958f);
+}
+
+/* The overlay's layer: one swapchain per eye, multisampled where the GPU
+ * resolves it on chip (EXT_multisampled_render_to_texture, free on Adreno). */
+typedef struct {
+    XrSwapchain chain;
+    uint32_t n, w, h;
+    XrSwapchainImageOpenGLESKHR img[8];
+    GLuint fbo[8], depth;
+} Eye;
+static Eye s_eye[2];
+static int s_overlay_ok = -1;           /* -1 not yet tried */
+
+static int overlay_init(void)
+{
+    XrViewConfigurationView vcv[2] = { { XR_TYPE_VIEW_CONFIGURATION_VIEW },
+                                       { XR_TYPE_VIEW_CONFIGURATION_VIEW } };
+    PFNGLFRAMEBUFFERTEXTURE2DMULTISAMPLEEXTPROC fb_ms = NULL;
+    PFNGLRENDERBUFFERSTORAGEMULTISAMPLEEXTPROC rb_ms = NULL;
+    const char *exts = (const char *)glGetString(GL_EXTENSIONS);
+    uint32_t nv = 0, i;
+    int e, samples = 4;
+
+    if (!qo_init())
+        return 0;
+    XRCHECK(xrEnumerateViewConfigurationViews(s_inst, s_sys, XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO,
+                                              2, &nv, vcv));
+    if (exts && strstr(exts, "GL_EXT_multisampled_render_to_texture")) {
+        fb_ms = (PFNGLFRAMEBUFFERTEXTURE2DMULTISAMPLEEXTPROC)
+            eglGetProcAddress("glFramebufferTexture2DMultisampleEXT");
+        rb_ms = (PFNGLRENDERBUFFERSTORAGEMULTISAMPLEEXTPROC)
+            eglGetProcAddress("glRenderbufferStorageMultisampleEXT");
+    }
+    if (!fb_ms || !rb_ms)
+        samples = 1;
+    for (e = 0; e < 2; e++) {
+        Eye *y = &s_eye[e];
+        XrSwapchainCreateInfo ci = { XR_TYPE_SWAPCHAIN_CREATE_INFO };
+        /* three quarters of the headset's own size: the gun is small and
+         * the samples smooth it; the layer is cleared and drawn each frame */
+        y->w = vcv[e].recommendedImageRectWidth * 3 / 4;
+        y->h = vcv[e].recommendedImageRectHeight * 3 / 4;
+        ci.usageFlags = XR_SWAPCHAIN_USAGE_COLOR_ATTACHMENT_BIT;
+        ci.format = s_chain_fmt;
+        ci.sampleCount = 1;
+        ci.width = y->w;
+        ci.height = y->h;
+        ci.faceCount = 1;
+        ci.arraySize = 1;
+        ci.mipCount = 1;
+        XRCHECK(xrCreateSwapchain(s_sess, &ci, &y->chain));
+        XRCHECK(xrEnumerateSwapchainImages(y->chain, 0, &y->n, NULL));
+        if (y->n > 8)
+            y->n = 8;
+        for (i = 0; i < y->n; i++)
+            y->img[i].type = XR_TYPE_SWAPCHAIN_IMAGE_OPENGL_ES_KHR;
+        XRCHECK(xrEnumerateSwapchainImages(y->chain, y->n, &y->n,
+                                           (XrSwapchainImageBaseHeader *)y->img));
+        glGenRenderbuffers(1, &y->depth);
+        glBindRenderbuffer(GL_RENDERBUFFER, y->depth);
+        if (samples > 1)
+            rb_ms(GL_RENDERBUFFER, samples, GL_DEPTH_COMPONENT24, (GLsizei)y->w, (GLsizei)y->h);
+        else
+            glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT24, (GLsizei)y->w, (GLsizei)y->h);
+        glGenFramebuffers((GLsizei)y->n, y->fbo);
+        for (i = 0; i < y->n; i++) {
+            glBindFramebuffer(GL_FRAMEBUFFER, y->fbo[i]);
+            if (samples > 1)
+                fb_ms(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, y->img[i].image, 0, samples);
+            else
+                glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D,
+                                       y->img[i].image, 0);
+            glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, y->depth);
+            if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
+                fprintf(stderr, "[xr] overlay framebuffer incomplete\n");
+                glBindFramebuffer(GL_FRAMEBUFFER, 0);
+                return 0;
+            }
+        }
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    }
+    fprintf(stderr, "[xr] overlay %ux%u per eye, %dx MSAA\n", s_eye[0].w, s_eye[0].h, samples);
+    return 1;
+}
+
+/* ── The settings panel ───────────────────────────────────────────────────
+ * The left controller's menu button opens it to the player's left, turned
+ * towards them, the game's screen still in view (as in The House of the
+ * Dead 4 VR). Point the gun at a row and pull the trigger; the game gets no
+ * input meanwhile. Holding the other hand's upper button (B / Y) for a
+ * second opens and closes it too. */
+enum { M_SIGHT, M_LASER, M_GUN, M_HAND, M_STEREO, M_ASPECT, M_RES, M_DIST, M_SIZE,
+       M_COINS, M_COIN, M_RECENTRE, M_TEST, M_SERVICE, M_RESET, M_CLOSE, M_COUNT };
+static struct {
+    int open, hover, dirty;
+    float c[3], right[3], up[3], n[3], hw, hh;  /* where it hangs, LOCAL metres */
+    int test_frames, service_frames, coin;
+    int reset_armed;            /* "Reset game" chosen once: a second time resets */
+} s_menu;
+
+static void menu_items(XmItem *it)
+{
+    static const char *const sight[] = { "Iron sights", "Red dot", "Holographic" };
+    static const char *const laser[] = { "Laser and dot", "Dot only", "Off" };
+    static const char *const labels[M_COUNT] = {
+        "Sight", "Laser", "Gun model", "Gun hand", "Stereo 3D", "Aspect", "Resolution",
+        "Screen distance", "Screen size", "Coins", "Insert a coin", "Recentre view",
+        "Arcade Test button", "Arcade Service button", "Reset game", "Close" };
+    int i;
+    for (i = 0; i < M_COUNT; i++) {
+        it[i].label = labels[i];
+        it[i].value[0] = 0;
+    }
+    snprintf(it[M_SIGHT].value, 40, "%s", sight[s_vr.sight]);
+    snprintf(it[M_LASER].value, 40, "%s", laser[s_vr.laser]);
+    snprintf(it[M_GUN].value, 40, "%s", s_vr.show_gun ? "Shown" : "Hidden");
+    snprintf(it[M_HAND].value, 40, "%s", s_gun == HAND_L ? "Left" : "Right");
+    snprintf(it[M_STEREO].value, 40, "%s", vc3_stereo_get() ? "On" : "Off");
+    snprintf(it[M_ASPECT].value, 40, "%s", vc3_wide_get() ? "16:9" : "4:3");
+    snprintf(it[M_RES].value, 40, "%dx%s", vc3_scale_get(),
+             vc3_scale_get() > 1 && vc3_stereo_get() ? " (slow in 3D)" : "");
+    snprintf(it[M_DIST].value, 40, "%.1f m", s_dist);
+    snprintf(it[M_SIZE].value, 40, "%.1f m tall", s_height);
+    snprintf(it[M_COINS].value, 40, "%s", s_vr.auto_coins ? "Automatic" : "By menu");
+    if (s_menu.reset_armed)
+        snprintf(it[M_RESET].value, 40, "Pull again to reset");
+}
+
+static void menu_paint(void)
+{
+    static unsigned char img[XM_W * XM_H * 4];
+    XmItem it[M_COUNT];
+    menu_items(it);
+    xm_paint(img, "Virtua Cop 3 - settings", it, M_COUNT, s_menu.hover,
+             "Point, pull the trigger. Menu button: close");
+    qo_panel_upload(img, XM_W, XM_H);
+    s_menu.dirty = 0;
+}
+
+static void menu_place(void)
+{
+    float head[3], yaw, fwd[3];
+    int i;
+    head_pose(head, &yaw);
+    yaw += 0.55f;                               /* about 30 degrees to the left */
+    fwd[0] = -sinf(yaw);
+    fwd[1] = 0;
+    fwd[2] = -cosf(yaw);
+    for (i = 0; i < 3; i++) {
+        s_menu.c[i] = head[i] + fwd[i] * 0.95f;
+        s_menu.n[i] = -fwd[i];
+    }
+    s_menu.c[1] = head[1] - 0.12f;
+    s_menu.up[0] = 0; s_menu.up[1] = 1; s_menu.up[2] = 0;
+    s_menu.right[0] = s_menu.up[1] * s_menu.n[2] - s_menu.up[2] * s_menu.n[1];
+    s_menu.right[1] = s_menu.up[2] * s_menu.n[0] - s_menu.up[0] * s_menu.n[2];
+    s_menu.right[2] = s_menu.up[0] * s_menu.n[1] - s_menu.up[1] * s_menu.n[0];
+    s_menu.hw = 0.33f;
+    s_menu.hh = s_menu.hw * XM_H / XM_W;
+}
+
+static void menu_toggle(const char *why)
+{
+    s_menu.open = !s_menu.open;
+    s_menu.reset_armed = 0;
+    if (s_menu.open) {
+        menu_place();
+        s_menu.hover = -1;
+        s_menu.dirty = 1;
+    }
+    fprintf(stderr, "[xr] settings panel %s (%s)\n", s_menu.open ? "open" : "closed", why);
+}
+
+/* where the ray meets the panel: 0..1 from its top left; 0 if it misses */
+static int menu_hit(const float p[3], const float d[3], float *u, float *v, float hit[3])
+{
+    float dn = d[0] * s_menu.n[0] + d[1] * s_menu.n[1] + d[2] * s_menu.n[2], t, r[3], x, y;
+    int i;
+    if (dn > -1e-4f)
+        return 0;
+    t = ((s_menu.c[0] - p[0]) * s_menu.n[0] + (s_menu.c[1] - p[1]) * s_menu.n[1]
+         + (s_menu.c[2] - p[2]) * s_menu.n[2]) / dn;
+    if (t <= 0)
+        return 0;
+    for (i = 0; i < 3; i++) {
+        hit[i] = p[i] + d[i] * t;
+        r[i] = hit[i] - s_menu.c[i];
+    }
+    x = (r[0] * s_menu.right[0] + r[1] * s_menu.right[1] + r[2] * s_menu.right[2]) / s_menu.hw;
+    y = (r[0] * s_menu.up[0] + r[1] * s_menu.up[1] + r[2] * s_menu.up[2]) / s_menu.hh;
+    *u = (x + 1) * 0.5f;
+    *v = (1 - y) * 0.5f;
+    return x >= -1 && x <= 1 && y >= -1 && y <= 1;
+}
+
+static void cycle(float *v, const float *opts, int n)
+{
+    int k = 0;
+    while (k < n && opts[k] <= *v + 0.01f)
+        k++;
+    *v = opts[k % n];
+}
+
+static void menu_choose(int item)
+{
+    static const float dists[] = { 1.8f, 2.2f, 2.6f, 3.2f, 4.0f, 5.0f };
+    static const float sizes[] = { 1.4f, 1.9f, 2.4f, 3.0f, 3.8f };
+    int armed = s_menu.reset_armed;
+
+    s_menu.reset_armed = 0;             /* anything else chosen in between: no reset */
+    switch (item) {
+    case M_SIGHT: s_vr.sight = (s_vr.sight + 1) % QO_SIGHT_COUNT; break;
+    case M_LASER: s_vr.laser = (s_vr.laser + 1) % 3; break;
+    case M_GUN: s_vr.show_gun = !s_vr.show_gun; break;
+    case M_HAND:
+        s_gun = 1 - s_gun;
+        s_vr.left_handed = s_gun == HAND_L;
+        break;
+    case M_STEREO: vc3_stereo_set(!vc3_stereo_get()); break;
+    case M_ASPECT: vc3_wide_set(!vc3_wide_get()); break;
+    case M_RES: vc3_scale_set(vc3_scale_get() % VC3_SCALE_MAX + 1); break;
+    case M_DIST: cycle(&s_dist, dists, 6); break;
+    case M_SIZE: cycle(&s_height, sizes, 5); break;
+    case M_COINS: s_vr.auto_coins = !s_vr.auto_coins; break;
+    case M_COIN: s_menu.coin = 1; break;
+    case M_RECENTRE: recentre(); break;
+    case M_TEST: s_menu.test_frames = 12; break;
+    case M_SERVICE: s_menu.service_frames = 12; break;
+    case M_RESET:
+        if (!armed) {
+            s_menu.reset_armed = 1;
+            break;
+        }
+        vr_save();
+        vc3_quest_restart();
+        break;
+    case M_CLOSE: s_menu.open = 0; break;
+    }
+    vr_save();
+    s_menu.dirty = 1;
+}
+
+/* ── The gun ──────────────────────────────────────────────────────────────
+ * As in The House of the Dead 4 VR: trigger fires (pulled with the gun off
+ * the screen it reloads, as pointing a light gun away does); grip reloads;
+ * A / X on the gun hand is the cabinet's foot pedal (the other hand's grip
+ * is too), B / Y on the gun hand its CHANGE button; a thumbstick click is
+ * Start (with automatic coins, a coin with it); the left menu button opens
+ * the settings. A trigger on the other hand moves the gun there. The other
+ * hand's thumbstick moves the screen (up/down: nearer/farther; left/right:
+ * smaller/larger). */
 static float s_hit_u = -1, s_hit_v = -1;
+static QoFrame s_qo;
+static XrTime s_shot_t;
 
 static void gun_frame(XrTime t, const Frame *f)
 {
-    static int was[2][4];
+    static int was[2][5], was_menu, was_start;
     static float stick_cool;
+    static XrTime panel_held;
+    static unsigned frames;
     XrActiveActionSet as = { 0 };
     XrActionsSyncInfo sy = { XR_TYPE_ACTIONS_SYNC_INFO };
     double ux = -1, uy = -1;
-    int buttons = 0, h, off = 1 - s_gun, now[2][4];
-    float trig[2];
+    int buttons = 0, h, off, now[2][5], menu_btn, start, coin, on_screen = 0;
+    float o[3], d[3];
+    int located = 0;
 
     as.actionSet = s_set;
     sy.countActiveActionSets = 1;
@@ -582,69 +914,186 @@ static void gun_frame(XrTime t, const Frame *f)
     if (XR_FAILED(xrSyncActions(s_sess, &sy)))
         return;
     for (h = 0; h < 2; h++) {
-        trig[h] = act_float(a_trigger, h);
-        now[h][0] = trig[h] > 0.5f;
+        now[h][0] = act_float(a_trigger, h) > 0.55f;
         now[h][1] = act_bool(a_lower, h);
         now[h][2] = act_bool(a_upper, h);
         now[h][3] = act_bool(a_stick_click, h);
+        now[h][4] = act_float(a_grip, h) > 0.6f;
     }
     /* The hand that pulls its trigger is the gun hand. */
-    if (now[off][0] && !was[off][0]) {
+    off = 1 - s_gun;
+    if (now[off][0] && !was[off][0] && !s_menu.open) {
         s_gun = off;
         off = 1 - s_gun;
+        s_vr.left_handed = s_gun == HAND_L;
+        vr_save();
+    }
+    menu_btn = act_bool(a_menu, HAND_L);
+    {   /* VC3_XR_FAKE_MENU=1: the panel opens by itself, for a test */
+        static int fake_menu = -1;
+        if (fake_menu < 0)
+            fake_menu = getenv("VC3_XR_FAKE_MENU") && *getenv("VC3_XR_FAKE_MENU") == '1';
+        if (fake_menu == 1 && s_views_ok && frames > 600) {
+            fake_menu = 2;
+            menu_toggle("test");
+        }
+    }
+    if (menu_btn && !was_menu)
+        menu_toggle("menu button");
+    was_menu = menu_btn;
+    if (now[off][2] && !was[off][2])
+        panel_held = t;
+    if (now[off][2] && panel_held && t - panel_held >= 1000000000) {
+        panel_held = 0;
+        menu_toggle("held button");
+        rumble(off, 0.3f, 20);
     }
 
     s_hit_u = s_hit_v = -1;
+    s_qo.gun_valid = 0;
     {
         XrSpaceLocation loc = { XR_TYPE_SPACE_LOCATION };
-        if (XR_SUCCEEDED(xrLocateSpace(s_aim_space[s_gun], s_local, t, &loc))
+        int got = XR_SUCCEEDED(xrLocateSpace(s_aim_space[s_gun], s_local, t, &loc))
             && (loc.locationFlags & XR_SPACE_LOCATION_POSITION_VALID_BIT)
-            && (loc.locationFlags & XR_SPACE_LOCATION_ORIENTATION_VALID_BIT) && f) {
+            && (loc.locationFlags & XR_SPACE_LOCATION_ORIENTATION_VALID_BIT);
+        /* VC3_XR_FAKE_GUN=1, for a headset nobody holds: a gun in front of
+         * the eyes, raised to aim through its sight, sweeping slowly */
+        static int fake = -1;
+        if (fake < 0)
+            fake = getenv("VC3_XR_FAKE_GUN") && *getenv("VC3_XR_FAKE_GUN") == '1';
+        if (!got && fake) {
+            double sec = (double)t / 1e9;
+            float yaw = (float)(0.06 * sin(sec * 0.5)), pitch = 0.0f;
+            float sh = qo_sight_height(s_vr.sight);
+            loc.pose.orientation = (XrQuaternionf){ 0, sinf(yaw / 2), 0, cosf(yaw / 2) };
+            (void)pitch;
+            loc.pose.position = (XrVector3f){ 0.0f, -sh - 0.002f, -0.30f };
+            got = 1;
+        }
+        if (got) {
             static const float fwd[3] = { 0, 0, -1 };
-            float d[3], hw = s_height * (float)f->lw / (float)f->lh * 0.5f, hh = s_height * 0.5f;
-            const XrVector3f *o = &loc.pose.position;
+            float up[3] = { 0, qo_sight_height(s_vr.sight), 0 }, lift[3];
+            int i;
+            /* the aim is the sight's line: the bore raised to it */
             qrot(loc.pose.orientation, fwd, d);
-            if (d[2] < -1e-4f) {
-                float tt = (-s_dist - o->z) / d[2];
-                float x = o->x + tt * d[0], y = o->y + tt * d[1];
-                if (tt > 0) {
-                    s_hit_u = (x + hw) / (2 * hw);
-                    s_hit_v = (hh - y) / (2 * hh);
-                }
+            qrot(loc.pose.orientation, up, lift);
+            o[0] = loc.pose.position.x + lift[0];
+            o[1] = loc.pose.position.y + lift[1];
+            o[2] = loc.pose.position.z + lift[2];
+            located = 1;
+            s_qo.gun_valid = 1;
+            s_qo.gun_q[0] = loc.pose.orientation.x;
+            s_qo.gun_q[1] = loc.pose.orientation.y;
+            s_qo.gun_q[2] = loc.pose.orientation.z;
+            s_qo.gun_q[3] = loc.pose.orientation.w;
+            s_qo.gun_p[0] = loc.pose.position.x;
+            s_qo.gun_p[1] = loc.pose.position.y;
+            s_qo.gun_p[2] = loc.pose.position.z;
+            for (i = 0; i < 3; i++)
+                s_qo.end[i] = o[i] + d[i] * 5.0f;
+        }
+    }
+    if (located && f) {
+        /* into the anchor's frame, where the screen lies at z = -s_dist */
+        float rel[3] = { o[0] - s_anchor_p[0], o[1] - s_anchor_p[1], o[2] - s_anchor_p[2] };
+        float lo[3], ld[3];
+        float hw = s_height * (float)f->lw / (float)f->lh * 0.5f, hh = s_height * 0.5f;
+        yaw_rot(-s_anchor_yaw, rel, lo);
+        yaw_rot(-s_anchor_yaw, d, ld);
+        if (ld[2] < -1e-4f) {
+            float tt = (-s_dist - lo[2]) / ld[2];
+            if (tt > 0) {
+                float x = lo[0] + tt * ld[0], y = lo[1] + tt * ld[1];
+                int i;
+                s_hit_u = (x + hw) / (2 * hw);
+                s_hit_v = (hh - y) / (2 * hh);
+                if (s_hit_u >= -0.5f && s_hit_u <= 1.5f && s_hit_v >= -0.5f && s_hit_v <= 1.5f)
+                    for (i = 0; i < 3; i++)
+                        s_qo.end[i] = o[i] + d[i] * tt;
             }
         }
     }
     if (f && s_hit_u >= 0 && s_hit_u <= 1 && s_hit_v >= 0 && s_hit_v <= 1) {
         double gw = f->lh * 4.0 / 3.0, gx = s_hit_u * f->lw - (f->lw - gw) / 2.0;
+        on_screen = 1;
         if (gx >= 0 && gx < gw) {
             ux = gx / gw;
             uy = s_hit_v;
         }
     }
+    s_qo.beam = s_vr.laser == LASER_ON;
+    s_qo.dot = on_screen && s_vr.laser != LASER_OFF;
+    s_qo.sight = s_vr.sight;
+    s_qo.show_gun = s_vr.show_gun;
 
-    /* Trigger: a shot; with the gun off the screen, a reload. Grip too. */
-    if (now[s_gun][0])
-        buttons |= ux < 0 ? VC3_VR_RELOAD : VC3_VR_FIRE;
-    if (act_float(a_grip, s_gun) > 0.6f)
-        buttons |= VC3_VR_RELOAD;
-    if (act_float(a_grip, off) > 0.6f)          /* the foot pedal */
-        buttons |= VC3_VR_PEDAL;
-    if (now[s_gun][0] && !was[s_gun][0])
-        rumble(s_gun, ux < 0 ? 0.3f : 0.8f, ux < 0 ? 40 : 25);
-    /* A / X: a coin and start (a credit is then always there); B / Y: coin. */
-    if (now[0][1] || now[1][1])
-        buttons |= VC3_VR_START | VC3_VR_COIN;
-    if (now[0][2] || now[1][2])
-        buttons |= VC3_VR_COIN;
-    if (act_bool(a_menu, HAND_L))
+    if (s_menu.open) {          /* the gun points at the panel; the game sees nothing */
+        float u, v, hit[3];
+        int on = located && menu_hit(o, d, &u, &v, hit);
+        int row = on ? xm_row_at(u, v, M_COUNT) : -1;
+        if (row != s_menu.hover) {
+            s_menu.hover = row;
+            s_menu.dirty = 1;
+        }
+        if (on)
+            memcpy(s_qo.end, hit, sizeof hit);
+        s_qo.beam = 1;
+        s_qo.dot = on;
+        if (now[s_gun][0] && !was[s_gun][0] && row >= 0) {
+            menu_choose(row);
+            rumble(s_gun, 0.25f, 15);
+        }
+        if (s_menu.dirty)
+            menu_paint();
+        ux = uy = -1;
+    } else {
+        /* Trigger: a shot; with the gun off the screen, a reload. Grip too. */
+        if (now[s_gun][0])
+            buttons |= ux < 0 ? VC3_VR_RELOAD : VC3_VR_FIRE;
+        if (now[s_gun][4])
+            buttons |= VC3_VR_RELOAD;
+        if (now[s_gun][1] || now[off][4])       /* the foot pedal */
+            buttons |= VC3_VR_PEDAL;
+        if (now[s_gun][2])
+            buttons |= VC3_VR_CHANGE;
+        if (now[s_gun][0] && !was[s_gun][0]) {
+            rumble(s_gun, ux < 0 ? 0.3f : 0.8f, ux < 0 ? 40 : 25);
+            if (ux >= 0)
+                s_shot_t = t;
+        }
+    }
+    /* the kick and the flash of a shot */
+    {
+        double ms = s_shot_t ? (double)(t - s_shot_t) / 1e6 : 1e9;
+        s_qo.kick = ms < 140 ? (float)(1.0 - ms / 140.0) : 0.0f;
+        s_qo.flash = ms < 40;
+    }
+
+    if (s_menu.test_frames) {
+        s_menu.test_frames--;
         buttons |= VC3_VR_TEST;
+    }
+    if (s_menu.service_frames) {
+        s_menu.service_frames--;
+        buttons |= VC3_VR_SERVICE;
+    }
+    start = (now[0][3] || now[1][3]) && !s_menu.open;
+    if (start)
+        buttons |= VC3_VR_START;
+    /* Coins: from the panel, and with automatic coins one at start-up and
+     * one with every press of Start -- Start alone plays and continues. */
+    coin = s_menu.coin;
+    s_menu.coin = 0;
+    if (s_vr.auto_coins && (++frames == 240 || (start && !was_start)))
+        coin = 1;
+    was_start = start;
+    if (coin)
+        buttons |= VC3_VR_COIN;
     vc3_input_vr(ux, uy, buttons);
 
-    /* The other hand moves the screen; thumbstick clicks change aspect
-     * (left) and internal resolution (right). */
+    /* The other hand's thumbstick moves the screen. */
     {
         XrVector2f st = act_vec2(a_stick_xy, off);
-        if (fabsf(st.y) > 0.3f || fabsf(st.x) > 0.3f) {
+        if (!s_menu.open && (fabsf(st.y) > 0.3f || fabsf(st.x) > 0.3f)) {
             s_dist -= st.y * 0.02f;
             s_height *= 1.0f + st.x * 0.01f;
             if (s_dist < 0.8f) s_dist = 0.8f;
@@ -657,10 +1106,6 @@ static void gun_frame(XrTime t, const Frame *f)
             screen_save();
         }
     }
-    if (now[HAND_L][3] && !was[HAND_L][3])
-        vc3_stereo_set(!vc3_stereo_get());
-    if (now[HAND_R][3] && !was[HAND_R][3])
-        vc3_wide_set(!vc3_wide_get());
     /* Infinity one eye distance apart on the screen: 2 * eye / width in NDC. */
     if (f)
         vc3_gl_stereo_separation(2.0f * EYE_DISTANCE
@@ -668,11 +1113,10 @@ static void gun_frame(XrTime t, const Frame *f)
     memcpy(was, now, sizeof was);
 }
 
-/* The frame into the swapchain image, upright (the surfaces hold the picture
- * top row first, GL's bottom), with the aim dot. */
 /* The frame -- whole, or with eyes side by side as they are -- into the
- * swapchain image, upright, with the aim dot in each eye's half (on the
- * screen's plane: no disparity). */
+ * swapchain image, upright (the surfaces hold the picture top row first,
+ * GL's bottom); with dot, the aim dot in each eye's half (on the screen's
+ * plane: no disparity), for when there is no overlay to draw it. */
 static void draw_frame(GLuint dst_fbo, const Frame *f, GLsizei w, GLsizei h, int dot)
 {
     int e, ew = w / f->eyes;
@@ -700,6 +1144,111 @@ static void draw_frame(GLuint dst_fbo, const Frame *f, GLsizei w, GLsizei h, int
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
 }
 
+static void mat4_mul(float *o, const float *a, const float *b)
+{
+    float r[16];
+    int c, k;
+    for (c = 0; c < 4; c++)
+        for (k = 0; k < 4; k++)
+            r[c * 4 + k] = a[k] * b[c * 4] + a[4 + k] * b[c * 4 + 1] + a[8 + k] * b[c * 4 + 2]
+                         + a[12 + k] * b[c * 4 + 3];
+    memcpy(o, r, 64);
+}
+
+/* This eye's view-projection, LOCAL metres to clip space. */
+static void eye_viewproj(const XrView *v, float vp[16])
+{
+    XrQuaternionf q = v->pose.orientation, qi = { -q.x, -q.y, -q.z, q.w };
+    static const float ex[3] = { 1, 0, 0 }, ey[3] = { 0, 1, 0 }, ez[3] = { 0, 0, 1 };
+    float view[16], proj[16], c0[3], c1[3], c2[3], t[3], rt[3];
+    float l = tanf(v->fov.angleLeft), r = tanf(v->fov.angleRight);
+    float u = tanf(v->fov.angleUp), d = tanf(v->fov.angleDown), n = 0.02f, fa = 100.0f;
+
+    qrot(qi, ex, c0);
+    qrot(qi, ey, c1);
+    qrot(qi, ez, c2);
+    t[0] = -v->pose.position.x;
+    t[1] = -v->pose.position.y;
+    t[2] = -v->pose.position.z;
+    qrot(qi, t, rt);
+    memset(view, 0, sizeof view);
+    view[0] = c0[0]; view[1] = c0[1]; view[2] = c0[2];
+    view[4] = c1[0]; view[5] = c1[1]; view[6] = c1[2];
+    view[8] = c2[0]; view[9] = c2[1]; view[10] = c2[2];
+    view[12] = rt[0]; view[13] = rt[1]; view[14] = rt[2]; view[15] = 1;
+    memset(proj, 0, sizeof proj);
+    proj[0] = 2 / (r - l);
+    proj[5] = 2 / (u - d);
+    proj[8] = (r + l) / (r - l);
+    proj[9] = (u + d) / (u - d);
+    proj[10] = -(fa + n) / (fa - n);
+    proj[11] = -1;
+    proj[14] = -2 * fa * n / (fa - n);
+    mat4_mul(vp, proj, view);
+}
+
+/* The gun, the laser and the panel into each eye's overlay image. */
+static int draw_overlay(XrCompositionLayerProjectionView pv[2])
+{
+    int e;
+    for (e = 0; e < 2; e++) {
+        Eye *y = &s_eye[e];
+        XrSwapchainImageAcquireInfo ai = { XR_TYPE_SWAPCHAIN_IMAGE_ACQUIRE_INFO };
+        XrSwapchainImageWaitInfo wi = { XR_TYPE_SWAPCHAIN_IMAGE_WAIT_INFO };
+        XrSwapchainImageReleaseInfo ri = { XR_TYPE_SWAPCHAIN_IMAGE_RELEASE_INFO };
+        uint32_t idx = 0;
+        float vp[16], eye[3];
+
+        wi.timeout = XR_INFINITE_DURATION;
+        if (XR_FAILED(xrAcquireSwapchainImage(y->chain, &ai, &idx)))
+            return 0;
+        xrWaitSwapchainImage(y->chain, &wi);
+        glBindFramebuffer(GL_FRAMEBUFFER, y->fbo[idx]);
+        glViewport(0, 0, (GLsizei)y->w, (GLsizei)y->h);
+        glDisable(GL_SCISSOR_TEST);
+        if (s_srgb_control)
+            glDisable(GL_FRAMEBUFFER_SRGB_EXT);
+        glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+        glDepthMask(GL_TRUE);
+        glClearColor(0, 0, 0, 0);
+        glClearDepthf(1);
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+        eye_viewproj(&s_views[e], vp);
+        eye[0] = s_views[e].pose.position.x;
+        eye[1] = s_views[e].pose.position.y;
+        eye[2] = s_views[e].pose.position.z;
+        if (s_menu.open) {
+            float pm[16], m[16];
+            int k;
+            memset(pm, 0, sizeof pm);
+            for (k = 0; k < 3; k++) {
+                pm[k] = s_menu.right[k] * s_menu.hw;
+                pm[4 + k] = s_menu.up[k] * s_menu.hh;
+                pm[8 + k] = s_menu.n[k];
+                pm[12 + k] = s_menu.c[k];
+            }
+            pm[15] = 1;
+            mat4_mul(m, vp, pm);
+            qo_draw_panel(m);
+        }
+        qo_draw(&s_qo, vp, eye);
+        {   /* only the colour is kept */
+            static const GLenum dis[1] = { GL_DEPTH_ATTACHMENT };
+            glInvalidateFramebuffer(GL_FRAMEBUFFER, 1, dis);
+        }
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+        xrReleaseSwapchainImage(y->chain, &ri);
+
+        pv[e] = (XrCompositionLayerProjectionView){ XR_TYPE_COMPOSITION_LAYER_PROJECTION_VIEW };
+        pv[e].pose = s_views[e].pose;
+        pv[e].fov = s_views[e].fov;
+        pv[e].subImage.swapchain = y->chain;
+        pv[e].subImage.imageRect.extent.width = (int32_t)y->w;
+        pv[e].subImage.imageRect.extent.height = (int32_t)y->h;
+    }
+    return 1;
+}
+
 static void xr_frame(void)
 {
     XrFrameWaitInfo wi = { XR_TYPE_FRAME_WAIT_INFO };
@@ -707,7 +1256,10 @@ static void xr_frame(void)
     XrFrameBeginInfo bi = { XR_TYPE_FRAME_BEGIN_INFO };
     XrFrameEndInfo ei = { XR_TYPE_FRAME_END_INFO };
     XrCompositionLayerQuad quad[2];
-    const XrCompositionLayerBaseHeader *layers[2];
+    XrCompositionLayerProjection proj = { XR_TYPE_COMPOSITION_LAYER_PROJECTION };
+    XrCompositionLayerProjectionView pv[2];
+    const XrCompositionLayerBaseHeader *layers[3];
+    uint32_t nl = 0;
     Frame *f;
     int is_new;
 
@@ -716,8 +1268,28 @@ static void xr_frame(void)
     if (XR_FAILED(xrBeginFrame(s_sess, &bi)))
         return;
     f = take_frame(&is_new);
+    {
+        XrViewLocateInfo vl = { XR_TYPE_VIEW_LOCATE_INFO };
+        XrViewState vs = { XR_TYPE_VIEW_STATE };
+        uint32_t nv = 0;
+        vl.viewConfigurationType = XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO;
+        vl.displayTime = fs.predictedDisplayTime;
+        vl.space = s_local;
+        s_views[0] = (XrView){ XR_TYPE_VIEW };
+        s_views[1] = (XrView){ XR_TYPE_VIEW };
+        s_views_ok = XR_SUCCEEDED(xrLocateViews(s_sess, &vl, &vs, 2, &nv, s_views)) && nv == 2
+            && (vs.viewStateFlags & XR_VIEW_STATE_POSITION_VALID_BIT)
+            && (vs.viewStateFlags & XR_VIEW_STATE_ORIENTATION_VALID_BIT);
+    }
+    if (s_overlay_ok < 0) {
+        s_overlay_ok = overlay_init();
+        if (!s_overlay_ok)
+            fprintf(stderr, "[xr] no overlay: the aim dot is drawn into the picture\n");
+    }
     if (s_state == XR_SESSION_STATE_FOCUSED)
         gun_frame(fs.predictedDisplayTime, f);
+    else
+        s_qo.gun_valid = 0;
 
     ei.displayTime = fs.predictedDisplayTime;
     ei.environmentBlendMode = XR_ENVIRONMENT_BLEND_MODE_OPAQUE;
@@ -730,10 +1302,19 @@ static void xr_frame(void)
         wti.timeout = XR_INFINITE_DURATION;
         if (XR_SUCCEEDED(xrAcquireSwapchainImage(s_chain, &ai, &idx))
             && XR_SUCCEEDED(xrWaitSwapchainImage(s_chain, &wti))) {
-            draw_frame(s_chain_fbo[idx], f, (GLsizei)s_chain_w, (GLsizei)s_chain_h, 1);
-            xrReleaseSwapchainImage(s_chain, &ri);
-
             uint32_t e;
+            float c[3], yq = s_anchor_yaw * 0.5f;
+
+            draw_frame(s_chain_fbo[idx], f, (GLsizei)s_chain_w, (GLsizei)s_chain_h,
+                       s_overlay_ok <= 0);
+            xrReleaseSwapchainImage(s_chain, &ri);
+            {
+                float fwd[3] = { 0, 0, -s_dist };
+                yaw_rot(s_anchor_yaw, fwd, c);
+                c[0] += s_anchor_p[0];
+                c[1] += s_anchor_p[1];
+                c[2] += s_anchor_p[2];
+            }
             for (e = 0; e < (uint32_t)f->eyes; e++) {
                 XrCompositionLayerQuad *q = &quad[e];
                 *q = (XrCompositionLayerQuad){ XR_TYPE_COMPOSITION_LAYER_QUAD };
@@ -744,16 +1325,28 @@ static void xr_frame(void)
                 q->subImage.imageRect.offset.x = (int32_t)(e * s_chain_w / (uint32_t)f->eyes);
                 q->subImage.imageRect.extent.width = (int32_t)(s_chain_w / (uint32_t)f->eyes);
                 q->subImage.imageRect.extent.height = (int32_t)s_chain_h;
-                q->pose.orientation.w = 1;
-                q->pose.position.z = -s_dist;
+                q->pose.orientation.y = sinf(yq);
+                q->pose.orientation.w = cosf(yq);
+                q->pose.position.x = c[0];
+                q->pose.position.y = c[1];
+                q->pose.position.z = c[2];
                 q->size.height = s_height;
                 q->size.width = s_height * (float)f->lw / (float)f->lh;
-                layers[e] = (const XrCompositionLayerBaseHeader *)q;
+                layers[nl++] = (const XrCompositionLayerBaseHeader *)q;
             }
-            ei.layerCount = (uint32_t)f->eyes;
-            ei.layers = layers;
         }
     }
+    /* the gun and the panel, over the screen */
+    if (fs.shouldRender && s_overlay_ok > 0 && s_views_ok && (s_qo.gun_valid || s_menu.open)
+        && draw_overlay(pv)) {
+        proj.layerFlags = XR_COMPOSITION_LAYER_BLEND_TEXTURE_SOURCE_ALPHA_BIT;
+        proj.space = s_local;
+        proj.viewCount = 2;
+        proj.views = pv;
+        layers[nl++] = (const XrCompositionLayerBaseHeader *)&proj;
+    }
+    ei.layerCount = nl;
+    ei.layers = layers;
     xrEndFrame(s_sess, &ei);
 }
 

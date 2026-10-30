@@ -92,15 +92,26 @@ JDK 17+, and SDL2 and the OpenXR loader built for arm64 Android in `$DEPS`
 `quest/install.sh /path/to/vc3` installs it over adb and copies your game
 folder to `/sdcard/VirtuaCop3` (the app asks for all-files access).
 
-In the headset the controller is the gun: aim at the screen (a red dot shows
-where) and pull the trigger; pull it pointing away from the screen, or squeeze
-the grip, to reload; the other hand's grip is the foot pedal. A / X inserts a
-coin and starts, B / Y inserts a coin, the
-left menu button is the cabinet's test switch. The other hand's thumbstick
-moves the screen (up/down: nearer/farther, left/right: smaller/larger); the
-left thumbstick click turns 3D on and off, the right one switches 4:3 / 16:9.
-The Quest defaults to 2x, 16:9 and 3D; everything is saved in the app's
-settings file (`scale=`, `aspect=`, `stereo=`; `VC3_STEREO_DEPTH` moves the
+In the headset you hold a handgun (a polymer service pistol, its slide
+running back with each shot) with a sight of your choice: iron sights
+(three dots), a red dot, or a holographic sight (a red ring round a red dot);
+the optics show their reticle where the shot lands on the screen, seen
+through the glass. The controls are The House of the Dead 4 VR's: trigger
+fires; pulled with the gun off the screen, or the grip squeezed, it reloads.
+A / X on the gun hand is the foot pedal (so is the other hand's grip), B / Y
+on the gun hand is the CHANGE button, a thumbstick click is Start (with
+automatic coins, a coin goes in with it), and pulling the other hand's
+trigger moves the gun to that hand. The left menu button (or the other
+hand's B / Y held for a second) opens the settings panel beside the screen:
+point at a row and pull the trigger to change the sight, laser (laser and
+dot, dot only, off), gun model, gun hand, stereo 3D, aspect, resolution,
+screen distance and size, coins (automatic or from the panel), and to insert
+a coin, recentre the view, press the cabinet's Test or Service button, or
+reset the game. The other hand's thumbstick also moves the screen (up/down:
+nearer/farther, left/right: smaller/larger).
+The Quest defaults to 1x (2x and up are GPU-bound in 3D), 16:9, 3D, iron
+sights and the laser dot; everything is saved in the app's
+settings file (`scale=`, `aspect=`, `stereo=`, `vr_sight=`, `vr_laser=`, ...; `VC3_STEREO_DEPTH` moves the
 depth the screen sits at, in the game's units, about metres, default 8). `env.txt` in `/sdcard/VirtuaCop3`, one `NAME=value`
 per line, sets the usual `VC3_*` options; the last run's log is
 `/sdcard/VirtuaCop3/vc3.log`. Without an OpenXR runtime (or with

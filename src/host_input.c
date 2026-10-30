@@ -554,7 +554,8 @@ void host_input_poll(chihiro_input_t *in)
 
     in->test = bound(k, VC3_KEY_TEST) || auto_held("test", t)
         || (s_vr_on && (s_vr_buttons & VC3_VR_TEST));
-    if (bound(k, VC3_KEY_SERVICE) || auto_held("service", t))
+    if (bound(k, VC3_KEY_SERVICE) || auto_held("service", t)
+        || (s_vr_on && (s_vr_buttons & VC3_VR_SERVICE)))
         in->player[0] |= JVS_SW_SERVICE;
     if (bound(k, VC3_KEY_START1) || auto_held("start", t)
         || (s_vr_on && (s_vr_buttons & VC3_VR_START)))
@@ -584,7 +585,8 @@ void host_input_poll(chihiro_input_t *in)
     if (reload)
         in->player[0] |= JVS_SW_PUSH2;
     /* The input test names push 3 CHANGE and push 4 PEDAL. */
-    if ((buttons & SDL_BUTTON(SDL_BUTTON_MIDDLE)) || bound(k, VC3_KEY_CHANGE))
+    if ((buttons & SDL_BUTTON(SDL_BUTTON_MIDDLE)) || bound(k, VC3_KEY_CHANGE)
+        || (s_vr_on && (s_vr_buttons & VC3_VR_CHANGE)))
         in->player[0] |= JVS_SW_PUSH3;
     if (bound(k, VC3_KEY_PEDAL) || auto_held("pedal", t)
         || (s_vr_on && (s_vr_buttons & VC3_VR_PEDAL)))

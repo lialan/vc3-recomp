@@ -47,7 +47,9 @@ if(ANDROID)
     find_package(SDL2 REQUIRED)
     add_library(vc3 SHARED ${VC3_SOURCES}
         src/android/android_main.c
-        src/android/quest_host.c)
+        src/android/quest_host.c
+        src/android/quest_overlay.c
+        src/android/quest_menu.c)
     set_target_properties(vc3 PROPERTIES OUTPUT_NAME main)
     set_source_files_properties(src/main.c PROPERTIES COMPILE_DEFINITIONS main=vc3_main)
     target_compile_definitions(vc3 PRIVATE VC3_GLES=1)

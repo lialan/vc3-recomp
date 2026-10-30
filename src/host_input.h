@@ -11,6 +11,8 @@
 #define VC3_VR_COIN   0x08
 #define VC3_VR_TEST   0x10
 #define VC3_VR_PEDAL  0x20
+#define VC3_VR_CHANGE 0x40
+#define VC3_VR_SERVICE 0x80
 void vc3_input_vr(double ux, double uy, int buttons);
 
 /* Keyboard bindings (the Controls menu): actions, their keys, learning a
