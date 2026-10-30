@@ -369,7 +369,9 @@ static struct {
     int auto_coins;     /* a coin at start-up and with every Start */
     int immersive;      /* the game's 3D around the player; else on the screen */
     int refresh;        /* display Hz asked for: 120 (default), 90, 72 */
-} s_vr = { QO_SIGHT_IRON, LASER_DOT, 1, 0, 1, 1, 120 };
+    int imm_scale;      /* immersive detail: the game drawn at 1x-3x (default 2) */
+} s_vr = { QO_SIGHT_IRON, LASER_DOT, 1, 0, 1, 1, 120, 2 };
+static uint32_t s_rec_w;                /* the headset's recommended eye width */
 
 static int key_index(const char *v, const char *const *keys, int n, int dflt)
 {
@@ -400,6 +402,8 @@ static void screen_load(void)
         s_vr.immersive = strcmp(v, "screen") != 0;
     if ((v = vc3_setting_get("vr_refresh=")) && atoi(v) >= 60 && atoi(v) <= 144)
         s_vr.refresh = atoi(v);
+    if ((v = vc3_setting_get("vr_detail=")) && atoi(v) >= 1 && atoi(v) <= 3)
+        s_vr.imm_scale = atoi(v);
 }
 
 static void screen_save(void)
@@ -423,6 +427,8 @@ static void vr_save(void)
         char b[16];
         snprintf(b, sizeof b, "%d", s_vr.refresh);
         vc3_setting_put("vr_refresh=", b);
+        snprintf(b, sizeof b, "%d", s_vr.imm_scale);
+        vc3_setting_put("vr_detail=", b);
     }
     screen_save();
 }
@@ -1024,6 +1030,7 @@ int vc3_vr_view_latch(Vc3VrView *v)
         vr_eye_matrix(v->pose_q[e], v->pose_p[e], v->tan_fov[e], imm_units(), IMM_NEAR, IMM_FAR,
                       v->vp[e]);
     }
+    v->scale = s_vr.imm_scale;
     return v->on = 1;
 }
 
@@ -1090,6 +1097,9 @@ static int overlay_init(void)
         return 0;
     XRCHECK(xrEnumerateViewConfigurationViews(s_inst, s_sys, XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO,
                                               2, &nv, vcv));
+    s_rec_w = vcv[0].recommendedImageRectWidth;
+    fprintf(stderr, "[xr] recommended eye %ux%u\n", vcv[0].recommendedImageRectWidth,
+            vcv[0].recommendedImageRectHeight);
     if (exts && strstr(exts, "GL_EXT_multisampled_render_to_texture")) {
         fb_ms = (PFNGLFRAMEBUFFERTEXTURE2DMULTISAMPLEEXTPROC)
             eglGetProcAddress("glFramebufferTexture2DMultisampleEXT");
@@ -1154,7 +1164,7 @@ static int overlay_init(void)
  * Dead 4 VR). Point the gun at a row and pull the trigger; the game gets no
  * input meanwhile. Holding the other hand's upper button (B / Y) for a
  * second opens and closes it too. */
-enum { M_SCREEN, M_REFRESH, M_SIGHT, M_LASER, M_GUN, M_HAND, M_STEREO, M_ASPECT, M_RES, M_DIST, M_SIZE,
+enum { M_SCREEN, M_DETAIL, M_REFRESH, M_SIGHT, M_LASER, M_GUN, M_HAND, M_STEREO, M_ASPECT, M_RES, M_DIST, M_SIZE,
        M_COINS, M_COIN, M_RECENTRE, M_TEST, M_SERVICE, M_RESET, M_CLOSE, M_COUNT };
 static struct {
     int open, hover, dirty;
@@ -1168,7 +1178,7 @@ static void menu_items(XmItem *it)
     static const char *const sight[] = { "Iron sights", "Red dot", "Holographic" };
     static const char *const laser[] = { "Laser and dot", "Dot only", "Off" };
     static const char *const labels[M_COUNT] = {
-        "Screen", "Refresh", "Sight", "Laser", "Gun model", "Gun hand", "Stereo 3D", "Aspect", "Resolution",
+        "Screen", "Immersive detail", "Refresh", "Sight", "Laser", "Gun model", "Gun hand", "Stereo 3D", "Aspect", "Resolution",
         "Screen distance", "Screen size", "Coins", "Insert a coin", "Recentre view",
         "Arcade Test button", "Arcade Service button", "Reset game", "Close" };
     int i;
@@ -1177,6 +1187,13 @@ static void menu_items(XmItem *it)
         it[i].value[0] = 0;
     }
     snprintf(it[M_SCREEN].value, 40, "%s", s_vr.immersive ? "Immersive" : "Virtual screen");
+    /* the game's 640 across in an eye spanning the whole view: how close
+     * to the headset's own recommended sharpness */
+    if (s_rec_w)
+        snprintf(it[M_DETAIL].value, 40, "%dx (%u%% of headset)", s_vr.imm_scale,
+                 (unsigned)(640u * (unsigned)s_vr.imm_scale * 100u / s_rec_w));
+    else
+        snprintf(it[M_DETAIL].value, 40, "%dx", s_vr.imm_scale);
     snprintf(it[M_REFRESH].value, 40, "%d Hz%s", s_vr.refresh,
              s_vr.refresh == 120 ? " (smoothest)" : "");
     snprintf(it[M_SIGHT].value, 40, "%s", sight[s_vr.sight]);
@@ -1279,6 +1296,7 @@ static void menu_choose(int item)
     s_menu.reset_armed = 0;             /* anything else chosen in between: no reset */
     switch (item) {
     case M_SCREEN: s_vr.immersive = !s_vr.immersive; break;
+    case M_DETAIL: s_vr.imm_scale = s_vr.imm_scale % 3 + 1; break;
     case M_REFRESH:
         s_vr.refresh = s_vr.refresh >= 120 ? 72 : s_vr.refresh >= 90 ? 120 : 90;
         rate_apply();

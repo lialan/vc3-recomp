@@ -26,6 +26,9 @@ typedef struct {
     float pose_p[2][3];       /* position (metres) -- for the headset's layer */
     float tan_fov[2][4];      /* left, right, up, down */
     float fov[2][4];          /* the same as angles (radians), as OpenXR gives them */
+    int scale;                /* the game's surfaces drawn at this scale while
+                                 immersive (each eye spans the whole field of
+                                 view); 0: the display setting's */
     uint64_t id;              /* which head pose (for the log) */
 } Vc3VrView;
 

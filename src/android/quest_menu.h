@@ -6,8 +6,8 @@
 #define VC3_QUEST_MENU_H
 
 #define XM_W 768                /* the panel's picture, in pixels */
-#define XM_H 772
-#define XM_ROWS 18
+#define XM_H 808
+#define XM_ROWS 19
 
 typedef struct {
     const char *label;

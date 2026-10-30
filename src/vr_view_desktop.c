@@ -55,6 +55,10 @@ int vc3_vr_view_latch(Vc3VrView *v)
         v->fov[i][3] = -t;
         vr_eye_matrix(v->pose_q[i], v->pose_p[i], v->tan_fov[i], 1.0f, 0.05f, 2000.0f, v->vp[i]);
     }
+    {   /* VC3_IMMERSIVE_TEST_SCALE=n: the immersive detail the headset would ask */
+        const char *sc = getenv("VC3_IMMERSIVE_TEST_SCALE");
+        v->scale = sc ? atoi(sc) : 0;
+    }
     v->id++;
     return v->on = 1;
 }

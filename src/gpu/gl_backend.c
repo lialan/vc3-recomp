@@ -4546,6 +4546,10 @@ static void gl_flip(void)
         }
 
         on = vc3_vr_view_latch(&s_view);
+        /* immersive spreads each eye over the whole field of view: its own,
+         * finer scale (the host's, from the headset's recommended size) */
+        if (on && s_view.scale >= 1 && s_view.scale <= VC3_SCALE_MAX)
+            s_scale = s_view.scale;
         s_stereo = vc3_stereo_get() || on;
         s_imm = on && s_stereo && s_3d_prev > 0 && s_gp_ok;
         if (genv("VC3_IMM_LOG")) {
