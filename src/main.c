@@ -14,7 +14,9 @@
 #error "vc3-recomp's host entry is POSIX-only; use the xboxrecomp template on Windows"
 #endif
 
+#include <dlfcn.h>
 #include <limits.h>
+#include <sys/ucontext.h>
 #include <signal.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -81,6 +83,22 @@ static void fault_handler(int sig, siginfo_t *si, void *ucv)
         return;
 
     dump_guest(fault);
+    {
+        /* The host PC names the lifted function (sub_XXXXXXXX) or runtime
+         * routine that faulted. */
+        uintptr_t pc = 0, lr = 0;
+        Dl_info di;
+#if defined(__APPLE__) && defined(__aarch64__)
+        pc = (uintptr_t)((ucontext_t *)ucv)->uc_mcontext->__ss.__pc;
+        lr = (uintptr_t)((ucontext_t *)ucv)->uc_mcontext->__ss.__lr;
+#endif
+        if (pc && dladdr((void *)pc, &di) && di.dli_sname)
+            fprintf(stderr, "  host pc %p in %s+0x%lx\n", (void *)pc, di.dli_sname,
+                    (unsigned long)(pc - (uintptr_t)di.dli_saddr));
+        if (lr && dladdr((void *)lr, &di) && di.dli_sname)
+            fprintf(stderr, "  host lr %p in %s+0x%lx\n", (void *)lr, di.dli_sname,
+                    (unsigned long)(lr - (uintptr_t)di.dli_saddr));
+    }
     signal(sig, SIG_DFL); /* re-raise for the crash reporter / debugger */
 }
 
@@ -171,6 +189,17 @@ int main(int argc, char **argv)
      * blocks of growing size up to 256 MB. Without reclaim the frees are
      * dropped and D3D's 9 MB framebuffer request no longer fits. */
     setenv("RECOMP_HEAP_RECLAIM", "1", 0);
+    /* Chihiro drives a VGA monitor; VC3's 1024x768 mode only exists in the
+     * VGA rows of D3D's mode table, so an HDTV pack fails device creation. */
+    setenv("RECOMP_AV_PACK", "vga", 0);
+    /* D3D is linked into the XBE, so frames exist only as NV2A pushbuffer:
+     * the toolkit's executor runs it and answers D3D's fences. */
+    setenv("RECOMP_PB_EXEC", "1", 0);
+    /* D3D's present path waits on a KEVENT it built in the device itself
+     * (0x119254), set by its vblank ISR/DPC: it needs title-built events and
+     * a 60 Hz vblank that honours the interrupt enables. */
+    setenv("RECOMP_TITLE_KEVENTS", "1", 0);
+    setenv("RECOMP_VBLANK", "paced", 0);
 
     snprintf(xbe_path, sizeof(xbe_path), "%s/%s", game_dir, VC3_XBE_NAME);
     xbe = load_file(xbe_path, &xbe_size);

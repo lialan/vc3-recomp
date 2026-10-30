@@ -46,6 +46,10 @@ void sub_0013DA10(void) { chihiro_eeprom_read(); }   /* JvsEEPROM_Read  */
 void sub_0013DBD0(void) { chihiro_eeprom_write(); }  /* JvsEEPROM_Write */
 void sub_0013E5E0(void) { chihiro_rtc_read(); }      /* JvsRTC_Read     */
 
+/* XDK D3D's fence wait, against the push-buffer executor (src/d3d_fence.c). */
+extern void vc3_d3d_block_on_time(void);
+void sub_0010CAC0(void) { vc3_d3d_block_on_time(); } /* D3D_BlockOnTime */
+
 /* ── Manual function overrides ─────────────────────────────── */
 
 /*

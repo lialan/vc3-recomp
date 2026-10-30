@@ -28,6 +28,7 @@ add_executable(vc3
     src/recomp_manual.c
     src/chihiro/chihiro.c
     src/chihiro/storage.c
+    src/d3d_fence.c
     ${RECOMP_GEN_SOURCES}
 )
 
@@ -44,3 +45,6 @@ target_include_directories(vc3 PRIVATE
 # of compile time for little gain during bring-up.
 set_source_files_properties(${RECOMP_GEN_SOURCES} PROPERTIES
     COMPILE_OPTIONS "-O1;-Wno-everything")
+
+# Let the crash handler name the lifted function at a host PC (dladdr).
+target_link_options(vc3 PRIVATE -Wl,-export_dynamic)

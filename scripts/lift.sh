@@ -9,4 +9,5 @@ cd "$ROOT/external/xboxrecomp"
 "$ROOT/.venv/bin/python" -m tools.recomp "$XBE" --all --split 250 --game-name vc3 \
     --gen-dir "$ROOT/src/recomp/gen" --disasm-dir "$OUT/disasm" \
     --func-id-dir "$OUT/func_id" --abi-dir "$OUT/abi" \
-    --exclude-manual "$ROOT/src/recomp_manual.c"
+    --exclude-manual "$ROOT/src/recomp_manual.c" \
+    ${VC3_TRACE:+--trace-functions "$VC3_TRACE"}

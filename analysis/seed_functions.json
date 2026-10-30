@@ -1,0 +1,12 @@
+[
+ {
+  "start": "0x000B6393",
+  "observed": true,
+  "note": "PsCreateSystemThreadEx StartContext1 observed at runtime; decodes as a function body."
+ },
+ {
+  "start": "0x001100B0",
+  "observed": true,
+  "note": "D3D vblank/GPU DPC routine (KeInitializeDpc); 'DPC routine 0x001100B0 not in dispatch' at runtime. Clean prologue; static analysis folded it into a block at 0x1100A9."
+ }
+]

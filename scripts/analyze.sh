@@ -9,7 +9,10 @@ OUT="$ROOT/analysis/out"
 mkdir -p "$OUT"
 cd "$ROOT/external/xboxrecomp"
 "$PY" -m tools.xbe_parser "$XBE" --json "$OUT/xbe.json" --quiet
-"$PY" -m tools.disasm "$XBE" --analysis-json "$OUT/xbe.json" -o "$OUT/disasm" -v
+# Entry points static analysis misses (DPCs, thread starts); see the notes.
+SEEDS="$ROOT/analysis/seed_functions.json"
+"$PY" -m tools.disasm "$XBE" --analysis-json "$OUT/xbe.json" -o "$OUT/disasm" \
+    ${SEEDS:+$( [ -f "$SEEDS" ] && echo --seed-functions "$SEEDS")} --force -v
 "$PY" -m tools.func_id "$XBE" --functions "$OUT/disasm/functions.json" \
     --xrefs "$OUT/disasm/xrefs.json" --strings "$OUT/disasm/strings.json" \
     -o "$OUT/func_id" -v
