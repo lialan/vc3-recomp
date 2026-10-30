@@ -8,6 +8,7 @@
  */
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "recomp_types.h"
@@ -23,17 +24,22 @@ const char *chihiro_save_dir(void)
 
 /* The launch data the Chihiro system software hands the game.
  *
- * VC3 marks its I/O ready (0x7FE70, the flag 0x7FEE0 tests; without it the
- * game raises "JVS I/O board is not connected") only when XGetLaunchInfo
- * returns launch type 0 with the first launch-data dword 1: launched by the
- * boot software after its I/O check, as the TestLaunch stub (vc3_t.xbe) does.
+ * Launch type 0 with the first launch-data dword 1 means "started by the
+ * TestLaunch stub (vc3_t.xbe)": 0x7FE70 sets [[0x179ACC]+0x18], which skips
+ * the game's own I/O check task ('IOER', 0x814F0) and boots straight into
+ * the test menu (scene 7, 0x80CF0). A normal boot has no launch data, so the
+ * page is only installed when VC3_TEST_LAUNCH=1.
  * XGetLaunchInfo (0xB61AB) reads the page from the kernel's LaunchDataPage,
  * checks the title id against the certificate's (0 here) and copies 3 KB from
  * +0x400. */
 static void chihiro_set_launch_data(void)
 {
-    uint32_t page = xbox_HeapAlloc(0x1000, 4096);
+    const char *test = getenv("VC3_TEST_LAUNCH");
+    uint32_t page;
 
+    if (!test || strcmp(test, "1") != 0)
+        return;
+    page = xbox_HeapAlloc(0x1000, 4096);
     if (!page) {
         fprintf(stderr, "[CHIHIRO] no memory for the launch data page\n");
         return;
@@ -41,7 +47,7 @@ static void chihiro_set_launch_data(void)
     memset((void *)XBOX_PTR(page), 0, 0x1000);
     MEM32(page + 0x000) = 0;          /* LaunchDataType: title */
     MEM32(page + 0x004) = 0;          /* title id, as in vc3.xbe's certificate */
-    MEM32(page + 0x400) = 1;          /* launched after the I/O check */
+    MEM32(page + 0x400) = 1;          /* launched by TestLaunch */
     MEM32(XBOX_KERNEL_DATA_BASE + KDATA_LAUNCH_DATA_PAGE) = page;
     fprintf(stderr, "[CHIHIRO] launch data page at 0x%08X\n", page);
 }

@@ -37,6 +37,7 @@
 extern void xbe_entry_point(void);
 extern void xbox_path_init(const char *game_dir, const char *save_dir);
 extern void chihiro_init(const char *save_dir);
+extern void vc3_gl_backend_register(void);   /* src/gpu/gl_backend.c */
 
 typedef struct MCPXAPUState MCPXAPUState;
 extern MCPXAPUState *mcpx_apu_init_standalone(uint8_t *ram_ptr);
@@ -160,7 +161,7 @@ static char **s_argv;
 
 /* XLaunchNewImage (0xB6256), replaced: VC3 relaunches d:\vc3.xbe to leave the
  * test menu, which on a Chihiro is a reboot into the game. Here it is a fresh
- * process with the same arguments; the boot sets the launch data again.
+ * process with the same arguments; the next boot is a normal one (no TestLaunch data).
  * stdcall (path, launch data); returns only if exec fails. */
 void vc3_relaunch(void)
 {
@@ -179,6 +180,7 @@ void vc3_relaunch(void)
     else
         unsetenv("VC3_AUTOKEYS");
     unsetenv("VC3_AUTOKEYS_RELAUNCH");
+    unsetenv("VC3_TEST_LAUNCH");      /* leaving test mode boots the game */
     if (s_argv && _NSGetExecutablePath(exe, &size) == 0)
         execv(exe, s_argv);
     perror("[VC3] relaunch failed");
@@ -217,6 +219,7 @@ static int guest_main(void)
     xbox_path_init(s_game_dir, s_save_dir);
     xbox_kernel_bridge_init();
     chihiro_init(s_save_dir);
+    vc3_gl_backend_register();   /* before the title submits any work */
 
     g_esp = XBOX_STACK_TOP;
     if (!recomp_dispatch_init())

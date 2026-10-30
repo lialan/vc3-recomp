@@ -32,10 +32,11 @@ add_executable(vc3
     src/chihiro/baseboard.c
     src/d3d_fence.c
     src/host_input.c
+    src/gpu/gl_backend.c
     ${RECOMP_GEN_SOURCES}
 )
 
-target_link_libraries(vc3 PRIVATE xboxrecomp)
+target_link_libraries(vc3 PRIVATE xboxrecomp "-framework OpenGL")
 target_include_directories(vc3 PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src
     ${CMAKE_CURRENT_SOURCE_DIR}/src/recomp/gen
