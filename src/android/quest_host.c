@@ -48,6 +48,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 #include <unistd.h>
 
 #include <EGL/egl.h>
@@ -122,7 +123,8 @@ typedef struct {
     GLsizei w, h;            /* as drawn: both eyes, side by side, in stereo */
     int eyes;                /* 1, or 2 for a stereo pair (each w / 2 wide) */
     int lw, lh;              /* the picture's shape (guest pixels) */
-    GLsync fence;
+    GLsync fence;            /* the back end's copy into it is done */
+    GLsync read_done;        /* the host's last copy out of it is done */
 } Frame;
 
 static Frame s_frame[3];
@@ -130,6 +132,50 @@ static int s_back = 0, s_ready = 1, s_front = 2;
 static uint64_t s_ready_seq, s_shown_seq;
 static pthread_mutex_t s_lock = PTHREAD_MUTEX_INITIALIZER;
 static uint64_t s_frames_in;   /* for the log */
+
+/* VC3_PACE_LOG=1: once a second, the spread of the times between game
+ * frames (back end thread) and how many headset frames showed each (host). */
+static int s_pace = -1;
+
+static uint64_t pace_now_us(void)
+{
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (uint64_t)ts.tv_sec * 1000000u + (uint64_t)ts.tv_nsec / 1000u;
+}
+
+static int cmp_u32(const void *a, const void *b)
+{
+    uint32_t x = *(const uint32_t *)a, y = *(const uint32_t *)b;
+    return x < y ? -1 : x > y;
+}
+
+static void pace_game_frame(void)
+{
+    static uint64_t last, t0;
+    static uint32_t dt[512];
+    static int n;
+    uint64_t now = pace_now_us();
+    if (s_pace < 0)
+        s_pace = getenv("VC3_PACE_LOG") && *getenv("VC3_PACE_LOG") == '1';
+    if (!s_pace)
+        return;
+    if (last && n < 512)
+        dt[n++] = (uint32_t)(now - last);
+    last = now;
+    if (!t0)
+        t0 = now;
+    if (now - t0 >= 1000000 && n > 0) {
+        int over = 0, i;
+        qsort(dt, (size_t)n, sizeof dt[0], cmp_u32);
+        for (i = 0; i < n; i++)
+            over += dt[i] > 20000;
+        fprintf(stderr, "[pace] game %d frames: ms p50 %.1f p95 %.1f max %.1f, >20 ms %d\n", n,
+                dt[n / 2] / 1000.0, dt[n * 95 / 100] / 1000.0, dt[n - 1] / 1000.0, over);
+        n = 0;
+        t0 = now;
+    }
+}
 
 void vc3_quest_frame(GLuint fbo, int pw, int ph, int eyes, int lw, int lh)
 {
@@ -140,6 +186,21 @@ void vc3_quest_frame(GLuint fbo, int pw, int ph, int eyes, int lw, int lh)
     pw *= eyes;                         /* the eyes are side by side */
     if (!dst_fbo)
         glGenFramebuffers(1, &dst_fbo);
+    /* The host may still have a copy out of this texture queued on the GPU
+     * (it was the host's frame until the last swap): the GPU waits for it
+     * before this one overwrites it. Without it the headset showed frames
+     * torn between two game frames -- the flicker. */
+    {
+        GLsync rd;
+        pthread_mutex_lock(&s_lock);
+        rd = f->read_done;
+        f->read_done = 0;
+        pthread_mutex_unlock(&s_lock);
+        if (rd) {
+            glWaitSync(rd, 0, GL_TIMEOUT_IGNORED);
+            glDeleteSync(rd);
+        }
+    }
     if (!f->tex || f->w != pw || f->h != ph) {
         if (f->tex)
             glDeleteTextures(1, &f->tex);
@@ -159,6 +220,39 @@ void vc3_quest_frame(GLuint fbo, int pw, int ph, int eyes, int lw, int lh)
     glBindFramebuffer(GL_DRAW_FRAMEBUFFER, dst_fbo);
     glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, f->tex, 0);
     glBlitFramebuffer(0, 0, pw, ph, 0, 0, pw, ph, GL_COLOR_BUFFER_BIT, GL_NEAREST);
+    {   /* VC3_QUEST_DUMP=first,count: those game frames (both eyes) as PPM
+         * files beside the game, to see frame-to-frame changes (stalls) */
+        static long first = -2, count, n;
+        if (first == -2) {
+            const char *v = getenv("VC3_QUEST_DUMP");
+            first = -1;
+            if (v && sscanf(v, "%ld,%ld", &first, &count) != 2)
+                first = -1;
+        }
+        if (first >= 0 && n >= first && n < first + count) {
+            static unsigned char *px;
+            char path[256];
+            const char *dir = "/sdcard/VirtuaCop3/dump";
+            FILE *o;
+            int y;
+            if (!px)
+                px = (unsigned char *)malloc((size_t)pw * ph * 4);
+            glBindFramebuffer(GL_READ_FRAMEBUFFER, dst_fbo);
+            glReadPixels(0, 0, pw, ph, GL_RGBA, GL_UNSIGNED_BYTE, px);
+            glBindFramebuffer(GL_READ_FRAMEBUFFER, fbo);
+            snprintf(path, sizeof path, "%s/f%04ld.ppm", dir, n - first);
+            if (px && (o = fopen(path, "wb"))) {
+                fprintf(o, "P6\n%d %d\n255\n", pw, ph);
+                for (y = ph - 1; y >= 0; y--) {
+                    int x;
+                    for (x = 0; x < pw; x++)
+                        fwrite(px + ((size_t)y * pw + x) * 4, 1, 3, o);
+                }
+                fclose(o);
+            }
+        }
+        n++;
+    }
     glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, 0, 0);
     f->lw = lw;
     f->lh = lh;
@@ -166,6 +260,7 @@ void vc3_quest_frame(GLuint fbo, int pw, int ph, int eyes, int lw, int lh)
     f->fence = glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
     glFlush();                          /* the fence must reach the GPU */
 
+    pace_game_frame();
     pthread_mutex_lock(&s_lock);
     t = s_ready;
     s_ready = s_back;
@@ -173,6 +268,20 @@ void vc3_quest_frame(GLuint fbo, int pw, int ph, int eyes, int lw, int lh)
     s_ready_seq++;
     s_frames_in++;
     pthread_mutex_unlock(&s_lock);
+}
+
+/* After the host's copy out of f is queued: a fence the back end's GPU
+ * waits on before writing f again. */
+static void frame_read_done(Frame *f)
+{
+    GLsync fs = glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0), old;
+    glFlush();                          /* the fence must reach the GPU */
+    pthread_mutex_lock(&s_lock);
+    old = f->read_done;
+    f->read_done = fs;
+    pthread_mutex_unlock(&s_lock);
+    if (old)
+        glDeleteSync(old);
 }
 
 /* The newest frame, on the host's thread; NULL before the first. */
@@ -192,6 +301,8 @@ static Frame *take_frame(int *is_new)
     f = &s_frame[s_front];
     if (!f->tex)
         return NULL;
+    /* (the read_done fence of the frame given up stays: the back end waits
+     * on it before writing that frame again) */
     if (*is_new && f->fence)
         glWaitSync(f->fence, 0, GL_TIMEOUT_IGNORED);
     return f;
@@ -1268,6 +1379,27 @@ static void xr_frame(void)
     if (XR_FAILED(xrBeginFrame(s_sess, &bi)))
         return;
     f = take_frame(&is_new);
+    if (s_pace > 0) {   /* how many headset frames each game frame showed for */
+        static int shown, hist[5], xr_n;
+        static uint64_t t0;
+        uint64_t now = pace_now_us();
+        if (is_new) {
+            if (shown)
+                hist[shown > 4 ? 4 : shown]++;
+            shown = 0;
+        }
+        shown++;
+        xr_n++;
+        if (!t0)
+            t0 = now;
+        if (now - t0 >= 1000000) {
+            fprintf(stderr, "[pace] headset %d frames: game frames shown 1x %d, 2x %d, 3x %d, 4+x %d\n",
+                    xr_n, hist[1], hist[2], hist[3], hist[4]);
+            memset(hist, 0, sizeof hist);
+            xr_n = 0;
+            t0 = now;
+        }
+    }
     {
         XrViewLocateInfo vl = { XR_TYPE_VIEW_LOCATE_INFO };
         XrViewState vs = { XR_TYPE_VIEW_STATE };
@@ -1307,6 +1439,7 @@ static void xr_frame(void)
 
             draw_frame(s_chain_fbo[idx], f, (GLsizei)s_chain_w, (GLsizei)s_chain_h,
                        s_overlay_ok <= 0);
+            frame_read_done(f);
             xrReleaseSwapchainImage(s_chain, &ri);
             {
                 float fwd[3] = { 0, 0, -s_dist };
@@ -1380,6 +1513,7 @@ static void flat_frame(void)
         /* the left eye of a stereo pair */
         glBlitFramebuffer(0, 0, f->w / f->eyes, f->h, (ww - dw) / 2, (wh + dh) / 2,
                           (ww + dw) / 2, (wh - dh) / 2, GL_COLOR_BUFFER_BIT, GL_LINEAR);
+        frame_read_done(f);
     }
     SDL_GL_SwapWindow(s_win);
 }
