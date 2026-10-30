@@ -12,4 +12,17 @@
 #define VC3_VR_TEST   0x10
 void vc3_input_vr(double ux, double uy, int buttons);
 
+/* Keyboard bindings (the Controls menu): actions, their keys, learning a
+ * new key from the next press. Saved as key_<action>= in the settings. */
+enum {
+    VC3_KEY_COIN1, VC3_KEY_COIN2, VC3_KEY_START1, VC3_KEY_START2,
+    VC3_KEY_FIRE, VC3_KEY_RELOAD, VC3_KEY_TEST, VC3_KEY_SERVICE, VC3_KEY_FPS,
+    VC3_KEY_COUNT
+};
+const char *vc3_key_action_name(int action);
+const char *vc3_key_name(int action);      /* "" when unbound */
+void vc3_key_learn(int action);            /* next key press; Escape: none */
+int  vc3_key_learning(void);               /* the action waiting, or -1 */
+void vc3_key_defaults(void);
+
 #endif

@@ -29,7 +29,11 @@ saved in `~/Library/Application Support/VC3/game_dir`, or
 go in the app.
 
 Controls: mouse aims the gun, left button fires, right button reloads;
-5/6 coin, 1/2 start, F2 test, F1 service. Saves go to
+5/6 coin, 1/2 start, F2 test, F1 service, F10 toggles 60/120 fps. The
+**Controls** menu rebinds each of these keys (and can give fire and reload a
+key too): choose an action, then press the new key in the game window
+(Escape leaves it unbound); the choice is saved as `key_<action>=` in
+`~/Library/Application Support/VC3/settings`. Saves go to
 `~/Library/Application Support/vc3-recomp` (`VC3_SAVE_DIR` to change).
 
 Display settings, from the **Display** menu (each choice is saved to

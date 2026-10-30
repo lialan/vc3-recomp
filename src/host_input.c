@@ -12,6 +12,10 @@
  *   1 / 2            start, player 1 / 2
  *   F2               test       F1   service
  *   F10              display 60 <-> 120 fps (display_settings.c; not the board)
+ *   (none)           fire / reload from the keyboard, if bound
+ *
+ * The keys are the defaults: Controls in the menu bar (macos_menu.m) binds
+ * each action to another key, saved as key_<action>= in the settings file.
  *
  * VC3_AUTOKEYS scripts presses for unattended runs: "t:key,t:key", with t in
  * seconds since the first poll and key one of test, service, coin, start,
@@ -92,6 +96,101 @@ static volatile Uint32 s_mwin;               /* window under the mouse, 0 none *
 static volatile Uint32 s_buttons;
 static volatile Uint8 s_keys[SDL_NUM_SCANCODES];
 
+/* Key bindings: one scancode per action (0: none), the defaults above
+ * unless the settings file says otherwise. Written on the thread that pumps
+ * events (the menu, a key learnt), read when the board is polled. */
+static const struct {
+    const char *id, *name;
+    SDL_Scancode def;
+} k_action[VC3_KEY_COUNT] = {
+    { "coin1",   "Coin (player 1)",  SDL_SCANCODE_5 },
+    { "coin2",   "Coin (player 2)",  SDL_SCANCODE_6 },
+    { "start1",  "Start (player 1)", SDL_SCANCODE_1 },
+    { "start2",  "Start (player 2)", SDL_SCANCODE_2 },
+    { "fire",    "Fire (keyboard)",  SDL_SCANCODE_UNKNOWN },
+    { "reload",  "Reload (keyboard)", SDL_SCANCODE_UNKNOWN },
+    { "test",    "Test",             SDL_SCANCODE_F2 },
+    { "service", "Service",          SDL_SCANCODE_F1 },
+    { "fps",     "Toggle 60/120 fps", SDL_SCANCODE_F10 },
+};
+static volatile int s_bind[VC3_KEY_COUNT];
+static volatile int s_bind_loaded;
+static volatile int s_learn = -1;       /* action waiting for a key, -1 none */
+
+static void bind_save(int a)
+{
+    char key[32];
+    snprintf(key, sizeof key, "key_%s=", k_action[a].id);
+    vc3_setting_put(key, s_bind[a] ? SDL_GetScancodeName((SDL_Scancode)s_bind[a]) : "none");
+}
+
+static void bind_load(void)
+{
+    int a;
+    if (s_bind_loaded)
+        return;
+    for (a = 0; a < VC3_KEY_COUNT; a++) {
+        char key[32];
+        const char *v;
+        snprintf(key, sizeof key, "key_%s=", k_action[a].id);
+        v = vc3_setting_get(key);
+        if (!v)
+            s_bind[a] = k_action[a].def;
+        else if (!strcmp(v, "none"))
+            s_bind[a] = 0;
+        else {
+            SDL_Scancode sc = SDL_GetScancodeFromName(v);
+            s_bind[a] = sc != SDL_SCANCODE_UNKNOWN ? (int)sc : (int)k_action[a].def;
+        }
+    }
+    s_bind_loaded = 1;
+}
+
+const char *vc3_key_action_name(int a)
+{
+    return a >= 0 && a < VC3_KEY_COUNT ? k_action[a].name : "";
+}
+
+/* The key bound to an action, as SDL names it ("" when none). */
+const char *vc3_key_name(int a)
+{
+    bind_load();
+    if (a < 0 || a >= VC3_KEY_COUNT || !s_bind[a])
+        return "";
+    return SDL_GetScancodeName((SDL_Scancode)s_bind[a]);
+}
+
+/* The next key pressed becomes action a's (Escape: no key). */
+void vc3_key_learn(int a)
+{
+    bind_load();
+    s_learn = a >= 0 && a < VC3_KEY_COUNT ? a : -1;
+    if (s_learn >= 0)
+        fprintf(stderr, "[INPUT] press a key for %s (Escape: none)\n", k_action[a].name);
+}
+
+int vc3_key_learning(void)
+{
+    return s_learn;
+}
+
+void vc3_key_defaults(void)
+{
+    int a;
+    bind_load();
+    s_learn = -1;
+    for (a = 0; a < VC3_KEY_COUNT; a++) {
+        s_bind[a] = k_action[a].def;
+        bind_save(a);
+    }
+    fprintf(stderr, "[INPUT] keys back to the defaults\n");
+}
+
+static int bound(const volatile Uint8 *k, int a)
+{
+    return k && s_bind[a] && k[s_bind[a]];
+}
+
 static int SDLCALL input_watch(void *ud, SDL_Event *e)
 {
     (void)ud;
@@ -113,10 +212,27 @@ static int SDLCALL input_watch(void *ud, SDL_Event *e)
         break;
     case SDL_KEYDOWN:
     case SDL_KEYUP:
+        if (e->type == SDL_KEYDOWN && !e->key.repeat && s_learn >= 0) {
+            /* Learning: this key is the action's now, and does nothing else. */
+            int a = s_learn;
+            SDL_Scancode sc = e->key.keysym.scancode;
+            int i;
+            s_learn = -1;
+            s_bind[a] = sc == SDL_SCANCODE_ESCAPE ? 0 : (int)sc;
+            for (i = 0; i < VC3_KEY_COUNT; i++)     /* one action per key */
+                if (i != a && s_bind[i] == s_bind[a] && s_bind[a]) {
+                    s_bind[i] = 0;
+                    bind_save(i);
+                }
+            bind_save(a);
+            fprintf(stderr, "[INPUT] %s: %s\n", k_action[a].name,
+                    s_bind[a] ? SDL_GetScancodeName(sc) : "none");
+            break;
+        }
         if (e->key.keysym.scancode < SDL_NUM_SCANCODES)
             s_keys[e->key.keysym.scancode] = e->type == SDL_KEYDOWN;
-        if (e->type == SDL_KEYDOWN && !e->key.repeat
-                && e->key.keysym.scancode == SDL_SCANCODE_F10)
+        if (e->type == SDL_KEYDOWN && !e->key.repeat && s_bind[VC3_KEY_FPS]
+                && (int)e->key.keysym.scancode == s_bind[VC3_KEY_FPS])
             vc3_fps_toggle();
         break;
     case SDL_WINDOWEVENT:
@@ -358,6 +474,7 @@ void host_input_poll(chihiro_input_t *in)
     int fire, reload, coin[2];
 
     if (s_nauto < 0) {
+        bind_load();
         auto_parse();
         s_t0 = now_ms();
         SDL_AddEventWatch(input_watch, NULL);
@@ -377,8 +494,10 @@ void host_input_poll(chihiro_input_t *in)
     my = s_my;
     mouse_in_picture(mx, my, &ux, &uy);
 
-    fire = (buttons & SDL_BUTTON(SDL_BUTTON_LEFT)) || auto_held("fire", t);
-    reload = (buttons & SDL_BUTTON(SDL_BUTTON_RIGHT)) || auto_held("reload", t);
+    fire = (buttons & SDL_BUTTON(SDL_BUTTON_LEFT)) || auto_held("fire", t)
+        || bound(k, VC3_KEY_FIRE);
+    reload = (buttons & SDL_BUTTON(SDL_BUTTON_RIGHT)) || auto_held("reload", t)
+        || bound(k, VC3_KEY_RELOAD);
     if (s_vr_on) {                      /* a headset's gun replaces the mouse */
         int vb = s_vr_buttons;
         ux = s_vr_ux;
@@ -398,14 +517,14 @@ void host_input_poll(chihiro_input_t *in)
             sscanf(aim, "%lf,%lf", &ux, &uy);
     }
 
-    in->test = (k && k[SDL_SCANCODE_F2]) || auto_held("test", t)
+    in->test = bound(k, VC3_KEY_TEST) || auto_held("test", t)
         || (s_vr_on && (s_vr_buttons & VC3_VR_TEST));
-    if ((k && k[SDL_SCANCODE_F1]) || auto_held("service", t))
+    if (bound(k, VC3_KEY_SERVICE) || auto_held("service", t))
         in->player[0] |= JVS_SW_SERVICE;
-    if ((k && k[SDL_SCANCODE_1]) || auto_held("start", t)
+    if (bound(k, VC3_KEY_START1) || auto_held("start", t)
         || (s_vr_on && (s_vr_buttons & VC3_VR_START)))
         in->player[0] |= JVS_SW_START;
-    if (k && k[SDL_SCANCODE_2])
+    if (bound(k, VC3_KEY_START2))
         in->player[1] |= JVS_SW_START;
     /* A reload is the gun pointed away, then the trigger: the trigger only
      * goes down once the gun has been off the screen for 100 ms, as a player
@@ -462,9 +581,9 @@ void host_input_poll(chihiro_input_t *in)
         in->screen_x[0] = in->screen_y[0] = 0xFFFF;
     }
 
-    coin[0] = (k && k[SDL_SCANCODE_5]) || auto_held("coin", t)
+    coin[0] = bound(k, VC3_KEY_COIN1) || auto_held("coin", t)
         || (s_vr_on && (s_vr_buttons & VC3_VR_COIN));
-    coin[1] = k && k[SDL_SCANCODE_6];
+    coin[1] = bound(k, VC3_KEY_COIN2);
     for (i = 0; i < 2; i++) {
         if (coin[i] && !coin_was[i])
             chihiro_coin_insert(i);
