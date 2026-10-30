@@ -134,14 +134,18 @@ Known issues:
   times the stage-1 lightmap where a batch uses one (VC3's walls).
 * The attract background is white (probably the Sofdec movie
   `vc3_title2_100mh.sfd`, not decoded).
-* Real mouse/keyboard play is not yet verified: `scripts/real-input.swift`
-  needs the terminal to have Accessibility permission. Sound is emulated and
-  measured (RECOMP_AUDIO_WAV) but muted unless `VC3_SOUND=1`.
+* Input is verified from SDL's event queue onward (`VC3_INPUT_SELFTEST=1`:
+  coin, start, aim, fire, reload through the emulated JVS board). Play with a
+  physical mouse is not yet confirmed by a person; `scripts/real-input.swift`
+  (OS-level events) needs the terminal to have Accessibility permission.
+  Reload uses the gun's off-screen switch (JVS button 2).
+* Sound is emulated and measured (RECOMP_AUDIO_WAV) but muted unless
+  `VC3_SOUND=1`.
 
 Debug switches: `VC3_GL=0` (software rasteriser), `VC3_GL_STATS`,
 `VC3_GL_FTRACE=<flag>`, `VC3_GL_RCDBG=1..7`, `VC3_JVS_TRACE`,
 `RECOMP_FFP_TRACE=<flag>`, `RECOMP_FRAME_TRACE=<flag>`, `VC3_AUTOKEYS`,
-`VC3_AUTOAIM`.
+`VC3_AUTOAIM`, `VC3_INPUT_SELFTEST`.
 
 ## Risks
 
