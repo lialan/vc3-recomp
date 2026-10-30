@@ -696,13 +696,83 @@ static int prog_link(Prog *p, GLuint vs, GLuint fs, int feedback)
  * for every one of ~30000 draws a second. Writes are unsynchronised -- a
  * range is never written twice before the orphan that ends its use. GL 4.1
  * on macOS has no persistent mapping (ARB_buffer_storage). */
+/*
+ * On OpenGL ES with EXT_buffer_storage (the Quest) the ring is instead
+ * mapped once, persistent and coherent, and written with memcpy: Adreno's
+ * glMapBufferRange blocked on every call, unsynchronised or not -- a
+ * second a second in the upload, the game at 34 fps where it could hold 60.
+ * The ring is cut into RING_SEGS segments; leaving one puts a fence after
+ * its last draw, and coming round to it again waits for that fence (long
+ * signalled at 16 MB a lap), so the GPU never reads data being replaced. */
+#define RING_SEGS 4
 typedef struct {
     GLuint buf;
     GLenum target;
     GLsizeiptr size, at;
+    uint8_t *mem;                /* persistent mapping, or NULL */
+    int seg;                     /* the segment being written */
+    GLsync fence[RING_SEGS];
 } Ring;
-static Ring s_vring = { 0, GL_ARRAY_BUFFER, 16 << 20, 0 };
-static Ring s_iring = { 0, GL_ELEMENT_ARRAY_BUFFER, 4 << 20, 0 };
+static Ring s_vring = { 0, GL_ARRAY_BUFFER, 16 << 20, 0, NULL, 0, { 0 } };
+static Ring s_iring = { 0, GL_ELEMENT_ARRAY_BUFFER, 4 << 20, 0, NULL, 0, { 0 } };
+
+#if defined(VC3_GLES)
+typedef void (*BufferStorageFn)(GLenum, GLsizeiptr, const void *, GLbitfield);
+static BufferStorageFn s_buffer_storage;
+static int s_buffer_storage_tried;
+
+/* Persistent storage for r, on first use; 0 if the driver has none. */
+static int ring_persistent(Ring *r)
+{
+    if (!s_buffer_storage_tried) {
+        GLint i, n = 0;
+        s_buffer_storage_tried = 1;
+        glGetIntegerv(GL_NUM_EXTENSIONS, &n);
+        for (i = 0; i < n; i++) {
+            const char *e = (const char *)glGetStringi(GL_EXTENSIONS, (GLuint)i);
+            if (e && !strcmp(e, "GL_EXT_buffer_storage"))
+                s_buffer_storage = (BufferStorageFn)eglGetProcAddress("glBufferStorageEXT");
+        }
+        fprintf(stderr, "[GL] streaming: %s\n", s_buffer_storage
+                ? "persistent mapped ring (EXT_buffer_storage)" : "map per draw");
+    }
+    if (!s_buffer_storage)
+        return 0;
+    if (!r->mem) {
+        const GLbitfield fl = GL_MAP_WRITE_BIT | GL_MAP_PERSISTENT_BIT_EXT
+                            | GL_MAP_COHERENT_BIT_EXT;
+        glBindBuffer(r->target, r->buf);
+        s_buffer_storage(r->target, r->size, NULL, fl);
+        r->mem = (uint8_t *)glMapBufferRange(r->target, 0, r->size, fl);
+        if (!r->mem)
+            return 0;
+        r->seg = 0;
+    }
+    return 1;
+}
+
+/* About to write [from, to): fence the segments left, wait for those
+ * entered to be free. */
+static void ring_enter(Ring *r, GLsizeiptr from, GLsizeiptr to)
+{
+    GLsizeiptr seg = r->size / RING_SEGS;
+    int sg, s0 = (int)(from / seg), s1 = (int)((to - 1) / seg);
+
+    for (sg = s0; sg <= s1; sg++) {
+        if (sg == r->seg)
+            continue;
+        if (r->fence[r->seg])
+            glDeleteSync(r->fence[r->seg]);
+        r->fence[r->seg] = glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
+        r->seg = sg;
+        if (r->fence[sg]) {
+            glClientWaitSync(r->fence[sg], GL_SYNC_FLUSH_COMMANDS_BIT, 1000000000ull);
+            glDeleteSync(r->fence[sg]);
+            r->fence[sg] = 0;
+        }
+    }
+}
+#endif
 
 /* Map `bytes` at a 16-byte boundary; the buffer stays bound to its target.
  * NULL if bytes cannot fit even an empty buffer. */
@@ -715,6 +785,16 @@ static void *ring_map(Ring *r, GLsizeiptr bytes, GLsizeiptr *offset)
     if (!r->buf)
         glGenBuffers(1, &r->buf);
     glBindBuffer(r->target, r->buf);
+#if defined(VC3_GLES)
+    if (r->mem || ring_persistent(r)) {
+        if (at + bytes > r->size)
+            at = 0;                    /* round again */
+        ring_enter(r, at, at + bytes);
+        *offset = at;
+        r->at = at + bytes;
+        return r->mem + at;
+    }
+#endif
     if (!r->at || at + bytes > r->size) {
         glBufferData(r->target, r->size, NULL, GL_STREAM_DRAW);
         at = 0;
@@ -725,6 +805,13 @@ static void *ring_map(Ring *r, GLsizeiptr bytes, GLsizeiptr *offset)
                             | GL_MAP_UNSYNCHRONIZED_BIT | GL_MAP_INVALIDATE_RANGE_BIT);
 }
 
+/* After writing what ring_map handed out (a persistent ring stays mapped). */
+static void ring_unmap(Ring *r)
+{
+    if (!r->mem)
+        glUnmapBuffer(r->target);
+}
+
 static GLsizeiptr ring_put(Ring *r, const void *data, GLsizeiptr bytes)
 {
     GLsizeiptr off = 0;
@@ -733,7 +820,7 @@ static GLsizeiptr ring_put(Ring *r, const void *data, GLsizeiptr bytes)
     if (!p)
         return -1;
     memcpy(p, data, (size_t)bytes);
-    glUnmapBuffer(r->target);
+    ring_unmap(r);
     return off;
 }
 
@@ -2268,7 +2355,7 @@ static int raw_attribs(const Nv2aRawGeometry *g, const int slot[8])
             memcpy(dst + grp[k].off, grp[k].base, grp[k].bytes);
             grp[k].off += off;
         }
-        glUnmapBuffer(GL_ARRAY_BUFFER);
+        ring_unmap(&s_vring);
     }
     for (r = 0; r < 8; r++) {
         const Nv2aAttrib *a = slot[r] >= 0 ? &g->attr[slot[r]] : NULL;
@@ -2417,6 +2504,19 @@ static int raw_submit(const Nv2aRawGeometry *g, GLsizeiptr *ioff)
 /* VC3_GL_STATS: raw draws and why some were declined. */
 static struct { uint32_t draws, tris, declined; } s_rst;
 
+/* VC3_GL_TIMING=1: wall time spent in gl_draw's stages, per second -- to
+ * tell CPU work from a driver wait. TM(k) closes stage k-1 at mark k. */
+static int s_tm_on = -1;
+static uint64_t s_tm_ns[8], s_tm_last, s_tm_draws;
+static uint64_t tm_now(void)
+{
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (uint64_t)ts.tv_sec * 1000000000ull + (uint64_t)ts.tv_nsec;
+}
+#define TM(k) do { if (s_tm_on > 0) { uint64_t n_ = tm_now(); \
+    if ((k) > 0) s_tm_ns[(k) - 1] += n_ - s_tm_last; s_tm_last = n_; } } while (0)
+
 static void gl_draw(const Nv2aSurface *s, const Nv2aBatch *b)
 {
     const Nv2aRawGeometry *raw = b->raw;
@@ -2443,7 +2543,9 @@ static void gl_draw(const Nv2aSurface *s, const Nv2aBatch *b)
             s_cur_vao = vao;
         }
     }
+    TM(0);
     apply_state(b->state);
+    TM(1);
     glUniform2f(U->surf, (float)f->w, (float)f->h);
     {
         float xs, xo;
@@ -2455,6 +2557,7 @@ static void gl_draw(const Nv2aSurface *s, const Nv2aBatch *b)
     active_tex(0);
     if (b->texture)
         textured = tex_bind_for(f, b->texture, &tw, &th);
+    TM(2);
     if (s_st.on) {
         if (!b->texture && (b->stage[1] || b->stage[2] || b->stage[3]))
             s_st.stage0_empty++;
@@ -2634,6 +2737,7 @@ static void gl_draw(const Nv2aSurface *s, const Nv2aBatch *b)
             }
         }
         if (raw) {
+            TM(3);
             if (!raw_submit(raw, &ioff)) {
                 s_rst.declined++;
                 return;
@@ -2646,6 +2750,7 @@ static void gl_draw(const Nv2aSurface *s, const Nv2aBatch *b)
             else
                 for (k = 3; k <= 8; k++)
                     glDisableVertexAttribArray(k);
+            TM(3);
             off = ring_put(&s_vring, b->vertices, (GLsizeiptr)(b->count * sizeof(Nv2aVertex)));
             if (off < 0)
                 return;
@@ -2691,6 +2796,7 @@ static void gl_draw(const Nv2aSurface *s, const Nv2aBatch *b)
         s_st.zpass_batches++;
         s_st.zpass_pixels += passed;
     } else {
+        TM(4);
         /* Stereo: the same draw for each eye, in its half. */
         int eye, eyes = f->st ? 2 : 1;
         for (eye = 0; eye < eyes; eye++) {
@@ -2715,6 +2821,7 @@ static void gl_draw(const Nv2aSurface *s, const Nv2aBatch *b)
         }
         if (f->st)
             glViewport(0, 0, f->pw, f->ph);
+        TM(5);
     }
     if (raw) {
         if (s_has_clip) {
@@ -3514,6 +3621,22 @@ static void gl_flip(void)
 {
     int i;
 
+    if (s_tm_on < 0)
+        s_tm_on = genv("VC3_GL_TIMING") != NULL;
+    if (s_tm_on > 0) {
+        static uint64_t t0;
+        uint64_t n = tm_now();
+        if (!t0)
+            t0 = n;
+        if (n - t0 >= 1000000000ull) {
+            fprintf(stderr, "[GLTIME] state %.0f ms | tex0 %.0f | rc+lmap %.0f | upload+attribs %.0f"
+                    " | draw %.0f ms\n", s_tm_ns[0] / 1e6, s_tm_ns[1] / 1e6, s_tm_ns[2] / 1e6,
+                    s_tm_ns[3] / 1e6, s_tm_ns[4] / 1e6);
+            memset(s_tm_ns, 0, sizeof s_tm_ns);
+            t0 = n;
+        }
+    }
+
     if (!gl_ready())
         return;
     if (s_ftr == 1) {
@@ -3540,8 +3663,23 @@ static void gl_flip(void)
         for (i = 0; i < s_nsurfs; i++) {
             if (!s_surfs[i].dirty)
                 continue;
-            if (shown && s_surfs[i].va == shown && !all)
+            if (shown && s_surfs[i].va == shown && !all) {
+#if defined(VC3_GLES)
+                /* The Quest shows the drawn surface itself (quest_present):
+                 * guest memory gets the frame only if VC3_GL_READBACK=1.
+                 * Reading it back every flip cost a resolve and, once the
+                 * GPU ran a frame behind, a wait on the mapped buffer that
+                 * held 3D at 2x to 30 fps or less. */
+                static int rb = -1;
+                if (rb < 0)
+                    rb = genv("VC3_GL_READBACK") && genv("VC3_GL_READBACK")[0] == '1';
+                if (!rb) {
+                    s_surfs[i].dirty = 0;
+                    continue;
+                }
+#endif
                 surf_readback_async(&s_surfs[i]);
+            }
             else if (all || !shown)
                 surf_readback(&s_surfs[i]);
         }

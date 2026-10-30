@@ -138,7 +138,10 @@ void vc3_display_init(void)
 
     v = setting("VC3_SCALE", "scale=", &env);
 #if defined(__ANDROID__)
-    n = v ? atoi(v) : 2;               /* the Quest: a sharper big screen */
+    /* The Quest: 1x. Stereo at 2x is twice 1706x960 through every pass,
+     * which the Quest 3's GPU holds at 15-35 fps in combat (56-60 at 1x);
+     * scale=2 (or VC3_SCALE=2) for a sharper screen in mono. */
+    n = v ? atoi(v) : 1;
 #else
     n = v ? atoi(v) : 1;
 #endif
