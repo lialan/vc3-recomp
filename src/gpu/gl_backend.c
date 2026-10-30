@@ -82,6 +82,7 @@ static struct {
     uint32_t fail[256];        /* failed decodes by format code */
     uint32_t stage0_empty;     /* no stage-0 texture, a later stage has one */
     uint32_t stage0_off;       /* combiners present, stage 0 program off */
+    uint32_t stage_mode[32];   /* batches per shader stage program mode */
     uint32_t fmt[256];         /* textured batches by format code */
 } s_st;
 
@@ -128,6 +129,8 @@ static const char *FS =
     "in vec4 v_tc0, v_tc1, v_tc2, v_tc3;\n"
     "uniform sampler2D u_tex;\n"
     "uniform sampler2D u_t1, u_t2, u_t3;\n"   /* stages 1-3; stage 0 is u_tex */
+    "uniform samplerCube u_c0, u_c1, u_c2, u_c3;\n"  /* cube-map stages, units 4-7 */
+    "uniform int u_iscube[4];\n"
     "uniform int u_textured;\n"
     "uniform int u_atest;\n"
     "uniform int u_afunc;\n"                  /* GL_NEVER 0x200 .. GL_ALWAYS 0x207 */
@@ -193,10 +196,10 @@ static const char *FS =
     "  return (mode == 3u ? tc.xy : tc.xy / q) * u_ts[st];\n"
     "}\n"
     "vec4 combiners() {\n"
-    "  vec4 t0 = stage(0, v_tc0, texture(u_tex, stage_uv(0, v_tc0)));\n"
-    "  vec4 t1 = stage(1, v_tc1, texture(u_t1, stage_uv(1, v_tc1)));\n"
-    "  vec4 t2 = stage(2, v_tc2, texture(u_t2, stage_uv(2, v_tc2)));\n"
-    "  vec4 t3 = stage(3, v_tc3, texture(u_t3, stage_uv(3, v_tc3)));\n"
+    "  vec4 t0 = stage(0, v_tc0, u_iscube[0] != 0 ? texture(u_c0, v_tc0.xyz) : texture(u_tex, stage_uv(0, v_tc0)));\n"
+    "  vec4 t1 = stage(1, v_tc1, u_iscube[1] != 0 ? texture(u_c1, v_tc1.xyz) : texture(u_t1, stage_uv(1, v_tc1)));\n"
+    "  vec4 t2 = stage(2, v_tc2, u_iscube[2] != 0 ? texture(u_c2, v_tc2.xyz) : texture(u_t2, stage_uv(2, v_tc2)));\n"
+    "  vec4 t3 = stage(3, v_tc3, u_iscube[3] != 0 ? texture(u_c3, v_tc3.xyz) : texture(u_t3, stage_uv(3, v_tc3)));\n"
     "  uint n = min(u_ctl & 0xFFu, 8u), flags = u_ctl >> 8;\n"
     "  for (int i = 0; i < 16; i++) R[i] = vec4(0.0);\n"
     "  R[3] = vec4(u_fogc, u_nofog != 0 ? 1.0 : v_fog);\n"
@@ -369,6 +372,10 @@ static int gl_ready(void)
         glUniform1i(glGetUniformLocation(s_prog, "u_t1"), 1);
         glUniform1i(glGetUniformLocation(s_prog, "u_t2"), 2);
         glUniform1i(glGetUniformLocation(s_prog, "u_t3"), 3);
+        glUniform1i(glGetUniformLocation(s_prog, "u_c0"), 4);
+        glUniform1i(glGetUniformLocation(s_prog, "u_c1"), 5);
+        glUniform1i(glGetUniformLocation(s_prog, "u_c2"), 6);
+        glUniform1i(glGetUniformLocation(s_prog, "u_c3"), 7);
         glUniform1i(glGetUniformLocation(s_prog, "u_adbg"),
                     genv("VC3_GL_ADBG") ? atoi(genv("VC3_GL_ADBG")) : 0);
         glUniform1i(glGetUniformLocation(s_prog, "u_nofog"),
@@ -631,6 +638,36 @@ static uint64_t hash_bytes(const uint8_t *p, size_t n)
     return h;
 }
 
+/* Bytes of one w x h level of a swizzled or DXT texture. */
+static size_t level_bytes(uint32_t color, uint32_t w, uint32_t h)
+{
+    uint32_t bb = d3d8_format_dxt_block_bytes(color);
+    if (bb)
+        return (size_t)((w + 3) / 4) * ((h + 3) / 4) * bb;
+    switch (color) {
+    case 0x00: case 0x01: case 0x0B: case 0x13: case 0x19: case 0x1F:
+        return (size_t)w * h;
+    case 0x02: case 0x03: case 0x04: case 0x05: case 0x10: case 0x11:
+    case 0x1A: case 0x1C: case 0x1D: case 0x24: case 0x25:
+        return (size_t)w * h * 2;
+    default:
+        return (size_t)w * h * 4;
+    }
+}
+
+/* One cube face: its whole mip chain, padded to 128 bytes. */
+static size_t cube_face_bytes(const Nv2aTexture *t)
+{
+    uint32_t w = t->width, h = t->height, l, levels = t->levels ? t->levels : 1;
+    size_t n = 0;
+    for (l = 0; l < levels; l++) {
+        n += level_bytes(t->color, w, h);
+        w = w > 1 ? w / 2 : 1;
+        h = h > 1 ? h / 2 : 1;
+    }
+    return (n + 127) & ~(size_t)127;
+}
+
 /* 64 slices of 16 bytes spread over the texture: cheap enough for every
  * bind. VC3 streams textures through the same memory within a frame -- a
  * face, then a jacket of the same size and format at one address -- and a
@@ -678,6 +715,79 @@ static GLint gl_wrap(uint32_t mode)
     case 4:  return GL_CLAMP_TO_EDGE;
     default: return GL_REPEAT;
     }
+}
+
+/* Cube maps, cached apart from the 2D textures and checked the same way
+ * (sampled hash per bind, full hash on a change or a new frame). */
+#define CUBE_SLOTS 256
+typedef struct {
+    uint32_t offset, w, fmt, levels;
+    uint64_t hash, quick;
+    uint32_t checked;
+    GLuint tex;
+} CubeEntry;
+static CubeEntry s_cube[CUBE_SLOTS];
+
+/* Bind cube map t to the active unit; 0 if it cannot be decoded. */
+static int tex_bind_cube(const Nv2aTexture *t)
+{
+    const uint8_t *mem = (const uint8_t *)xbox_GetMemoryOffset();
+    size_t face = cube_face_bytes(t), need = (size_t)t->width * t->height;
+    CubeEntry *e = &s_cube[((t->offset >> 7) ^ (t->width * 31u)) % CUBE_SLOTS];
+    uint64_t q;
+    int f;
+
+    if (!t->width || t->width != t->height || t->width > 2048)
+        return 0;
+    if (!e->tex || e->offset != t->offset || e->w != t->width || e->fmt != t->color
+        || e->levels != t->levels) {
+        if (!e->tex)
+            glGenTextures(1, &e->tex);
+        e->offset = t->offset;
+        e->w = t->width;
+        e->fmt = t->color;
+        e->levels = t->levels;
+        e->hash = e->quick = 0;
+        e->checked = 0;
+    }
+    glBindTexture(GL_TEXTURE_CUBE_MAP, e->tex);
+    q = hash_sampled(mem + t->offset, face * 6);
+    if (e->checked != s_frame || q != e->quick) {
+        uint64_t h = hash_bytes(mem + t->offset, face * 6);
+        e->checked = s_frame;
+        e->quick = q;
+        if (h != e->hash || !e->hash) {
+            if (need > s_decode_cap) {
+                free(s_decode);
+                s_decode = (uint32_t *)malloc(need * 4);
+                s_decode_cap = s_decode ? need : 0;
+            }
+            if (!s_decode)
+                return 0;
+            for (f = 0; f < 6; f++) {
+                Nv2aTexture tf = *t;
+                tf.offset = t->offset + (uint32_t)(face * (size_t)f);
+                tf.cube = 0;
+                tf.levels = 1;
+                if (!nv2a_backend_decode_texture(&tf, s_decode)) {
+                    s_st.fail[t->color & 0xFF]++;
+                    e->hash = 0;
+                    return 0;
+                }
+                glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X + f, 0, GL_RGBA8,
+                             (GLsizei)t->width, (GLsizei)t->height, 0, GL_BGRA,
+                             GL_UNSIGNED_INT_8_8_8_8_REV, s_decode);
+            }
+            s_st.uploads++;
+            e->hash = h;
+            glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+            glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+            glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+            glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+            glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
+        }
+    }
+    return 1;
 }
 
 /* Bind the texture a batch samples to unit 0; returns 0 to draw untextured.
@@ -1008,7 +1118,7 @@ static int s_use_rc = 0;
 static void bind_combiners(const Surf *f, const Nv2aBatch *b)
 {
     const Nv2aCombiner *rc = b->rc;
-    GLint on[4] = { 0, 0, 0, 0 };
+    GLint on[4] = { 0, 0, 0, 0 }, cube[4] = { 0, 0, 0, 0 };
     GLfloat ts[8], f0[32], f1[32], c[4];
     GLuint k;
     int st;
@@ -1017,9 +1127,19 @@ static void bind_combiners(const Surf *f, const Nv2aBatch *b)
         const Nv2aTexture *t = b->stage[st];
         float sw = 1.0f, sh = 1.0f;
 
-        glActiveTexture(GL_TEXTURE0 + st);
         ts[st * 2] = ts[st * 2 + 1] = 1.0f;
-        if (t && tex_bind_for(f, t, &sw, &sh)) {
+        /* A cube map goes on unit 4 + stage, sampled by direction. */
+        if (t && t->cube) {
+            glActiveTexture(GL_TEXTURE4 + st);
+            if (tex_bind_cube(t)) {
+                on[st] = cube[st] = 1;
+                glActiveTexture(GL_TEXTURE0 + st);
+                glBindTexture(GL_TEXTURE_2D, s_white);
+                continue;
+            }
+        }
+        glActiveTexture(GL_TEXTURE0 + st);
+        if (t && !t->cube && tex_bind_for(f, t, &sw, &sh)) {
             int norm = d3d8_format_is_swizzled(t->color)
                     || d3d8_format_dxt_block_bytes(t->color);
             on[st] = 1;
@@ -1053,6 +1173,7 @@ static void bind_combiners(const Surf *f, const Nv2aBatch *b)
     nv2a_rc_unpack(b->fog_color, c);
     glUniform3f(u_fogc, c[2], c[1], c[0]);
     glUniform1iv(u_on, 4, on);
+    glUniform1iv(glGetUniformLocation(s_prog, "u_iscube"), 4, cube);
     glUniform1i(glGetUniformLocation(s_prog, "u_dbgon"),
                 !(b->stage[0] && surf_find(b->stage[0]->offset)));
     glUniform2fv(u_ts, 4, ts);
@@ -1123,6 +1244,11 @@ static void gl_draw(const Nv2aSurface *s, const Nv2aBatch *b)
             s_st.stage0_empty++;
         if (b->rc && !(b->rc->stage_program & 0x1F) && b->texture)
             s_st.stage0_off++;
+        if (b->rc) {
+            int st;
+            for (st = 0; st < 4; st++)
+                s_st.stage_mode[(b->rc->stage_program >> (st * 5)) & 0x1F]++;
+        }
     }
     if (s_st.on && textured && surf_find(b->texture->offset) && s_st.rt_logged < 6) {
         float u0 = 1e9f, u1 = -1e9f, v0 = 1e9f, v1 = -1e9f;
@@ -1198,7 +1324,19 @@ static void gl_draw(const Nv2aSurface *s, const Nv2aBatch *b)
     }
     if (genv("VC3_GL_RCCHECK"))
         rc_check(b);
-    if (b->rc && b->ext && s_use_rc)
+    /* A batch with a cube-map stage can only be drawn faithfully by the
+     * combiners: the default texture * diffuse path has no direction to look
+     * a cube up by. Opt-in (VC3_GL_CUBE_RC=1) while the combiner path is not
+     * yet right: routed by default, VC3's monitor-room walls went flat grey. */
+    int has_cube = 0;
+    if (b->rc && b->ext && genv("VC3_GL_CUBE_RC")) {
+        int st;
+        for (st = 0; st < 4; st++)
+            if (b->stage[st] && b->stage[st]->cube
+                && ((b->rc->stage_program >> (st * 5)) & 0x1F) == 3)
+                has_cube = 1;
+    }
+    if (b->rc && b->ext && (s_use_rc || has_cube))
         bind_combiners(f, b);
     else {
         GLuint k;
@@ -1367,6 +1505,10 @@ static void gl_flip(void)
         fprintf(stderr, "\n[GL]   visibility tests: %u batches, %u pixels passed", s_st.zpass_batches, s_st.zpass_pixels);
         fprintf(stderr, "\n[GL]   stage 0 empty but a later stage textured: %u; stage-0 program off: %u",
                 s_st.stage0_empty, s_st.stage0_off);
+        fprintf(stderr, "\n[GL]   stage modes:");
+        for (i = 0; i < 32; i++)
+            if (s_st.stage_mode[i])
+                fprintf(stderr, " %d:%u", i, s_st.stage_mode[i]);
         fprintf(stderr, "\n[GL]   formats:");
         for (i = 0; i < 256; i++)
             if (s_st.fmt[i])
