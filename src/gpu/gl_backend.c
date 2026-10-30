@@ -1236,6 +1236,32 @@ static int s_gp_ok, s_bgp_ok;
 static uint32_t s_gp_good, s_gp_bad;    /* for the log */
 static uint32_t s_3d_this, s_3d_prev;   /* 3D batches into a shown surface */
 static uint32_t s_shown_va[4];          /* the surfaces shown lately (VC3 triple buffers) */
+/* Clip distances 0-2 and depth clamp as last set (set_cap): a fixed-function
+ * draw wants clip 0, 1 (the CPU path's planes), 2 (one-pass stereo) and the
+ * clamp; a CPU-path draw only clip 0 (its one-pass half, else 1.0). Set when
+ * they change, not on and off around every draw. */
+static int s_cap[4];
+
+static void set_cap(int i, int on)
+{
+    static const GLenum cap[4] = { GL_CLIP_DISTANCE0, GL_CLIP_DISTANCE0 + 1,
+                                   GL_CLIP_DISTANCE0 + 2, GL_DEPTH_CLAMP };
+    if ((i < 3 && !s_has_clip) || (i == 3 && !s_has_dclamp) || s_cap[i] == on)
+        return;
+    if (on)
+        glEnable(cap[i]);
+    else
+        glDisable(cap[i]);
+    s_cap[i] = on;
+}
+
+static void caps_off(void)
+{
+    int i;
+    for (i = 0; i < 4; i++)
+        set_cap(i, 0);
+}
+
 static GLuint s_hud_fbo, s_hud_tex;
 static GLsizei s_hud_w, s_hud_h;
 static uint32_t s_hud_frame;            /* the frame the HUD picture holds */
@@ -1310,6 +1336,7 @@ static Surf *surf_find(uint32_t va)
 static struct { uint32_t draws, tris, declined; } s_rst;   /* fixed-function draws */
 static uint32_t s_zp_frame;              /* visibility tests (GPU time log) */
 static uint32_t s_sw_frame;              /* surface switches (GPU time log) */
+static uint32_t s_va_hit, s_va_miss;     /* attribute pointers kept / set (log) */
 static int s_gt_on = -1;
 static GLuint s_gt_q[GT_RING];
 static uint32_t s_gt_va[GT_RING];
@@ -1402,6 +1429,8 @@ static void gt_flip(void)
                          s_gt_frames ? s_sw_frame / s_gt_frames : 0);
         s_rst.draws = s_rst.tris = 0;
         s_zp_frame = s_sw_frame = 0;
+        fprintf(stderr, "[GPUTIME]   attribute pointers kept %u, set %u\n", s_va_hit, s_va_miss);
+        s_va_hit = s_va_miss = 0;
         for (j = 0; j < GT_SURFS && s_gt_sum[j].va && n < (int)sizeof line - 40; j++)
             if (s_gt_sum[j].ms / s_gt_frames >= 0.3) {
                 const Surf *q = surf_find(s_gt_sum[j].va);
@@ -1898,6 +1927,7 @@ typedef struct {
     uint64_t quick;            /* sampled hash, checked on every bind */
     uint32_t checked;          /* frame of the last content check */
     uint32_t used;             /* frame of the last use */
+    int streamed;              /* its memory has changed since the first upload */
     GLuint tex;
 } TexEntry;
 static TexEntry s_tex[TEX_SLOTS];
@@ -2220,19 +2250,26 @@ static int tex_bind(const Nv2aTexture *t, float *sw, float *sh)
             e->hash = 0;
             e->quick = 0;
             e->checked = 0;
+            e->streamed = 0;
         }
         glBindTexture(GL_TEXTURE_2D, e->tex);
         bound = e->tex;
-        /* Full check every fourth frame; at once whenever the sampled hash
-         * (every bind) says the memory now holds something else -- how a
-         * texture streamed through one address within a frame shows. */
+        /* Full check every fourth frame for a texture that has never
+         * changed; every frame for one the CPU has rewritten since its first
+         * upload (the comm window's faces, movie frames); and at once
+         * whenever the sampled hash (every bind) says the memory now holds
+         * something else -- how a texture streamed through one address
+         * within a frame shows. */
         uint64_t q = hash_sampled(mem + t->offset, tex_bytes(t));
-        if (s_frame - e->checked >= 4 || q != e->quick || !e->checked) {
+        if (q != e->quick || !e->checked
+            || (e->streamed ? e->checked != s_frame : s_frame - e->checked >= 4)) {
             uint64_t h = hash_bytes(mem + t->offset, tex_bytes(t));
             e->checked = s_frame;
             e->quick = q;
             if (h != e->hash || !e->hash) {
                 size_t need = (size_t)t->width * t->height;
+                if (e->hash)
+                    e->streamed = 1;        /* rewritten: checked every frame now */
                 if (need > s_decode_cap) {
                     free(s_decode);
                     s_decode = (uint32_t *)malloc(need * 4);
@@ -2652,6 +2689,20 @@ static void raw_roles(const Nv2aRawGeometry *g, int slot[8])
     slot[7] = 12;
 }
 
+/* The vertex layout the attribute pointers were last set for, when the
+ * attributes were one interleaved stream: a batch with the same layout puts
+ * its vertices a whole number of strides past that stream's start in the
+ * ring and is drawn with that as its base vertex, the pointers left alone --
+ * eight glVertexAttribPointer calls a draw less, each one vertex-fetch state
+ * the driver rebuilds. */
+static struct {
+    int valid;
+    GLsizeiptr base;                    /* the stream's start in the ring */
+    uint32_t stride;
+    uint32_t sig[8];                    /* per role: type, size, offset; 0 off */
+} s_va;
+static GLint s_basevertex;              /* this raw draw's */
+
 /* Upload each attribute stream min..max once, at its own stride, and point
  * the roles at it. Attributes interleaved in one vertex (offsets within a
  * stride of each other) share one copy. Returns 0 if they cannot fit. */
@@ -2698,6 +2749,53 @@ static int raw_attribs(const Nv2aRawGeometry *g, const int slot[8])
     for (k = 0; k < ngrp; k++) {
         grp[k].off = total;
         total += ((GLsizeiptr)grp[k].bytes + 15) & ~(GLsizeiptr)15;
+    }
+    s_basevertex = 0;
+    if (ngrp == 1 && grp[0].stride) {
+        /* one stream: the same layout as the pointers? */
+        uint32_t sig[8];
+        int same;
+        static int keep = -1;
+        if (keep < 0)
+            keep = !(genv("VC3_GL_VAO_KEEP") && genv("VC3_GL_VAO_KEEP")[0] == '0');
+        for (r = 0; r < 8; r++) {
+            const Nv2aAttrib *a = slot[r] >= 0 ? &g->attr[slot[r]] : NULL;
+            sig[r] = gi[r] < 0 ? 0u
+                   : 0x80000000u | (a->type & 15u) | ((a->size & 15u) << 4)
+                     | ((uint32_t)((const uint8_t *)a->data - grp[0].base) << 8);
+        }
+        same = keep && s_va.valid && s_va.stride == grp[0].stride && !g->check_out
+            && !memcmp(sig, s_va.sig, sizeof sig);
+        if (same) {
+            GLsizeiptr off0, at;
+            uint8_t *p = (uint8_t *)ring_map(&s_vring, total + grp[0].stride, &off0);
+            if (!p)
+                return 0;
+            at = off0;
+            if (at >= s_va.base) {
+                GLsizeiptr d = (at - s_va.base) % (GLsizeiptr)grp[0].stride;
+                if (d)
+                    at += (GLsizeiptr)grp[0].stride - d;
+                memcpy(p + (at - off0), grp[0].base, grp[0].bytes);
+                ring_unmap(&s_vring);
+                s_basevertex = (GLint)((at - s_va.base) / (GLsizeiptr)grp[0].stride);
+                s_va_hit++;
+                for (r = 0; r < 8; r++)
+                    if (gi[r] < 0) {
+                        const Nv2aAttrib *a = slot[r] >= 0 ? &g->attr[slot[r]] : NULL;
+                        static const float none[4] = { 0.0f, 0.0f, 0.0f, 1.0f };
+                        glVertexAttrib4fv((GLuint)r, a ? a->value : none);
+                    }
+                return 1;
+            }
+            ring_unmap(&s_vring);           /* the ring went round: set again */
+        }
+        s_va_miss++;
+        memcpy(s_va.sig, sig, sizeof sig);
+        s_va.stride = grp[0].stride;
+        s_va.valid = 0;                     /* set below, once the pointers are */
+    } else {
+        s_va.valid = 0;
     }
     if (total) {
         if (!(dst = (uint8_t *)ring_map(&s_vring, total, &off)))
@@ -2753,6 +2851,10 @@ static int raw_attribs(const Nv2aRawGeometry *g, const int slot[8])
     cu4fv(U->ascale, 8, &scale[0][0]);
     cu1i(U->packed, packed);
     cu1i(U->bgra, bgra);
+    if (ngrp == 1 && grp[0].stride && total) {
+        s_va.base = grp[0].off;             /* the pointers' stream */
+        s_va.valid = 1;
+    }
     return 1;
 }
 
@@ -3227,14 +3329,18 @@ static void gl_draw(const Nv2aSurface *s, const Nv2aBatch *b)
     if (raw) {
         if (raw->check_out)
             raw_capture(raw);
-        if (s_has_clip) {
-            glEnable(GL_CLIP_DISTANCE0);
-            glEnable(GL_CLIP_DISTANCE1);
-        }
-        if (s_has_dclamp)
-            glEnable(GL_DEPTH_CLAMP);
+        set_cap(0, 1);
+        set_cap(1, 1);
+        set_cap(2, 1);
+        set_cap(3, 1);
         s_rst.draws++;
         s_rst.tris += tris;
+    }
+    if (!raw) {
+        set_cap(0, 1);
+        set_cap(1, 0);
+        set_cap(2, 0);
+        set_cap(3, 0);
     }
     if (b->zpass_out) {
         GLfloat sb0[8] = { 0 };
@@ -3249,8 +3355,8 @@ static void gl_draw(const Nv2aSurface *s, const Nv2aBatch *b)
             glGenQueries(1, &q);
         glBeginQuery(GL_SAMPLES_PASSED, q);
         if (raw)
-            glDrawElements(raw_mode(raw->prim), (GLsizei)raw->index_count,
-                           GL_UNSIGNED_SHORT, (void *)ioff);
+            glDrawElementsBaseVertex(raw_mode(raw->prim), (GLsizei)raw->index_count,
+                                     GL_UNSIGNED_SHORT, (void *)ioff, s_basevertex);
         else
             glDrawArrays(GL_TRIANGLES, 0, (GLsizei)b->count);
         glEndQuery(GL_SAMPLES_PASSED);
@@ -3348,13 +3454,13 @@ static void gl_draw(const Nv2aSurface *s, const Nv2aBatch *b)
                 cuMatrix4fv(U->immvp2, 2, GL_FALSE, &s_view.vp[0][0]);
             cu1i(U->st2, 1);
             glViewport(0, 0, 2 * f->pw, f->ph);
-            glEnable(cd);
+            (void)cd;
             if (raw)
-                glDrawElementsInstanced(raw_mode(raw->prim), (GLsizei)raw->index_count,
-                                        GL_UNSIGNED_SHORT, (void *)ioff, 2);
+                glDrawElementsInstancedBaseVertex(raw_mode(raw->prim),
+                                                  (GLsizei)raw->index_count, GL_UNSIGNED_SHORT,
+                                                  (void *)ioff, 2, s_basevertex);
             else
                 glDrawArraysInstanced(GL_TRIANGLES, 0, (GLsizei)b->count, 2);
-            glDisable(cd);
             glViewport(0, 0, f->pw, f->ph);
         }
         /* Stereo: the same draw for each eye, in its half. */
@@ -3383,8 +3489,8 @@ static void gl_draw(const Nv2aSurface *s, const Nv2aBatch *b)
                 cu2f(U->eye, 0.0f, s_st_depth);
             }
             if (raw)
-                glDrawElements(raw_mode(raw->prim), (GLsizei)raw->index_count,
-                               GL_UNSIGNED_SHORT, (void *)ioff);
+                glDrawElementsBaseVertex(raw_mode(raw->prim), (GLsizei)raw->index_count,
+                                         GL_UNSIGNED_SHORT, (void *)ioff, s_basevertex);
             else
                 glDrawArrays(GL_TRIANGLES, 0, (GLsizei)b->count);
         }
@@ -3393,14 +3499,6 @@ static void gl_draw(const Nv2aSurface *s, const Nv2aBatch *b)
         if (f->st)
             glViewport(0, 0, f->pw, f->ph);
         TM(5);
-    }
-    if (raw) {
-        if (s_has_clip) {
-            glDisable(GL_CLIP_DISTANCE0);
-            glDisable(GL_CLIP_DISTANCE1);
-        }
-        if (s_has_dclamp)
-            glDisable(GL_DEPTH_CLAMP);
     }
     if (!raw && genv("VC3_GL_RCCHECK") && b->rc && b->ext && s_use_rc
         && b->state->alpha_test_enable && (b->state->alpha_ref & 0xFF) == 0x80
@@ -4209,6 +4307,9 @@ static void quest_present(void)
 static void gl_flip(void)
 {
     int i;
+
+    if (gl_ready())
+        caps_off();                     /* the flip's own drawing has no clip planes */
 
     if (s_tm_on < 0)
         s_tm_on = genv("VC3_GL_TIMING") != NULL;
