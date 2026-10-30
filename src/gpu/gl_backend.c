@@ -1186,9 +1186,20 @@ static void gl_flip(void)
             fprintf(stderr, "[GLTR] frame begins\n");
         }
     }
-    for (i = 0; i < s_nsurfs; i++)
-        if (s_surfs[i].dirty)
-            surf_readback(&s_surfs[i]);
+    /* Only the surface being presented goes back to guest memory: render
+     * targets the title samples are read from their framebuffers on the GPU,
+     * and reading every dirty surface back each flip, synchronously, was half
+     * the GPU thread. VC3_GL_READBACK_ALL=1 restores that, for a title that
+     * reads a render target with the CPU. */
+    {
+        static int all = -1;
+        uint32_t shown = nv2a_backend_presented_va();
+        if (all < 0)
+            all = getenv("VC3_GL_READBACK_ALL") != NULL;
+        for (i = 0; i < s_nsurfs; i++)
+            if (s_surfs[i].dirty && (all || !shown || s_surfs[i].va == shown))
+                surf_readback(&s_surfs[i]);
+    }
     s_frame++;
     if (s_st.on && s_frame % 300 == 0) {
         fprintf(stderr, "[GL] %u flips: %u draws (%u tris), %u textured, %u "

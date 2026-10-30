@@ -268,6 +268,27 @@ static uint16_t to16(double u)
     return (uint16_t)(u <= 0.0 ? 0 : u >= 1.0 ? 0xFFFF : u * 65535.0);
 }
 
+/* The game maps the gun reading to the screen through its own calibration
+ * (test menu, GUN ADJUSTMENT; kept in backup memory), so the mouse sends the
+ * full range and the game's calibration lines shots up with the cursor.
+ * VC3_GUN_RANGE="xlo,xhi,ylo,yhi" (8-bit units) narrows it for experiments. */
+static uint16_t gun16(double u, int axis)
+{
+    static double r[4] = { 0x00, 0xFF, 0x00, 0xFF };
+    static int init;
+    double lo, hi;
+    if (!init) {
+        const char *e = getenv("VC3_GUN_RANGE");
+        init = 1;
+        if (e)
+            sscanf(e, "%lf,%lf,%lf,%lf", &r[0], &r[1], &r[2], &r[3]);
+    }
+    lo = r[axis * 2];
+    hi = r[axis * 2 + 1];
+    u = u <= 0.0 ? 0.0 : u >= 1.0 ? 1.0 : u;
+    return to16((lo + u * (hi - lo)) / 255.0);
+}
+
 /* Fill the board's input snapshot. Coins are edge-triggered: one per press. */
 void host_input_poll(chihiro_input_t *in)
 {
@@ -342,10 +363,10 @@ void host_input_poll(chihiro_input_t *in)
     if (reload)
         in->player[0] |= JVS_SW_PUSH2;
 
-    in->analog[0] = to16(ux);
-    in->analog[1] = to16(uy);
-    in->screen_x[0] = to16(ux);
-    in->screen_y[0] = to16(uy);
+    in->analog[0] = gun16(ux, 0);
+    in->analog[1] = gun16(uy, 1);
+    in->screen_x[0] = gun16(ux, 0);
+    in->screen_y[0] = gun16(uy, 1);
     /* Off the picture, or reloading: the gun sees no screen. */
     if (reload || ux < 0.0) {
         in->analog[0] = in->analog[1] = 0xFFFF;
