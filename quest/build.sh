@@ -3,6 +3,7 @@
 #
 #   quest/build.sh              -> quest/VirtuaCop3VR.apk
 #   quest/build.sh --native     only libmain.so (build-quest/), no APK
+#   APK_OUT=path quest/build.sh the APK under another name
 #
 # The APK holds no game files: copy your vc3.xbe and media/ to the headset
 # (quest/install.sh). Needs the lifted game in src/recomp/gen (scripts/lift.sh),
@@ -45,5 +46,6 @@ echo "sdk.dir=$SDK" > "$Q/local.properties"
 
 cd "$Q"
 ./gradlew -q :vc3:assembleRelease
-cp vc3/build/outputs/apk/release/vc3-release.apk "$Q/VirtuaCop3VR.apk"
-echo "built $Q/VirtuaCop3VR.apk"
+OUT=${APK_OUT:-$Q/VirtuaCop3VR.apk}      # APK_OUT: another name, leaving the installed one
+cp vc3/build/outputs/apk/release/vc3-release.apk "$OUT"
+echo "built $OUT"
