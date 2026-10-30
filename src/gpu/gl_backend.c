@@ -1282,6 +1282,52 @@ void vc3_gl_stereo_separation(float ndc)
         s_st_sep = ndc;
 }
 
+/* VC3_FOVEATION=1 (the Quest): a stereo surface rendered with fixed
+ * foveation (QCOM_texture_foveated) -- full detail round each eye's middle,
+ * coarser towards the edges, one focal point per half. Off by default until
+ * it has been seen on the headset; skipped without the extension or two
+ * focal points. The texture bound. */
+static void surf_foveate(const Surf *f)
+{
+#if defined(VC3_GLES)
+    typedef void (*FovFn)(GLuint, GLuint, GLuint, GLfloat, GLfloat, GLfloat, GLfloat, GLfloat);
+    static FovFn fov;
+    static int tried, on;
+    GLint n = 0;
+    if (!tried) {
+        const char *e = genv("VC3_FOVEATION");
+        tried = 1;
+        on = e && e[0] == '1';
+        if (on) {
+            GLint i, k = 0;
+            glGetIntegerv(GL_NUM_EXTENSIONS, &k);
+            on = 0;
+            for (i = 0; i < k; i++) {
+                const char *x = (const char *)glGetStringi(GL_EXTENSIONS, (GLuint)i);
+                if (x && !strcmp(x, "GL_QCOM_texture_foveated"))
+                    on = 1;
+            }
+            if (on)
+                fov = (FovFn)eglGetProcAddress("glTextureFoveationParametersQCOM");
+            on = on && fov;
+            fprintf(stderr, "[GL] foveation: %s\n", on ? "on" : "not available");
+        }
+    }
+    if (!on)
+        return;
+    glTexParameteri(GL_TEXTURE_2D, 0x8BFB /* TEXTURE_FOVEATED_FEATURE_BITS_QCOM */,
+                    0x1 /* FOVEATION_ENABLE_BIT */ | 0x2 /* SCALED_BIN_METHOD_BIT */);
+    glGetTexParameteriv(GL_TEXTURE_2D, 0x8BFD /* NUM_FOCAL_POINTS_QUERY */, &n);
+    if (n < 2)
+        return;
+    /* the eyes' middles in the double-wide surface, -1..1 across */
+    fov(f->color, 0, 0, -0.5f, 0.0f, 4.0f, 4.0f, 0.4f);
+    fov(f->color, 0, 1, 0.5f, 0.0f, 4.0f, 4.0f, 0.4f);
+#else
+    (void)f;
+#endif
+}
+
 static void surf_alloc(Surf *f, GLsizei w, GLsizei h)
 {
     GLsizei pw, ph;
@@ -1308,6 +1354,8 @@ static void surf_alloc(Surf *f, GLsizei w, GLsizei h)
                  GL_UNSIGNED_INT_8_8_8_8_REV, NULL);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    if (f->st)
+        surf_foveate(f);
     glGenRenderbuffers(1, &f->depth);
     glBindRenderbuffer(GL_RENDERBUFFER, f->depth);
     glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH24_STENCIL8, pw * (f->st ? 2 : 1), ph);

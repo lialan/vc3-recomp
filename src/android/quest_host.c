@@ -43,8 +43,11 @@
  */
 #if defined(__ANDROID__)
 
+#define _GNU_SOURCE                     /* cpu_set_t, sched_setaffinity */
 #include <math.h>
 #include <pthread.h>
+#include <sched.h>
+#include <sys/syscall.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -84,12 +87,16 @@ static EGLDisplay s_dpy = EGL_NO_DISPLAY;
 static EGLContext s_ctx = EGL_NO_CONTEXT;
 static EGLConfig  s_cfg;
 static int s_es_minor = 2;          /* 3.2 on the Quest; 3.0 in the emulator */
+/* The threads the headset is told about (perf_frame): the loop's, the GL
+ * back end's, the game's; 0 until each has started. */
+static volatile pid_t s_tid_host, s_tid_exec, s_tid_guest;
 static volatile int s_quit;
 
 /* Called once on the executor thread by gl_backend.c's gl_ready: a context
  * sharing the host's objects, current on that thread from here on. */
 int vc3_quest_gl_context(void)
 {
+    s_tid_exec = (pid_t)syscall(SYS_gettid);
     EGLint ctx_attr[] = {
         EGL_CONTEXT_MAJOR_VERSION, 3, EGL_CONTEXT_MINOR_VERSION, 2, EGL_NONE
     };
@@ -361,7 +368,8 @@ static struct {
     int left_handed;
     int auto_coins;     /* a coin at start-up and with every Start */
     int immersive;      /* the game's 3D around the player; else on the screen */
-} s_vr = { QO_SIGHT_IRON, LASER_DOT, 1, 0, 1, 1 };
+    int refresh;        /* display Hz asked for: 120 (default), 90, 72 */
+} s_vr = { QO_SIGHT_IRON, LASER_DOT, 1, 0, 1, 1, 120 };
 
 static int key_index(const char *v, const char *const *keys, int n, int dflt)
 {
@@ -390,6 +398,8 @@ static void screen_load(void)
         s_vr.auto_coins = strcmp(v, "manual") != 0;
     if ((v = vc3_setting_get("vr_screen=")))
         s_vr.immersive = strcmp(v, "screen") != 0;
+    if ((v = vc3_setting_get("vr_refresh=")) && atoi(v) >= 60 && atoi(v) <= 144)
+        s_vr.refresh = atoi(v);
 }
 
 static void screen_save(void)
@@ -409,6 +419,11 @@ static void vr_save(void)
     vc3_setting_put("vr_hand=", s_vr.left_handed ? "left" : "right");
     vc3_setting_put("vr_coins=", s_vr.auto_coins ? "auto" : "manual");
     vc3_setting_put("vr_screen=", s_vr.immersive ? "immersive" : "screen");
+    {
+        char b[16];
+        snprintf(b, sizeof b, "%d", s_vr.refresh);
+        vc3_setting_put("vr_refresh=", b);
+    }
     screen_save();
 }
 
@@ -426,6 +441,11 @@ static XrSpace s_local;
 static XrSessionState s_state = XR_SESSION_STATE_UNKNOWN;
 static int s_running;
 static PFN_xrRequestDisplayRefreshRateFB s_request_rate;
+static PFN_xrEnumerateDisplayRefreshRatesFB s_enum_rates;
+static PFN_xrPerfSettingsSetPerformanceLevelEXT s_perf_level;
+static PFN_xrSetAndroidApplicationThreadKHR s_set_thread;
+static float s_rates[8];
+static int s_nrates;
 
 static XrSwapchain s_chain;
 static uint32_t s_chain_n, s_chain_w, s_chain_h;
@@ -527,8 +547,9 @@ static int xr_init(void)
     jobject activity = (jobject)SDL_AndroidGetActivity();
     PFN_xrInitializeLoaderKHR init = NULL;
     XrLoaderInitInfoAndroidKHR li = { XR_TYPE_LOADER_INIT_INFO_ANDROID_KHR };
-    const char *ext[4] = { XR_KHR_ANDROID_CREATE_INSTANCE_EXTENSION_NAME,
+    const char *ext[8] = { XR_KHR_ANDROID_CREATE_INSTANCE_EXTENSION_NAME,
                            XR_KHR_OPENGL_ES_ENABLE_EXTENSION_NAME };
+    int have_perf = 0, have_threads = 0;
     uint32_t next = 2, n = 0, i;
     XrExtensionProperties *props;
     int have_rate = 0;
@@ -559,11 +580,21 @@ static int xr_init(void)
         props[i].type = XR_TYPE_EXTENSION_PROPERTIES;
     xrEnumerateInstanceExtensionProperties(NULL, n, &n, props);
     for (i = 0; i < n; i++)
+    {
         if (!strcmp(props[i].extensionName, XR_FB_DISPLAY_REFRESH_RATE_EXTENSION_NAME))
             have_rate = 1;
+        if (!strcmp(props[i].extensionName, XR_EXT_PERFORMANCE_SETTINGS_EXTENSION_NAME))
+            have_perf = 1;
+        if (!strcmp(props[i].extensionName, XR_KHR_ANDROID_THREAD_SETTINGS_EXTENSION_NAME))
+            have_threads = 1;
+    }
     free(props);
     if (have_rate)
         ext[next++] = XR_FB_DISPLAY_REFRESH_RATE_EXTENSION_NAME;
+    if (have_perf)
+        ext[next++] = XR_EXT_PERFORMANCE_SETTINGS_EXTENSION_NAME;
+    if (have_threads)
+        ext[next++] = XR_KHR_ANDROID_THREAD_SETTINGS_EXTENSION_NAME;
 
     ai.applicationVM = vm;
     ai.applicationActivity = activity;
@@ -575,9 +606,20 @@ static int xr_init(void)
     ic.applicationInfo.applicationVersion = 1;
     ic.applicationInfo.apiVersion = XR_MAKE_VERSION(1, 0, 34);
     XRCHECK(xrCreateInstance(&ic, &s_inst));
-    if (have_rate)
+    if (have_rate) {
         xrGetInstanceProcAddr(s_inst, "xrRequestDisplayRefreshRateFB",
                               (PFN_xrVoidFunction *)&s_request_rate);
+        xrGetInstanceProcAddr(s_inst, "xrEnumerateDisplayRefreshRatesFB",
+                              (PFN_xrVoidFunction *)&s_enum_rates);
+    }
+    if (have_perf)
+        xrGetInstanceProcAddr(s_inst, "xrPerfSettingsSetPerformanceLevelEXT",
+                              (PFN_xrVoidFunction *)&s_perf_level);
+    if (have_threads)
+        xrGetInstanceProcAddr(s_inst, "xrSetAndroidApplicationThreadKHR",
+                              (PFN_xrVoidFunction *)&s_set_thread);
+    fprintf(stderr, "[xr] extensions: refresh rate %s, performance levels %s, thread hints %s\n",
+            have_rate ? "yes" : "no", have_perf ? "yes" : "no", have_threads ? "yes" : "no");
 
     sgi.formFactor = XR_FORM_FACTOR_HEAD_MOUNTED_DISPLAY;
     XRCHECK(xrGetSystem(s_inst, &sgi, &s_sys));
@@ -670,6 +712,113 @@ static int chain_fit(uint32_t w, uint32_t h)
     return 1;
 }
 
+/* The display rate (the panel's Refresh, vr_refresh=): 120 by default --
+ * the game's 60 frames shown exactly twice each, with the cadence lock in
+ * xr_frame -- or 90 / 72 when asked; only rates the headset offers. */
+static void rate_apply(void)
+{
+    int i, best = -1;
+    if (!s_request_rate)
+        return;
+    for (i = 0; i < s_nrates; i++)
+        if (best < 0 || fabsf(s_rates[i] - (float)s_vr.refresh) < fabsf(s_rates[best] - (float)s_vr.refresh))
+            best = i;
+    if (best >= 0 && XR_SUCCEEDED(s_request_rate(s_sess, s_rates[best])))
+        fprintf(stderr, "[xr] display %.0f Hz\n", s_rates[best]);
+    else if (s_nrates == 0 && XR_SUCCEEDED(s_request_rate(s_sess, (float)s_vr.refresh)))
+        fprintf(stderr, "[xr] display %d Hz\n", s_vr.refresh);
+}
+
+/* At the session's start: the rates on offer, the display rate, and the CPU
+ * and GPU held high (VC3_XR_PERF: sustained (default), boost, or off). */
+static void perf_begin(void)
+{
+    const char *e = getenv("VC3_XR_PERF");
+    if (s_enum_rates) {
+        uint32_t n = 0;
+        if (XR_SUCCEEDED(s_enum_rates(s_sess, 0, &n, NULL)) && n) {
+            if (n > 8)
+                n = 8;
+            if (XR_SUCCEEDED(s_enum_rates(s_sess, n, &n, s_rates)))
+                s_nrates = (int)n;
+        }
+    }
+    rate_apply();
+    if (s_perf_level && !(e && !strcmp(e, "off"))) {
+        XrPerfSettingsLevelEXT lv = e && !strcmp(e, "boost") ? XR_PERF_SETTINGS_LEVEL_BOOST_EXT
+                                                              : XR_PERF_SETTINGS_LEVEL_SUSTAINED_HIGH_EXT;
+        XrResult rc = s_perf_level(s_sess, XR_PERF_SETTINGS_DOMAIN_CPU_EXT, lv);
+        XrResult rg = s_perf_level(s_sess, XR_PERF_SETTINGS_DOMAIN_GPU_EXT, lv);
+        fprintf(stderr, "[xr] performance %s: CPU %d, GPU %d\n",
+                lv == XR_PERF_SETTINGS_LEVEL_BOOST_EXT ? "boost" : "sustained high", (int)rc, (int)rg);
+    }
+}
+
+/* The fastest cores (highest cpuinfo_max_freq), as a mask; 0 if unknown. */
+static unsigned long big_cores(void)
+{
+    unsigned long mask = 0;
+    long best = 0;
+    int c;
+    for (c = 0; c < 16; c++) {
+        char path[96];
+        long f = 0;
+        FILE *fp;
+        snprintf(path, sizeof path, "/sys/devices/system/cpu/cpu%d/cpufreq/cpuinfo_max_freq", c);
+        if (!(fp = fopen(path, "r")))
+            continue;
+        if (fscanf(fp, "%ld", &f) == 1) {
+            if (f > best) {
+                best = f;
+                mask = 0;
+            }
+            if (f == best)
+                mask |= 1ul << c;
+        }
+        fclose(fp);
+    }
+    return mask;
+}
+
+/* Each headset frame until done: tell the runtime which thread is which
+ * once each exists -- the loop (it submits the frames) the renderer's main,
+ * the GL back end a renderer worker, the game the application's main -- and
+ * with VC3_BIGCORES=1 put the game and the back end on the fastest cores. */
+static void perf_frame(void)
+{
+    static int told_host, told_exec, told_guest, pinned;
+    if (s_set_thread) {
+        if (!told_host && s_tid_host)
+            told_host = XR_SUCCEEDED(s_set_thread(s_sess, XR_ANDROID_THREAD_TYPE_RENDERER_MAIN_KHR,
+                                                  (uint32_t)s_tid_host)) ? 1 : -1;
+        if (!told_exec && s_tid_exec)
+            told_exec = XR_SUCCEEDED(s_set_thread(s_sess, XR_ANDROID_THREAD_TYPE_RENDERER_WORKER_KHR,
+                                                  (uint32_t)s_tid_exec)) ? 1 : -1;
+        if (!told_guest && s_tid_guest) {
+            told_guest = XR_SUCCEEDED(s_set_thread(s_sess, XR_ANDROID_THREAD_TYPE_APPLICATION_MAIN_KHR,
+                                                   (uint32_t)s_tid_guest)) ? 1 : -1;
+            fprintf(stderr, "[xr] thread hints: loop %d, back end %d, game %d (1 accepted)\n",
+                    told_host, told_exec, told_guest);
+        }
+    }
+    if (!pinned && s_tid_exec && s_tid_guest) {
+        const char *e = getenv("VC3_BIGCORES");
+        pinned = 1;
+        if (e && *e == '1') {
+            unsigned long m = big_cores();
+            cpu_set_t set;
+            int c, a, b;
+            CPU_ZERO(&set);
+            for (c = 0; c < 16; c++)
+                if (m & (1ul << c))
+                    CPU_SET(c, &set);
+            a = m ? sched_setaffinity(s_tid_guest, sizeof set, &set) : -1;
+            b = m ? sched_setaffinity(s_tid_exec, sizeof set, &set) : -1;
+            fprintf(stderr, "[xr] game and back end on cores %#lx: %d %d (0 done)\n", m, a, b);
+        }
+    }
+}
+
 static void xr_events(void)
 {
     XrEventDataBuffer ev = { XR_TYPE_EVENT_DATA_BUFFER };
@@ -683,8 +832,7 @@ static void xr_events(void)
                 bi.primaryViewConfigurationType = XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO;
                 if (XR_SUCCEEDED(xrBeginSession(s_sess, &bi))) {
                     s_running = 1;
-                    if (s_request_rate)
-                        s_request_rate(s_sess, 120.0f);
+                    perf_begin();
                 }
             } else if (s_state == XR_SESSION_STATE_STOPPING && s_running) {
                 xrEndSession(s_sess);
@@ -999,7 +1147,7 @@ static int overlay_init(void)
  * Dead 4 VR). Point the gun at a row and pull the trigger; the game gets no
  * input meanwhile. Holding the other hand's upper button (B / Y) for a
  * second opens and closes it too. */
-enum { M_SCREEN, M_SIGHT, M_LASER, M_GUN, M_HAND, M_STEREO, M_ASPECT, M_RES, M_DIST, M_SIZE,
+enum { M_SCREEN, M_REFRESH, M_SIGHT, M_LASER, M_GUN, M_HAND, M_STEREO, M_ASPECT, M_RES, M_DIST, M_SIZE,
        M_COINS, M_COIN, M_RECENTRE, M_TEST, M_SERVICE, M_RESET, M_CLOSE, M_COUNT };
 static struct {
     int open, hover, dirty;
@@ -1013,7 +1161,7 @@ static void menu_items(XmItem *it)
     static const char *const sight[] = { "Iron sights", "Red dot", "Holographic" };
     static const char *const laser[] = { "Laser and dot", "Dot only", "Off" };
     static const char *const labels[M_COUNT] = {
-        "Screen", "Sight", "Laser", "Gun model", "Gun hand", "Stereo 3D", "Aspect", "Resolution",
+        "Screen", "Refresh", "Sight", "Laser", "Gun model", "Gun hand", "Stereo 3D", "Aspect", "Resolution",
         "Screen distance", "Screen size", "Coins", "Insert a coin", "Recentre view",
         "Arcade Test button", "Arcade Service button", "Reset game", "Close" };
     int i;
@@ -1022,6 +1170,8 @@ static void menu_items(XmItem *it)
         it[i].value[0] = 0;
     }
     snprintf(it[M_SCREEN].value, 40, "%s", s_vr.immersive ? "Immersive" : "Virtual screen");
+    snprintf(it[M_REFRESH].value, 40, "%d Hz%s", s_vr.refresh,
+             s_vr.refresh == 120 ? " (smoothest)" : "");
     snprintf(it[M_SIGHT].value, 40, "%s", sight[s_vr.sight]);
     snprintf(it[M_LASER].value, 40, "%s", laser[s_vr.laser]);
     snprintf(it[M_GUN].value, 40, "%s", s_vr.show_gun ? "Shown" : "Hidden");
@@ -1122,6 +1272,10 @@ static void menu_choose(int item)
     s_menu.reset_armed = 0;             /* anything else chosen in between: no reset */
     switch (item) {
     case M_SCREEN: s_vr.immersive = !s_vr.immersive; break;
+    case M_REFRESH:
+        s_vr.refresh = s_vr.refresh >= 120 ? 72 : s_vr.refresh >= 90 ? 120 : 90;
+        rate_apply();
+        break;
     case M_SIGHT: s_vr.sight = (s_vr.sight + 1) % QO_SIGHT_COUNT; break;
     case M_LASER: s_vr.laser = (s_vr.laser + 1) % 3; break;
     case M_GUN: s_vr.show_gun = !s_vr.show_gun; break;
@@ -1740,6 +1894,7 @@ static void xr_frame(void)
             && (vs.viewStateFlags & XR_VIEW_STATE_ORIENTATION_VALID_BIT);
         view_publish();
     }
+    perf_frame();
     if (s_overlay_ok < 0) {
         s_overlay_ok = overlay_init();
         if (!s_overlay_ok)
@@ -1865,6 +2020,7 @@ static volatile int s_guest_rc, s_guest_done;
 static void *guest_thread(void *arg)
 {
     (void)arg;
+    s_tid_guest = (pid_t)syscall(SYS_gettid);
     s_guest_rc = s_guest_main();
     s_guest_done = 1;
     return NULL;
@@ -1893,6 +2049,7 @@ int vc3_quest_run(int (*guest_main)(void))
 
     /* SDL owns the activity's surface; its GLES 3.2 context is the one the
      * headset is given, and the back end's shares with it. */
+    s_tid_host = (pid_t)syscall(SYS_gettid);
     SDL_SetHint(SDL_HINT_NO_SIGNAL_HANDLERS, "1");
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS | SDL_INIT_GAMECONTROLLER) != 0) {
         fprintf(stderr, "[quest] SDL: %s\n", SDL_GetError());
