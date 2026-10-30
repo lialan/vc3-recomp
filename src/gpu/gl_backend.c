@@ -581,6 +581,7 @@ static void surf_readback_async(Surf *f)
 typedef struct {
     uint32_t offset, w, h, fmt, pitch;
     uint64_t hash;
+    uint64_t quick;            /* sampled hash, checked on every bind */
     uint32_t checked;          /* frame of the last content check */
     uint32_t used;             /* frame of the last use */
     GLuint tex;
@@ -627,6 +628,25 @@ static uint64_t hash_bytes(const uint8_t *p, size_t n)
     }
     for (; i < n; i++)
         h = (h ^ p[i]) * 0x100000001b3ull;
+    return h;
+}
+
+/* 64 slices of 16 bytes spread over the texture: cheap enough for every
+ * bind. VC3 streams textures through the same memory within a frame -- a
+ * face, then a jacket of the same size and format at one address -- and a
+ * once-per-frame check drew the face with the jacket. */
+static uint64_t hash_sampled(const uint8_t *p, size_t n)
+{
+    uint64_t h = 0xcbf29ce484222325ull;
+    size_t k;
+
+    if (n <= 64 * 16)
+        return hash_bytes(p, n);
+    for (k = 0; k < 64; k++) {
+        size_t at = (n - 16) / 63 * k;
+        h ^= hash_bytes(p + at, 16) + k;
+        h *= 0x100000001b3ull;
+    }
     return h;
 }
 
@@ -705,12 +725,17 @@ static int tex_bind(const Nv2aTexture *t, float *sw, float *sh)
             e->fmt = t->color;
             e->pitch = t->pitch;
             e->hash = 0;
+            e->quick = 0;
             e->checked = 0;
         }
         glBindTexture(GL_TEXTURE_2D, e->tex);
-        if (e->checked != s_frame) {
+        /* Full check once a frame; within a frame, whenever the sampled hash
+         * says the memory now holds something else. */
+        uint64_t q = hash_sampled(mem + t->offset, tex_bytes(t));
+        if (e->checked != s_frame || q != e->quick) {
             uint64_t h = hash_bytes(mem + t->offset, tex_bytes(t));
             e->checked = s_frame;
+            e->quick = q;
             if (h != e->hash || !e->hash) {
                 size_t need = (size_t)t->width * t->height;
                 if (need > s_decode_cap) {
@@ -724,6 +749,37 @@ static int tex_bind(const Nv2aTexture *t, float *sw, float *sh)
                     return 0;
                 }
                 s_st.uploads++;
+                /* VC3_GL_TEXDUMP=<hex offset>[,<hex offset>...]: write those
+                 * textures as the back end decoded them (colour and alpha PPMs
+                 * in the working directory), to tell a bad decode from bad
+                 * shading. */
+                char want[16];
+                snprintf(want, sizeof want, "%08X", t->offset);
+                if (genv("VC3_GL_TEXDUMP") && strstr(genv("VC3_GL_TEXDUMP"), want)) {
+                    char name[64];
+                    FILE *o;
+                    size_t n = (size_t)t->width * t->height, p;
+                    int a;
+                    for (a = 0; a < 2; a++) {
+                        snprintf(name, sizeof name, "texdump_%08X%s.ppm", t->offset,
+                                 a ? "_alpha" : "");
+                        if (!(o = fopen(name, "wb")))
+                            continue;
+                        fprintf(o, "P6\n%u %u\n255\n", t->width, t->height);
+                        for (p = 0; p < n; p++) {
+                            uint32_t c = s_decode[p];
+                            unsigned char px[3] = { (unsigned char)(c >> 16),
+                                                    (unsigned char)(c >> 8),
+                                                    (unsigned char)c };
+                            if (a)
+                                px[0] = px[1] = px[2] = (unsigned char)(c >> 24);
+                            fwrite(px, 1, 3, o);
+                        }
+                        fclose(o);
+                    }
+                    fprintf(stderr, "[GL] dumped texture %08X %ux%u fmt %02X pitch %u\n",
+                            t->offset, t->width, t->height, t->color & 0xFF, t->pitch);
+                }
                 glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, (GLsizei)t->width,
                              (GLsizei)t->height, 0, GL_BGRA,
                              GL_UNSIGNED_INT_8_8_8_8_REV, s_decode);
