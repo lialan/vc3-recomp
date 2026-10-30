@@ -46,6 +46,22 @@ void sub_0013DA10(void) { chihiro_eeprom_read(); }   /* JvsEEPROM_Read  */
 void sub_0013DBD0(void) { chihiro_eeprom_write(); }  /* JvsEEPROM_Write */
 void sub_0013E5E0(void) { chihiro_rtc_read(); }      /* JvsRTC_Read     */
 
+/* JVS I/O: the game's frames go to a software I/O board (src/chihiro/jvs.c). */
+extern void chihiro_jvs_send(void);
+extern void chihiro_jvs_receive(void);
+extern void chihiro_jvs_link_up(void);
+
+void sub_0013E110(void) { chihiro_jvs_send(); }      /* JvsNodeSendPacket    */
+void sub_0013E030(void) { chihiro_jvs_receive(); }   /* JvsNodeReceivePacket */
+void sub_00104F80(void) { chihiro_jvs_link_up(); }   /* game: JVS link up?   */
+
+/* Baseboard firmware handshake (src/chihiro/baseboard.c). */
+extern void chihiro_jamma_firmware_load(void);
+extern void chihiro_sc_firmware_download(void);
+
+void sub_0013D120(void) { chihiro_jamma_firmware_load(); }  /* JammaFirmwareLoad     */
+void sub_0013D310(void) { chihiro_sc_firmware_download(); } /* JvsScFirmwareDownload */
+
 /* XDK D3D's fence wait, against the push-buffer executor (src/d3d_fence.c). */
 extern void vc3_d3d_block_on_time(void);
 void sub_0010CAC0(void) { vc3_d3d_block_on_time(); } /* D3D_BlockOnTime */

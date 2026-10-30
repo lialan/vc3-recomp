@@ -28,6 +28,8 @@ add_executable(vc3
     src/recomp_manual.c
     src/chihiro/chihiro.c
     src/chihiro/storage.c
+    src/chihiro/jvs.c
+    src/chihiro/baseboard.c
     src/d3d_fence.c
     ${RECOMP_GEN_SOURCES}
 )
