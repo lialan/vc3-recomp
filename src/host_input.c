@@ -268,25 +268,40 @@ static uint16_t to16(double u)
     return (uint16_t)(u <= 0.0 ? 0 : u >= 1.0 ? 0xFFFF : u * 65535.0);
 }
 
-/* The game maps the gun reading to the screen through its own calibration
- * (test menu, GUN ADJUSTMENT; kept in backup memory), so the mouse sends the
- * full range and the game's calibration lines shots up with the cursor.
- * VC3_GUN_RANGE="xlo,xhi,ylo,yhi" (8-bit units) narrows it for experiments. */
-static uint16_t gun16(double u, int axis)
+/* The game turns the gun reading into gun coordinates -- about pixels from
+ * the screen centre, y up: x = (byte - 128) * 2.5, y = (128 - byte) * 1.875
+ * (measured on GUN ADJUSTMENT) -- and then through its calibration: five
+ * readings taken at dots on a 640x480 screen (TOP, LEFT, CENTER, RIGHT,
+ * BOTTOM at x 16/320/624, y 16/240/464). The default calibration is a real
+ * gun's, not a mouse's, so the aim drifted from the cursor. So send the
+ * reading the calibration maps to the cursor: interpolate between the dots'
+ * stored readings, piecewise either side of centre. */
+extern int chihiro_gun_calibration(int16_t cal[10]);
+
+static double lerp_cal(double p, double c, double lo_px, double lo, double mid,
+                       double hi_px, double hi)
 {
-    static double r[4] = { 0x00, 0xFF, 0x00, 0xFF };
-    static int init;
-    double lo, hi;
-    if (!init) {
-        const char *e = getenv("VC3_GUN_RANGE");
-        init = 1;
-        if (e)
-            sscanf(e, "%lf,%lf,%lf,%lf", &r[0], &r[1], &r[2], &r[3]);
-    }
-    lo = r[axis * 2];
-    hi = r[axis * 2 + 1];
-    u = u <= 0.0 ? 0.0 : u >= 1.0 ? 1.0 : u;
-    return to16((lo + u * (hi - lo)) / 255.0);
+    return p <= c ? lo + (p - lo_px) * (mid - lo) / (c - lo_px)
+                  : mid + (p - c) * (hi - mid) / (hi_px - c);
+}
+
+static void gun_reading(double ux, double uy, uint16_t *ox, uint16_t *oy)
+{
+    static const int16_t def[10] = { 5, 233, -318, 17, -10, 15, 242, 34, -10, -204 };
+    int16_t c[10];
+    double gx, gy, bx, by;
+
+    if (!chihiro_gun_calibration(c))
+        memcpy(c, def, sizeof c);
+    /* x: LEFT (16) .. CENTER (320) .. RIGHT (624); y: TOP (16) .. BOTTOM (464) */
+    gx = lerp_cal(ux * 640.0, 320.0, 16.0, c[2], c[4], 624.0, c[6]);
+    gy = lerp_cal(uy * 480.0, 240.0, 16.0, c[1], c[5], 464.0, c[9]);
+    bx = 128.0 + gx / 2.5;
+    by = 128.0 - gy / 1.875;
+    bx = bx < 0.0 ? 0.0 : bx > 255.99 ? 255.99 : bx;
+    by = by < 0.0 ? 0.0 : by > 255.99 ? 255.99 : by;
+    *ox = (uint16_t)(bx * 256.0);
+    *oy = (uint16_t)(by * 256.0);
 }
 
 /* Fill the board's input snapshot. Coins are edge-triggered: one per press. */
@@ -324,8 +339,9 @@ void host_input_poll(chihiro_input_t *in)
     reload = (buttons & SDL_BUTTON(SDL_BUTTON_RIGHT)) || auto_held("reload", t);
 
     /* A scripted shot with no window under the mouse aims at VC3_AUTOAIM
-     * ("x,y" in 0..1, default the centre), so unattended runs can shoot. */
-    if (ux < 0.0 && auto_held("fire", t)) {
+     * ("x,y" in 0..1, default the centre), so unattended runs can shoot; an
+     * explicit VC3_AUTOAIM also holds the aim between shots. */
+    if (ux < 0.0 && (auto_held("fire", t) || getenv("VC3_AUTOAIM"))) {
         const char *aim = getenv("VC3_AUTOAIM");
         ux = 0.5;
         uy = 0.5;
@@ -363,10 +379,9 @@ void host_input_poll(chihiro_input_t *in)
     if (reload)
         in->player[0] |= JVS_SW_PUSH2;
 
-    in->analog[0] = gun16(ux, 0);
-    in->analog[1] = gun16(uy, 1);
-    in->screen_x[0] = gun16(ux, 0);
-    in->screen_y[0] = gun16(uy, 1);
+    gun_reading(ux, uy, &in->analog[0], &in->analog[1]);
+    in->screen_x[0] = in->analog[0];
+    in->screen_y[0] = in->analog[1];
     /* Off the picture, or reloading: the gun sees no screen. */
     if (reload || ux < 0.0) {
         in->analog[0] = in->analog[1] = 0xFFFF;

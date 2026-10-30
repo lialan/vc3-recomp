@@ -118,6 +118,24 @@ static uint32_t store_xfer(store_t *s, int write, const char *op)
     return n;
 }
 
+/* Player 1's gun calibration as GUN ADJUSTMENT stores it: at 0x476 a 0x0010
+ * tag, then TOP, LEFT, CENTER, RIGHT, BOTTOM as signed (x, y) pairs in the
+ * game's gun coordinates. Returns 1 and fills cal[10] when the block is there
+ * and ordered as a calibration must be. */
+int chihiro_gun_calibration(int16_t cal[10])
+{
+    const uint8_t *p = s_backup_data + 0x476;
+    int i;
+
+    store_load(&s_backup);
+    if ((p[0] | p[1] << 8) != 0x0010)
+        return 0;
+    for (i = 0; i < 10; i++)
+        cal[i] = (int16_t)(p[2 + i * 2] | p[3 + i * 2] << 8);
+    /* left < centre < right across, bottom < centre < top down */
+    return cal[2] < cal[4] && cal[4] < cal[6] && cal[9] < cal[5] && cal[5] < cal[1];
+}
+
 void chihiro_backup_read(void)
 {
     store_xfer(&s_backup, 0, "BACKUP_Read");
