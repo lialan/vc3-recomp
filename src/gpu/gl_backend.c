@@ -1182,7 +1182,16 @@ typedef struct {
     VrGameProj gp;
     int gp_ok;
     uint32_t n3d;
+    /* Lazy copies (lazy_skip): the frame it was last sampled; anything but a
+     * full-screen 2D copy of a render target ever drawn into it; skipping;
+     * the render target the skipped copies read. */
+    uint32_t last_sampled, first_drawn;
+    int not_copy, skipping;
+    uint32_t copy_src;
 } Surf;
+static void lazy_catch_up(Surf *rt);
+static int lazy_skip(Surf *f, const Nv2aBatch *b);
+static int batch_fullscreen(const Nv2aBatch *b, const Surf *f);
 static Surf s_surfs[MAX_SURFS];
 static int s_nsurfs;
 
@@ -1550,6 +1559,8 @@ static void gt_flip(void)
     t0 = now;
 }
 
+static GLuint s_bound_fbo;              /* surf_bind's, for lazy_catch_up */
+
 /* The framebuffer for a guest surface, created or grown to fit, and bound.
  * A change of scale or aspect remakes it at the first draw after the flip
  * that took the change; VC3 redraws every surface each frame. */
@@ -1577,6 +1588,7 @@ static Surf *surf_bind(const Nv2aSurface *s)
     f->pitch = s->pitch;
     f->bpp = bpp;
     gt_surface(f->va);
+    s_bound_fbo = f->fbo;
     glBindFramebuffer(GL_FRAMEBUFFER, f->fbo);
     glViewport(0, 0, f->pw, f->ph);
     return f;
@@ -2317,6 +2329,7 @@ static int tex_bind(const Nv2aTexture *t, float *sw, float *sh)
     }
     if (rt && rt->fbo && !rt->cpu_owned) {
         s_st.rt++;
+        lazy_catch_up(rt);
         if (genv("VC3_RT_USE_LOG")) {   /* which render targets are sampled (debug) */
             static uint32_t vas[16], cnt[16], fr;
             int k;
@@ -2574,6 +2587,8 @@ static void gl_clear(const Nv2aSurface *s, const Nv2aRenderState *rs,
 
     (void)rs;
     if (!gl_ready() || !(f = surf_bind(s)))
+        return;
+    if (lazy_skip(f, NULL))
         return;
     glDisable(GL_SCISSOR_TEST);
     s_rs_valid = 0;                    /* masks change below */
@@ -3118,6 +3133,78 @@ static int surf_shown(const Surf *f)
     return 0;
 }
 
+/* ── Lazy copies ──────────────────────────────────────────────────────────
+   VC3 copies its scene into another full-size stereo target twice every
+   frame (80C28000) that nothing samples outside E.S. mode -- 2 ms of the
+   Quest's GPU a frame at 1x, four times that at 2x. A target that is never
+   shown, gets only full-screen 2D copies of other render targets, and has
+   not been sampled for LAZY_FRAMES frames has its copies (and clears)
+   skipped; the moment something samples it again it is first brought up
+   to date with a blit from the copies' source, and drawn from then on.
+   VC3_LAZY_RT=0: copies always drawn. */
+#define LAZY_FRAMES 60
+
+static int lazy_on(void)
+{
+    static int on = -1;
+    if (on < 0)
+        on = !(genv("VC3_LAZY_RT") && genv("VC3_LAZY_RT")[0] == '0');
+    return on;
+}
+
+/* Called by tex_bind when a render target is about to be sampled. */
+static void lazy_catch_up(Surf *rt)
+{
+    Surf *src;
+    rt->last_sampled = s_frame;
+    if (!rt->skipping)
+        return;
+    rt->skipping = 0;
+    src = rt->copy_src ? surf_find(rt->copy_src) : NULL;
+    if (genv("VC3_IMM_LOG"))
+        fprintf(stderr, "[GL] lazy: %08X sampled again, brought up to date from %08X\n",
+                rt->va, src ? src->va : 0);
+    if (src && src->fbo && src != rt) {
+        GLboolean mask[4], sc = glIsEnabled(GL_SCISSOR_TEST);
+        glGetBooleanv(GL_COLOR_WRITEMASK, mask);
+        glDisable(GL_SCISSOR_TEST);
+        glColorMask(1, 1, 1, 1);
+        glBindFramebuffer(GL_READ_FRAMEBUFFER, src->fbo);
+        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, rt->fbo);
+        glBlitFramebuffer(0, 0, src->pw * (src->st ? 2 : 1), src->ph,
+                          0, 0, rt->pw * (rt->st ? 2 : 1), rt->ph, GL_COLOR_BUFFER_BIT, GL_LINEAR);
+        glBindFramebuffer(GL_FRAMEBUFFER, s_bound_fbo);
+        glColorMask(mask[0], mask[1], mask[2], mask[3]);
+        if (sc)
+            glEnable(GL_SCISSOR_TEST);
+    }
+}
+
+/* Whether a draw into f (b: the batch, NULL for a clear) is skipped. */
+static int lazy_skip(Surf *f, const Nv2aBatch *b)
+{
+    int copy;
+    if (!f->first_drawn)
+        f->first_drawn = s_frame;
+    copy = !b || (!b->raw && b->count && b->vertices[0].rhw == 1.0f && b->texture
+                  && surf_find(b->texture->offset) && surf_find(b->texture->offset)->fbo
+                  && surf_find(b->texture->offset) != f && batch_fullscreen(b, f));
+    if (!copy)
+        f->not_copy = 1;
+    if (!lazy_on() || !f->st || f->not_copy || surf_shown(f) || f->cpu_owned
+        || s_frame - f->first_drawn < LAZY_FRAMES || s_frame - f->last_sampled < LAZY_FRAMES)
+        return 0;
+    if (b)
+        f->copy_src = b->texture->offset;
+    if (!f->skipping) {
+        f->skipping = 1;
+        if (genv("VC3_IMM_LOG"))
+            fprintf(stderr, "[GL] lazy: copies into %08X skipped (unsampled %u frames)\n",
+                    f->va, s_frame - f->last_sampled);
+    }
+    return 1;
+}
+
 /* 2D covering (nearly) the whole surface: a fade or a pass over the scene. */
 static int batch_fullscreen(const Nv2aBatch *b, const Surf *f)
 {
@@ -3215,6 +3302,8 @@ static void gl_draw(const Nv2aSurface *s, const Nv2aBatch *b)
     GLsizeiptr ioff = 0;
 
     if ((!raw && !b->count) || !gl_ready() || !(f = surf_bind(s)))
+        return;
+    if (lazy_skip(f, b))
         return;
     U = raw ? (batch_needs_rc(f, b, raw != NULL) ? &s_praw_rc : &s_praw)
             : (batch_needs_rc(f, b, raw != NULL) ? &s_pcpu_rc : &s_pcpu);
