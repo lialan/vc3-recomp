@@ -66,6 +66,8 @@
 #include "host_input.h"
 #include "quest_menu.h"
 #include "quest_overlay.h"
+#include "vr_math.h"
+#include "vr_view.h"
 
 void vc3_quest_restart(void);       /* below: a fresh process */
 
@@ -125,6 +127,10 @@ typedef struct {
     int lw, lh;              /* the picture's shape (guest pixels) */
     GLsync fence;            /* the back end's copy into it is done */
     GLsync read_done;        /* the host's last copy out of it is done */
+    Vc3VrFrame vr;           /* immersive: the pose it was drawn with, the HUD */
+    GLuint hud;              /* the HUD picture (vr.hud_w x vr.hud_h) */
+    GLsizei hud_w, hud_h;
+    int has_hud;
 } Frame;
 
 static Frame s_frame[3];
@@ -177,8 +183,9 @@ static void pace_game_frame(void)
     }
 }
 
-void vc3_quest_frame(GLuint fbo, int pw, int ph, int eyes, int lw, int lh)
+void vc3_quest_frame(GLuint fbo, int pw, int ph, int eyes, int lw, int lh, const void *vr_frame)
 {
+    const Vc3VrFrame *vf = (const Vc3VrFrame *)vr_frame;
     static GLuint dst_fbo;
     Frame *f = &s_frame[s_back];        /* this thread alone touches s_back */
     int t;
@@ -253,6 +260,31 @@ void vc3_quest_frame(GLuint fbo, int pw, int ph, int eyes, int lw, int lh)
         }
         n++;
     }
+    /* the HUD picture, beside the frame */
+    f->has_hud = 0;
+    if (vf && vf->imm && vf->hud_fbo) {
+        if (!f->hud || f->hud_w != vf->hud_w || f->hud_h != vf->hud_h) {
+            if (f->hud)
+                glDeleteTextures(1, &f->hud);
+            glGenTextures(1, &f->hud);
+            glBindTexture(GL_TEXTURE_2D, f->hud);
+            glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, vf->hud_w, vf->hud_h);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+            f->hud_w = vf->hud_w;
+            f->hud_h = vf->hud_h;
+        }
+        glBindFramebuffer(GL_READ_FRAMEBUFFER, (GLuint)vf->hud_fbo);
+        glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, f->hud, 0);
+        glBlitFramebuffer(0, 0, f->hud_w, f->hud_h, 0, 0, f->hud_w, f->hud_h,
+                          GL_COLOR_BUFFER_BIT, GL_NEAREST);
+        glBindFramebuffer(GL_READ_FRAMEBUFFER, fbo);
+        f->has_hud = 1;
+    }
+    if (vf)
+        f->vr = *vf;
+    else
+        memset(&f->vr, 0, sizeof f->vr);
     glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, 0, 0);
     f->lw = lw;
     f->lh = lh;
@@ -325,7 +357,8 @@ static struct {
     int show_gun;
     int left_handed;
     int auto_coins;     /* a coin at start-up and with every Start */
-} s_vr = { QO_SIGHT_IRON, LASER_DOT, 1, 0, 1 };
+    int immersive;      /* the game's 3D around the player; else on the screen */
+} s_vr = { QO_SIGHT_IRON, LASER_DOT, 1, 0, 1, 1 };
 
 static int key_index(const char *v, const char *const *keys, int n, int dflt)
 {
@@ -352,6 +385,8 @@ static void screen_load(void)
         s_vr.left_handed = !strcmp(v, "left");
     if ((v = vc3_setting_get("vr_coins=")))
         s_vr.auto_coins = strcmp(v, "manual") != 0;
+    if ((v = vc3_setting_get("vr_screen=")))
+        s_vr.immersive = strcmp(v, "screen") != 0;
 }
 
 static void screen_save(void)
@@ -370,6 +405,7 @@ static void vr_save(void)
     vc3_setting_put("vr_gun=", s_vr.show_gun ? "on" : "off");
     vc3_setting_put("vr_hand=", s_vr.left_handed ? "left" : "right");
     vc3_setting_put("vr_coins=", s_vr.auto_coins ? "auto" : "manual");
+    vc3_setting_put("vr_screen=", s_vr.immersive ? "immersive" : "screen");
     screen_save();
 }
 
@@ -753,6 +789,124 @@ static void recentre(void)
             s_anchor_p[1], s_anchor_p[2], s_anchor_yaw * 57.2958f);
 }
 
+/* ── The immersive view (vr_view.h) ───────────────────────────────────────
+ * The back end draws each frame through the newest head pose it can get:
+ * this, called on its thread at each flip, hands it the eyes relative to
+ * the anchor -- the game's camera -- as matrices. The headset loop updates
+ * the pose every display frame (view_publish). The frame then carries the
+ * pose it was drawn with, and the headset's layer says so, so the
+ * compositor turns it to where the head is when it is shown. */
+#define IMM_NEAR 0.05f                  /* metres */
+#define IMM_FAR 2000.0f
+#define HUD_DIST 5.0f                   /* the HUD panel, metres from the anchor */
+static pthread_mutex_t s_view_lock = PTHREAD_MUTEX_INITIALIZER;
+static XrView s_pub_views[2];
+static int s_pub_ok;
+static float s_pub_anchor_p[3], s_pub_anchor_yaw;
+static uint64_t s_pub_id;
+
+static float imm_units(void)
+{
+    static float u = -1;
+    if (u < 0) {
+        const char *e = getenv("VC3_IMM_UNITS");     /* game units per metre */
+        u = e && atof(e) > 0 ? (float)atof(e) : 1.0f;
+    }
+    return u;
+}
+
+static void view_publish(void)
+{
+    pthread_mutex_lock(&s_view_lock);
+    s_pub_ok = s_views_ok && s_vr.immersive && s_running;
+    if (s_pub_ok) {
+        memcpy(s_pub_views, s_views, sizeof s_pub_views);
+        memcpy(s_pub_anchor_p, s_anchor_p, sizeof s_pub_anchor_p);
+        s_pub_anchor_yaw = s_anchor_yaw;
+        s_pub_id++;
+    }
+    pthread_mutex_unlock(&s_view_lock);
+}
+
+int vc3_vr_view_latch(Vc3VrView *v)
+{
+    XrView views[2];
+    float ap[3], ay, qa_inv[4];
+    int ok, e, k;
+
+    pthread_mutex_lock(&s_view_lock);
+    ok = s_pub_ok;
+    if (ok) {
+        memcpy(views, s_pub_views, sizeof views);
+        memcpy(ap, s_pub_anchor_p, sizeof ap);
+        ay = s_pub_anchor_yaw;
+        v->id = s_pub_id;
+    }
+    pthread_mutex_unlock(&s_view_lock);
+    if (!ok)
+        return v->on = 0;
+    qa_inv[0] = 0;
+    qa_inv[1] = -sinf(ay * 0.5f);
+    qa_inv[2] = 0;
+    qa_inv[3] = cosf(ay * 0.5f);
+    for (e = 0; e < 2; e++) {
+        const float qe[4] = { views[e].pose.orientation.x, views[e].pose.orientation.y,
+                              views[e].pose.orientation.z, views[e].pose.orientation.w };
+        float rel[3];
+        for (k = 0; k < 3; k++)
+            rel[k] = (&views[e].pose.position.x)[k] - ap[k];
+        vr_qmul(qa_inv, qe, v->pose_q[e]);
+        yaw_rot(-ay, rel, v->pose_p[e]);
+        v->fov[e][0] = views[e].fov.angleLeft;
+        v->fov[e][1] = views[e].fov.angleRight;
+        v->fov[e][2] = views[e].fov.angleUp;
+        v->fov[e][3] = views[e].fov.angleDown;
+        for (k = 0; k < 4; k++)
+            v->tan_fov[e][k] = tanf(v->fov[e][k]);
+        vr_eye_matrix(v->pose_q[e], v->pose_p[e], v->tan_fov[e], imm_units(), IMM_NEAR, IMM_FAR,
+                      v->vp[e]);
+    }
+    return v->on = 1;
+}
+
+/* An eye of a frame's view, back in LOCAL (with the anchor as it is now). */
+static void view_to_local(const Vc3VrView *v, int e, XrPosef *pose)
+{
+    float qa[4] = { 0, sinf(s_anchor_yaw * 0.5f), 0, cosf(s_anchor_yaw * 0.5f) }, q[4], p[3];
+    vr_qmul(qa, v->pose_q[e], q);
+    yaw_rot(s_anchor_yaw, v->pose_p[e], p);
+    pose->orientation.x = q[0];
+    pose->orientation.y = q[1];
+    pose->orientation.z = q[2];
+    pose->orientation.w = q[3];
+    pose->position.x = p[0] + s_anchor_p[0];
+    pose->position.y = p[1] + s_anchor_p[1];
+    pose->position.z = p[2] + s_anchor_p[2];
+}
+
+/* The HUD panel of an immersive frame, in the anchor's frame: the game's
+ * own view at HUD_DIST, so its marks lie over what they mark. */
+static int hud_panel(const Frame *f, float c[3], float *w, float *h)
+{
+    const Vc3VrFrame *vf = &f->vr;
+    VrGameProj g;
+    float u = imm_units(), v[3];
+    if (!vf->gp_ok || vf->gw <= 0 || vf->gh <= 0)
+        return 0;
+    g.kx = vf->gp[0]; g.ky = vf->gp[1]; g.cx = vf->gp[2]; g.cy = vf->gp[3]; g.inv_pz = vf->gp[4];
+    if (!(fabsf(g.kx) > 1e-3f) || !(fabsf(g.ky) > 1e-3f) || !(fabsf(g.inv_pz) > 1e-9f))
+        return 0;
+    vr_unproject_gl(&g, vf->gw * 0.5f, vf->gh * 0.5f, HUD_DIST * u / fabsf(g.inv_pz), v);
+    c[0] = v[0] / u;
+    c[1] = v[1] / u;
+    c[2] = v[2] / u;
+    /* the HUD is drawn as wide as the picture (16:9: the middle 4:3 is the
+     * game's view) */
+    *w = HUD_DIST * (float)f->lw / fabsf(g.kx);
+    *h = HUD_DIST * (float)vf->gh / fabsf(g.ky);
+    return 1;
+}
+
 /* The overlay's layer: one swapchain per eye, multisampled where the GPU
  * resolves it on chip (EXT_multisampled_render_to_texture, free on Adreno). */
 typedef struct {
@@ -842,7 +996,7 @@ static int overlay_init(void)
  * Dead 4 VR). Point the gun at a row and pull the trigger; the game gets no
  * input meanwhile. Holding the other hand's upper button (B / Y) for a
  * second opens and closes it too. */
-enum { M_SIGHT, M_LASER, M_GUN, M_HAND, M_STEREO, M_ASPECT, M_RES, M_DIST, M_SIZE,
+enum { M_SCREEN, M_SIGHT, M_LASER, M_GUN, M_HAND, M_STEREO, M_ASPECT, M_RES, M_DIST, M_SIZE,
        M_COINS, M_COIN, M_RECENTRE, M_TEST, M_SERVICE, M_RESET, M_CLOSE, M_COUNT };
 static struct {
     int open, hover, dirty;
@@ -856,7 +1010,7 @@ static void menu_items(XmItem *it)
     static const char *const sight[] = { "Iron sights", "Red dot", "Holographic" };
     static const char *const laser[] = { "Laser and dot", "Dot only", "Off" };
     static const char *const labels[M_COUNT] = {
-        "Sight", "Laser", "Gun model", "Gun hand", "Stereo 3D", "Aspect", "Resolution",
+        "Screen", "Sight", "Laser", "Gun model", "Gun hand", "Stereo 3D", "Aspect", "Resolution",
         "Screen distance", "Screen size", "Coins", "Insert a coin", "Recentre view",
         "Arcade Test button", "Arcade Service button", "Reset game", "Close" };
     int i;
@@ -864,11 +1018,13 @@ static void menu_items(XmItem *it)
         it[i].label = labels[i];
         it[i].value[0] = 0;
     }
+    snprintf(it[M_SCREEN].value, 40, "%s", s_vr.immersive ? "Immersive" : "Virtual screen");
     snprintf(it[M_SIGHT].value, 40, "%s", sight[s_vr.sight]);
     snprintf(it[M_LASER].value, 40, "%s", laser[s_vr.laser]);
     snprintf(it[M_GUN].value, 40, "%s", s_vr.show_gun ? "Shown" : "Hidden");
     snprintf(it[M_HAND].value, 40, "%s", s_gun == HAND_L ? "Left" : "Right");
-    snprintf(it[M_STEREO].value, 40, "%s", vc3_stereo_get() ? "On" : "Off");
+    snprintf(it[M_STEREO].value, 40, "%s", s_vr.immersive ? "On (immersive)"
+             : vc3_stereo_get() ? "On" : "Off");
     snprintf(it[M_ASPECT].value, 40, "%s", vc3_wide_get() ? "16:9" : "4:3");
     snprintf(it[M_RES].value, 40, "%dx%s", vc3_scale_get(),
              vc3_scale_get() > 1 && vc3_stereo_get() ? " (slow in 3D)" : "");
@@ -962,6 +1118,7 @@ static void menu_choose(int item)
 
     s_menu.reset_armed = 0;             /* anything else chosen in between: no reset */
     switch (item) {
+    case M_SCREEN: s_vr.immersive = !s_vr.immersive; break;
     case M_SIGHT: s_vr.sight = (s_vr.sight + 1) % QO_SIGHT_COUNT; break;
     case M_LASER: s_vr.laser = (s_vr.laser + 1) % 3; break;
     case M_GUN: s_vr.show_gun = !s_vr.show_gun; break;
@@ -1124,7 +1281,38 @@ static void gun_frame(XrTime t, const Frame *f)
             }
         }
     }
-    if (f && s_hit_u >= 0 && s_hit_u <= 1 && s_hit_v >= 0 && s_hit_v <= 1) {
+    if (located && f && f->vr.imm) {
+        /* Immersive: the gun's ray meets the HUD panel's plane (the game's
+         * view at HUD_DIST); the game shoots from its camera through that
+         * point, so its screen position is the point through the game's
+         * own projection. */
+        float rel[3] = { o[0] - s_anchor_p[0], o[1] - s_anchor_p[1], o[2] - s_anchor_p[2] };
+        float lo[3], ld[3], pc[3], pw_, ph_;
+        s_hit_u = s_hit_v = -1;
+        yaw_rot(-s_anchor_yaw, rel, lo);
+        yaw_rot(-s_anchor_yaw, d, ld);
+        if (hud_panel(f, pc, &pw_, &ph_) && ld[2] < -1e-4f) {
+            float tt = (pc[2] - lo[2]) / ld[2];
+            if (tt > 0) {
+                const Vc3VrFrame *vf = &f->vr;
+                VrGameProj g = { vf->gp[0], vf->gp[1], vf->gp[2], vf->gp[3], vf->gp[4] };
+                float u = imm_units(), v[3], sx, sy;
+                int i;
+                for (i = 0; i < 3; i++) {
+                    v[i] = (lo[i] + ld[i] * tt) * u;
+                    s_qo.end[i] = o[i] + d[i] * tt;
+                }
+                if (vr_project_gl(&g, v, &sx, &sy)) {
+                    double gx = sx / vf->gw, gy = sy / vf->gh;
+                    if (gx >= 0 && gx <= 1 && gy >= 0 && gy <= 1) {
+                        ux = gx;
+                        uy = gy;
+                        on_screen = 1;
+                    }
+                }
+            }
+        }
+    } else if (f && s_hit_u >= 0 && s_hit_u <= 1 && s_hit_v >= 0 && s_hit_v <= 1) {
         double gw = f->lh * 4.0 / 3.0, gx = s_hit_u * f->lw - (f->lw - gw) / 2.0;
         on_screen = 1;
         if (gx >= 0 && gx < gw) {
@@ -1360,16 +1548,128 @@ static int draw_overlay(XrCompositionLayerProjectionView pv[2])
     return 1;
 }
 
+/* The HUD panel's swapchain, the size of the HUD picture. */
+static XrSwapchain s_hud_chain;
+static uint32_t s_hud_n, s_hud_cw, s_hud_ch;
+static XrSwapchainImageOpenGLESKHR s_hud_img[8];
+static GLuint s_hud_fbo[8];
+
+static int hud_chain_fit(uint32_t w, uint32_t h)
+{
+    XrSwapchainCreateInfo ci = { XR_TYPE_SWAPCHAIN_CREATE_INFO };
+    uint32_t i;
+    if (s_hud_chain && s_hud_cw == w && s_hud_ch == h)
+        return 1;
+    if (s_hud_chain) {
+        glDeleteFramebuffers((GLsizei)s_hud_n, s_hud_fbo);
+        xrDestroySwapchain(s_hud_chain);
+        s_hud_chain = XR_NULL_HANDLE;
+    }
+    ci.usageFlags = XR_SWAPCHAIN_USAGE_COLOR_ATTACHMENT_BIT | XR_SWAPCHAIN_USAGE_TRANSFER_DST_BIT;
+    ci.format = s_chain_fmt;
+    ci.sampleCount = 1;
+    ci.width = w;
+    ci.height = h;
+    ci.faceCount = 1;
+    ci.arraySize = 1;
+    ci.mipCount = 1;
+    XRCHECK(xrCreateSwapchain(s_sess, &ci, &s_hud_chain));
+    XRCHECK(xrEnumerateSwapchainImages(s_hud_chain, 0, &s_hud_n, NULL));
+    if (s_hud_n > 8)
+        s_hud_n = 8;
+    for (i = 0; i < s_hud_n; i++)
+        s_hud_img[i].type = XR_TYPE_SWAPCHAIN_IMAGE_OPENGL_ES_KHR;
+    XRCHECK(xrEnumerateSwapchainImages(s_hud_chain, s_hud_n, &s_hud_n,
+                                       (XrSwapchainImageBaseHeader *)s_hud_img));
+    glGenFramebuffers((GLsizei)s_hud_n, s_hud_fbo);
+    for (i = 0; i < s_hud_n; i++) {
+        glBindFramebuffer(GL_FRAMEBUFFER, s_hud_fbo[i]);
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D,
+                               s_hud_img[i].image, 0);
+    }
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    s_hud_cw = w;
+    s_hud_ch = h;
+    fprintf(stderr, "[xr] HUD panel %ux%u\n", w, h);
+    return 1;
+}
+
+/* The frame's HUD picture into the panel's swapchain, upright; the quad. */
+static int hud_layer(const Frame *f, XrCompositionLayerQuad *q)
+{
+    XrSwapchainImageAcquireInfo ai = { XR_TYPE_SWAPCHAIN_IMAGE_ACQUIRE_INFO };
+    XrSwapchainImageWaitInfo wti = { XR_TYPE_SWAPCHAIN_IMAGE_WAIT_INFO };
+    XrSwapchainImageReleaseInfo ri = { XR_TYPE_SWAPCHAIN_IMAGE_RELEASE_INFO };
+    uint32_t idx = 0;
+    float pc[3], pw, ph, c[3];
+    if (!f->has_hud || !hud_panel(f, pc, &pw, &ph)
+        || !hud_chain_fit((uint32_t)f->hud_w, (uint32_t)f->hud_h))
+        return 0;
+    wti.timeout = XR_INFINITE_DURATION;
+    if (XR_FAILED(xrAcquireSwapchainImage(s_hud_chain, &ai, &idx))
+        || XR_FAILED(xrWaitSwapchainImage(s_hud_chain, &wti)))
+        return 0;
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, s_read_fbo);
+    glFramebufferTexture2D(GL_READ_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, f->hud, 0);
+    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, s_hud_fbo[idx]);
+    glDisable(GL_SCISSOR_TEST);
+    if (s_srgb_control)
+        glDisable(GL_FRAMEBUFFER_SRGB_EXT);
+    glBlitFramebuffer(0, 0, f->hud_w, f->hud_h, 0, f->hud_h, f->hud_w, 0, GL_COLOR_BUFFER_BIT,
+                      GL_NEAREST);
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    xrReleaseSwapchainImage(s_hud_chain, &ri);
+    yaw_rot(s_anchor_yaw, pc, c);
+    memset(q, 0, sizeof *q);
+    q->type = XR_TYPE_COMPOSITION_LAYER_QUAD;
+    q->layerFlags = XR_COMPOSITION_LAYER_BLEND_TEXTURE_SOURCE_ALPHA_BIT;  /* premultiplied */
+    q->space = s_local;
+    q->eyeVisibility = XR_EYE_VISIBILITY_BOTH;
+    q->subImage.swapchain = s_hud_chain;
+    q->subImage.imageRect.extent.width = (int32_t)s_hud_cw;
+    q->subImage.imageRect.extent.height = (int32_t)s_hud_ch;
+    q->pose.orientation.y = sinf(s_anchor_yaw * 0.5f);
+    q->pose.orientation.w = cosf(s_anchor_yaw * 0.5f);
+    q->pose.position.x = c[0] + s_anchor_p[0];
+    q->pose.position.y = c[1] + s_anchor_p[1];
+    q->pose.position.z = c[2] + s_anchor_p[2];
+    q->size.width = pw;
+    q->size.height = ph;
+    return 1;
+}
+
+/* An immersive frame's two eyes as a projection layer: each half of the
+ * frame as that eye's view, with the pose and field of view it was drawn
+ * with (the compositor turns it to where the head is now). */
+static void world_views(const Frame *f, XrCompositionLayerProjectionView wv[2])
+{
+    int e;
+    for (e = 0; e < 2; e++) {
+        memset(&wv[e], 0, sizeof wv[e]);
+        wv[e].type = XR_TYPE_COMPOSITION_LAYER_PROJECTION_VIEW;
+        view_to_local(&f->vr.view, e, &wv[e].pose);
+        wv[e].fov.angleLeft = f->vr.view.fov[e][0];
+        wv[e].fov.angleRight = f->vr.view.fov[e][1];
+        wv[e].fov.angleUp = f->vr.view.fov[e][2];
+        wv[e].fov.angleDown = f->vr.view.fov[e][3];
+        wv[e].subImage.swapchain = s_chain;
+        wv[e].subImage.imageRect.offset.x = (int32_t)((uint32_t)e * s_chain_w / 2);
+        wv[e].subImage.imageRect.extent.width = (int32_t)(s_chain_w / 2);
+        wv[e].subImage.imageRect.extent.height = (int32_t)s_chain_h;
+    }
+}
+
 static void xr_frame(void)
 {
     XrFrameWaitInfo wi = { XR_TYPE_FRAME_WAIT_INFO };
     XrFrameState fs = { XR_TYPE_FRAME_STATE };
     XrFrameBeginInfo bi = { XR_TYPE_FRAME_BEGIN_INFO };
     XrFrameEndInfo ei = { XR_TYPE_FRAME_END_INFO };
-    XrCompositionLayerQuad quad[2];
+    XrCompositionLayerQuad quad[2], hudq;
     XrCompositionLayerProjection proj = { XR_TYPE_COMPOSITION_LAYER_PROJECTION };
-    XrCompositionLayerProjectionView pv[2];
-    const XrCompositionLayerBaseHeader *layers[3];
+    XrCompositionLayerProjection world = { XR_TYPE_COMPOSITION_LAYER_PROJECTION };
+    XrCompositionLayerProjectionView pv[2], wv[2];
+    const XrCompositionLayerBaseHeader *layers[4];
     uint32_t nl = 0;
     Frame *f;
     int is_new;
@@ -1412,6 +1712,7 @@ static void xr_frame(void)
         s_views_ok = XR_SUCCEEDED(xrLocateViews(s_sess, &vl, &vs, 2, &nv, s_views)) && nv == 2
             && (vs.viewStateFlags & XR_VIEW_STATE_POSITION_VALID_BIT)
             && (vs.viewStateFlags & XR_VIEW_STATE_ORIENTATION_VALID_BIT);
+        view_publish();
     }
     if (s_overlay_ok < 0) {
         s_overlay_ok = overlay_init();
@@ -1438,9 +1739,20 @@ static void xr_frame(void)
             float c[3], yq = s_anchor_yaw * 0.5f;
 
             draw_frame(s_chain_fbo[idx], f, (GLsizei)s_chain_w, (GLsizei)s_chain_h,
-                       s_overlay_ok <= 0);
-            frame_read_done(f);
+                       s_overlay_ok <= 0 && !f->vr.imm);
             xrReleaseSwapchainImage(s_chain, &ri);
+            if (f->vr.imm && f->eyes == 2) {
+                /* Immersive: the world in each eye, the HUD on its panel. */
+                world_views(f, wv);
+                world.space = s_local;
+                world.viewCount = 2;
+                world.views = wv;
+                layers[nl++] = (const XrCompositionLayerBaseHeader *)&world;
+                if (hud_layer(f, &hudq))
+                    layers[nl++] = (const XrCompositionLayerBaseHeader *)&hudq;
+                frame_read_done(f);
+            } else {
+            frame_read_done(f);
             {
                 float fwd[3] = { 0, 0, -s_dist };
                 yaw_rot(s_anchor_yaw, fwd, c);
@@ -1466,6 +1778,7 @@ static void xr_frame(void)
                 q->size.height = s_height;
                 q->size.width = s_height * (float)f->lw / (float)f->lh;
                 layers[nl++] = (const XrCompositionLayerBaseHeader *)q;
+            }
             }
         }
     }

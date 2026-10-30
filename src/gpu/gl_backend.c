@@ -60,7 +60,9 @@
 #define GL_SAMPLES_PASSED           GL_ANY_SAMPLES_PASSED
 #define glClearDepth(d)             glClearDepthf((GLfloat)(d))
 extern int vc3_quest_gl_context(void);         /* src/android/quest_host.c */
-extern void vc3_quest_frame(GLuint fbo, int pw, int ph, int eyes, int lw, int lh);
+struct Vc3VrFrame_;
+extern void vc3_quest_frame(GLuint fbo, int pw, int ph, int eyes, int lw, int lh,
+                            const void *vr_frame);   /* a Vc3VrFrame (vr_view.h) */
 #else
 #define GL_SILENCE_DEPRECATION
 #include <OpenGL/OpenGL.h>
@@ -76,6 +78,8 @@ extern void vc3_quest_frame(GLuint fbo, int pw, int ph, int eyes, int lw, int lh
 
 #include "nv2a_backend.h"
 #include "../display_settings.h"
+#include "../vr_math.h"
+#include "../vr_view.h"
 
 static void es_bgra(GLenum target);
 #include "../d3d/d3d8_swizzle.h"   /* relative to src/kernel, as the executor */
@@ -128,6 +132,9 @@ typedef struct {
     GLint comp, mv, proj, tm, c59, skin, usecomp, lighting, lkind, light, samb,
           matalpha, colmat, flipn, hasnrm, hascol, texgen, tgon, tmon, ascale,
           packed, aa, vpz, nearz, fogen, fogmode, fogp, uvs0, bgra;
+    /* The immersive view (vr_view.h): this eye's matrix, the game's
+     * projection, on / 1 / pz. */
+    GLint immvp, gp, gw;
 } Prog;
 static Prog s_pcpu, s_praw, *U = &s_pcpu;
 static uint32_t s_frame = 1;
@@ -165,6 +172,9 @@ static const char *VS =
     "uniform vec2 u_surf;\n"                  /* framebuffer size */
     "uniform vec2 u_xs;\n"                    /* clip x scale, offset (16:9) */
     "uniform vec2 u_eye;\n"                   /* stereo: h, convergence D */
+    "uniform mat4 u_immvp;\n"                 /* immersive: this eye's matrix */
+    "uniform vec4 u_gp;\n"                    /* the game's projection kx ky cx cy */
+    "uniform vec2 u_gw;\n"                    /* immersive on, 1 / pz */
     "uniform vec2 u_depth;\n"                 /* clip min, max */
     "uniform vec2 u_texsize;\n"
     "out vec4 v_col;\n"
@@ -180,7 +190,14 @@ static const char *VS =
     "    ndc.x += u_eye.x * (min(u_eye.y * a_pos.w, 4.0) - 1.0);\n"
     "  ndc.x = ndc.x * u_xs.x + u_xs.y;\n"
     "  float z = clamp((a_pos.z - u_depth.x) / (u_depth.y - u_depth.x), 0.0, 1.0) * 2.0 - 1.0;\n"
-    "  gl_Position = vec4(ndc * w, z * w, w);\n"
+    /* immersive, 3D: the game eye position back from the screen and w,
+     * then through this eye (vr_math.h, vr_unproject_gl) */
+    "  if (u_gw.x != 0.0 && a_pos.w != 1.0 && a_pos.w > 0.0) {\n"
+    "    float ez = w * u_gw.y;\n"
+    "    gl_Position = u_immvp * vec4((a_pos.x - u_gp.z) / u_gp.x * ez,\n"
+    "                                 (a_pos.y - u_gp.w) / u_gp.y * ez, -w * abs(u_gw.y), 1.0);\n"
+    "  } else\n"
+    "    gl_Position = vec4(ndc * w, z * w, w);\n"
     "  v_col = a_col.zyxw;\n"
     "  v_uv = a_uv / u_texsize;\n"
     "  v_spec = a_spec.zyxw;\n"
@@ -214,6 +231,9 @@ static const char *VS_FF =
     "uniform vec2 u_xs;\n"
     "uniform vec2 u_eye;\n"
     "uniform mat4 u_comp, u_mv[4], u_proj, u_tm[4];\n"   /* uploaded transposed */
+    "uniform mat4 u_immvp;\n"
+    "uniform vec4 u_gp;\n"
+    "uniform vec2 u_gw;\n"
     "uniform vec4 u_c59;\n"
     "uniform uint u_skin;\n"
     "uniform int u_usecomp, u_lighting, u_flipn, u_hasnrm, u_hascol;\n"
@@ -361,10 +381,16 @@ static const char *VS_FF =
     "  ndc.x = ndc.x * u_xs.x + u_xs.y;\n"
     "  float zn = (s.z - u_depth.x) / (u_depth.y - u_depth.x) * 2.0 - 1.0;\n"
     "  bool bad = abs(w) <= 1e-6 || any(isnan(o_screen)) || any(isinf(o_screen));\n"
-    "  gl_Position = bad ? vec4(0.0, 0.0, 0.0, 1.0) : vec4(ndc * w, zn * w, w);\n"
+    /* immersive: the eye position back from s and w, through this eye; the
+     * headset's frustum clips (the game's planes no longer apply) */
+    "  bool imm = u_gw.x != 0.0;\n"
+    "  float iez = w * u_gw.y;\n"
+    "  vec4 ipos = u_immvp * vec4((s.x - u_gp.z) / u_gp.x * iez, (s.y - u_gp.w) / u_gp.y * iez,\n"
+    "                             -w * abs(u_gw.y), 1.0);\n"
+    "  gl_Position = bad ? vec4(0.0, 0.0, 0.0, 1.0) : (imm ? ipos : vec4(ndc * w, zn * w, w));\n"
     "#if !defined(GL_ES) || defined(GL_EXT_clip_cull_distance)\n"
-    "  gl_ClipDistance[0] = bad ? -1e30 : w - 1e-3;\n"
-    "  gl_ClipDistance[1] = bad ? -1e30 : (u_nearz != 0 ? (s.z - u_vpz) * w : 1.0);\n"
+    "  gl_ClipDistance[0] = bad ? -1e30 : (imm ? 1.0 : w - 1e-3);\n"
+    "  gl_ClipDistance[1] = bad ? -1e30 : (!imm && u_nearz != 0 ? (s.z - u_vpz) * w : 1.0);\n"
     "#endif\n"
     "}\n";
 
@@ -654,6 +680,9 @@ static int prog_link(Prog *p, GLuint vs, GLuint fs, int feedback)
 #define LOC(field, name) p->field = glGetUniformLocation(p->prog, name)
     LOC(surf, "u_surf"); LOC(depth, "u_depth"); LOC(texsize, "u_texsize");
     LOC(xs, "u_xs"); LOC(eye, "u_eye"); LOC(sbs, "u_sbs");
+    LOC(immvp, "u_immvp"); LOC(gp, "u_gp"); LOC(gw, "u_gw");
+    if (genv("VC3_IMM_LOG"))
+        fprintf(stderr, "[IMM] program %u: immvp %d gp %d gw %d\n", p->prog, p->immvp, p->gp, p->gw);
     LOC(textured, "u_textured"); LOC(atest, "u_atest"); LOC(afunc, "u_afunc");
     LOC(aref, "u_aref"); LOC(rc, "u_rc"); LOC(cicw, "u_cicw"); LOC(aicw, "u_aicw");
     LOC(cocw, "u_cocw"); LOC(aocw, "u_aocw"); LOC(f0, "u_f0"); LOC(f1, "u_f1");
@@ -986,6 +1015,11 @@ typedef struct {
      * menu once cleared, so the GPU copy stays black. */
     int memq_valid, cpu_owned;
     uint64_t memq;
+    /* Immersive: the game's projection into this surface (its last
+     * perspective fixed-function batch), and 3D batches this frame. */
+    VrGameProj gp;
+    int gp_ok;
+    uint32_t n3d;
 } Surf;
 static Surf s_surfs[MAX_SURFS];
 static int s_nsurfs;
@@ -1024,6 +1058,29 @@ static int s_stereo;                    /* this frame, latched at the flip */
 static float s_st_sep = 0.04f;          /* separation at infinity, NDC */
 static float s_st_depth = 8.0f;         /* convergence: clip w (VC3: ~metres) */
 static GLfloat s_sbs[4];                /* per texture unit 0-3: 1 = a stereo surface */
+
+/* ── Immersive (vr_view.h) ──────────────────────────────────────────────
+
+   With a headset that wants it, a frame with 3D is drawn for the eyes
+   themselves: each 3D vertex's game eye position comes back from its screen
+   position and w through the game's projection, and goes through the eye's
+   matrix (the head's pose and the eye's field of view) -- so the world
+   fills the view and stays put as the head turns. The projection is taken
+   from each fixed-function batch's matrices (vr_game_proj_from); the
+   vertex-program batches (sprites, effects) use the newest one. 2D that is
+   not full-screen goes to the HUD picture, shown on a panel the size of the
+   game's view; full-screen 2D (fades, effects that redraw the scene) stays
+   in the eyes. A frame with no 3D in it is shown on the virtual screen. */
+static int s_imm;                       /* this frame is drawn immersive */
+static Vc3VrView s_view;                /* with this pose */
+static VrGameProj s_gp, s_bgp;          /* the newest projection; this batch's */
+static int s_gp_ok, s_bgp_ok;
+static uint32_t s_gp_good, s_gp_bad;    /* for the log */
+static uint32_t s_3d_this, s_3d_prev;   /* 3D batches into a shown surface */
+static uint32_t s_shown_va[4];          /* the surfaces shown lately (VC3 triple buffers) */
+static GLuint s_hud_fbo, s_hud_tex;
+static GLsizei s_hud_w, s_hud_h;
+static uint32_t s_hud_frame;            /* the frame the HUD picture holds */
 
 static int surf_stereo(GLsizei w, GLsizei h)
 {
@@ -2422,6 +2479,21 @@ static void raw_uniforms(const Nv2aRawGeometry *g)
     glUniform1ui(U->fogmode, g->fog_mode);
     glUniform2f(U->fogp, g->fog_param[0], g->fog_param[1]);
     glUniform2f(U->uvs0, g->uv_scale0[0], g->uv_scale0[1]);
+    {   /* the game's projection for this batch, when its matrices changed */
+        static float last_aa[2];
+        if (!(valid && !memcmp(&last, ff, sizeof last)) || last_aa[0] != g->aa_sx
+            || last_aa[1] != g->aa_sy) {
+            last_aa[0] = g->aa_sx;
+            last_aa[1] = g->aa_sy;
+            s_bgp_ok = vr_game_proj_from(ff->composite, ff->mv[0], (int)ff->use_composite,
+                                         ff->proj, g->aa_sx, g->aa_sy, ff->c59, &s_bgp);
+            if (s_bgp_ok) {
+                s_gp_good++;
+            } else {
+                s_gp_bad++;
+            }
+        }
+    }
     if (valid && !memcmp(&last, ff, sizeof last))
         return;
     last = *ff;
@@ -2516,6 +2588,73 @@ static uint64_t tm_now(void)
 }
 #define TM(k) do { if (s_tm_on > 0) { uint64_t n_ = tm_now(); \
     if ((k) > 0) s_tm_ns[(k) - 1] += n_ - s_tm_last; s_tm_last = n_; } } while (0)
+
+/* A surface the game has shown lately (a back buffer): where the HUD is. */
+static int surf_shown(const Surf *f)
+{
+    int k;
+    for (k = 0; k < 4; k++)
+        if (f->va && f->va == s_shown_va[k])
+            return 1;
+    return 0;
+}
+
+/* 2D covering (nearly) the whole surface: a fade or a pass over the scene. */
+static int batch_fullscreen(const Nv2aBatch *b, const Surf *f)
+{
+    float x0 = 1e9f, x1 = -1e9f, y0 = 1e9f, y1 = -1e9f;
+    uint32_t k;
+    for (k = 0; k < b->count; k++) {
+        const Nv2aVertex *q = &b->vertices[k];
+        if (q->x < x0) x0 = q->x;
+        if (q->x > x1) x1 = q->x;
+        if (q->y < y0) y0 = q->y;
+        if (q->y > y1) y1 = q->y;
+    }
+    return x1 - x0 >= 0.9f * (float)f->w && y1 - y0 >= 0.9f * (float)f->h;
+}
+
+/* The HUD picture, bound for a draw: an eye's size, transparent at the
+ * frame's first HUD draw. Drawn with alpha kept as coverage (premultiplied
+ * over), for the headset's blended layer. */
+static void hud_bind(const Surf *f, const Nv2aRenderState *rs)
+{
+    if (!s_hud_fbo || s_hud_w != f->pw || s_hud_h != f->ph) {
+        GLint was = 0;
+        if (!s_hud_fbo) {
+            glGenFramebuffers(1, &s_hud_fbo);
+            glGenTextures(1, &s_hud_tex);
+        }
+        s_hud_w = f->pw;
+        s_hud_h = f->ph;
+        glGetIntegerv(GL_TEXTURE_BINDING_2D, &was);
+        glBindTexture(GL_TEXTURE_2D, s_hud_tex);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, s_hud_w, s_hud_h, 0, GL_RGBA,
+                     GL_UNSIGNED_BYTE, NULL);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glBindTexture(GL_TEXTURE_2D, (GLuint)was);
+        glBindFramebuffer(GL_FRAMEBUFFER, s_hud_fbo);
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, s_hud_tex, 0);
+        s_hud_frame = 0;
+    }
+    glBindFramebuffer(GL_FRAMEBUFFER, s_hud_fbo);
+    glViewport(0, 0, s_hud_w, s_hud_h);
+    if (s_hud_frame != s_frame) {
+        GLboolean mask[4], sc = glIsEnabled(GL_SCISSOR_TEST);
+        glGetBooleanv(GL_COLOR_WRITEMASK, mask);
+        glDisable(GL_SCISSOR_TEST);
+        glColorMask(1, 1, 1, 1);
+        glClearColor(0, 0, 0, 0);
+        glClear(GL_COLOR_BUFFER_BIT);
+        glColorMask(mask[0], mask[1], mask[2], mask[3]);
+        if (sc)
+            glEnable(GL_SCISSOR_TEST);
+        s_hud_frame = s_frame;
+    }
+    if (rs->blend_enable)
+        glBlendFuncSeparate(rs->blend_src, rs->blend_dst, GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+}
 
 static void gl_draw(const Nv2aSurface *s, const Nv2aBatch *b)
 {
@@ -2797,8 +2936,70 @@ static void gl_draw(const Nv2aSurface *s, const Nv2aBatch *b)
         s_st.zpass_pixels += passed;
     } else {
         TM(4);
+        /* Immersive: 3D through each eye's matrix; 2D off the full screen to
+         * the HUD picture. */
+        int is3d, imm3d = 0, hud = 0;
+        if (raw && s_bgp_ok) {
+            f->gp = s_bgp;
+            f->gp_ok = 1;
+        }
+        is3d = raw ? s_bgp_ok
+                   : (b->vertices[0].rhw != 1.0f && b->vertices[0].rhw > 0.0f
+                      && (f->gp_ok || s_gp_ok));
+        if (is3d && f->st) {
+            s_3d_this++;
+            f->n3d++;
+        }
+        if (is3d && genv("VC3_IMM_LOG")) {   /* where the 3D goes (debug) */
+            static uint32_t vas[8], cnt[8], fr;
+            int k;
+            if (fr != s_frame) {
+                if (s_frame % 120 == 0)
+                    for (k = 0; k < 8 && vas[k]; k++)
+                        fprintf(stderr, "[IMM]   3D into %08X %dx%d st %d: %u batches (shown %08X %08X)\n",
+                                vas[k], surf_find(vas[k]) ? surf_find(vas[k])->w : 0,
+                                surf_find(vas[k]) ? surf_find(vas[k])->h : 0,
+                                surf_find(vas[k]) ? surf_find(vas[k])->st : 0, cnt[k],
+                                s_shown_va[0], s_shown_va[1]);
+                memset(vas, 0, sizeof vas);
+                memset(cnt, 0, sizeof cnt);
+                fr = s_frame;
+            }
+            for (k = 0; k < 8 && vas[k] && vas[k] != f->va; k++)
+                ;
+            if (k < 8) {
+                vas[k] = f->va;
+                cnt[k]++;
+            }
+        }
+        if (s_imm && f->st) {
+            if (is3d)
+                imm3d = 1;
+            else if (!raw && surf_shown(f) && !batch_fullscreen(b, f))
+                hud = 1;
+        }
+        if (s_imm && !is3d && genv("VC3_IMM_LOG") && s_frame % 120 == 0) {
+            static uint32_t lf, nl;
+            if (lf != s_frame) { lf = s_frame; nl = 0; }
+            if (nl++ < 40)
+                fprintf(stderr, "[IMM]   2D %s into %08X %dx%d st %d shown %d full %d count %u rhw %.3f tex %08X\n",
+                        raw ? "raw" : "cpu", f->va, f->w, f->h, f->st, surf_shown(f),
+                        raw ? -1 : batch_fullscreen(b, f), raw ? 0 : b->count,
+                        raw ? 0.0f : b->vertices[0].rhw, b->texture ? b->texture->offset : 0);
+        }
+        if (imm3d) {
+            const VrGameProj *g = raw ? &s_bgp : f->gp_ok ? &f->gp : &s_gp;
+            glUniform4f(U->gp, g->kx, g->ky, g->cx, g->cy);
+            glUniform2f(U->gw, 1.0f, g->inv_pz);
+        } else {
+            glUniform2f(U->gw, 0.0f, 0.0f);
+        }
+        if (hud) {
+            hud_bind(f, b->state);
+            s_rs_valid = 0;                 /* the blend's alpha was changed */
+        }
         /* Stereo: the same draw for each eye, in its half. */
-        int eye, eyes = f->st ? 2 : 1;
+        int eye, eyes = f->st && !hud ? 2 : 1;
         for (eye = 0; eye < eyes; eye++) {
             GLfloat sb[8];
             int k;
@@ -2807,9 +3008,14 @@ static void gl_draw(const Nv2aSurface *s, const Nv2aBatch *b)
                 sb[2 * k + 1] = 0.5f * (GLfloat)eye;
             }
             glUniform4fv(U->sbs, 2, sb);
-            if (f->st) {
+            if (hud) {
+                glUniform2f(U->eye, 0.0f, s_st_depth);
+            } else if (f->st) {
                 glViewport(eye * f->pw, 0, f->pw, f->ph);
-                glUniform2f(U->eye, eye ? -0.5f * s_st_sep : 0.5f * s_st_sep, s_st_depth);
+                if (imm3d)
+                    glUniformMatrix4fv(U->immvp, 1, GL_FALSE, s_view.vp[eye]);
+                glUniform2f(U->eye, s_imm ? 0.0f : eye ? -0.5f * s_st_sep : 0.5f * s_st_sep,
+                            s_st_depth);
             } else {
                 glUniform2f(U->eye, 0.0f, s_st_depth);
             }
@@ -2819,6 +3025,8 @@ static void gl_draw(const Nv2aSurface *s, const Nv2aBatch *b)
             else
                 glDrawArrays(GL_TRIANGLES, 0, (GLsizei)b->count);
         }
+        if (hud)
+            glBindFramebuffer(GL_FRAMEBUFFER, f->fbo);
         if (f->st)
             glViewport(0, 0, f->pw, f->ph);
         TM(5);
@@ -3577,7 +3785,24 @@ static void quest_present(void)
     lw = f->wide ? ((f->w * 4 / 3 + 1) & ~1) : f->w;
     lh = f->h;
     if (!f->cpu_owned) {
-        vc3_quest_frame(f->fbo, f->pw, f->ph, f->st ? 2 : 1, lw, lh);
+        Vc3VrFrame vf;
+        memset(&vf, 0, sizeof vf);
+        vf.imm = s_imm && f->st;
+        vf.view = s_view;
+        if (vf.imm && s_hud_fbo && s_hud_frame == s_frame) {
+            vf.hud_fbo = s_hud_fbo;
+            vf.hud_w = s_hud_w;
+            vf.hud_h = s_hud_h;
+        }
+        vf.gp[0] = s_gp.kx;
+        vf.gp[1] = s_gp.ky;
+        vf.gp[2] = s_gp.cx;
+        vf.gp[3] = s_gp.cy;
+        vf.gp[4] = s_gp.inv_pz;
+        vf.gp_ok = s_gp_ok;
+        vf.gw = f->w;
+        vf.gh = f->h;
+        vc3_quest_frame(f->fbo, f->pw, f->ph, f->st ? 2 : 1, lw, lh, &vf);
         return;
     }
     if (cap < (size_t)f->w * f->h * 4) {
@@ -3613,7 +3838,7 @@ static void quest_present(void)
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, f->w, f->h, 0, GL_RGBA, GL_UNSIGNED_BYTE, rgba);
     glBindFramebuffer(GL_FRAMEBUFFER, fbo);
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, tex, 0);
-    vc3_quest_frame(fbo, f->w, f->h, 1, f->w, f->h);
+    vc3_quest_frame(fbo, f->w, f->h, 1, f->w, f->h, NULL);
 }
 #endif
 
@@ -3650,6 +3875,24 @@ static void gl_flip(void)
             fprintf(stderr, "[GLTR] frame begins\n");
         }
     }
+#if !defined(VC3_GLES)
+    /* The desktop's immersive test (vr_view_desktop.c): no headset layer
+     * to show the HUD on, so its picture goes, small and opaque, into the
+     * right eye's lower right corner -- to see what the panel would get. */
+    if (s_imm && s_hud_fbo && s_hud_frame == s_frame && genv("VC3_IMMERSIVE_TEST")) {
+        Surf *pf = surf_find(nv2a_backend_presented_va());
+        if (pf && pf->st && pf->fbo) {
+            glDisable(GL_SCISSOR_TEST);
+            glColorMask(1, 1, 1, 1);
+            s_rs_valid = 0;
+            glBindFramebuffer(GL_READ_FRAMEBUFFER, s_hud_fbo);
+            glBindFramebuffer(GL_DRAW_FRAMEBUFFER, pf->fbo);
+            glBlitFramebuffer(0, 0, s_hud_w, s_hud_h, pf->pw + pf->pw / 2, 0, 2 * pf->pw, pf->ph / 2,
+                              GL_COLOR_BUFFER_BIT, GL_LINEAR);
+            glBindFramebuffer(GL_FRAMEBUFFER, pf->fbo);
+        }
+    }
+#endif
     /* Only the surface being presented goes back to guest memory: render
      * targets the title samples are read from their framebuffers on the GPU,
      * and reading every dirty surface back each flip, synchronously, was half
@@ -3684,6 +3927,22 @@ static void gl_flip(void)
                 surf_readback(&s_surfs[i]);
         }
     }
+    /* The frame's projection (the HUD panel, the aim): the one of the
+     * stereo surface the most 3D went into -- the scene. */
+    {
+        uint32_t best = 0;
+        for (i = 0; i < s_nsurfs; i++) {
+            Surf *q = &s_surfs[i];
+            if (q->st && q->gp_ok && q->n3d > best) {
+                best = q->n3d;
+                s_gp = q->gp;
+                s_gp_ok = 1;
+            }
+            q->n3d = 0;
+        }
+        s_3d_prev = s_3d_this;
+        s_3d_this = 0;
+    }
 #if defined(VC3_GLES)
     quest_present();
 #endif
@@ -3698,7 +3957,31 @@ static void gl_flip(void)
     }
     s_scale = vc3_scale_get();
     s_wide = vc3_wide_get();
-    s_stereo = vc3_stereo_get();
+    /* The next frame's view: immersive when the host has a pose for it and
+     * this frame had 3D in it (a frame without -- a movie, a menu -- goes
+     * on the virtual screen). Immersive draws both eyes, as stereo does. */
+    {
+        uint32_t shown = nv2a_backend_presented_va();
+        int on;
+        if (shown && shown != s_shown_va[0] && shown != s_shown_va[1]
+            && shown != s_shown_va[2] && shown != s_shown_va[3]) {
+            memmove(&s_shown_va[1], &s_shown_va[0], 3 * sizeof s_shown_va[0]);
+            s_shown_va[0] = shown;
+        }
+
+        on = vc3_vr_view_latch(&s_view);
+        s_stereo = vc3_stereo_get() || on;
+        s_imm = on && s_stereo && s_3d_prev > 0 && s_gp_ok;
+        if (genv("VC3_IMM_LOG")) {
+            static uint32_t n;
+            if (++n % 60 == 0)
+                fprintf(stderr, "[IMM] %s: 3D batches %u, projection %s (kx %.1f ky %.1f cx %.1f"
+                        " cy %.1f 1/pz %.3f), batches read %u, not perspective %u\n",
+                        s_imm ? "immersive" : on ? "screen (no 3D)" : "off", s_3d_prev,
+                        s_gp_ok ? "known" : "unknown", s_gp.kx, s_gp.ky, s_gp.cx, s_gp.cy,
+                        s_gp.inv_pz, s_gp_good, s_gp_bad);
+        }
+    }
     s_frame++;
     if (genv("VC3_FPS_LOG")) {            /* wall-clock flips per second */
         /* With the vblanks delivered over the same second: flips below the

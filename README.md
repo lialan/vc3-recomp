@@ -92,6 +92,17 @@ JDK 17+, and SDL2 and the OpenXR loader built for arm64 Android in `$DEPS`
 `quest/install.sh /path/to/vc3` installs it over adb and copies your game
 folder to `/sdcard/VirtuaCop3` (the app asks for all-files access).
 
+By default the headset is immersive: in a mission the game's 3D fills
+your whole view, drawn for each eye with the headset's own field of view and
+head pose (the game's camera is your head, its rail movement carries you),
+and the HUD, lock-on marks and comm window hang on a panel the size of the
+game's own view, so marks stay over what they mark; the gun aims through
+the game's projection. Movies, menus and anything without 3D show on the
+virtual screen. The panel's Screen row switches to the virtual screen for
+everything (`vr_screen=screen`). Immersive spreads the game's pixels over the
+whole field of view, so it looks softer than the screen at the same
+resolution; 2x is worth trying if the frame rate holds.
+
 In the headset you hold a handgun (a polymer service pistol, its slide
 running back with each shot) with a sight of your choice: iron sights
 (three dots), a red dot, or a holographic sight (a red ring round a red dot);

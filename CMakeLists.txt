@@ -57,7 +57,7 @@ if(ANDROID)
     target_link_libraries(vc3 PRIVATE xboxrecomp SDL2::SDL2 ${OPENXR_LIB}
         EGL GLESv3 android log m)
 else()
-    add_executable(vc3 ${VC3_SOURCES})
+    add_executable(vc3 ${VC3_SOURCES} src/vr_view_desktop.c)
     target_link_libraries(vc3 PRIVATE xboxrecomp "-framework OpenGL")
 endif()
 
