@@ -57,10 +57,14 @@ STAMP=$(date +%H%M%S)
 SCEN=(
   "screen-mono|stereo=0;vr_screen=screen|"
   "screen-stereo|stereo=1;vr_screen=screen|"
-  "immersive|stereo=1;vr_screen=immersive|"
-  "immersive-bigcores|stereo=1;vr_screen=immersive|VC3_BIGCORES=1"
-  "immersive-foveation|stereo=1;vr_screen=immersive|VC3_FOVEATION=1"
-  "immersive-72hz|stereo=1;vr_screen=immersive;vr_refresh=72|"
+  "immersive-1x|stereo=1;vr_screen=immersive;vr_detail=1|"
+  "immersive-2x|stereo=1;vr_screen=immersive;vr_detail=2|"
+  "immersive-3x|stereo=1;vr_screen=immersive;vr_detail=3|"
+  "immersive-2x-foveation|stereo=1;vr_screen=immersive;vr_detail=2|VC3_FOVEATION=1"
+  "immersive-3x-foveation|stereo=1;vr_screen=immersive;vr_detail=3|VC3_FOVEATION=1"
+  "immersive-2x-bigcores|stereo=1;vr_screen=immersive;vr_detail=2|VC3_BIGCORES=1"
+  "immersive-2x-72hz|stereo=1;vr_screen=immersive;vr_detail=2;vr_refresh=72|"
+  "immersive-2x-nozoom|stereo=1;vr_screen=immersive;vr_detail=2|VC3_IMM_ZOOM=0"
 )
 KEYS=30:coin,31:start,40:fire,44:fire,46:fire,48:fire,50:fire,55:fire,60:fire,65:fire,70:fire,75:fire
 LOGS=()
@@ -88,7 +92,7 @@ for s in "${SCEN[@]}"; do
     log="$OUT/$STAMP-$name.log"
     $A logcat -d | grep -E " vc3 |xr|OpenXR" > "$log"
     $A shell am force-stop $PKG
-    grep -E "\[xr\] (extensions|performance|thread hints|display|game and back end)|\[GL\] foveation" "$log" | sed 's/.*vc3 *: /   /'
+    grep -E "\[xr\] (extensions|performance|thread hint|display|recommended|game and back end)|\[GL\] foveation|\[CRASH\]" "$log" | sed 's/.*vc3 *: /   /'
     LOGS+=("$log")
 done
 echo
