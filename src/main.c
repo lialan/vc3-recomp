@@ -271,8 +271,9 @@ int main(int argc, char **argv)
      * blocks of growing size up to 256 MB. Without reclaim the frees are
      * dropped and D3D's 9 MB framebuffer request no longer fits. */
     setenv("RECOMP_HEAP_RECLAIM", "1", 0);
-    /* Chihiro drives a VGA monitor; VC3's 1024x768 mode only exists in the
-     * VGA rows of D3D's mode table, so an HDTV pack fails device creation. */
+    /* Chihiro drives a VGA monitor; VC3's modes (640x480p by default, see
+     * chihiro_dip_switches) are looked up in the VGA rows of D3D's mode
+     * table, so an HDTV pack fails device creation. */
     setenv("RECOMP_AV_PACK", "vga", 0);
     /* D3D is linked into the XBE, so frames exist only as NV2A pushbuffer:
      * the toolkit's executor runs it and answers D3D's fences. */
@@ -282,10 +283,22 @@ int main(int argc, char **argv)
      * a 60 Hz vblank that honours the interrupt enables. */
     setenv("RECOMP_TITLE_KEVENTS", "1", 0);
     setenv("RECOMP_VBLANK", "paced", 0);
-    /* A window by default, sized for VC3's 1024x768 picture at 1x. */
+    /* A window by default, sized for the display mode the DIP switches pick:
+     * 640x480 shown at 2x, the larger modes at 1x. */
     setenv("RECOMP_FB_WINDOW", "1", 0);
-    setenv("RECOMP_FB_SIZE", "1024x768", 0);
-    setenv("RECOMP_WINDOW_SCALE", "1", 0);
+    {
+        const char *res = getenv("VC3_RES");
+        if (res && !strcmp(res, "1024")) {
+            setenv("RECOMP_FB_SIZE", "1024x768", 0);
+            setenv("RECOMP_WINDOW_SCALE", "1", 0);
+        } else if (res && !strcmp(res, "800")) {
+            setenv("RECOMP_FB_SIZE", "800x600", 0);
+            setenv("RECOMP_WINDOW_SCALE", "1", 0);
+        } else {
+            setenv("RECOMP_FB_SIZE", "640x480", 0);
+            setenv("RECOMP_WINDOW_SCALE", "2", 0);
+        }
+    }
 
     snprintf(xbe_path, sizeof(xbe_path), "%s/%s", game_dir, VC3_XBE_NAME);
     s_xbe = load_file(xbe_path, &s_xbe_size);

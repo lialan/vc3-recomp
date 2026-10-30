@@ -66,6 +66,10 @@ void sub_0013D310(void) { chihiro_sc_firmware_download(); } /* JvsScFirmwareDown
 extern void chihiro_devunit_probe(void);
 void sub_0007D220(void) { chihiro_devunit_probe(); }
 
+/* Baseboard DIP switches: picks the display mode (baseboard.c). */
+extern void chihiro_dip_switches(void);
+void sub_000F5220(void) { chihiro_dip_switches(); }
+
 /* XLaunchNewImage: leaving the test menu reboots into the game (src/main.c). */
 extern void vc3_relaunch(void);
 void sub_000B6256(void) { vc3_relaunch(); }          /* XLaunchNewImage */

@@ -50,7 +50,7 @@ static uint32_t s_frame = 1;
 /* VC3_GL_STATS=1: every 300 flips, what the batches asked for. */
 static struct {
     int on;
-    uint32_t draws, tris, textured, rt, uploads, untex;
+    uint32_t draws, tris, textured, rt, uploads, untex, rt_logged;
     uint32_t fail[256];        /* failed decodes by format code */
     uint32_t fmt[256];         /* textured batches by format code */
 } s_st;
@@ -553,6 +553,22 @@ static void gl_draw(const Nv2aSurface *s, const Nv2aBatch *b)
     glActiveTexture(GL_TEXTURE0);
     if (b->texture && b->texture->offset != f->va)
         textured = tex_bind(b->texture, &tw, &th);
+    if (s_st.on && textured && surf_find(b->texture->offset) && s_st.rt_logged < 6) {
+        float u0 = 1e9f, u1 = -1e9f, v0 = 1e9f, v1 = -1e9f;
+        uint32_t k;
+        for (k = 0; k < b->count; k++) {
+            const Nv2aVertex *q = &b->vertices[k];
+            if (q->u < u0) u0 = q->u;
+            if (q->u > u1) u1 = q->u;
+            if (q->v < v0) v0 = q->v;
+            if (q->v > v1) v1 = q->v;
+        }
+        s_st.rt_logged++;
+        fprintf(stderr, "[GL]   rt %08X -> %08X: uv %.1f..%.1f x %.1f..%.1f, tex %ux%u "
+                "fmt %02X pitch %u, divided by %.0fx%.0f\n", b->texture->offset, f->va,
+                u0, u1, v0, v1, b->texture->width, b->texture->height,
+                b->texture->color, b->texture->pitch, tw, th);
+    }
     s_st.draws++;
     s_st.tris += b->count / 3;
     if (textured)

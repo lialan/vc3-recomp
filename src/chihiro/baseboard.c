@@ -9,6 +9,8 @@
 
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
 #include "recomp_types.h"
 
@@ -33,6 +35,36 @@ void chihiro_jamma_firmware_load(void)
 void chihiro_devunit_probe(void)
 {
     MEM32(0x0036983Cu) = 1;
+    g_esp += 4;
+}
+
+/* 0xF5220: the baseboard DIP switches (via 0x104FB0), 0x80000000 if the board
+ * does not answer. The boot (0x39530) picks the display mode from them:
+ * index (~dip >> 1) & 0xB through the table at 0xF88CC -- 10 is 640x480
+ * progressive, 9 800x600, 11 1024x768, 0 640x480 interlaced. With no board
+ * the index is 11, but VC3 lays its 2D out at 640x480, so a 1024x768 frame
+ * shows menus and text in its top-left corner. Default to a 31 kHz monitor at
+ * 640x480; VC3_RES=800|1024 picks the others, VC3_DIP sets the raw value.
+ * cdecl, no arguments. */
+void chihiro_dip_switches(void)
+{
+    static int logged;
+    const char *raw = getenv("VC3_DIP");
+    const char *res = getenv("VC3_RES");
+    uint32_t dip = 0x2;                        /* index 10: 640x480p */
+
+    if (raw)
+        dip = (uint32_t)strtoul(raw, NULL, 0);
+    else if (res && !strcmp(res, "800"))
+        dip = 0x4;                             /* index 9: 800x600 */
+    else if (res && !strcmp(res, "1024"))
+        dip = 0x0;                             /* index 11: 1024x768 */
+    if (!logged) {
+        logged = 1;
+        fprintf(stderr, "[CHIHIRO] DIP switches 0x%08X (display index %u)\n",
+                dip, (~dip >> 1) & 0xBu);
+    }
+    g_eax = dip;
     g_esp += 4;
 }
 
