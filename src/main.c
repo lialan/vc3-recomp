@@ -15,6 +15,7 @@
 #endif
 
 #include <dlfcn.h>
+#include <mach-o/dyld.h>   /* _NSGetExecutablePath */
 #include <limits.h>
 #include <sys/ucontext.h>
 #include <signal.h>
@@ -153,16 +154,94 @@ static void mkdirs(const char *path)
     mkdir(tmp, 0755);
 }
 
+/* ── Relaunch ──────────────────────────────────────────────── */
+
+static char **s_argv;
+
+/* XLaunchNewImage (0xB6256), replaced: VC3 relaunches d:\vc3.xbe to leave the
+ * test menu, which on a Chihiro is a reboot into the game. Here it is a fresh
+ * process with the same arguments; the boot sets the launch data again.
+ * stdcall (path, launch data); returns only if exec fails. */
+void vc3_relaunch(void)
+{
+    char exe[PATH_MAX];
+    uint32_t size = sizeof(exe);
+    uint32_t path = MEM32(g_esp + 4);
+
+    fprintf(stderr, "[VC3] XLaunchNewImage(%s): restarting\n",
+            path ? (const char *)XBOX_PTR(path) : "(null)");
+    fflush(stdout);
+    fflush(stderr);
+    /* A scripted run's presses belong to the boot that read them; the next
+     * boot gets VC3_AUTOKEYS_RELAUNCH, if any. */
+    if (getenv("VC3_AUTOKEYS_RELAUNCH"))
+        setenv("VC3_AUTOKEYS", getenv("VC3_AUTOKEYS_RELAUNCH"), 1);
+    else
+        unsetenv("VC3_AUTOKEYS");
+    unsetenv("VC3_AUTOKEYS_RELAUNCH");
+    if (s_argv && _NSGetExecutablePath(exe, &size) == 0)
+        execv(exe, s_argv);
+    perror("[VC3] relaunch failed");
+    g_eax = 0x80004005u;
+    g_esp += 12;
+}
+
+/* ── Boot (on the guest thread) ────────────────────────────── */
+
+extern int xbox_HostWindowMain(int (*guest_main)(void));
+
+static char s_game_dir[PATH_MAX], s_save_dir[PATH_MAX];
+static void *s_xbe;
+static size_t s_xbe_size;
+
+/* Runs on the thread the toolkit's window starts (or directly, headless):
+ * the guest registers are thread-local, so the whole boot belongs here. */
+static int guest_main(void)
+{
+    install_fault_handler();
+
+    /* Chihiro has 128 MB, like a devkit; the game sizes its pools for it. */
+    xbox_SetTotalRam(XBOX_DEVKIT_RAM);
+    if (!xbox_MemoryLayoutInit(s_xbe, s_xbe_size)) {
+        fprintf(stderr, "failed to map the Xbox address space\n");
+        return 1;
+    }
+    g_xbox_mem_offset = xbox_GetMemoryOffset();
+
+    if (getenv("RECOMP_AC97_READY")) {
+        g_apu_state = mcpx_apu_init_standalone((uint8_t *)xbox_GetMemoryBase());
+        fprintf(stderr, "[BOOT] emulated APU %s\n", g_apu_state ? "up" : "FAILED");
+    }
+
+    xbox_kernel_init();
+    xbox_path_init(s_game_dir, s_save_dir);
+    xbox_kernel_bridge_init();
+    chihiro_init(s_save_dir);
+
+    g_esp = XBOX_STACK_TOP;
+    if (!recomp_dispatch_init())
+        fprintf(stderr, "[BOOT] flat dispatch unavailable; using binary search\n");
+    xbox_WatchdogStart();
+
+    printf("entry 0x%08X, esp 0x%08X\n", VC3_ENTRY_POINT, g_esp);
+    xbe_entry_point();
+
+    printf("game returned\n");
+    xbox_kernel_shutdown();
+    xbox_MemoryLayoutShutdown();
+    return 0;
+}
+
 /* ── main ──────────────────────────────────────────────────── */
 
 int main(int argc, char **argv)
 {
-    char game_dir[PATH_MAX], save_dir[PATH_MAX], xbe_path[PATH_MAX];
+    char *game_dir = s_game_dir, *save_dir = s_save_dir, xbe_path[PATH_MAX];
     const char *dir = argc > 1 ? argv[1] : getenv("VC3_GAME_DIR");
     const char *save = getenv("VC3_SAVE_DIR");
-    void *xbe;
-    size_t xbe_size = 0;
+    int rc;
 
+    s_argv = argv;
     setvbuf(stdout, NULL, _IONBF, 0);
     setvbuf(stderr, NULL, _IONBF, 0);
 
@@ -173,9 +252,9 @@ int main(int argc, char **argv)
         return 2;
     }
     if (save)
-        snprintf(save_dir, sizeof(save_dir), "%s", save);
+        snprintf(save_dir, sizeof(s_save_dir), "%s", save);
     else
-        snprintf(save_dir, sizeof(save_dir),
+        snprintf(save_dir, sizeof(s_save_dir),
                  "%s/Library/Application Support/vc3-recomp",
                  getenv("HOME") ? getenv("HOME") : ".");
     mkdirs(save_dir);
@@ -200,47 +279,21 @@ int main(int argc, char **argv)
      * a 60 Hz vblank that honours the interrupt enables. */
     setenv("RECOMP_TITLE_KEVENTS", "1", 0);
     setenv("RECOMP_VBLANK", "paced", 0);
+    /* A window by default, sized for VC3's 1024x768 picture at 1x. */
+    setenv("RECOMP_FB_WINDOW", "1", 0);
+    setenv("RECOMP_FB_SIZE", "1024x768", 0);
+    setenv("RECOMP_WINDOW_SCALE", "1", 0);
 
     snprintf(xbe_path, sizeof(xbe_path), "%s/%s", game_dir, VC3_XBE_NAME);
-    xbe = load_file(xbe_path, &xbe_size);
-    if (!xbe) {
+    s_xbe = load_file(xbe_path, &s_xbe_size);
+    if (!s_xbe) {
         fprintf(stderr, "cannot read %s\n", xbe_path);
         return 1;
     }
     printf("=== Virtua Cop 3 (recomp) ===\ngame: %s\nsave: %s\n",
            game_dir, save_dir);
 
-    install_fault_handler();
-
-    /* Chihiro has 128 MB, like a devkit; the game sizes its pools for it. */
-    xbox_SetTotalRam(XBOX_DEVKIT_RAM);
-    if (!xbox_MemoryLayoutInit(xbe, xbe_size)) {
-        fprintf(stderr, "failed to map the Xbox address space\n");
-        return 1;
-    }
-    g_xbox_mem_offset = xbox_GetMemoryOffset();
-
-    if (getenv("RECOMP_AC97_READY")) {
-        g_apu_state = mcpx_apu_init_standalone((uint8_t *)xbox_GetMemoryBase());
-        fprintf(stderr, "[BOOT] emulated APU %s\n", g_apu_state ? "up" : "FAILED");
-    }
-
-    xbox_kernel_init();
-    xbox_path_init(game_dir, save_dir);
-    xbox_kernel_bridge_init();
-    chihiro_init(save_dir);
-
-    g_esp = XBOX_STACK_TOP;
-    if (!recomp_dispatch_init())
-        fprintf(stderr, "[BOOT] flat dispatch unavailable; using binary search\n");
-    xbox_WatchdogStart();
-
-    printf("entry 0x%08X, esp 0x%08X\n", VC3_ENTRY_POINT, g_esp);
-    xbe_entry_point();
-
-    printf("game returned\n");
-    xbox_kernel_shutdown();
-    xbox_MemoryLayoutShutdown();
-    free(xbe);
-    return 0;
+    rc = xbox_HostWindowMain(guest_main);
+    free(s_xbe);
+    return rc;
 }

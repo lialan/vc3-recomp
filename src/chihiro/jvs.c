@@ -153,6 +153,7 @@ static int do_command(const uint8_t *p, int len, int *pos, out_t *o, int *reset)
         put(o, JVS_REPORT_OK);
         return 1;
     case 0x20:                       /* switch inputs: players, bytes each */
+        host_input_poll(&s_in);      /* first command of every poll frame */
         n = p[*pos + 1];
         i = p[*pos + 2];
         *pos += 3;

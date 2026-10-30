@@ -31,6 +31,7 @@ add_executable(vc3
     src/chihiro/jvs.c
     src/chihiro/baseboard.c
     src/d3d_fence.c
+    src/host_input.c
     ${RECOMP_GEN_SOURCES}
 )
 

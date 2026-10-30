@@ -23,6 +23,17 @@ void chihiro_jamma_firmware_load(void)
     g_esp += 8;
 }
 
+/* 0x7D220: sets the development-unit flag [0x36983C] when the boot memory
+ * probe (0x34F60) finds more than 64 MB of contiguous memory. Eight places
+ * read it through 0x7D240, among them 0xAEF40, which then opens the test
+ * menu at every boot. The toolkit's 128 MB contiguous window makes the probe
+ * find ~112 MB; a cabinet must run as retail, so the flag stays 0. cdecl. */
+void chihiro_devunit_probe(void)
+{
+    MEM32(0x0036983Cu) = 0;
+    g_esp += 4;
+}
+
 /* JvsScFirmwareDownload(u32 off, u32 size, u8 *buf, u32 flags), stdcall: the
  * game reads back 4 bytes of sound-controller firmware status. */
 void chihiro_sc_firmware_download(void)

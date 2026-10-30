@@ -62,6 +62,14 @@ extern void chihiro_sc_firmware_download(void);
 void sub_0013D120(void) { chihiro_jamma_firmware_load(); }  /* JammaFirmwareLoad     */
 void sub_0013D310(void) { chihiro_sc_firmware_download(); } /* JvsScFirmwareDownload */
 
+/* Development-unit flag from the boot memory probe: always retail. */
+extern void chihiro_devunit_probe(void);
+void sub_0007D220(void) { chihiro_devunit_probe(); }
+
+/* XLaunchNewImage: leaving the test menu reboots into the game (src/main.c). */
+extern void vc3_relaunch(void);
+void sub_000B6256(void) { vc3_relaunch(); }          /* XLaunchNewImage */
+
 /* XDK D3D's fence wait, against the push-buffer executor (src/d3d_fence.c). */
 extern void vc3_d3d_block_on_time(void);
 void sub_0010CAC0(void) { vc3_d3d_block_on_time(); } /* D3D_BlockOnTime */

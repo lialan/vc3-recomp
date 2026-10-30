@@ -30,4 +30,7 @@ void chihiro_init(const char *save_dir);
 void chihiro_input_set(const chihiro_input_t *in);
 void chihiro_coin_insert(int slot);    /* 0-based */
 
+/* src/host_input.c: mouse/keyboard into a snapshot (coins via insert). */
+void host_input_poll(chihiro_input_t *in);
+
 #endif
