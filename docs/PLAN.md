@@ -144,12 +144,14 @@ Known issues:
   nor are any of its seven callers. The white is the movie surface itself:
   `media/movie_xpr.gz` (a 16-byte `VCGZ` header, then gzip of `tex.xpr`) is a
   640x480 LIN_X8R8G8B8 texture, every pixel white, that decoded frames would
-  be converted into. The title-movie object is type 0x28 in the object table
-  at ~0x153378 (20-byte entries, id at +0x10): init 0x14710 (plays movie 4,
-  looping), update 0x147A0, destroy 0x14780. Nothing creates a type-0x28
-  object during boot/attract; the table is reached by computed indexing (no
-  stored pointer to it). Next: find the spawner that walks this table and why
-  the attract scene does not spawn type 0x28.
+  be converted into. The title-movie object is type 0x27 in the object-type
+  table at 0x1533B8 (20-byte entries {id, init, update, destroy, extra}):
+  init 0x14710 (plays movie 4, looping), update 0x147A0, destroy 0x14780.
+  The lookup `0x159D0(id, which)` (sole caller 0x1D760) is never called
+  during boot or attract (checked with an entry hook), so no object from this
+  table is created there. The attract sequence may be stuck on a placeholder
+  screen rather than cycling title movie / demo / ranking. Next: find what
+  normally starts 0x1D760 from the attract scene.
   (`vc3_title2_100mh.sfd`, `demo_100mh.sfd` and `bonfire.sfd` are unused
   strings; those files do not ship.)
 * Input is verified from SDL's event queue onward (`VC3_INPUT_SELFTEST=1`:
