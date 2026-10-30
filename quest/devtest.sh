@@ -69,6 +69,7 @@ SCEN=(
   "immersive-2x-72hz|stereo=1;vr_screen=immersive;vr_detail=2;vr_refresh=72|"
   "immersive-2x-nozoom|stereo=1;vr_screen=immersive;vr_detail=2|VC3_IMM_ZOOM=0"
   "immersive-2x-oldoverlay|stereo=1;vr_screen=immersive;vr_detail=2|VC3_OVERLAY_FULLRATE=1 VC3_OVERLAY_SCALE=0.75"
+  "immersive-2x-spin-nolazy|stereo=1;vr_screen=immersive;vr_detail=2|RECOMP_ACK_IDLE_US=0 VC3_LAZY_RT=0"
 )
 KEYS=30:coin,31:start,40:fire,44:fire,46:fire,48:fire,50:fire,55:fire,60:fire,65:fire,70:fire,75:fire
 LOGS=()
