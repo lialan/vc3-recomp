@@ -383,9 +383,10 @@ void host_input_poll(chihiro_input_t *in)
     /* VC3 polls the screen position on channel 2 every frame (25 02), and
      * channel 1 only at startup; channel 2 left at 0,0 put gameplay shots in
      * the top-left corner while Mission Select, which reads the analog
-     * channels, aimed fine. */
-    in->screen_x[0] = in->screen_x[1] = in->analog[0];
-    in->screen_y[0] = in->screen_y[1] = in->analog[1];
+     * channels, aimed fine. Screen position is the plain position over the
+     * 16-bit range (the calibrated analog reading here landed up-left). */
+    in->screen_x[0] = in->screen_x[1] = ux < 0.0 ? 0 : to16(ux);
+    in->screen_y[0] = in->screen_y[1] = uy < 0.0 ? 0 : to16(uy);
     /* One line per trigger pull: what the mouse reported, the window in
      * points and pixels, where that lands in the picture, and the gun
      * reading sent -- enough to tell a host mapping problem from the game's. */
