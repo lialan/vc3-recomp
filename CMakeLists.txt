@@ -27,6 +27,7 @@ add_executable(vc3
     src/main.c
     src/recomp_manual.c
     src/chihiro/chihiro.c
+    src/chihiro/storage.c
     ${RECOMP_GEN_SOURCES}
 )
 

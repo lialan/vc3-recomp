@@ -85,6 +85,27 @@ and clock-backed replacements of the same shape.
 | 0x000F6DC0, 0x000F6F50 | media board (`mbcom:`) |
 | 0x000B60CA, 0x000B6256, 0x000B7659 | CD-ROM / partition path setup |
 
+## Host replacements in place
+
+These go through xboxrecomp's replacement path. `src/recomp_manual.c` defines
+`void sub_XXXXXXXX(void)`, and `scripts/lift.sh` passes
+`--exclude-manual src/recomp_manual.c`. The recompiler then drops the lifted
+body, turns every direct call and tail jump into `RECOMP_ICALL_SAFE`/
+`RECOMP_ITAIL`, and maps the VA to our symbol in the dispatch table
+(`external/xboxrecomp/docs/pipeline/05-runtime.md`, "Replace, Don't Wrap").
+
+| VA | Replaced by (`src/chihiro/storage.c`) | Signature (stdcall, ret 0x10) |
+|---|---|---|
+| 0x13DD90 | `chihiro_backup_read`  | `(dev_off, size, buf, flags)`, `backup.bin` 64 KB by raw offset |
+| 0x13DEE0 | `chihiro_backup_write` | same, write-through |
+| 0x13DA10 | `chihiro_eeprom_read`  | `(dev_off, size, buf, flags)`, `eeprom.bin` 256 B |
+| 0x13DBD0 | `chihiro_eeprom_write` | same, write-through |
+| 0x13E5E0 | `chihiro_rtc_read`     | 16 bytes; the first 8 are BCD `{yy,mm,dd,wday,hh,mi,ss,0}` (order inferred from 0x105020) |
+
+Every game caller passes `flags = 0` (synchronous), so the replacements return 0
+at once. Replacements must `#include "recomp_types.h"` (thread-local registers),
+read arg N at `MEM32(g_esp + 4 + 4*N)`, and pop with `g_esp += 20`.
+
 ## Lift (phase 2, 2026-10-29)
 
 `tools.recomp --all --split 250` lifted all 6,742 functions with 0 failures:

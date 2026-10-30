@@ -109,11 +109,20 @@ folder), which should reuse `src/chihiro/`.
   * `RECOMP_HEAP_RECLAIM=1`, because the boot memory probe at 0x34F60
     allocates and frees blocks up to 256 MB, and without reclaim the frees are
     dropped.
+* Step 1 of phase 4 is done: backup RAM, EEPROM and the clock are host
+  replacements (`src/chihiro/storage.c`). They use the toolkit's
+  replace-by-`sub_XXXXXXXX` mechanism (`--exclude-manual`); see
+  `docs/chihiro-symbols.md`.
 * Where it gets to: D3D init (framebuffer allocated, vblank ISR vector 3
-  connected), the baseboard interrupt connected (vector 1 → 0x13A3F4), and
-  partition1 TDATA/UDATA created. It then spins in backup-data validation
-  (0x1E780) → `JvsBACKUP_Read`/`Write`, waiting on the absent baseboard.
-  **That is where phase 4 starts.**
+  connected), the baseboard interrupt connected (vector 1 → 0x13A3F4),
+  partition1 TDATA/UDATA created, and the main loop polling EEPROM and backup
+  through our replacements.
+* Current blocker: D3D device creation (0x10B1D0) fails inside 0x10EC40.
+  Teardown (0x10F1A0) then spins at 0x10F1E0, waiting for the GPU reference
+  counter `[[dev+0x17BC]+0x44]` to match, and the NV2A model never advances it
+  (REF=0). An earlier reading blamed backup RAM; that came from stale stack
+  values. Backup writes, persistence and the RTC are untested until the game
+  gets past this.
 
 ## Risks
 

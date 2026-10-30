@@ -20,34 +20,31 @@
 
 #include <stdio.h>
 #include <stdint.h>
-#include <stddef.h>   /* ptrdiff_t */
 
-/* ── ICALL trace ring buffer ───────────────────────────────── */
+/* Thread-local guest registers, MEM/XBOX_PTR, recomp_func_t and the ICALL
+ * trace globals. Plain `extern uint32_t g_eax;` here would name a different,
+ * non-TLS variable and overrides would set nothing the caller reads
+ * (docs/pipeline/05-runtime.md, "Registers in recomp_manual.c"). */
+#include "recomp_types.h"
 
-/*
- * These globals are written by the RECOMP_ICALL macro (defined in
- * recomp_types.h) every time an indirect call is dispatched. When a
- * crash occurs, the VEH handler or recomp_icall_fail_log() can dump
- * the last 16 call targets to help you trace what happened.
+/* ── Replacements (re-lift with --exclude-manual this file) ───
  *
- * The runtime owns them: xbox_kernel defines all three in
- * src/kernel/xbox_memory_layout.c, and recomp_types.h declares them extern.
- * Declare, do not define -- a definition here as well is a duplicate symbol,
- * and a project copied from this template failed to link on all three:
+ * A `void sub_XXXXXXXX(void)` defined here replaces the lifted body: the
+ * recompiler skips it and routes every direct call, tail jump and ICALL to
+ * this definition. Keep the logic in src/chihiro/; these only name the VAs.
  *
- *   xbox_memory_layout.obj : error LNK2005: g_icall_count already defined
- *                            in recomp_manual.obj
- */
-extern volatile uint32_t g_icall_trace[16];
-extern volatile uint32_t g_icall_trace_idx;
-extern volatile uint64_t g_icall_count;
+ * Chihiro baseboard storage and clock (SEGA XPP library, stdcall, 4 args). */
+extern void chihiro_backup_read(void);
+extern void chihiro_backup_write(void);
+extern void chihiro_eeprom_read(void);
+extern void chihiro_eeprom_write(void);
+extern void chihiro_rtc_read(void);
 
-typedef void (*recomp_func_t)(void);
-
-/* ── Register state (defined in xbox_memory_layout.c) ──────── */
-
-extern uint32_t g_eax;
-extern ptrdiff_t g_xbox_mem_offset;
+void sub_0013DD90(void) { chihiro_backup_read(); }   /* JvsBACKUP_Read  */
+void sub_0013DEE0(void) { chihiro_backup_write(); }  /* JvsBACKUP_Write */
+void sub_0013DA10(void) { chihiro_eeprom_read(); }   /* JvsEEPROM_Read  */
+void sub_0013DBD0(void) { chihiro_eeprom_write(); }  /* JvsEEPROM_Write */
+void sub_0013E5E0(void) { chihiro_rtc_read(); }      /* JvsRTC_Read     */
 
 /* ── Manual function overrides ─────────────────────────────── */
 
