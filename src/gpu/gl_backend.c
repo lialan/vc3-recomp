@@ -502,6 +502,57 @@ static void surf_readback(Surf *f)
     f->dirty = 0;
 }
 
+/* The presented surface, read back without waiting: each flip starts a read
+ * into one pixel-pack buffer and copies the other -- started a flip earlier,
+ * long finished -- into guest memory. A synchronous glReadPixels waited for
+ * everything queued on the GPU, the window's vsync'd present included, so the
+ * title waited on the display; this shows frames one flip late instead. */
+typedef struct {
+    GLuint pbo;
+    GLsizeiptr cap;
+    uint32_t va, bytes;          /* where and how much, 0 when none pending */
+} Readback;
+
+static Readback s_rb[2];
+static int s_rb_next;
+
+static void surf_readback_async(Surf *f)
+{
+    Readback *r = &s_rb[s_rb_next], *prev = &s_rb[s_rb_next ^ 1];
+    GLsizeiptr bytes = (GLsizeiptr)f->pitch * f->h;
+
+    if (!r->pbo)
+        glGenBuffers(1, &r->pbo);
+    glBindBuffer(GL_PIXEL_PACK_BUFFER, r->pbo);
+    if (r->cap < bytes) {
+        glBufferData(GL_PIXEL_PACK_BUFFER, bytes, NULL, GL_STREAM_READ);
+        r->cap = bytes;
+    }
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, f->fbo);
+    glPixelStorei(GL_PACK_ROW_LENGTH, (GLint)(f->pitch / f->bpp));
+    if (f->bpp == 2)
+        glReadPixels(0, 0, f->w, f->h, GL_RGB, GL_UNSIGNED_SHORT_5_6_5, NULL);
+    else
+        glReadPixels(0, 0, f->w, f->h, GL_BGRA, GL_UNSIGNED_INT_8_8_8_8_REV, NULL);
+    glPixelStorei(GL_PACK_ROW_LENGTH, 0);
+    r->va = f->va;
+    r->bytes = (uint32_t)bytes;
+    f->dirty = 0;
+
+    if (prev->pbo && prev->bytes) {
+        const void *src;
+        glBindBuffer(GL_PIXEL_PACK_BUFFER, prev->pbo);
+        src = glMapBufferRange(GL_PIXEL_PACK_BUFFER, 0, prev->bytes, GL_MAP_READ_BIT);
+        if (src) {
+            memcpy((uint8_t *)xbox_GetMemoryOffset() + prev->va, src, prev->bytes);
+            glUnmapBuffer(GL_PIXEL_PACK_BUFFER);
+        }
+        prev->bytes = 0;
+    }
+    glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
+    s_rb_next ^= 1;
+}
+
 /* ── Textures ──────────────────────────────────────────────── */
 
 #define TEX_SLOTS 2048
@@ -1196,9 +1247,14 @@ static void gl_flip(void)
         uint32_t shown = nv2a_backend_presented_va();
         if (all < 0)
             all = getenv("VC3_GL_READBACK_ALL") != NULL;
-        for (i = 0; i < s_nsurfs; i++)
-            if (s_surfs[i].dirty && (all || !shown || s_surfs[i].va == shown))
+        for (i = 0; i < s_nsurfs; i++) {
+            if (!s_surfs[i].dirty)
+                continue;
+            if (shown && s_surfs[i].va == shown && !all)
+                surf_readback_async(&s_surfs[i]);
+            else if (all || !shown)
                 surf_readback(&s_surfs[i]);
+        }
     }
     s_frame++;
     if (s_st.on && s_frame % 300 == 0) {
