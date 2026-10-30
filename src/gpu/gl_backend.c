@@ -447,6 +447,11 @@ typedef struct {
     GLsizei w, h;
     GLuint fbo, color, depth;
     int dirty;                 /* drawn since the last readback */
+    /* Guest memory as the GPU last left it, to spot the CPU writing the
+     * surface: VC3's movie decoder writes frames straight into a surface the
+     * menu once cleared, so the GPU copy stays black. */
+    int memq_valid, cpu_owned;
+    uint64_t memq;
 } Surf;
 static Surf s_surfs[MAX_SURFS];
 static int s_nsurfs;
@@ -529,6 +534,7 @@ static void surf_readback(Surf *f)
         glReadPixels(0, 0, f->w, rows, GL_BGRA, GL_UNSIGNED_INT_8_8_8_8_REV, dst);
     glPixelStorei(GL_PACK_ROW_LENGTH, 0);
     f->dirty = 0;
+    f->memq_valid = 0;
 }
 
 /* The presented surface, read back without waiting: each flip starts a read
@@ -573,7 +579,10 @@ static void surf_readback_async(Surf *f)
         glBindBuffer(GL_PIXEL_PACK_BUFFER, prev->pbo);
         src = glMapBufferRange(GL_PIXEL_PACK_BUFFER, 0, prev->bytes, GL_MAP_READ_BIT);
         if (src) {
+            Surf *pf = surf_find(prev->va);
             memcpy((uint8_t *)xbox_GetMemoryOffset() + prev->va, src, prev->bytes);
+            if (pf)
+                pf->memq_valid = 0;
             glUnmapBuffer(GL_PIXEL_PACK_BUFFER);
         }
         prev->bytes = 0;
@@ -801,7 +810,18 @@ static int tex_bind(const Nv2aTexture *t, float *sw, float *sh)
     TexEntry *e = NULL;
 
     s_st.fmt[t->color & 0xFF]++;
-    if (rt && rt->fbo) {
+    if (rt && rt->fbo && !rt->cpu_owned) {
+        /* Memory changed since the GPU last wrote it: the CPU owns it now. */
+        size_t n = (size_t)rt->pitch * (size_t)rt->h;
+        uint64_t q = hash_sampled(mem + rt->va, n);
+        if (!rt->memq_valid) {
+            rt->memq = q;
+            rt->memq_valid = 1;
+        } else if (q != rt->memq) {
+            rt->cpu_owned = 1;
+        }
+    }
+    if (rt && rt->fbo && !rt->cpu_owned) {
         s_st.rt++;
         glBindTexture(GL_TEXTURE_2D, rt->color);
         *sw = (float)rt->w;
@@ -1050,6 +1070,8 @@ static void gl_clear(const Nv2aSurface *s, const Nv2aRenderState *rs,
     if (bits)
         glClear(bits);
     f->dirty = 1;
+    f->memq_valid = 0;
+    f->cpu_owned = 0;
 }
 
 /* VC3_GL_RCCHECK=1: for a few alpha-tested combiner batches, evaluate the
@@ -1440,6 +1462,8 @@ static void gl_draw(const Nv2aSurface *s, const Nv2aBatch *b)
     }
     glActiveTexture(GL_TEXTURE0);
     f->dirty = 1;
+    f->memq_valid = 0;
+    f->cpu_owned = 0;
 }
 
 static void gl_flip(void)
