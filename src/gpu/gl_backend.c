@@ -302,6 +302,9 @@ static const char *VS =
     "    float ez = w * u_gw.y;\n"
     "    gl_Position = ivp * vec4((a_pos.x - u_gp.z) / u_gp.x * ez,\n"
     "                             (a_pos.y - u_gp.w) / u_gp.y * ez, -w * abs(u_gw.y), 1.0);\n"
+    /* the surfaces hold the picture top row first (screen y down into GL's
+     * y, flipped back when shown): the eye's clip y the same way round */
+    "    gl_Position.y = -gl_Position.y;\n"
     "  } else\n"
     "    gl_Position = vec4(ndc * w, z * w, w);\n"
     "  v_eye = seye;\n"
@@ -507,6 +510,7 @@ static const char *VS_FF =
     "  float iez = w * u_gw.y;\n"
     "  vec4 ipos = ivp * vec4((s.x - u_gp.z) / u_gp.x * iez, (s.y - u_gp.w) / u_gp.y * iez,\n"
     "                             -w * abs(u_gw.y), 1.0);\n"
+    "  ipos.y = -ipos.y;\n"                  /* top row first, as the surfaces */
     "  gl_Position = bad ? vec4(0.0, 0.0, 0.0, 1.0) : (imm ? ipos : vec4(ndc * w, zn * w, w));\n"
     "#if !defined(GL_ES) || defined(GL_EXT_clip_cull_distance)\n"
     "  gl_ClipDistance[0] = bad ? -1e30 : (imm ? 1.0 : w - 1e-3);\n"

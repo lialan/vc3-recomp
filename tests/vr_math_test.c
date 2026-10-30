@@ -195,8 +195,66 @@ static void test_aim_through_panel(void)
     }
 }
 
+/* VC3's own projection, as the back end recovers it on the Mac: right-
+ * handed, kx -772.5, ky 772.5, centre 320.5, 240.5, 1/pz -1. Up must be up
+ * all the way: a point above the camera is near the screen's top (small y),
+ * the eye's clip y is positive for it, and the surfaces -- which hold the
+ * picture top row first, screen y down into GL's y -- need that clip y
+ * negated to agree with the game's own drawing (which put the immersive
+ * view upside down on the headset until it was). Then the aim's round trip:
+ * a point on the HUD plane to the screen and back. */
+static void test_vc3_orientation(void)
+{
+    VrGameProj g = { -772.5f, 772.5f, 320.5f, 240.5f, -1.0f };
+    const float id[4] = { 0, 0, 0, 1 }, tan_fov[4] = { -1.2f, 1.1f, 1.1f, -1.2f };
+    float sx, sy, m[16], c[4];
+    float up[3] = { 0, 1, -10 }, right[3] = { 1, 0, -10 };
+
+    CHECK(vr_project_gl(&g, up, &sx, &sy) && sy < g.cy && NEAR(sx, g.cx, 1e-3f),
+          "up projects to %f %f (screen y should be above %f)", sx, sy, g.cy);
+    CHECK(vr_project_gl(&g, right, &sx, &sy) && sx > g.cx, "right projects to x %f", sx);
+    {   /* back from the screen: still up */
+        float v[3];
+        vr_project_gl(&g, up, &sx, &sy);
+        vr_unproject_gl(&g, sx, sy, 10.0f / fabsf(g.inv_pz), v);
+        CHECK(v[1] > 0 && NEAR(v[1], 1, 1e-3f) && NEAR(v[2], -10, 1e-3f), "up back as %f %f %f",
+              v[0], v[1], v[2]);
+    }
+    vr_eye_matrix(id, (const float[3]){ 0, 0, 0 }, tan_fov, 1.0f, 0.05f, 2000.0f, m);
+    clip_of(m, up, c);
+    CHECK(c[1] / c[3] > 0, "the eye's clip y for up is %f", c[1] / c[3]);
+    {   /* the surface convention: the game's top-of-screen point lands at a
+         * negative surface y; the immersive one, negated, must agree */
+        float game_surface_y, imm_surface_y;
+        vr_project_gl(&g, up, &sx, &sy);
+        game_surface_y = sy / 480.0f * 2.0f - 1.0f;
+        imm_surface_y = -(c[1] / c[3]);
+        CHECK(game_surface_y < 0 && imm_surface_y < 0,
+              "surface y: game %f, immersive %f (both should be negative)", game_surface_y,
+              imm_surface_y);
+    }
+    {   /* head pitched up 20 degrees: a level point ahead goes down the view */
+        float a = 20.0f * 3.14159265f / 180.0f, q[4] = { sinf(a / 2), 0, 0, cosf(a / 2) };
+        float ahead[3] = { 0, 0, -10 };
+        vr_eye_matrix(q, (const float[3]){ 0, 0, 0 }, tan_fov, 1.0f, 0.05f, 2000.0f, m);
+        clip_of(m, ahead, c);
+        CHECK(c[1] / c[3] < 0, "pitched up: ahead at clip y %f (should be below centre)",
+              c[1] / c[3]);
+    }
+    {   /* aim: a point on the HUD plane at 5 m to the screen and back */
+        float d = 5.0f, hit[3] = { 0.7f, -0.4f, -5.0f }, v[3];
+        CHECK(vr_project_gl(&g, hit, &sx, &sy), "aim: no projection");
+        CHECK(sx > g.cx && sy > g.cy, "aim: right and low should be right and down, got %f %f",
+              sx, sy);
+        vr_unproject_gl(&g, sx, sy, d / fabsf(g.inv_pz), v);
+        CHECK(NEAR(v[0], hit[0], 1e-4f) && NEAR(v[1], hit[1], 1e-4f) && NEAR(v[2], hit[2], 1e-4f),
+              "aim round trip %f %f %f", v[0], v[1], v[2]);
+    }
+}
+
 int main(void)
 {
+    test_vc3_orientation();
     test_projection_recovery();
     test_right_handed();
     test_eye_matrix();
