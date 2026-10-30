@@ -25,7 +25,8 @@
  * The gun is the controller: its aim ray meets the screen, and that point in
  * the game's 4:3 picture is where the gun reads (host_input.c), with a dot
  * drawn there. Trigger fires; pulled with the gun off the screen, or the
- * grip, reloads, as pointing a light gun away does. A / X: coin and start;
+ * grip, reloads, as pointing a light gun away does. The other hand's grip
+ * is the cabinet's foot pedal. A / X: coin and start;
  * B / Y: coin; left menu button: the cabinet's test switch. The other
  * hand's thumbstick moves the screen (up/down: nearer/farther; left/right:
  * smaller/larger); thumbstick clicks: aspect 4:3/16:9 (left), internal
@@ -613,6 +614,8 @@ static void gun_frame(XrTime t, const Frame *f)
         buttons |= ux < 0 ? VC3_VR_RELOAD : VC3_VR_FIRE;
     if (act_float(a_grip, s_gun) > 0.6f)
         buttons |= VC3_VR_RELOAD;
+    if (act_float(a_grip, off) > 0.6f)          /* the foot pedal */
+        buttons |= VC3_VR_PEDAL;
     if (now[s_gun][0] && !was[s_gun][0])
         rumble(s_gun, ux < 0 ? 0.3f : 0.8f, ux < 0 ? 40 : 25);
     /* A / X: a coin and start (a credit is then always there); B / Y: coin. */

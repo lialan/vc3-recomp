@@ -13,7 +13,8 @@
 #define JVS_SW_RIGHT    0x0400
 #define JVS_SW_PUSH1    0x0200
 #define JVS_SW_PUSH2    0x0100
-#define JVS_SW_PUSH3    0x0080
+#define JVS_SW_PUSH3    0x0080  /* VC3: CHANGE (input test) */
+#define JVS_SW_PUSH4    0x0040  /* VC3: PEDAL */
 
 /* What the I/O board reports, refreshed by the host input layer. */
 typedef struct {

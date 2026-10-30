@@ -28,7 +28,8 @@ saved in `~/Library/Application Support/VC3/game_dir`, or
 `~/Downloads/VR/VC3/extracted`, and otherwise asks for it once. No game files
 go in the app.
 
-Controls: mouse aims the gun, left button fires, right button reloads;
+Controls: mouse aims the gun, left button fires, right button reloads,
+middle button is the gun's CHANGE button; Space is the cabinet's foot pedal;
 5/6 coin, 1/2 start, F2 test, F1 service, F10 toggles 60/120 fps. The
 **Controls** menu rebinds each of these keys (and can give fire and reload a
 key too): choose an action, then press the new key in the game window
@@ -47,9 +48,10 @@ these change only how it is drawn and shown.
   resolution; guest memory and frame dumps still get 640x480.
 - **Aspect Ratio** (`aspect=`, `VC3_ASPECT=4:3|16:9`): 16:9 draws the
   screen a third wider and extends the 3D view into the sides (hor+). In
-  play the HUD moves out to the screen edges (left-side widgets to the left
-  edge, right-side ones to the right, the rest stays centred) while the
-  lock-on rings stay on their targets; fades and full-screen passes cover
+  play the HUD panels at the screen's sides (score, gun and lives) move out
+  to the edges, the rest of the HUD stays where it was, and the lock-on rings
+  stay on their targets; menus and the mission map stay 4:3, so what you aim
+  at is where the game looks; fades and full-screen passes cover
   the whole width. Movies and full-screen 2D pictures (menus, logos) stay
   4:3 in the middle with black sides, not stretched. The gun aims at the
   middle 4:3 as before; the sides count as off the screen (a shot there
@@ -87,7 +89,8 @@ folder to `/sdcard/VirtuaCop3` (the app asks for all-files access).
 
 In the headset the controller is the gun: aim at the screen (a red dot shows
 where) and pull the trigger; pull it pointing away from the screen, or squeeze
-the grip, to reload. A / X inserts a coin and starts, B / Y inserts a coin, the
+the grip, to reload; the other hand's grip is the foot pedal. A / X inserts a
+coin and starts, B / Y inserts a coin, the
 left menu button is the cabinet's test switch. The other hand's thumbstick
 moves the screen (up/down: nearer/farther, left/right: smaller/larger); the
 left thumbstick click switches 4:3 / 16:9, the right one the internal

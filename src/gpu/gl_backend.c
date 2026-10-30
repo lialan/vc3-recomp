@@ -997,12 +997,17 @@ static int hud_joined(const HudBox *a, const HudBox *b)
         && ix > -8.0f;                              /* glyphs of one row */
 }
 
-/* Where a widget goes: -1 left edge, 1 right edge, 0 middle. */
+/* Where a widget goes: -1 left edge, 1 right edge, 0 middle. Only a widget
+ * that sits against the screen's side (within 5% of it) and keeps to that
+ * side's 3/8 is the side HUD -- VC3's score panel and gun panel, at x 8.
+ * Anything else stays with the 4:3 picture: the Virtua City map's labels
+ * and other things a player shoots at, whose hit areas the game keeps in
+ * 4:3 coordinates, and the life bar, whose fill is drawn in 3D. */
 static int hud_place_of(const HudBox *b, float w)
 {
-    if (b->x1 <= w * 0.375f)
+    if (b->x0 <= w * 0.05f && b->x1 <= w * 0.375f)
         return -1;
-    if (b->x0 >= w * 0.625f)
+    if (b->x1 >= w * 0.95f && b->x0 >= w * 0.625f)
         return 1;
     return 0;
 }
@@ -1144,16 +1149,27 @@ static void surf_xform(Surf *f, const Nv2aBatch *b, float *scale, float *offset)
             L->box[L->nbox++] = bx;
         /* The last frame's widget this batch falls in, else the batch's
          * own box (a new element, for its first frame). */
+        /* The widget it was part of (inside it, give or take a pixel; a
+         * mere touch is not enough: the life bar's frame touches the gun
+         * panel), else the one it extends -- the next glyph of a text row,
+         * VC3 types its briefings out a letter a frame. */
         place = hud_place_of(&bx, (float)f->w);
-        for (i = 0; i < L->nwidget; i++) {
-            const HudBox *u = &L->widget[i];
-            /* Inside it, or the next glyph of its text row (VC3 types its
-             * briefings out a letter a frame). */
-            if ((x0 < u->x1 && x1 > u->x0 && y0 < u->y1 && y1 > u->y0)
-                || hud_joined(&bx, u)) {
-                place = L->place[i];
-                break;
+        {
+            int inside = -1, row = -1;
+            for (i = 0; i < L->nwidget; i++) {
+                const HudBox *u = &L->widget[i];
+                if (x0 >= u->x0 - 1.0f && x1 <= u->x1 + 1.0f
+                    && y0 >= u->y0 - 1.0f && y1 <= u->y1 + 1.0f) {
+                    inside = i;
+                    break;
+                }
+                if (row < 0 && hud_joined(&bx, u))
+                    row = i;
             }
+            if (inside >= 0)
+                place = L->place[inside];
+            else if (row >= 0)
+                place = L->place[row];
         }
     }
     *offset = (float)place * (1.0f - mid);
@@ -2369,6 +2385,8 @@ static void gl_draw(const Nv2aSurface *s, const Nv2aBatch *b)
         float xs, xo;
         surf_xform(f, b, &xs, &xo);
         glUniform2f(U->xs, xs, xo);
+        if (s_ftr == 1 && f->wide)
+            fprintf(stderr, "[GLTR]   16:9 x scale %.3f offset %+.3f\n", xs, xo);
     }
     active_tex(0);
     if (b->texture)

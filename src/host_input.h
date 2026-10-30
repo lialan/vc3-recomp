@@ -10,13 +10,15 @@
 #define VC3_VR_START  0x04
 #define VC3_VR_COIN   0x08
 #define VC3_VR_TEST   0x10
+#define VC3_VR_PEDAL  0x20
 void vc3_input_vr(double ux, double uy, int buttons);
 
 /* Keyboard bindings (the Controls menu): actions, their keys, learning a
  * new key from the next press. Saved as key_<action>= in the settings. */
 enum {
     VC3_KEY_COIN1, VC3_KEY_COIN2, VC3_KEY_START1, VC3_KEY_START2,
-    VC3_KEY_FIRE, VC3_KEY_RELOAD, VC3_KEY_TEST, VC3_KEY_SERVICE, VC3_KEY_FPS,
+    VC3_KEY_FIRE, VC3_KEY_RELOAD, VC3_KEY_PEDAL, VC3_KEY_CHANGE,
+    VC3_KEY_TEST, VC3_KEY_SERVICE, VC3_KEY_FPS,
     VC3_KEY_COUNT
 };
 const char *vc3_key_action_name(int action);

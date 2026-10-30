@@ -8,6 +8,8 @@
  *   mouse            player 1 gun: position in the 4:3 picture
  *   left button      trigger
  *   right button     reload (fires off-screen)
+ *   middle button    change (the gun's second button; JVS push 3)
+ *   Space            pedal (JVS push 4: the cabinet's foot pedal)
  *   5 / 6            coin, slot 1 / 2
  *   1 / 2            start, player 1 / 2
  *   F2               test       F1   service
@@ -109,6 +111,8 @@ static const struct {
     { "start2",  "Start (player 2)", SDL_SCANCODE_2 },
     { "fire",    "Fire (keyboard)",  SDL_SCANCODE_UNKNOWN },
     { "reload",  "Reload (keyboard)", SDL_SCANCODE_UNKNOWN },
+    { "pedal",   "Pedal",            SDL_SCANCODE_SPACE },
+    { "change",  "Change (keyboard)", SDL_SCANCODE_UNKNOWN },
     { "test",    "Test",             SDL_SCANCODE_F2 },
     { "service", "Service",          SDL_SCANCODE_F1 },
     { "fps",     "Toggle 60/120 fps", SDL_SCANCODE_F10 },
@@ -548,6 +552,19 @@ void host_input_poll(chihiro_input_t *in)
      * cleared. */
     if (reload)
         in->player[0] |= JVS_SW_PUSH2;
+    /* The input test names push 3 CHANGE and push 4 PEDAL. */
+    if ((buttons & SDL_BUTTON(SDL_BUTTON_MIDDLE)) || bound(k, VC3_KEY_CHANGE))
+        in->player[0] |= JVS_SW_PUSH3;
+    if (bound(k, VC3_KEY_PEDAL) || auto_held("pedal", t)
+        || (s_vr_on && (s_vr_buttons & VC3_VR_PEDAL)))
+        in->player[0] |= JVS_SW_PUSH4;
+    /* VC3_JVS_OR=<hex>: switch bits held on player 1, to see in the test
+     * menu's input test which switch a bit is. */
+    {
+        const char *e = getenv("VC3_JVS_OR");
+        if (e)
+            in->player[0] |= (uint16_t)strtoul(e, NULL, 16);
+    }
 
     gun_reading(ux, uy, &in->analog[0], &in->analog[1]);
     /* VC3 polls the screen position on channel 2 every frame (25 02), and
