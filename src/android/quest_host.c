@@ -788,17 +788,24 @@ static void perf_frame(void)
 {
     static int told_host, told_exec, told_guest, pinned;
     if (s_set_thread) {
-        if (!told_host && s_tid_host)
-            told_host = XR_SUCCEEDED(s_set_thread(s_sess, XR_ANDROID_THREAD_TYPE_RENDERER_MAIN_KHR,
-                                                  (uint32_t)s_tid_host)) ? 1 : -1;
-        if (!told_exec && s_tid_exec)
-            told_exec = XR_SUCCEEDED(s_set_thread(s_sess, XR_ANDROID_THREAD_TYPE_RENDERER_WORKER_KHR,
-                                                  (uint32_t)s_tid_exec)) ? 1 : -1;
+        /* each when its thread exists; logged as the runtime answers */
+        if (!told_host && s_tid_host) {
+            XrResult r = s_set_thread(s_sess, XR_ANDROID_THREAD_TYPE_RENDERER_MAIN_KHR,
+                                      (uint32_t)s_tid_host);
+            told_host = 1;
+            fprintf(stderr, "[xr] thread hint: loop as renderer main: %d\n", (int)r);
+        }
+        if (!told_exec && s_tid_exec) {
+            XrResult r = s_set_thread(s_sess, XR_ANDROID_THREAD_TYPE_RENDERER_WORKER_KHR,
+                                      (uint32_t)s_tid_exec);
+            told_exec = 1;
+            fprintf(stderr, "[xr] thread hint: GL back end as renderer worker: %d\n", (int)r);
+        }
         if (!told_guest && s_tid_guest) {
-            told_guest = XR_SUCCEEDED(s_set_thread(s_sess, XR_ANDROID_THREAD_TYPE_APPLICATION_MAIN_KHR,
-                                                   (uint32_t)s_tid_guest)) ? 1 : -1;
-            fprintf(stderr, "[xr] thread hints: loop %d, back end %d, game %d (1 accepted)\n",
-                    told_host, told_exec, told_guest);
+            XrResult r = s_set_thread(s_sess, XR_ANDROID_THREAD_TYPE_APPLICATION_MAIN_KHR,
+                                      (uint32_t)s_tid_guest);
+            told_guest = 1;
+            fprintf(stderr, "[xr] thread hint: game as application main: %d\n", (int)r);
         }
     }
     if (!pinned && s_tid_exec && s_tid_guest) {
@@ -2037,7 +2044,8 @@ void vc3_quest_restart(void)
         if (m)
             (*env)->CallVoidMethod(env, activity, m);
     }
-    exit(0);
+    fflush(stderr);
+    _exit(0);                           /* as at close: no handlers under the game */
 }
 
 int vc3_quest_run(int (*guest_main)(void))
@@ -2140,7 +2148,12 @@ int vc3_quest_run(int (*guest_main)(void))
         }
     }
     fprintf(stderr, "[quest] %s\n", s_guest_done ? "game returned" : "closing");
-    exit(s_guest_done ? s_guest_rc : 0);
+    /* _exit, not exit: the game's thread is still running lifted code, and
+     * exit's handlers (static destructors, the runtime's) pulled its memory
+     * from under it -- a fault with every register zero at each close. */
+    fflush(stderr);
+    fflush(stdout);
+    _exit(s_guest_done ? s_guest_rc : 0);
 }
 
 #endif /* __ANDROID__ */
