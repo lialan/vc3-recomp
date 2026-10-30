@@ -80,6 +80,8 @@ static struct {
     uint32_t draws, tris, textured, rt, uploads, untex, rt_logged, rc_logged;
     uint32_t zpass_batches, zpass_pixels;
     uint32_t fail[256];        /* failed decodes by format code */
+    uint32_t stage0_empty;     /* no stage-0 texture, a later stage has one */
+    uint32_t stage0_off;       /* combiners present, stage 0 program off */
     uint32_t fmt[256];         /* textured batches by format code */
 } s_st;
 
@@ -1060,6 +1062,12 @@ static void gl_draw(const Nv2aSurface *s, const Nv2aBatch *b)
     glActiveTexture(GL_TEXTURE0);
     if (b->texture)
         textured = tex_bind_for(f, b->texture, &tw, &th);
+    if (s_st.on) {
+        if (!b->texture && (b->stage[1] || b->stage[2] || b->stage[3]))
+            s_st.stage0_empty++;
+        if (b->rc && !(b->rc->stage_program & 0x1F) && b->texture)
+            s_st.stage0_off++;
+    }
     if (s_st.on && textured && surf_find(b->texture->offset) && s_st.rt_logged < 6) {
         float u0 = 1e9f, u1 = -1e9f, v0 = 1e9f, v1 = -1e9f;
         uint32_t k;
@@ -1301,6 +1309,8 @@ static void gl_flip(void)
             fprintf(stderr, " %08X/%dx%d", s_surfs[i].va, s_surfs[i].w,
                     s_surfs[i].h);
         fprintf(stderr, "\n[GL]   visibility tests: %u batches, %u pixels passed", s_st.zpass_batches, s_st.zpass_pixels);
+        fprintf(stderr, "\n[GL]   stage 0 empty but a later stage textured: %u; stage-0 program off: %u",
+                s_st.stage0_empty, s_st.stage0_off);
         fprintf(stderr, "\n[GL]   formats:");
         for (i = 0; i < 256; i++)
             if (s_st.fmt[i])
