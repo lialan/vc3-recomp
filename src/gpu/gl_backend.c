@@ -49,6 +49,10 @@ static GLint u_rc, u_cicw, u_aicw, u_cocw, u_aocw, u_f0, u_f1, u_fin0, u_fin1,
              u_ctl, u_sprog, u_fc0, u_fc1, u_fogc, u_on, u_ts;
 static uint32_t s_frame = 1;
 
+/* VC3_GL_FTRACE=<flag file>: once the file exists, log every clear and batch
+ * of the next frame (0 idle, 1 tracing, 2 done). */
+static int s_ftr;
+
 /* VC3_GL_STATS=1: every 300 flips, what the batches asked for. */
 static struct {
     int on;
@@ -111,6 +115,9 @@ static const char *FS =
     "uniform vec4 u_fc0, u_fc1;\n"
     "uniform vec3 u_fogc;\n"
     "uniform int u_nofog;\n"                  /* VC3_GL_NOFOG=1: debug */
+    "uniform int u_rcdbg;\n"                  /* VC3_GL_RCDBG: 1 texel, 2 uv, 3 split */
+    "uniform vec3 u_dbgcol;\n"                /* RCDBG 6: colour per combiner setup */
+    "uniform vec2 u_surf;\n"
     "uniform int u_on[4];\n"                  /* stage has a usable texture */
     "uniform vec2 u_ts[4];\n"                 /* coordinate -> GL [0,1] scale */
     "out vec4 o_col;\n"
@@ -226,6 +233,12 @@ static const char *FS =
     "void main() {\n"
     "  vec4 c = v_col;\n"
     "  if (u_rc != 0) c = combiners();\n"
+    "  if (u_rc != 0 && u_rcdbg == 1) c = vec4(texture(u_tex, stage_uv(0, v_tc0)).rgb, 1.0);\n"
+    "  if (u_rc != 0 && u_rcdbg == 2) c = vec4(fract(stage_uv(0, v_tc0)), float(u_on[0]), 1.0);\n"
+    "  if (u_rc != 0 && u_rcdbg == 6) c = vec4(u_dbgcol, 1.0);\n"
+    "  if (u_rc != 0 && u_rcdbg == 7) c = vec4(vec3(v_fog), 1.0);\n"
+    "  if (u_rc != 0 && u_rcdbg == 3 && gl_FragCoord.x < u_surf.x * 0.5)\n"
+    "    c = v_col * (u_textured != 0 ? texture(u_tex, v_uv) : vec4(1.0));\n"
     "  else if (u_textured != 0) c *= texture(u_tex, v_uv);\n"
     "  if (u_atest != 0) {\n"
     "    float a = c.a; bool pass = true;\n"
@@ -318,6 +331,8 @@ static int gl_ready(void)
         glUniform1i(glGetUniformLocation(s_prog, "u_t3"), 3);
         glUniform1i(glGetUniformLocation(s_prog, "u_nofog"),
                     getenv("VC3_GL_NOFOG") != NULL);
+        glUniform1i(glGetUniformLocation(s_prog, "u_rcdbg"),
+                    getenv("VC3_GL_RCDBG") ? atoi(getenv("VC3_GL_RCDBG")) : 0);
         u_rc = glGetUniformLocation(s_prog, "u_rc");
         u_cicw = glGetUniformLocation(s_prog, "u_cicw");
         u_aicw = glGetUniformLocation(s_prog, "u_aicw");
@@ -618,6 +633,42 @@ static int tex_bind(const Nv2aTexture *t, float *sw, float *sh)
 
 /* ── State ─────────────────────────────────────────────────── */
 
+/* A batch that samples the surface it draws into: VC3's full-screen tint
+ * and blur passes redraw the frame through itself. The NV2A reads what is
+ * there; GL forbids sampling a bound attachment, so take a snapshot first
+ * and sample that. Left as white, each pass flattened the whole picture to
+ * its modulation colour. */
+static GLuint s_self_tex;
+static GLsizei s_self_w, s_self_h;
+
+static int tex_bind_for(const Surf *f, const Nv2aTexture *t, float *sw, float *sh)
+{
+    uint32_t mag = (t->filter >> 24) & 0xF, min = (t->filter >> 16) & 0xFF;
+
+    if (t->offset != f->va)
+        return tex_bind(t, sw, sh);
+    if (!s_self_tex)
+        glGenTextures(1, &s_self_tex);
+    glBindTexture(GL_TEXTURE_2D, s_self_tex);
+    if (s_self_w != f->w || s_self_h != f->h) {
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, f->w, f->h, 0, GL_BGRA,
+                     GL_UNSIGNED_INT_8_8_8_8_REV, NULL);
+        s_self_w = f->w;
+        s_self_h = f->h;
+    }
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, f->fbo);
+    glCopyTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 0, 0, f->w, f->h);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER,
+                    mag == 1 ? GL_NEAREST : GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER,
+                    min == 1 ? GL_NEAREST : GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, gl_wrap(t->addr_u));
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, gl_wrap(t->addr_v));
+    *sw = (float)f->w;
+    *sh = (float)f->h;
+    return 1;
+}
+
 static void apply_state(const Nv2aRenderState *rs)
 {
     static int cull_mode = -1;
@@ -710,6 +761,9 @@ static void gl_clear(const Nv2aSurface *s, const Nv2aRenderState *rs,
         glClearStencil((GLint)(zstencil & 0xFF));
         bits |= GL_STENCIL_BUFFER_BIT;
     }
+    if (s_ftr == 1)
+        fprintf(stderr, "[GLTR] clear surf %08X flags %X colour %08X\n",
+                f->va, flags, argb);
     if (bits)
         glClear(bits);
     f->dirty = 1;
@@ -717,6 +771,7 @@ static void gl_clear(const Nv2aSurface *s, const Nv2aRenderState *rs,
 
 /* VC3_GL_COMBINERS=0 falls back to texture * diffuse for every batch. */
 static int s_use_rc = 1;
+
 
 /* Combiner state and inputs for a batch that carries them (Nv2aBatch.rc):
  * the four stage textures on units 0-3, each with the scale that turns its
@@ -736,7 +791,7 @@ static void bind_combiners(const Surf *f, const Nv2aBatch *b)
 
         glActiveTexture(GL_TEXTURE0 + st);
         ts[st * 2] = ts[st * 2 + 1] = 1.0f;
-        if (t && t->offset != f->va && tex_bind(t, &sw, &sh)) {
+        if (t && tex_bind_for(f, t, &sw, &sh)) {
             int norm = d3d8_format_is_swizzled(t->color)
                     || d3d8_format_dxt_block_bytes(t->color);
             on[st] = 1;
@@ -771,6 +826,32 @@ static void bind_combiners(const Surf *f, const Nv2aBatch *b)
     glUniform3f(u_fogc, c[2], c[1], c[0]);
     glUniform1iv(u_on, 4, on);
     glUniform2fv(u_ts, 4, ts);
+    {
+        /* RCDBG 6: a colour per (stage program, final combiner, stage 0-1
+         * inputs), logged once each, so a pixel names the setup that drew it. */
+        static uint32_t seen[64];
+        static int nseen;
+        uint32_t h = rc->stage_program * 2654435761u ^ rc->final0 * 40503u
+                   ^ rc->final1 ^ rc->color_icw[0] * 7u ^ rc->color_icw[1] * 13u;
+        float r = (float)((h >> 16) & 0xFF) / 255.0f, g = (float)((h >> 8) & 0xFF) / 255.0f,
+              bl = (float)(h & 0xFF) / 255.0f;
+        int i, known = 0;
+        for (i = 0; i < nseen; i++)
+            if (seen[i] == h) known = 1;
+        if (!known && nseen < 64 && getenv("VC3_GL_RCDBG")) {
+            seen[nseen++] = h;
+            fprintf(stderr, "[GL]   rc setup %02X%02X%02X: prog %05X fin %08X %08X "
+                    "s0 %08X/%08X s1 %08X/%08X spec %08X tex %08X/%08X\n",
+                    (h >> 16) & 0xFF, (h >> 8) & 0xFF, h & 0xFF, rc->stage_program,
+                    rc->final0, rc->final1, rc->color_icw[0], rc->color_ocw[0],
+                    rc->color_icw[1], rc->color_ocw[1], b->ext[0].specular,
+                    b->stage[0] ? b->stage[0]->offset : 0,
+                    b->stage[1] ? b->stage[1]->offset : 0);
+        }
+        glUniform3f(glGetUniformLocation(s_prog, "u_dbgcol"), r, g, bl);
+        if (getenv("VC3_GL_RCDBG") && atoi(getenv("VC3_GL_RCDBG")) >= 6)
+            glDisable(GL_BLEND);     /* exact colours, so a pixel names its setup */
+    }
 
     glBindBuffer(GL_ARRAY_BUFFER, s_vbo_ext);
     glBufferData(GL_ARRAY_BUFFER, (GLsizeiptr)(b->count * sizeof(Nv2aVertexEx)),
@@ -792,8 +873,8 @@ static void gl_draw(const Nv2aSurface *s, const Nv2aBatch *b)
     apply_state(b->state);
     glUniform2f(u_surf, (float)f->w, (float)f->h);
     glActiveTexture(GL_TEXTURE0);
-    if (b->texture && b->texture->offset != f->va)
-        textured = tex_bind(b->texture, &tw, &th);
+    if (b->texture)
+        textured = tex_bind_for(f, b->texture, &tw, &th);
     if (s_st.on && textured && surf_find(b->texture->offset) && s_st.rt_logged < 6) {
         float u0 = 1e9f, u1 = -1e9f, v0 = 1e9f, v1 = -1e9f;
         uint32_t k;
@@ -809,6 +890,26 @@ static void gl_draw(const Nv2aSurface *s, const Nv2aBatch *b)
                 "fmt %02X pitch %u, divided by %.0fx%.0f\n", b->texture->offset, f->va,
                 u0, u1, v0, v1, b->texture->width, b->texture->height,
                 b->texture->color, b->texture->pitch, tw, th);
+    }
+    if (s_ftr == 1) {
+        float x0 = 1e9f, x1 = -1e9f, y0 = 1e9f, y1 = -1e9f;
+        uint32_t k;
+        for (k = 0; k < b->count; k++) {
+            const Nv2aVertex *q = &b->vertices[k];
+            if (q->x < x0) x0 = q->x;
+            if (q->x > x1) x1 = q->x;
+            if (q->y < y0) y0 = q->y;
+            if (q->y > y1) y1 = q->y;
+        }
+        fprintf(stderr, "[GLTR] %s surf %08X n %u box %.0f..%.0f x %.0f..%.0f diff %08X "
+                "tex %08X%s s1 %08X blend %u %X/%X z %u/%u sprog %05X fin %08X fog %.2f\n",
+                b->rc ? "RC " : "FF ", f->va, b->count, x0, x1, y0, y1,
+                b->vertices[0].diffuse, b->texture ? b->texture->offset : 0,
+                b->texture && b->texture->offset == f->va ? "(self)" : "",
+                b->stage[1] ? b->stage[1]->offset : 0, b->state->blend_enable,
+                b->state->blend_src, b->state->blend_dst, b->state->depth_test_enable,
+                b->state->depth_write, b->rc ? b->rc->stage_program : 0,
+                b->rc ? b->rc->final0 : 0, b->ext && b->rc ? b->ext[0].fog : -1.0f);
     }
     s_st.draws++;
     s_st.tris += b->count / 3;
@@ -828,6 +929,15 @@ static void gl_draw(const Nv2aSurface *s, const Nv2aBatch *b)
                 b->fog_color, b->vertices[0].diffuse, e->specular, e->fog,
                 e->tex[0][0], e->tex[0][1], e->tex[0][2], e->tex[0][3],
                 e->tex[1][0], e->tex[1][1], e->tex[1][2], e->tex[1][3]);
+        {
+            int k;
+            for (k = 0; k < 3 && k < (int)b->count; k++)
+                fprintf(stderr, "[GL]     v%d xy %.1f %.1f rhw %.4f uv %.2f %.2f | "
+                        "ext tc0 %.4f %.4f %.4f %.4f\n", k, b->vertices[k].x,
+                        b->vertices[k].y, b->vertices[k].rhw, b->vertices[k].u,
+                        b->vertices[k].v, b->ext[k].tex[0][0], b->ext[k].tex[0][1],
+                        b->ext[k].tex[0][2], b->ext[k].tex[0][3]);
+        }
     }
     if (b->rc && b->ext && s_use_rc)
         bind_combiners(f, b);
@@ -851,6 +961,17 @@ static void gl_flip(void)
 
     if (!gl_ready())
         return;
+    if (s_ftr == 1) {
+        s_ftr = 2;
+        fprintf(stderr, "[GLTR] end of frame\n");
+    } else if (s_ftr == 0 && getenv("VC3_GL_FTRACE")) {
+        FILE *fl = fopen(getenv("VC3_GL_FTRACE"), "rb");
+        if (fl) {
+            fclose(fl);
+            s_ftr = 1;
+            fprintf(stderr, "[GLTR] frame begins\n");
+        }
+    }
     for (i = 0; i < s_nsurfs; i++)
         if (s_surfs[i].dirty)
             surf_readback(&s_surfs[i]);
