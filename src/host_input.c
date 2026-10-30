@@ -72,6 +72,18 @@ static void auto_parse(void)
     }
 }
 
+/* How long a scripted press is held: AUTO_HOLD_MS, or for fire
+ * VC3_AUTOFIRE_MS (a real click is ~80 ms; for testing short ones). */
+static uint32_t auto_hold_ms(const char *key)
+{
+    static int fire_ms = -1;
+    if (fire_ms < 0) {
+        const char *e = getenv("VC3_AUTOFIRE_MS");
+        fire_ms = e ? atoi(e) : 0;
+    }
+    return !strcmp(key, "fire") && fire_ms > 0 ? (uint32_t)fire_ms : AUTO_HOLD_MS;
+}
+
 /* Is the scripted key held right now? */
 static int auto_held(const char *key, uint32_t t)
 {
@@ -79,7 +91,7 @@ static int auto_held(const char *key, uint32_t t)
     int i;
     for (i = 0; i < s_nauto; i++)
         if (!strcmp(s_auto[i].key, key) && t >= s_auto[i].at_ms
-                && t < s_auto[i].at_ms + AUTO_HOLD_MS) {
+                && t < s_auto[i].at_ms + auto_hold_ms(key)) {
             if (!(logged & (1u << i))) {
                 logged |= 1u << i;
                 fprintf(stderr, "[INPUT] auto %s at %.1fs\n", key, t / 1000.0);
@@ -146,6 +158,25 @@ static void bind_load(void)
             SDL_Scancode sc = SDL_GetScancodeFromName(v);
             s_bind[a] = sc != SDL_SCANCODE_UNKNOWN ? (int)sc : (int)k_action[a].def;
         }
+    }
+    /* One action per key here too: a key the player chose beats another
+     * action's default. A fire key saved as Space before the pedal had
+     * Space as its default held the trigger down with the pedal, so mouse
+     * clicks made no new shots. */
+    for (a = 0; a < VC3_KEY_COUNT; a++) {
+        char key[32];
+        int b;
+        snprintf(key, sizeof key, "key_%s=", k_action[a].id);
+        if (!s_bind[a] || vc3_setting_get(key))
+            continue;                       /* unbound, or chosen */
+        for (b = 0; b < VC3_KEY_COUNT; b++)
+            if (b != a && s_bind[b] == s_bind[a]) {
+                fprintf(stderr, "[INPUT] %s: %s is %s's; %s has no key\n",
+                        k_action[a].name, SDL_GetScancodeName((SDL_Scancode)s_bind[a]),
+                        k_action[b].name, k_action[a].name);
+                s_bind[a] = 0;
+                break;
+            }
     }
     s_bind_loaded = 1;
 }
