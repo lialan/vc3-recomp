@@ -43,14 +43,16 @@ extern ptrdiff_t xbox_GetMemoryOffset(void);
 
 static CGLContextObj s_ctx;
 static int s_failed;
-static GLuint s_prog, s_vao, s_vbo, s_white;
+static GLuint s_prog, s_vao, s_vbo, s_vbo_ext, s_white;
 static GLint u_surf, u_depth, u_texsize, u_textured, u_atest, u_afunc, u_aref;
+static GLint u_rc, u_cicw, u_aicw, u_cocw, u_aocw, u_f0, u_f1, u_fin0, u_fin1,
+             u_ctl, u_sprog, u_fc0, u_fc1, u_fogc, u_on, u_ts;
 static uint32_t s_frame = 1;
 
 /* VC3_GL_STATS=1: every 300 flips, what the batches asked for. */
 static struct {
     int on;
-    uint32_t draws, tris, textured, rt, uploads, untex, rt_logged;
+    uint32_t draws, tris, textured, rt, uploads, untex, rt_logged, rc_logged;
     uint32_t fail[256];        /* failed decodes by format code */
     uint32_t fmt[256];         /* textured batches by format code */
 } s_st;
@@ -60,11 +62,20 @@ static const char *VS =
     "layout(location=0) in vec4 a_pos;\n"     /* x, y, z, rhw */
     "layout(location=1) in vec4 a_col;\n"     /* B, G, R, A bytes */
     "layout(location=2) in vec2 a_uv;\n"      /* texels */
+    "layout(location=3) in vec4 a_spec;\n"    /* Nv2aVertexEx: B, G, R, A */
+    "layout(location=4) in float a_fog;\n"
+    "layout(location=5) in vec4 a_tc0;\n"
+    "layout(location=6) in vec4 a_tc1;\n"
+    "layout(location=7) in vec4 a_tc2;\n"
+    "layout(location=8) in vec4 a_tc3;\n"
     "uniform vec2 u_surf;\n"                  /* framebuffer size */
     "uniform vec2 u_depth;\n"                 /* clip min, max */
     "uniform vec2 u_texsize;\n"
     "out vec4 v_col;\n"
     "out vec2 v_uv;\n"
+    "out vec4 v_spec;\n"
+    "out float v_fog;\n"
+    "out vec4 v_tc0, v_tc1, v_tc2, v_tc3;\n"
     "void main() {\n"
     "  float w = (a_pos.w > 0.0 && a_pos.w < 1e30) ? 1.0 / a_pos.w : 1.0;\n"
     "  vec2 ndc = a_pos.xy / u_surf * 2.0 - 1.0;\n"
@@ -72,21 +83,150 @@ static const char *VS =
     "  gl_Position = vec4(ndc * w, z * w, w);\n"
     "  v_col = a_col.zyxw;\n"
     "  v_uv = a_uv / u_texsize;\n"
+    "  v_spec = a_spec.zyxw;\n"
+    "  v_fog = a_fog;\n"
+    "  v_tc0 = a_tc0; v_tc1 = a_tc1; v_tc2 = a_tc2; v_tc3 = a_tc3;\n"
     "}\n";
 
+/* The register combiners: xboxrecomp's nv2a_combiner.c (which follows xemu's
+ * psh.c) transcribed to GLSL, its state in uniforms. Kept line for line with
+ * the C so a difference between the two is a bug in one of them. */
 static const char *FS =
     "#version 410\n"
     "in vec4 v_col;\n"
     "in vec2 v_uv;\n"
+    "in vec4 v_spec;\n"
+    "in float v_fog;\n"
+    "in vec4 v_tc0, v_tc1, v_tc2, v_tc3;\n"
     "uniform sampler2D u_tex;\n"
+    "uniform sampler2D u_t1, u_t2, u_t3;\n"   /* stages 1-3; stage 0 is u_tex */
     "uniform int u_textured;\n"
     "uniform int u_atest;\n"
     "uniform int u_afunc;\n"                  /* GL_NEVER 0x200 .. GL_ALWAYS 0x207 */
     "uniform float u_aref;\n"
+    "uniform int u_rc;\n"                     /* evaluate the combiners */
+    "uniform uint u_cicw[8], u_aicw[8], u_cocw[8], u_aocw[8];\n"
+    "uniform vec4 u_f0[8], u_f1[8];\n"
+    "uniform uint u_fin0, u_fin1, u_ctl, u_sprog;\n"
+    "uniform vec4 u_fc0, u_fc1;\n"
+    "uniform vec3 u_fogc;\n"
+    "uniform int u_nofog;\n"                  /* VC3_GL_NOFOG=1: debug */
+    "uniform int u_on[4];\n"                  /* stage has a usable texture */
+    "uniform vec2 u_ts[4];\n"                 /* coordinate -> GL [0,1] scale */
     "out vec4 o_col;\n"
+    "vec4 R[16];\n"
+    "float map_in(float x, uint b) {\n"
+    "  float p = max(x, 0.0);\n"
+    "  uint m = (b >> 5) & 7u;\n"
+    "  if (m == 0u) return p;\n"
+    "  if (m == 1u) return 1.0 - clamp(x, 0.0, 1.0);\n"
+    "  if (m == 2u) return 2.0 * p - 1.0;\n"
+    "  if (m == 3u) return -2.0 * p + 1.0;\n"
+    "  if (m == 4u) return p - 0.5;\n"
+    "  if (m == 5u) return -p + 0.5;\n"
+    "  if (m == 6u) return x;\n"
+    "  return -x;\n"
+    "}\n"
+    "float map_out(float x, uint m) {\n"
+    "  if (m == 0x08u) return x - 0.5;\n"
+    "  if (m == 0x10u) return x * 2.0;\n"
+    "  if (m == 0x18u) return (x - 0.5) * 2.0;\n"
+    "  if (m == 0x20u) return x * 4.0;\n"
+    "  if (m == 0x30u) return x * 0.5;\n"
+    "  return x;\n"
+    "}\n"
+    "vec3 rd_rgb(uint b) {\n"
+    "  vec4 r = R[b & 15u];\n"
+    "  vec3 v = ((b & 0x10u) != 0u) ? vec3(r.a) : r.rgb;\n"
+    "  return vec3(map_in(v.x, b), map_in(v.y, b), map_in(v.z, b));\n"
+    "}\n"
+    "float rd_a(uint b) {\n"
+    "  vec4 r = R[b & 15u];\n"
+    "  return map_in(((b & 0x10u) != 0u) ? r.a : r.b, b);\n"
+    "}\n"
+    /* What texture stage st contributes, by its SHADER_STAGE_PROGRAM mode
+     * (rc_stage_fetch). An unusable stage reads white, like rc_texel. */
+    "vec4 stage(int st, vec4 tc, vec4 texel) {\n"
+    "  uint mode = (u_sprog >> uint(st * 5)) & 31u;\n"
+    "  if (mode == 0u) return vec4(0.0, 0.0, 0.0, 1.0);\n"
+    "  if (mode == 4u) return clamp(tc, 0.0, 1.0);\n"
+    "  if (mode <= 3u) return u_on[st] != 0 ? texel : vec4(1.0);\n"
+    "  return vec4(0.0);\n"
+    "}\n"
+    "vec2 stage_uv(int st, vec4 tc) {\n"
+    "  uint mode = (u_sprog >> uint(st * 5)) & 31u;\n"
+    "  float q = tc.w != 0.0 ? tc.w : 1.0;\n"
+    "  return (mode == 3u ? tc.xy : tc.xy / q) * u_ts[st];\n"
+    "}\n"
+    "vec4 combiners() {\n"
+    "  vec4 t0 = stage(0, v_tc0, texture(u_tex, stage_uv(0, v_tc0)));\n"
+    "  vec4 t1 = stage(1, v_tc1, texture(u_t1, stage_uv(1, v_tc1)));\n"
+    "  vec4 t2 = stage(2, v_tc2, texture(u_t2, stage_uv(2, v_tc2)));\n"
+    "  vec4 t3 = stage(3, v_tc3, texture(u_t3, stage_uv(3, v_tc3)));\n"
+    "  uint n = min(u_ctl & 0xFFu, 8u), flags = u_ctl >> 8;\n"
+    "  for (int i = 0; i < 16; i++) R[i] = vec4(0.0);\n"
+    "  R[3] = vec4(u_fogc, u_nofog != 0 ? 1.0 : v_fog);\n"
+    "  R[4] = v_col; R[5] = v_spec;\n"
+    "  R[8] = t0; R[9] = t1; R[10] = t2; R[11] = t3;\n"
+    "  R[12].a = ((u_sprog & 31u) != 0u) ? t0.a : 1.0;\n"
+    "  for (uint s = 0u; s < 8u; s++) {\n"
+    "    if (s >= n) break;\n"
+    "    uint icw = u_cicw[s], ocw = u_cocw[s], aicw = u_aicw[s], aocw = u_aocw[s];\n"
+    "    uint fl = ocw >> 12, afl = aocw >> 12;\n"
+    "    R[1] = u_f0[(flags & 0x010u) != 0u ? s : 0u];\n"
+    "    R[2] = u_f1[(flags & 0x100u) != 0u ? s : 0u];\n"
+    "    bool mux_cd = (flags & 1u) != 0u ? R[12].a >= 0.5\n"
+    "                                      : ((int(R[12].a * 255.0) & 1) != 0);\n"
+    "    vec3 A = rd_rgb(icw >> 24), B = rd_rgb(icw >> 16);\n"
+    "    vec3 C = rd_rgb(icw >> 8),  D = rd_rgb(icw);\n"
+    "    float aA = rd_a(aicw >> 24), aB = rd_a(aicw >> 16);\n"
+    "    float aC = rd_a(aicw >> 8),  aD = rd_a(aicw);\n"
+    "    vec3 pab = ((fl & 2u) != 0u) ? vec3(dot(A, B)) : A * B;\n"
+    "    vec3 pcd = ((fl & 1u) != 0u) ? vec3(dot(C, D)) : C * D;\n"
+    "    vec3 sum = ((fl & 4u) != 0u) ? (mux_cd ? pcd : pab) : pab + pcd;\n"
+    "    uint om = fl & 0x38u;\n"
+    "    vec3 ab = clamp(vec3(map_out(pab.x, om), map_out(pab.y, om), map_out(pab.z, om)), -1.0, 1.0);\n"
+    "    vec3 cd = clamp(vec3(map_out(pcd.x, om), map_out(pcd.y, om), map_out(pcd.z, om)), -1.0, 1.0);\n"
+    "    vec3 ms = clamp(vec3(map_out(sum.x, om), map_out(sum.y, om), map_out(sum.z, om)), -1.0, 1.0);\n"
+    "    float apab = aA * aB, apcd = aC * aD;\n"
+    "    float asum = ((afl & 4u) != 0u) ? (mux_cd ? apcd : apab) : apab + apcd;\n"
+    "    uint aom = afl & 0x38u;\n"
+    "    float aab = clamp(map_out(apab, aom), -1.0, 1.0);\n"
+    "    float acd = clamp(map_out(apcd, aom), -1.0, 1.0);\n"
+    "    float ams = clamp(map_out(asum, aom), -1.0, 1.0);\n"
+    "    uint d;\n"
+    "    d = (ocw >> 4) & 15u;\n"
+    "    if (d != 0u) { R[d].rgb = ab; if ((fl & 0x80u) != 0u) R[d].a = ab.z; }\n"
+    "    d = ocw & 15u;\n"
+    "    if (d != 0u) { R[d].rgb = cd; if ((fl & 0x40u) != 0u) R[d].a = cd.z; }\n"
+    "    d = (ocw >> 8) & 15u;\n"
+    "    if (d != 0u) R[d].rgb = ms;\n"
+    "    d = (aocw >> 4) & 15u; if (d != 0u) R[d].a = aab;\n"
+    "    d = aocw & 15u;        if (d != 0u) R[d].a = acd;\n"
+    "    d = (aocw >> 8) & 15u; if (d != 0u) R[d].a = ams;\n"
+    "    R[0] = vec4(0.0);\n"
+    "  }\n"
+    "  vec4 o;\n"
+    "  if (u_fin0 != 0u || u_fin1 != 0u) {\n"
+    "    uint ff = u_fin1 & 0xFFu;\n"
+    "    R[1] = u_fc0; R[2] = u_fc1;\n"
+    "    vec3 a = ((ff & 0x40u) != 0u) ? 1.0 - R[5].rgb : R[5].rgb;\n"
+    "    vec3 b = ((ff & 0x20u) != 0u) ? 1.0 - R[12].rgb : R[12].rgb;\n"
+    "    R[14] = vec4(((ff & 0x80u) != 0u) ? clamp(a + b, 0.0, 1.0) : a + b, 0.0);\n"
+    "    vec3 E = rd_rgb(u_fin1 >> 24), F = rd_rgb(u_fin1 >> 16);\n"
+    "    R[15] = vec4(E * F, 0.0);\n"
+    "    vec3 A = rd_rgb(u_fin0 >> 24), B = rd_rgb(u_fin0 >> 16);\n"
+    "    vec3 C = rd_rgb(u_fin0 >> 8),  D = rd_rgb(u_fin0);\n"
+    "    o = vec4(D + C * (1.0 - A) + B * A, rd_a(u_fin1 >> 8));\n"
+    "  } else {\n"
+    "    o = R[12];\n"
+    "  }\n"
+    "  return clamp(o, 0.0, 1.0);\n"
+    "}\n"
     "void main() {\n"
     "  vec4 c = v_col;\n"
-    "  if (u_textured != 0) c *= texture(u_tex, v_uv);\n"
+    "  if (u_rc != 0) c = combiners();\n"
+    "  else if (u_textured != 0) c *= texture(u_tex, v_uv);\n"
     "  if (u_atest != 0) {\n"
     "    float a = c.a; bool pass = true;\n"
     "    int f = u_afunc - 0x200;\n"
@@ -173,6 +313,27 @@ static int gl_ready(void)
         u_afunc = glGetUniformLocation(s_prog, "u_afunc");
         u_aref = glGetUniformLocation(s_prog, "u_aref");
         glUniform1i(glGetUniformLocation(s_prog, "u_tex"), 0);
+        glUniform1i(glGetUniformLocation(s_prog, "u_t1"), 1);
+        glUniform1i(glGetUniformLocation(s_prog, "u_t2"), 2);
+        glUniform1i(glGetUniformLocation(s_prog, "u_t3"), 3);
+        glUniform1i(glGetUniformLocation(s_prog, "u_nofog"),
+                    getenv("VC3_GL_NOFOG") != NULL);
+        u_rc = glGetUniformLocation(s_prog, "u_rc");
+        u_cicw = glGetUniformLocation(s_prog, "u_cicw");
+        u_aicw = glGetUniformLocation(s_prog, "u_aicw");
+        u_cocw = glGetUniformLocation(s_prog, "u_cocw");
+        u_aocw = glGetUniformLocation(s_prog, "u_aocw");
+        u_f0 = glGetUniformLocation(s_prog, "u_f0");
+        u_f1 = glGetUniformLocation(s_prog, "u_f1");
+        u_fin0 = glGetUniformLocation(s_prog, "u_fin0");
+        u_fin1 = glGetUniformLocation(s_prog, "u_fin1");
+        u_ctl = glGetUniformLocation(s_prog, "u_ctl");
+        u_sprog = glGetUniformLocation(s_prog, "u_sprog");
+        u_fc0 = glGetUniformLocation(s_prog, "u_fc0");
+        u_fc1 = glGetUniformLocation(s_prog, "u_fc1");
+        u_fogc = glGetUniformLocation(s_prog, "u_fogc");
+        u_on = glGetUniformLocation(s_prog, "u_on");
+        u_ts = glGetUniformLocation(s_prog, "u_ts");
 
         glGenVertexArrays(1, &s_vao);
         glBindVertexArray(s_vao);
@@ -187,6 +348,22 @@ static int gl_ready(void)
         glEnableVertexAttribArray(2);
         glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof(Nv2aVertex),
                               (void *)offsetof(Nv2aVertex, u));
+        /* Combiner inputs, enabled only for batches that carry them. */
+        glGenBuffers(1, &s_vbo_ext);
+        glBindBuffer(GL_ARRAY_BUFFER, s_vbo_ext);
+        glVertexAttribPointer(3, 4, GL_UNSIGNED_BYTE, GL_TRUE, sizeof(Nv2aVertexEx),
+                              (void *)offsetof(Nv2aVertexEx, specular));
+        glVertexAttribPointer(4, 1, GL_FLOAT, GL_FALSE, sizeof(Nv2aVertexEx),
+                              (void *)offsetof(Nv2aVertexEx, fog));
+        {
+            GLuint k;
+            for (k = 0; k < 4; k++)
+                glVertexAttribPointer(5 + k, 4, GL_FLOAT, GL_FALSE,
+                                      sizeof(Nv2aVertexEx),
+                                      (void *)(offsetof(Nv2aVertexEx, tex)
+                                               + k * 4 * sizeof(float)));
+        }
+        glBindBuffer(GL_ARRAY_BUFFER, s_vbo);
 
         glGenTextures(1, &s_white);
         glBindTexture(GL_TEXTURE_2D, s_white);
@@ -538,6 +715,70 @@ static void gl_clear(const Nv2aSurface *s, const Nv2aRenderState *rs,
     f->dirty = 1;
 }
 
+/* VC3_GL_COMBINERS=0 falls back to texture * diffuse for every batch. */
+static int s_use_rc = 1;
+
+/* Combiner state and inputs for a batch that carries them (Nv2aBatch.rc):
+ * the four stage textures on units 0-3, each with the scale that turns its
+ * coordinates -- normalised for swizzled/DXT, texels for linear -- into
+ * GL's [0,1] over the texture actually bound; then the registers. */
+static void bind_combiners(const Surf *f, const Nv2aBatch *b)
+{
+    const Nv2aCombiner *rc = b->rc;
+    GLint on[4] = { 0, 0, 0, 0 };
+    GLfloat ts[8], f0[32], f1[32], c[4];
+    GLuint k;
+    int st;
+
+    for (st = 0; st < 4; st++) {
+        const Nv2aTexture *t = b->stage[st];
+        float sw = 1.0f, sh = 1.0f;
+
+        glActiveTexture(GL_TEXTURE0 + st);
+        ts[st * 2] = ts[st * 2 + 1] = 1.0f;
+        if (t && t->offset != f->va && tex_bind(t, &sw, &sh)) {
+            int norm = d3d8_format_is_swizzled(t->color)
+                    || d3d8_format_dxt_block_bytes(t->color);
+            on[st] = 1;
+            ts[st * 2]     = (norm ? (float)t->width : 1.0f) / sw;
+            ts[st * 2 + 1] = (norm ? (float)t->height : 1.0f) / sh;
+        } else {
+            glBindTexture(GL_TEXTURE_2D, s_white);
+        }
+    }
+    glActiveTexture(GL_TEXTURE0);
+    for (k = 0; k < 8; k++) {
+        nv2a_rc_unpack(rc->factor0[k], &f0[k * 4]);
+        nv2a_rc_unpack(rc->factor1[k], &f1[k * 4]);
+    }
+    glUniform1i(u_rc, 1);
+    glUniform1uiv(u_cicw, 8, rc->color_icw);
+    glUniform1uiv(u_aicw, 8, rc->alpha_icw);
+    glUniform1uiv(u_cocw, 8, rc->color_ocw);
+    glUniform1uiv(u_aocw, 8, rc->alpha_ocw);
+    glUniform4fv(u_f0, 8, f0);
+    glUniform4fv(u_f1, 8, f1);
+    glUniform1ui(u_fin0, rc->final0);
+    glUniform1ui(u_fin1, rc->final1);
+    glUniform1ui(u_ctl, rc->control);
+    glUniform1ui(u_sprog, rc->stage_program);
+    nv2a_rc_unpack(rc->final_c0, c);
+    glUniform4fv(u_fc0, 1, c);
+    nv2a_rc_unpack(rc->final_c1, c);
+    glUniform4fv(u_fc1, 1, c);
+    /* FOG_COLOR is R in bits 0-7, the reverse of a D3DCOLOR. */
+    nv2a_rc_unpack(b->fog_color, c);
+    glUniform3f(u_fogc, c[2], c[1], c[0]);
+    glUniform1iv(u_on, 4, on);
+    glUniform2fv(u_ts, 4, ts);
+
+    glBindBuffer(GL_ARRAY_BUFFER, s_vbo_ext);
+    glBufferData(GL_ARRAY_BUFFER, (GLsizeiptr)(b->count * sizeof(Nv2aVertexEx)),
+                 b->ext, GL_STREAM_DRAW);
+    for (k = 3; k <= 8; k++)
+        glEnableVertexAttribArray(k);
+}
+
 static void gl_draw(const Nv2aSurface *s, const Nv2aBatch *b)
 {
     Surf *f;
@@ -579,10 +820,28 @@ static void gl_draw(const Nv2aSurface *s, const Nv2aBatch *b)
         glBindTexture(GL_TEXTURE_2D, s_white);
     glUniform1i(u_textured, textured);
     glUniform2f(u_texsize, tw, th);
+    if (b->rc && b->ext && s_use_rc && s_st.on && s_st.rc_logged < 4) {
+        const Nv2aVertexEx *e = &b->ext[0];
+        s_st.rc_logged++;
+        fprintf(stderr, "[GL]   rc batch: fog %08X diffuse %08X specular %08X "
+                "fogf %.3f tc0 %.3f %.3f %.3f %.3f tc1 %.3f %.3f %.3f %.3f\n",
+                b->fog_color, b->vertices[0].diffuse, e->specular, e->fog,
+                e->tex[0][0], e->tex[0][1], e->tex[0][2], e->tex[0][3],
+                e->tex[1][0], e->tex[1][1], e->tex[1][2], e->tex[1][3]);
+    }
+    if (b->rc && b->ext && s_use_rc)
+        bind_combiners(f, b);
+    else {
+        GLuint k;
+        glUniform1i(u_rc, 0);
+        for (k = 3; k <= 8; k++)
+            glDisableVertexAttribArray(k);
+    }
     glBindBuffer(GL_ARRAY_BUFFER, s_vbo);
     glBufferData(GL_ARRAY_BUFFER, (GLsizeiptr)(b->count * sizeof(Nv2aVertex)),
                  b->vertices, GL_STREAM_DRAW);
     glDrawArrays(GL_TRIANGLES, 0, (GLsizei)b->count);
+    glActiveTexture(GL_TEXTURE0);
     f->dirty = 1;
 }
 
@@ -628,6 +887,8 @@ void vc3_gl_backend_register(void)
         return;
     }
     s_st.on = getenv("VC3_GL_STATS") != NULL;
+    e = getenv("VC3_GL_COMBINERS");
+    s_use_rc = !(e && e[0] == '0');
     nv2a_backend_register(&s_gl_backend);
     fprintf(stderr, "[GL] OpenGL back end registered\n");
 }

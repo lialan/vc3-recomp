@@ -135,6 +135,16 @@ void host_input_poll(chihiro_input_t *in)
     fire = (buttons & SDL_BUTTON(SDL_BUTTON_LEFT)) || auto_held("fire", t);
     reload = (buttons & SDL_BUTTON(SDL_BUTTON_RIGHT)) || auto_held("reload", t);
 
+    /* A scripted shot with no window under the mouse aims at VC3_AUTOAIM
+     * ("x,y" in 0..1, default the centre), so unattended runs can shoot. */
+    if (ux < 0.0 && auto_held("fire", t)) {
+        const char *aim = getenv("VC3_AUTOAIM");
+        ux = 0.5;
+        uy = 0.5;
+        if (aim)
+            sscanf(aim, "%lf,%lf", &ux, &uy);
+    }
+
     in->test = (k && k[SDL_SCANCODE_F2]) || auto_held("test", t);
     if ((k && k[SDL_SCANCODE_F1]) || auto_held("service", t))
         in->player[0] |= JVS_SW_SERVICE;
