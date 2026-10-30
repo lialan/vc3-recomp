@@ -1929,12 +1929,25 @@ static size_t tex_bytes(const Nv2aTexture *t)
     return (size_t)t->width * t->height * bpp;
 }
 
+/* Four independent lanes over 32-byte steps, folded at the end: the one
+ * chain of multiplies ran at a word per multiply latency, and the full
+ * check of every texture a frame was most of tex_bind's time. */
 static uint64_t hash_bytes(const uint8_t *p, size_t n)
 {
-    uint64_t h = 0xcbf29ce484222325ull;
-    size_t i;
+    uint64_t h0 = 0xcbf29ce484222325ull, h1 = 0x9e3779b97f4a7c15ull,
+             h2 = 0xc2b2ae3d27d4eb4full, h3 = 0x165667b19e3779f9ull, h;
+    size_t i = 0;
 
-    for (i = 0; i + 8 <= n; i += 8) {
+    for (; i + 32 <= n; i += 32) {
+        uint64_t w[4];
+        memcpy(w, p + i, 32);
+        h0 = (h0 ^ w[0]) * 0x100000001b3ull; h0 ^= h0 >> 29;
+        h1 = (h1 ^ w[1]) * 0x100000001b3ull; h1 ^= h1 >> 29;
+        h2 = (h2 ^ w[2]) * 0x100000001b3ull; h2 ^= h2 >> 29;
+        h3 = (h3 ^ w[3]) * 0x100000001b3ull; h3 ^= h3 >> 29;
+    }
+    h = h0 ^ (h1 * 31) ^ (h2 * 1031) ^ (h3 * 65599) ^ (uint64_t)n;
+    for (; i + 8 <= n; i += 8) {
         uint64_t w;
         memcpy(&w, p + i, 8);
         h = (h ^ w) * 0x100000001b3ull;
@@ -2210,10 +2223,11 @@ static int tex_bind(const Nv2aTexture *t, float *sw, float *sh)
         }
         glBindTexture(GL_TEXTURE_2D, e->tex);
         bound = e->tex;
-        /* Full check once a frame; within a frame, whenever the sampled hash
-         * says the memory now holds something else. */
+        /* Full check every fourth frame; at once whenever the sampled hash
+         * (every bind) says the memory now holds something else -- how a
+         * texture streamed through one address within a frame shows. */
         uint64_t q = hash_sampled(mem + t->offset, tex_bytes(t));
-        if (e->checked != s_frame || q != e->quick) {
+        if (s_frame - e->checked >= 4 || q != e->quick || !e->checked) {
             uint64_t h = hash_bytes(mem + t->offset, tex_bytes(t));
             e->checked = s_frame;
             e->quick = q;
