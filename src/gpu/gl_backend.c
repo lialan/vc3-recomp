@@ -1266,6 +1266,58 @@ static void caps_off(void)
         set_cap(i, 0);
 }
 
+/* The game's zoom (VC3 narrows its view for events and cutscenes): its
+ * usual focal length -- the one most frames of the scene use -- is the
+ * baseline, and each batch is re-projected with that baseline rather than
+ * its own, so a narrower view comes out as the world magnified about the
+ * game camera's axis by kx / baseline, as the game meant. The HUD panel and
+ * the aim use the same baseline, so the marks the game draws in its zoomed
+ * screen land on the magnified world. VC3_IMM_ZOOM=0: no zoom. */
+#define ZOOM_SLOTS 16
+static struct { float k; uint32_t n; } s_zoom_hist[ZOOM_SLOTS];
+static float s_kbase;                   /* the baseline |kx|; 0 until known */
+
+static void zoom_note(float kx)
+{
+    float a = fabsf(kx);
+    int i, best = -1, empty = -1;
+    if (!(a > 1.0f))
+        return;
+    for (i = 0; i < ZOOM_SLOTS; i++) {
+        if (s_zoom_hist[i].n && fabsf(s_zoom_hist[i].k - a) < 0.5f) {
+            s_zoom_hist[i].n++;
+            break;
+        }
+        if (!s_zoom_hist[i].n && empty < 0)
+            empty = i;
+    }
+    if (i == ZOOM_SLOTS && empty >= 0) {
+        s_zoom_hist[empty].k = a;
+        s_zoom_hist[empty].n = 1;
+    }
+    for (i = 0; i < ZOOM_SLOTS; i++)
+        if (s_zoom_hist[i].n && (best < 0 || s_zoom_hist[i].n > s_zoom_hist[best].n))
+            best = i;
+    if (best >= 0)
+        s_kbase = s_zoom_hist[best].k;
+}
+
+/* A projection as the immersive view uses it: the baseline focal length,
+ * this one's centre and aspect. */
+static VrGameProj zoom_proj(const VrGameProj *g)
+{
+    static int on = -1;
+    VrGameProj o = *g;
+    if (on < 0)
+        on = !(genv("VC3_IMM_ZOOM") && genv("VC3_IMM_ZOOM")[0] == '0');
+    if (on && s_kbase > 0.0f && fabsf(g->kx) > 1.0f) {
+        float z = s_kbase / fabsf(g->kx);
+        o.kx = g->kx * z;
+        o.ky = g->ky * z;
+    }
+    return o;
+}
+
 static GLuint s_hud_fbo, s_hud_tex;
 static GLsizei s_hud_w, s_hud_h;
 static uint32_t s_hud_frame;            /* the frame the HUD picture holds */
@@ -3472,7 +3524,8 @@ static void gl_draw(const Nv2aSurface *s, const Nv2aBatch *b)
         }
         if (imm3d) {
             const VrGameProj *g = raw ? &s_bgp : f->gp_ok ? &f->gp : &s_gp;
-            cu4f(U->gp, g->kx, g->ky, g->cx, g->cy);
+            VrGameProj zg = zoom_proj(g);
+            cu4f(U->gp, zg.kx, zg.ky, zg.cx, zg.cy);
             cu2f(U->gw, 1.0f, g->inv_pz);
         } else {
             cu2f(U->gw, 0.0f, 0.0f);
@@ -4308,8 +4361,11 @@ static void quest_present(void)
             vf.hud_w = s_hud_w;
             vf.hud_h = s_hud_h;
         }
-        vf.gp[0] = s_gp.kx;
-        vf.gp[1] = s_gp.ky;
+        {   /* the HUD panel and the aim: the zoom's baseline as well */
+            VrGameProj zg = zoom_proj(&s_gp);
+            vf.gp[0] = zg.kx;
+            vf.gp[1] = zg.ky;
+        }
         vf.gp[2] = s_gp.cx;
         vf.gp[3] = s_gp.cy;
         vf.gp[4] = s_gp.inv_pz;
@@ -4458,6 +4514,8 @@ static void gl_flip(void)
             }
             q->n3d = 0;
         }
+        if (best)
+            zoom_note(s_gp.kx);
         s_3d_prev = s_3d_this;
         s_3d_this = 0;
     }
@@ -4494,10 +4552,12 @@ static void gl_flip(void)
             static uint32_t n;
             if (++n % 60 == 0)
                 fprintf(stderr, "[IMM] %s: 3D batches %u, projection %s (kx %.1f ky %.1f cx %.1f"
-                        " cy %.1f 1/pz %.3f), batches read %u, not perspective %u\n",
+                        " cy %.1f 1/pz %.3f), zoom %.2f (baseline %.1f), batches read %u,"
+                        " not perspective %u\n",
                         s_imm ? "immersive" : on ? "screen (no 3D)" : "off", s_3d_prev,
                         s_gp_ok ? "known" : "unknown", s_gp.kx, s_gp.ky, s_gp.cx, s_gp.cy,
-                        s_gp.inv_pz, s_gp_good, s_gp_bad);
+                        s_gp.inv_pz, s_kbase > 0 ? fabsf(s_gp.kx) / s_kbase : 1.0f, s_kbase,
+                        s_gp_good, s_gp_bad);
         }
     }
     s_frame++;
