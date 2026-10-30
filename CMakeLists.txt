@@ -45,10 +45,12 @@ target_include_directories(vc3 PRIVATE
     ${XBOXRECOMP_DIR}/src/platform
 )
 
-# The generated chunks are huge straight-line C; full optimisation costs a lot
-# of compile time for little gain during bring-up.
+# The generated chunks are huge straight-line C, and the game's own logic runs
+# in them. -O2 is the default: in combat it lifts the worst second from ~28 to
+# ~40 fps. VC3_GEN_OPT=-O1 builds much faster for bring-up work.
+set(VC3_GEN_OPT "-O2" CACHE STRING "Optimisation level for the lifted C")
 set_source_files_properties(${RECOMP_GEN_SOURCES} PROPERTIES
-    COMPILE_OPTIONS "-O1;-Wno-everything")
+    COMPILE_OPTIONS "${VC3_GEN_OPT};-Wno-everything")
 
 # Let the crash handler name the lifted function at a host PC (dladdr).
 target_link_options(vc3 PRIVATE -Wl,-export_dynamic)

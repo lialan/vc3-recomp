@@ -12,6 +12,6 @@ export RECOMP_WATCHDOG_SECS="${RECOMP_WATCHDOG_SECS:-$((SECS - 5))}"
 export RECOMP_FB_WINDOW="${RECOMP_FB_WINDOW:-0}"   # headless unless asked
 unset VC3_SOUND
 mkdir -p "$VC3_SAVE_DIR"
-timeout -k 5 "$SECS" "$ROOT/build/vc3" "$GAME" >"$LOG" 2>&1
+timeout -k 5 "$SECS" "${VC3_BIN:-$ROOT/build/vc3}" "$GAME" >"$LOG" 2>&1
 rc=$?
 echo "exit=$rc lines=$(wc -l <"$LOG") log=$LOG"

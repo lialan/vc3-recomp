@@ -8,7 +8,7 @@
 # else a folder picker (the choice is saved).
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-BUILD="$ROOT/build"
+BUILD="${VC3_BUILD_DIR:-$ROOT/build}"
 APP="$BUILD/VC3.app"
 
 cmake --build "$BUILD" -j "$(sysctl -n hw.ncpu)"
