@@ -129,13 +129,14 @@ What it took, beyond the phase 0-3 setup:
 
 Known issues:
 
-* The register-combiner path (`VC3_GL_COMBINERS=1`) computes alpha 0 for the
-  lightmapped walls, which VC3 alpha-tests (GEQUAL 0x80), so it loses the room
-  in combat; texture * diffuse is the default and draws every scene. Lighting
-  through the lightmaps is therefore not applied.
+* The full register-combiner path (`VC3_GL_COMBINERS=1`) still rejects the
+  lightmapped walls in its alpha test; the default draws texture * diffuse,
+  times the stage-1 lightmap where a batch uses one (VC3's walls).
 * The attract background is white (probably the Sofdec movie
   `vc3_title2_100mh.sfd`, not decoded).
-* Sound is untested (muted by default; `VC3_SOUND=1`).
+* Real mouse/keyboard play is not yet verified: `scripts/real-input.swift`
+  needs the terminal to have Accessibility permission. Sound is emulated and
+  measured (RECOMP_AUDIO_WAV) but muted unless `VC3_SOUND=1`.
 
 Debug switches: `VC3_GL=0` (software rasteriser), `VC3_GL_STATS`,
 `VC3_GL_FTRACE=<flag>`, `VC3_GL_RCDBG=1..7`, `VC3_JVS_TRACE`,
