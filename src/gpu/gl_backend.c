@@ -2127,18 +2127,24 @@ static void gl_flip(void)
     }
     s_frame++;
     if (genv("VC3_FPS_LOG")) {            /* wall-clock flips per second */
+        /* With the vblanks delivered over the same second: flips below the
+         * vblank rate are frames that missed one. */
+        extern uint32_t xbox_VblankCount(void);
         static struct timespec t0;
-        static uint32_t f0;
+        static uint32_t f0, v0;
         struct timespec t;
         clock_gettime(CLOCK_MONOTONIC, &t);
         if (!t0.tv_sec) {
             t0 = t;
             f0 = s_frame;
+            v0 = xbox_VblankCount();
         } else if (t.tv_sec - t0.tv_sec >= 1) {
             double dt = (double)(t.tv_sec - t0.tv_sec) + (t.tv_nsec - t0.tv_nsec) / 1e9;
-            fprintf(stderr, "[FPS] %.1f\n", (s_frame - f0) / dt);
+            uint32_t v = xbox_VblankCount();
+            fprintf(stderr, "[FPS] %.1f vblank %.1f\n", (s_frame - f0) / dt, (v - v0) / dt);
             t0 = t;
             f0 = s_frame;
+            v0 = v;
         }
     }
     if (s_st.on && s_frame % 300 == 0) {
