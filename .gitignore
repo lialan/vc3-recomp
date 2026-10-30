@@ -71,3 +71,4 @@ quest/.gradle/
 quest/vc3/build/
 quest/vc3/src/main/libs/
 quest/vc3/src/main/java/org/libsdl/
+quest/devtest-out/

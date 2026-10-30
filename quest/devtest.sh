@@ -1,0 +1,95 @@
+#!/usr/bin/env bash
+# quest/devtest.sh [--apk path] [--only name,...] [--secs n]: every number the
+# Quest build is judged by, from one run on the headset.
+#
+# Installs the APK, then for each scenario: a settings file of its own
+# (/sdcard/VirtuaCop3/testcfg, so the player's settings are never touched),
+# an env.txt with the sound off, the diagnostics on and a scripted coin,
+# start and shots, a run of --secs seconds, the log. Then one line per
+# scenario (quest/tools/devtest_sum.py): frame rates in the intro and in
+# combat, the frame-time spread, how many display frames showed each game
+# frame, GPU time, the executor's walk. Logs land in quest/devtest-out/.
+#
+# Whatever happens -- an error, Ctrl-C -- it leaves the headset as the player
+# wants it: env.txt, testcfg and dump deleted, the game stopped (sound on, no
+# scripted input next launch). It refuses to start while the game is in
+# focus: the player may be in it.
+set -u
+SERIAL=${SERIAL:-2G97C5ZJ0G02DQ}
+ROOT=$(cd "$(dirname "$0")/.." && pwd)
+SDK=${ANDROID_SDK_ROOT:-$HOME/Library/Android/sdk}
+A="$SDK/platform-tools/adb -s $SERIAL"
+APK=$ROOT/quest/VirtuaCop3VR.apk
+PKG=org.vc3recomp.vr
+SECS=85
+ONLY=
+OUT=$ROOT/quest/devtest-out
+while [ $# -gt 0 ]; do
+    case $1 in
+    --apk) APK=$2; shift ;;
+    --only) ONLY=$2; shift ;;
+    --secs) SECS=$2; shift ;;
+    *) echo "unknown option $1"; exit 2 ;;
+    esac
+    shift
+done
+
+cleanup() {
+    $A shell am force-stop $PKG >/dev/null 2>&1
+    $A shell rm -rf /sdcard/VirtuaCop3/env.txt /sdcard/VirtuaCop3/testcfg /sdcard/VirtuaCop3/dump >/dev/null 2>&1
+    echo "headset left for play: env.txt, testcfg and dump removed, game stopped"
+}
+
+$A get-state >/dev/null 2>&1 || { echo "headset $SERIAL not attached"; exit 1; }
+if $A shell dumpsys window | grep mCurrentFocus | grep -q $PKG; then
+    echo "the game is in focus on the headset -- the player may be in it; not starting"
+    exit 1
+fi
+trap cleanup EXIT INT TERM
+
+echo "installing $APK"
+$A install -r "$APK" | tail -1
+$A shell appops set --uid $PKG MANAGE_EXTERNAL_STORAGE allow
+mkdir -p "$OUT"
+STAMP=$(date +%H%M%S)
+
+# name | settings lines (;-separated) | extra env (space-separated)
+SCEN=(
+  "screen-mono|stereo=0;vr_screen=screen|"
+  "screen-stereo|stereo=1;vr_screen=screen|"
+  "immersive|stereo=1;vr_screen=immersive|"
+  "immersive-bigcores|stereo=1;vr_screen=immersive|VC3_BIGCORES=1"
+  "immersive-foveation|stereo=1;vr_screen=immersive|VC3_FOVEATION=1"
+  "immersive-72hz|stereo=1;vr_screen=immersive;vr_refresh=72|"
+)
+KEYS=30:coin,31:start,40:fire,44:fire,46:fire,48:fire,50:fire,55:fire,60:fire,65:fire,70:fire,75:fire
+LOGS=()
+for s in "${SCEN[@]}"; do
+    IFS='|' read -r name settings extra <<< "$s"
+    if [ -n "$ONLY" ] && ! echo ",$ONLY," | grep -q ",$name,"; then continue; fi
+    tmp=$(mktemp -d)
+    { echo "scale=1"; echo "aspect=16:9"; echo "$settings" | tr ';' '\n'; } > "$tmp/settings"
+    {
+        echo VC3_SOUND=0; echo VC3_FPS_LOG=1; echo VC3_PACE_LOG=1; echo VC3_GPU_TIME=1
+        echo RECOMP_PROF=1; echo VC3_CONFIG_DIR=/sdcard/VirtuaCop3/testcfg
+        echo VC3_AUTOKEYS=$KEYS; echo VC3_AUTOAIM=0.5,0.5
+        for e in $extra; do echo "$e"; done
+    } > "$tmp/env.txt"
+    $A shell mkdir -p /sdcard/VirtuaCop3/testcfg
+    $A shell rm -f /sdcard/VirtuaCop3/testcfg/settings
+    $A push "$tmp/settings" /sdcard/VirtuaCop3/testcfg/settings >/dev/null
+    $A push "$tmp/env.txt" /sdcard/VirtuaCop3/env.txt >/dev/null
+    rm -rf "$tmp"
+    echo "== $name ($SECS s)"
+    $A shell am force-stop $PKG
+    $A logcat -c
+    $A shell am start -n $PKG/org.vc3recomp.VirtuaCop3VR >/dev/null
+    sleep "$SECS"
+    log="$OUT/$STAMP-$name.log"
+    $A logcat -d | grep -E " vc3 |xr|OpenXR" > "$log"
+    $A shell am force-stop $PKG
+    grep -E "\[xr\] (extensions|performance|thread hints|display|game and back end)|\[GL\] foveation" "$log" | sed 's/.*vc3 *: /   /'
+    LOGS+=("$log")
+done
+echo
+python3 "$ROOT/quest/tools/devtest_sum.py" "${LOGS[@]}"
