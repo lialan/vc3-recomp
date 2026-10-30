@@ -2,7 +2,7 @@
 """Map Chihiro hardware strings (JVS, media board, baseboard) to the functions
 that reference them, so the HLE layer knows which guest addresses to replace.
 
-Usage: find_chihiro_syms.py <vc3.xbe> <analysis/out dir>
+Usage: find_chihiro_syms.py <vc3.xbe> <analysis/out dir> [regex]
 """
 import json
 import re
@@ -28,12 +28,13 @@ def load_image(xbe_path):
 
 def main():
     xbe, out = sys.argv[1], sys.argv[2]
+    pattern = re.compile(sys.argv[3], re.I) if len(sys.argv) > 3 else PATTERN
     secs = load_image(xbe)
     strings = {}
     for sva, _, raw in secs:
         for m in re.finditer(rb"[\x20-\x7e]{4,}", raw):
             txt = m.group().decode()
-            if PATTERN.search(txt):
+            if pattern.search(txt):
                 strings[sva + m.start()] = txt
     funcs = sorted((int(f["start"], 16), int(f["end"], 16), f["name"])
                    for f in json.load(open(f"{out}/disasm/functions.json")))

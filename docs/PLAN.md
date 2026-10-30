@@ -137,8 +137,19 @@ Known issues:
   movies under `media/movie/` at boot (valid MPEG-PS, `00 00 01 BA`), but no
   `[READ]` ever returns movie data and none is asynchronous: the Sofdec player
   never starts streaming. No YUV textures are bound during attract, no thread
-  entry is missing and no kernel call is unimplemented. Next: trace the
-  Sofdec server (mwPly/ADXT, sections PSGSFD*) to see what it waits on.
+  entry is missing and no kernel call is unimplemented.
+  Traced further: Sofdec init (`mwPlyInitSfdFx` 0xC80A0) succeeds, but
+  play-movie (0x823C0: sets flags |= 6 at 0x373288, movie index at 0x37328C,
+  then 0x82290 creates the player via `mwPlyCreate` 0xC8EE0) is never called,
+  nor are any of its seven callers. The white is the movie surface itself:
+  `media/movie_xpr.gz` (a 16-byte `VCGZ` header, then gzip of `tex.xpr`) is a
+  640x480 LIN_X8R8G8B8 texture, every pixel white, that decoded frames would
+  be converted into. The title-movie object is type 0x28 in the object table
+  at ~0x153378 (20-byte entries, id at +0x10): init 0x14710 (plays movie 4,
+  looping), update 0x147A0, destroy 0x14780. Nothing creates a type-0x28
+  object during boot/attract; the table is reached by computed indexing (no
+  stored pointer to it). Next: find the spawner that walks this table and why
+  the attract scene does not spawn type 0x28.
   (`vc3_title2_100mh.sfd`, `demo_100mh.sfd` and `bonfire.sfd` are unused
   strings; those files do not ship.)
 * Input is verified from SDL's event queue onward (`VC3_INPUT_SELFTEST=1`:
