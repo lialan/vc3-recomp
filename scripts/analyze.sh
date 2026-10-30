@@ -13,5 +13,5 @@ cd "$ROOT/external/xboxrecomp"
 "$PY" -m tools.func_id "$XBE" --functions "$OUT/disasm/functions.json" \
     --xrefs "$OUT/disasm/xrefs.json" --strings "$OUT/disasm/strings.json" \
     -o "$OUT/func_id" -v
-"$PY" -m tools.abi_analysis --disasm-dir "$OUT/disasm" --func-id-dir "$OUT/func_id" \
+"$PY" -m tools.abi_analysis "$XBE" --disasm-dir "$OUT/disasm" --func-id-dir "$OUT/func_id" \
     --output-dir "$OUT/abi" -v

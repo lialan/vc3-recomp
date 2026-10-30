@@ -49,11 +49,12 @@ Thumbs.db
 .DS_Store
 
 # vc3-recomp: never commit game files, analysis output or lifted code
-.venv/
-analysis/out/
+.venv
+analysis/out
 analysis/*.log
-generated/
+src/recomp/gen
 game/
 *.xbe
 *.squashfs
 *.iso
+.claude/
