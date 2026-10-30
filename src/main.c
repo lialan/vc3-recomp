@@ -266,6 +266,10 @@ int main(int argc, char **argv)
      * it. VC3_SOUND=1 plays it; RECOMP_AUDIO_WAV captures it either way. */
     if (!getenv("VC3_SOUND") || strcmp(getenv("VC3_SOUND"), "1") != 0)
         setenv("SDL_AUDIODRIVER", "dummy", 1);
+    /* The emulated MCPX APU: without it the game has no sound at all. With
+     * it, VC3 starts the APU itself and mixes music and effects (measured:
+     * RMS 1-3.4k from the attract onwards, RECOMP_AUDIO_WAV capture). */
+    setenv("RECOMP_AC97_READY", "1", 0);
 
     /* The boot-time memory probe (0x34F60) allocates and frees contiguous
      * blocks of growing size up to 256 MB. Without reclaim the frees are

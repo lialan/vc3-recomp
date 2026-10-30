@@ -28,6 +28,7 @@
 #define GL_SILENCE_DEPRECATION
 #include <OpenGL/OpenGL.h>
 #include <OpenGL/gl3.h>
+#include <math.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -109,7 +110,8 @@ static const char *FS =
     "uniform int u_atest;\n"
     "uniform int u_afunc;\n"                  /* GL_NEVER 0x200 .. GL_ALWAYS 0x207 */
     "uniform float u_aref;\n"
-    "uniform int u_rc;\n"                     /* evaluate the combiners */
+    "uniform int u_rc;\n"
+    "uniform int u_lmap;\n"                   /* texture * diffuse * stage-1 lightmap */                     /* evaluate the combiners */
     "uniform uint u_cicw[8], u_aicw[8], u_cocw[8], u_aocw[8];\n"
     "uniform vec4 u_f0[8], u_f1[8];\n"
     "uniform uint u_fin0, u_fin1, u_ctl, u_sprog;\n"
@@ -118,7 +120,8 @@ static const char *FS =
     "uniform int u_nofog;\n"                  /* VC3_GL_NOFOG=1: debug */
     "uniform int u_rcdbg;\n"                  /* VC3_GL_RCDBG: 1 texel, 2 uv, 3 split */
     "uniform int u_adbg;\n"                   /* VC3_GL_ADBG: force an alpha input to 1 */
-    "uniform vec3 u_dbgcol;\n"                /* RCDBG 6: colour per combiner setup */
+    "uniform vec3 u_dbgcol;\n"
+    "uniform int u_dbgon;\n"                  /* debug views skip composites */                /* RCDBG 6: colour per combiner setup */
     "uniform vec2 u_surf;\n"
     "uniform int u_on[4];\n"                  /* stage has a usable texture */
     "uniform vec2 u_ts[4];\n"                 /* coordinate -> GL [0,1] scale */
@@ -238,16 +241,21 @@ static const char *FS =
     "void main() {\n"
     "  vec4 c = v_col;\n"
     "  if (u_rc != 0) c = combiners();\n"
-    "  if (u_rc != 0 && u_rcdbg == 1) c = vec4(texture(u_tex, stage_uv(0, v_tc0)).rgb, 1.0);\n"
-    "  if (u_rc != 0 && u_rcdbg == 2) c = vec4(fract(stage_uv(0, v_tc0)), float(u_on[0]), 1.0);\n"
-    "  if (u_rc != 0 && u_rcdbg == 6) c = vec4(u_dbgcol, 1.0);\n"
-    "  if (u_rc != 0 && u_rcdbg == 7) c = vec4(vec3(v_fog), 1.0);\n"
-    "  if (u_rc != 0 && u_rcdbg == 8) c = vec4(texture(u_t1, stage_uv(1, v_tc1)).rgb, 1.0);\n"
-    "  if (u_rc != 0 && u_rcdbg == 9) c = vec4(vec3(texture(u_t1, stage_uv(1, v_tc1)).a), 1.0);\n"
-    "  if (u_rc != 0 && u_rcdbg == 10) c = vec4(vec3(combiners().a), 1.0);\n"
-    "  if (u_rc != 0 && u_rcdbg == 3 && gl_FragCoord.x < u_surf.x * 0.5)\n"
+    "  if (u_rc != 0 && u_dbgon != 0 && u_rcdbg == 1) c = vec4(texture(u_tex, stage_uv(0, v_tc0)).rgb, 1.0);\n"
+    "  if (u_rc != 0 && u_dbgon != 0 && u_rcdbg == 2) c = vec4(fract(stage_uv(0, v_tc0)), float(u_on[0]), 1.0);\n"
+    "  if (u_rc != 0 && u_dbgon != 0 && u_rcdbg == 6) c = vec4(u_dbgcol, 1.0);\n"
+    "  if (u_rc != 0 && u_dbgon != 0 && u_rcdbg == 7) c = vec4(vec3(v_fog), 1.0);\n"
+    "  if (u_rc != 0 && u_dbgon != 0 && u_rcdbg == 8) c = vec4(texture(u_t1, stage_uv(1, v_tc1)).rgb, 1.0);\n"
+    "  if (u_rc != 0 && u_dbgon != 0 && u_rcdbg == 9) c = vec4(vec3(texture(u_t1, stage_uv(1, v_tc1)).a), 1.0);\n"
+    "  if (u_rc != 0 && u_dbgon != 0 && u_rcdbg == 10) c = vec4(vec3(combiners().a), 1.0);\n"
+    "  if (u_rc != 0 && u_dbgon != 0 && u_rcdbg == 12) c = vec4(combiners().a, texture(u_tex, stage_uv(0, v_tc0)).a, texture(u_t1, stage_uv(1, v_tc1)).a, 1.0);\n"
+    "  if (u_rc != 0 && u_dbgon != 0 && u_rcdbg == 13) c = vec4(v_col.a, float(u_on[0]), float(u_on[1]), 1.0);\n"
+    "  if (u_rc != 0 && u_dbgon != 0 && u_rcdbg == 3 && gl_FragCoord.x < u_surf.x * 0.5)\n"
     "    c = v_col * (u_textured != 0 ? texture(u_tex, v_uv) : vec4(1.0));\n"
-    "  else if (u_textured != 0) c *= texture(u_tex, v_uv);\n"
+    "  else if (u_textured != 0) {\n"
+    "    c *= texture(u_tex, v_uv);\n"
+    "    if (u_lmap != 0) c.rgb *= texture(u_t1, stage_uv(1, v_tc1)).rgb;\n"
+    "  }\n"
     "  if (u_atest != 0) {\n"
     /* In 8 bits, as the hardware and the software rasteriser compare: a
      * modulated 0x80 lands at 0.5, below 128/255 as a float. */
@@ -805,6 +813,58 @@ static void gl_clear(const Nv2aSurface *s, const Nv2aRenderState *rs,
     f->dirty = 1;
 }
 
+/* VC3_GL_RCCHECK=1: for a few alpha-tested combiner batches, evaluate the
+ * toolkit's C combiners (nv2a_rc_eval) at the first vertex with the real
+ * texels and colours, and log inputs and result -- the reference the GLSL
+ * port must match. */
+static void rc_check(const Nv2aBatch *b)
+{
+    static int n;
+    float v0[4], v1[4], fog[4] = {0, 0, 0, 1}, t[4][4], out[4];
+    int st;
+
+    if (n >= 8 || !b->rc || !b->ext || !b->state->alpha_test_enable
+        || (b->state->alpha_ref & 0xFF) != 0x80 || b->rc->alpha_icw[1] != 0x191C0000u)
+        return;
+    n++;
+    nv2a_rc_unpack(b->vertices[0].diffuse, v0);
+    nv2a_rc_unpack(b->ext[0].specular, v1);
+    fog[3] = b->ext[0].fog;
+    for (st = 0; st < 4; st++) {
+        const Nv2aTexture *tx = b->stage[st];
+        uint32_t mode = (b->rc->stage_program >> (st * 5)) & 0x1F;
+        t[st][0] = t[st][1] = t[st][2] = 0.0f;
+        t[st][3] = 1.0f;
+        if (!mode)
+            continue;
+        t[st][0] = t[st][1] = t[st][2] = t[st][3] = 1.0f;
+        if (tx && tx->width && tx->height && tx->width <= 1024 && tx->height <= 1024) {
+            uint32_t *px = (uint32_t *)malloc((size_t)tx->width * tx->height * 4);
+            if (px && nv2a_backend_decode_texture(tx, px)) {
+                int norm = d3d8_format_is_swizzled(tx->color)
+                        || d3d8_format_dxt_block_bytes(tx->color);
+                const float *c = b->ext[0].tex[st];
+                float q = c[3] != 0.0f ? c[3] : 1.0f;
+                float u = c[0] / q, v = c[1] / q;
+                int x, y;
+                if (norm) { u *= (float)tx->width; v *= (float)tx->height; }
+                x = ((int)floorf(u) % (int)tx->width + (int)tx->width) % (int)tx->width;
+                y = ((int)floorf(v) % (int)tx->height + (int)tx->height) % (int)tx->height;
+                nv2a_rc_unpack(px[(size_t)y * tx->width + x], t[st]);
+            }
+            free(px);
+        }
+    }
+    nv2a_rc_eval(b->rc, v0, v1, fog, (const float (*)[4])t, out);
+    fprintf(stderr, "[RCCHK] atest func %X ref %02X | v0 %.3f %.3f %.3f %.3f v1.a %.3f fog %.2f"
+            " | t0 %.3f %.3f %.3f %.3f t1 %.3f %.3f %.3f %.3f | out %.3f %.3f %.3f a=%.3f"
+            " | aicw %08X %08X aocw %08X %08X ctl %08X\n",
+            b->state->alpha_func, b->state->alpha_ref & 0xFF, v0[0], v0[1], v0[2], v0[3],
+            v1[3], fog[3], t[0][0], t[0][1], t[0][2], t[0][3], t[1][0], t[1][1], t[1][2],
+            t[1][3], out[0], out[1], out[2], out[3], b->rc->alpha_icw[0], b->rc->alpha_icw[1],
+            b->rc->alpha_ocw[0], b->rc->alpha_ocw[1], b->rc->control);
+}
+
 /* VC3_GL_COMBINERS=1 evaluates the register combiners. Off by default: their
  * alpha comes out 0 for VC3's lightmapped walls (alpha-tested GEQUAL 0x80),
  * so combat lost the whole room, while texture * diffuse draws every scene
@@ -864,6 +924,8 @@ static void bind_combiners(const Surf *f, const Nv2aBatch *b)
     nv2a_rc_unpack(b->fog_color, c);
     glUniform3f(u_fogc, c[2], c[1], c[0]);
     glUniform1iv(u_on, 4, on);
+    glUniform1i(glGetUniformLocation(s_prog, "u_dbgon"),
+                !(b->stage[0] && surf_find(b->stage[0]->offset)));
     glUniform2fv(u_ts, 4, ts);
     {
         /* RCDBG 6: a colour per (stage program, final combiner, stage 0-1
@@ -897,6 +959,19 @@ static void bind_combiners(const Surf *f, const Nv2aBatch *b)
                  b->ext, GL_STREAM_DRAW);
     for (k = 3; k <= 8; k++)
         glEnableVertexAttribArray(k);
+}
+
+/* The lightmap pattern of VC3's walls: stage 1 samples a 2D texture and the
+ * stage's RGB is t1 * r0 (input A texture 1, B r0). */
+static int lightmap_batch(const Nv2aBatch *b)
+{
+    uint32_t icw1;
+
+    if (!b->rc || !b->ext || !b->stage[1] || (b->rc->control & 0xFF) < 2
+        || ((b->rc->stage_program >> 5) & 0x1F) != 1)
+        return 0;
+    icw1 = b->rc->color_icw[1];
+    return ((icw1 >> 24) & 0x1F) == 0x09 && ((icw1 >> 16) & 0x1F) == 0x0C;
 }
 
 static void gl_draw(const Nv2aSurface *s, const Nv2aBatch *b)
@@ -986,13 +1061,42 @@ static void gl_draw(const Nv2aSurface *s, const Nv2aBatch *b)
                         b->ext[k].tex[0][2], b->ext[k].tex[0][3]);
         }
     }
+    if (getenv("VC3_GL_RCCHECK"))
+        rc_check(b);
     if (b->rc && b->ext && s_use_rc)
         bind_combiners(f, b);
     else {
         GLuint k;
+        int lmap = lightmap_batch(b);
         glUniform1i(u_rc, 0);
+        glUniform1i(glGetUniformLocation(s_prog, "u_lmap"), 0);
         for (k = 3; k <= 8; k++)
             glDisableVertexAttribArray(k);
+        if (lmap && textured) {
+            /* VC3's walls: stage 1 multiplies by a lightmap (t1 * r0). Drawn
+             * as texture * diffuse * lightmap, keeping the texture * diffuse
+             * alpha its alpha test needs. */
+            float sw = 1.0f, sh = 1.0f;
+            const Nv2aTexture *t = b->stage[1];
+            glActiveTexture(GL_TEXTURE1);
+            if (tex_bind_for(f, t, &sw, &sh)) {
+                int norm = d3d8_format_is_swizzled(t->color)
+                        || d3d8_format_dxt_block_bytes(t->color);
+                GLfloat ts[8] = { 1, 1, 1, 1, 1, 1, 1, 1 };
+                ts[2] = (norm ? (float)t->width : 1.0f) / sw;
+                ts[3] = (norm ? (float)t->height : 1.0f) / sh;
+                glUniform2fv(u_ts, 4, ts);
+                glUniform1ui(u_sprog, b->rc->stage_program);
+                glUniform1i(glGetUniformLocation(s_prog, "u_lmap"), 1);
+                glBindBuffer(GL_ARRAY_BUFFER, s_vbo_ext);
+                glBufferData(GL_ARRAY_BUFFER,
+                             (GLsizeiptr)(b->count * sizeof(Nv2aVertexEx)),
+                             b->ext, GL_STREAM_DRAW);
+                for (k = 3; k <= 8; k++)
+                    glEnableVertexAttribArray(k);
+            }
+            glActiveTexture(GL_TEXTURE0);
+        }
     }
     glBindBuffer(GL_ARRAY_BUFFER, s_vbo);
     glBufferData(GL_ARRAY_BUFFER, (GLsizeiptr)(b->count * sizeof(Nv2aVertex)),
@@ -1013,6 +1117,53 @@ static void gl_draw(const Nv2aSurface *s, const Nv2aBatch *b)
         s_st.zpass_pixels += passed;
     } else {
         glDrawArrays(GL_TRIANGLES, 0, (GLsizei)b->count);
+    }
+    if (getenv("VC3_GL_RCCHECK") && b->rc && b->ext && s_use_rc
+        && b->state->alpha_test_enable && (b->state->alpha_ref & 0xFF) == 0x80
+        && b->rc->alpha_icw[1] == 0x191C0000u) {
+        /* The GPU's own values for this batch, read back at the centre of
+         * its first triangle: debug view 13 (vertex alpha, stage 0/1 bound)
+         * then 12 (combiner alpha, t0.a, t1.a). */
+        static int probes;
+        float cx = (b->vertices[0].x + b->vertices[1].x + b->vertices[2].x) / 3.0f;
+        float cy = (b->vertices[0].y + b->vertices[1].y + b->vertices[2].y) / 3.0f;
+        if (probes < 8 && cx >= 0 && cy >= 0 && cx < f->w && cy < f->h) {
+            GLint loc = glGetUniformLocation(s_prog, "u_rcdbg");
+            unsigned char px13[4], px12[4];
+            probes++;
+            glDisable(GL_DEPTH_TEST);
+            glDisable(GL_BLEND);
+            glDisable(GL_STENCIL_TEST);
+            glColorMask(1, 1, 1, 1);
+            glUniform1i(u_atest, 0);
+            glUniform1i(glGetUniformLocation(s_prog, "u_dbgon"), 1);
+            glBindFramebuffer(GL_READ_FRAMEBUFFER, f->fbo);
+            {
+                unsigned char before[4], red[4];
+                glReadPixels((GLint)cx, (GLint)cy, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, before);
+                glEnable(GL_SCISSOR_TEST);
+                glScissor((GLint)cx, (GLint)cy, 1, 1);
+                glClearColor(1, 0, 0, 1);
+                glClear(GL_COLOR_BUFFER_BIT);
+                glDisable(GL_SCISSOR_TEST);
+                glReadPixels((GLint)cx, (GLint)cy, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, red);
+                fprintf(stderr, "[RCGPU] probe %.0f,%.0f fbo %u surf %08X %dx%d: after draw %02X%02X%02X%02X,"
+                        " after red clear %02X%02X%02X%02X; v0 %.1f,%.1f v1 %.1f,%.1f v2 %.1f,%.1f\n",
+                        cx, cy, f->fbo, f->va, f->w, f->h, before[0], before[1], before[2], before[3],
+                        red[0], red[1], red[2], red[3], b->vertices[0].x, b->vertices[0].y,
+                        b->vertices[1].x, b->vertices[1].y, b->vertices[2].x, b->vertices[2].y);
+            }
+            glUniform1i(loc, 13);
+            glDrawArrays(GL_TRIANGLES, 0, 3);
+            glReadPixels((GLint)cx, (GLint)cy, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, px13);
+            glUniform1i(loc, 12);
+            glDrawArrays(GL_TRIANGLES, 0, 3);
+            glReadPixels((GLint)cx, (GLint)cy, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, px12);
+            glUniform1i(loc, getenv("VC3_GL_RCDBG") ? atoi(getenv("VC3_GL_RCDBG")) : 0);
+            fprintf(stderr, "[RCGPU] at %.0f,%.0f: v_col.a %u on0 %u on1 %u | comb.a %u t0.a %u t1.a %u"
+                    " | diffuse[0] %08X\n", cx, cy, px13[0], px13[1], px13[2],
+                    px12[0], px12[1], px12[2], b->vertices[0].diffuse);
+        }
     }
     glActiveTexture(GL_TEXTURE0);
     f->dirty = 1;
