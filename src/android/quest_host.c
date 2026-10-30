@@ -1111,10 +1111,17 @@ static int overlay_init(void)
     for (e = 0; e < 2; e++) {
         Eye *y = &s_eye[e];
         XrSwapchainCreateInfo ci = { XR_TYPE_SWAPCHAIN_CREATE_INFO };
-        /* three quarters of the headset's own size: the gun is small and
-         * the samples smooth it; the layer is cleared and drawn each frame */
-        y->w = vcv[e].recommendedImageRectWidth * 3 / 4;
-        y->h = vcv[e].recommendedImageRectHeight * 3 / 4;
+        /* half the headset's own size (VC3_OVERLAY_SCALE=0.75 etc.): the gun
+         * is small and the samples smooth it, and the whole layer is
+         * cleared, resolved and blended by the compositor each time it is
+         * drawn -- GPU time only real play paid (no controllers in a
+         * scripted run, no overlay) */
+        {
+            const char *sc = getenv("VC3_OVERLAY_SCALE");
+            float f = sc && atof(sc) > 0.2 && atof(sc) <= 1.0 ? (float)atof(sc) : 0.5f;
+            y->w = (uint32_t)(vcv[e].recommendedImageRectWidth * f);
+            y->h = (uint32_t)(vcv[e].recommendedImageRectHeight * f);
+        }
         ci.usageFlags = XR_SWAPCHAIN_USAGE_COLOR_ATTACHMENT_BIT;
         ci.format = s_chain_fmt;
         ci.sampleCount = 1;
@@ -1988,14 +1995,39 @@ static void xr_frame(void)
             }
         }
     }
-    /* the gun and the panel, over the screen */
-    if (fs.shouldRender && s_overlay_ok > 0 && s_views_ok && (s_qo.gun_valid || s_menu.open)
-        && draw_overlay(pv)) {
-        proj.layerFlags = XR_COMPOSITION_LAYER_BLEND_TEXTURE_SOURCE_ALPHA_BIT;
-        proj.space = s_local;
-        proj.viewCount = 2;
-        proj.views = pv;
-        layers[nl++] = (const XrCompositionLayerBaseHeader *)&proj;
+    /* the gun and the panel, over the screen. At 90 Hz and up the gun is
+     * drawn every second display frame, the last image submitted again in
+     * between with the pose it was drawn for (the compositor turns it to
+     * the head's); with the panel open, every frame. VC3_OVERLAY_FULLRATE=1:
+     * every frame. */
+    {
+        static XrCompositionLayerProjectionView last_pv[2];
+        static int have_last, full = -1;
+        static uint32_t n;
+        int want = fs.shouldRender && s_overlay_ok > 0 && s_views_ok
+                   && (s_qo.gun_valid || s_menu.open);
+        int fast = fs.predictedDisplayPeriod > 0 && fs.predictedDisplayPeriod < 12000000;
+        if (full < 0)
+            full = getenv("VC3_OVERLAY_FULLRATE") && *getenv("VC3_OVERLAY_FULLRATE") == '1';
+        n++;
+        if (!want) {
+            have_last = 0;
+        } else if (!full && fast && !s_menu.open && have_last && (n & 1)) {
+            memcpy(pv, last_pv, sizeof last_pv);   /* the image drawn last frame */
+            proj.layerFlags = XR_COMPOSITION_LAYER_BLEND_TEXTURE_SOURCE_ALPHA_BIT;
+            proj.space = s_local;
+            proj.viewCount = 2;
+            proj.views = pv;
+            layers[nl++] = (const XrCompositionLayerBaseHeader *)&proj;
+        } else if (draw_overlay(pv)) {
+            memcpy(last_pv, pv, sizeof last_pv);
+            have_last = 1;
+            proj.layerFlags = XR_COMPOSITION_LAYER_BLEND_TEXTURE_SOURCE_ALPHA_BIT;
+            proj.space = s_local;
+            proj.viewCount = 2;
+            proj.views = pv;
+            layers[nl++] = (const XrCompositionLayerBaseHeader *)&proj;
+        }
     }
     ei.layerCount = nl;
     ei.layers = layers;

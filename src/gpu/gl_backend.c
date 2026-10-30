@@ -2317,6 +2317,23 @@ static int tex_bind(const Nv2aTexture *t, float *sw, float *sh)
     }
     if (rt && rt->fbo && !rt->cpu_owned) {
         s_st.rt++;
+        if (genv("VC3_RT_USE_LOG")) {   /* which render targets are sampled (debug) */
+            static uint32_t vas[16], cnt[16], fr;
+            int k;
+            if (fr != s_frame && s_frame % 120 == 0) {
+                for (k = 0; k < 16 && vas[k]; k++)
+                    fprintf(stderr, "[RTUSE] %08X sampled %u times\n", vas[k], cnt[k]);
+                memset(vas, 0, sizeof vas);
+                memset(cnt, 0, sizeof cnt);
+            }
+            fr = s_frame;
+            for (k = 0; k < 16 && vas[k] && vas[k] != rt->va; k++)
+                ;
+            if (k < 16) {
+                vas[k] = rt->va;
+                cnt[k]++;
+            }
+        }
         glBindTexture(GL_TEXTURE_2D, rt->color);
         bound = rt->color;
         if (rt->st && s_unit < 4)
@@ -3121,14 +3138,17 @@ static int batch_fullscreen(const Nv2aBatch *b, const Surf *f)
  * over), for the headset's blended layer. */
 static void hud_bind(const Surf *f, const Nv2aRenderState *rs)
 {
-    if (!s_hud_fbo || s_hud_w != f->pw || s_hud_h != f->ph) {
+    /* at the game's own 1x whatever the immersive detail: a flat panel at
+     * 5 m, and a quarter of the pixels to clear and fill at 2x */
+    GLsizei hw = f->pw / (f->sc > 0 ? f->sc : 1), hh = f->ph / (f->sc > 0 ? f->sc : 1);
+    if (!s_hud_fbo || s_hud_w != hw || s_hud_h != hh) {
         GLint was = 0;
         if (!s_hud_fbo) {
             glGenFramebuffers(1, &s_hud_fbo);
             glGenTextures(1, &s_hud_tex);
         }
-        s_hud_w = f->pw;
-        s_hud_h = f->ph;
+        s_hud_w = hw;
+        s_hud_h = hh;
         glGetIntegerv(GL_TEXTURE_BINDING_2D, &was);
         glBindTexture(GL_TEXTURE_2D, s_hud_tex);
         glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, s_hud_w, s_hud_h, 0, GL_RGBA,

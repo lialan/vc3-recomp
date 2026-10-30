@@ -65,6 +65,7 @@ SCEN=(
   "immersive-2x-bigcores|stereo=1;vr_screen=immersive;vr_detail=2|VC3_BIGCORES=1"
   "immersive-2x-72hz|stereo=1;vr_screen=immersive;vr_detail=2;vr_refresh=72|"
   "immersive-2x-nozoom|stereo=1;vr_screen=immersive;vr_detail=2|VC3_IMM_ZOOM=0"
+  "immersive-2x-oldoverlay|stereo=1;vr_screen=immersive;vr_detail=2|VC3_OVERLAY_FULLRATE=1 VC3_OVERLAY_SCALE=0.75"
 )
 KEYS=30:coin,31:start,40:fire,44:fire,46:fire,48:fire,50:fire,55:fire,60:fire,65:fire,70:fire,75:fire
 LOGS=()
@@ -77,6 +78,9 @@ for s in "${SCEN[@]}"; do
         echo VC3_SOUND=0; echo VC3_FPS_LOG=1; echo VC3_PACE_LOG=1; echo VC3_GPU_TIME=1
         echo RECOMP_PROF=1; echo VC3_CONFIG_DIR=/sdcard/VirtuaCop3/testcfg
         echo VC3_AUTOKEYS=$KEYS; echo VC3_AUTOAIM=0.5,0.5
+        # the stand-in gun: the overlay drawn as in real play (no one holds
+        # the controllers in a scripted run)
+        echo VC3_XR_FAKE_GUN=1
         for e in $extra; do echo "$e"; done
     } > "$tmp/env.txt"
     $A shell mkdir -p /sdcard/VirtuaCop3/testcfg
