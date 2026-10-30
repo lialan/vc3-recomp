@@ -70,6 +70,8 @@
 #include "vr_view.h"
 
 void vc3_quest_restart(void);       /* below: a fresh process */
+void xbox_VblankAlign(uint64_t edge_ns);   /* the toolkit's kernel */
+uint64_t xbox_HostNowNs(void);
 
 #ifndef GL_FRAMEBUFFER_SRGB_EXT
 #define GL_FRAMEBUFFER_SRGB_EXT 0x8DB9
@@ -316,13 +318,14 @@ static void frame_read_done(Frame *f)
         glDeleteSync(old);
 }
 
-/* The newest frame, on the host's thread; NULL before the first. */
-static Frame *take_frame(int *is_new)
+/* The newest frame, on the host's thread; NULL before the first. With
+ * allow 0 the one shown stays (the display's cadence, xr_frame). */
+static Frame *take_frame(int *is_new, int allow)
 {
     Frame *f;
 
     pthread_mutex_lock(&s_lock);
-    *is_new = s_ready_seq != s_shown_seq;
+    *is_new = allow && s_ready_seq != s_shown_seq;
     if (*is_new) {
         int t = s_front;
         s_front = s_ready;
@@ -1321,7 +1324,10 @@ static void gun_frame(XrTime t, const Frame *f)
         }
     }
     s_qo.beam = s_vr.laser == LASER_ON;
-    s_qo.dot = on_screen && s_vr.laser != LASER_OFF;
+    /* the laser's dot on the screen; with an optic on, only with the beam
+     * (the optic's own reticle shows where the shot goes) */
+    s_qo.dot = on_screen && (s_vr.laser == LASER_ON
+                             || (s_vr.laser == LASER_DOT && s_vr.sight == QO_SIGHT_IRON));
     s_qo.sight = s_vr.sight;
     s_qo.show_gun = s_vr.show_gun;
 
@@ -1672,13 +1678,33 @@ static void xr_frame(void)
     const XrCompositionLayerBaseHeader *layers[4];
     uint32_t nl = 0;
     Frame *f;
-    int is_new;
+    int is_new, allow = 1;
 
     if (XR_FAILED(xrWaitFrame(s_sess, &wi, &fs)))
         return;
     if (XR_FAILED(xrBeginFrame(s_sess, &bi)))
         return;
-    f = take_frame(&is_new);
+    {
+        /* The display's cadence: at 120 Hz a game frame every second
+         * display frame, so each is shown exactly twice, and the game's
+         * 60 Hz vblank aligned to those frames' starts (xbox_VblankAlign),
+         * so the frame it paces is done by the one that takes it. Without
+         * it game frames came 1, 2 or 3 display frames apart -- judder.
+         * VC3_XR_CADENCE=0: take the newest frame every display frame. */
+        static int cad_on = -1;
+        static uint32_t xr_n;
+        double per = (double)fs.predictedDisplayPeriod / 1e6, ratio = per > 0 ? 16.6667 / per : 0;
+        int k = (int)(ratio + 0.5);
+        int locked;
+        if (cad_on < 0)
+            cad_on = !(getenv("VC3_XR_CADENCE") && *getenv("VC3_XR_CADENCE") == '0');
+        locked = cad_on && k >= 2 && fabs(ratio - k) < 0.05;
+        xr_n++;
+        allow = !locked || xr_n % (uint32_t)k == 0;
+        if (locked && allow)
+            xbox_VblankAlign(xbox_HostNowNs());
+    }
+    f = take_frame(&is_new, allow);
     if (s_pace > 0) {   /* how many headset frames each game frame showed for */
         static int shown, hist[5], xr_n;
         static uint64_t t0;
@@ -1801,7 +1827,7 @@ static void xr_frame(void)
 static void flat_frame(void)
 {
     int is_new, ww = 0, wh = 0;
-    Frame *f = take_frame(&is_new);
+    Frame *f = take_frame(&is_new, 1);
 
     if (!f || !is_new) {
         SDL_Delay(4);

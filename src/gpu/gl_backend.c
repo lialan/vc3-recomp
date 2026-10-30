@@ -1171,6 +1171,117 @@ static Surf *surf_find(uint32_t va)
     return NULL;
 }
 
+/* VC3_GPU_TIME=1: the GPU's time per frame, by the surface drawn into --
+ * timer queries opened at each change of surface (surf_bind) and read back
+ * when done, never waited on. Logged once a second. */
+#ifndef GL_TIME_ELAPSED
+#define GL_TIME_ELAPSED 0x88BF            /* EXT_disjoint_timer_query on ES */
+#endif
+#define GT_RING 512
+static struct { uint32_t draws, tris, declined; } s_rst;   /* fixed-function draws */
+static int s_gt_on = -1;
+static GLuint s_gt_q[GT_RING];
+static uint32_t s_gt_va[GT_RING];
+static unsigned s_gt_head, s_gt_tail;     /* issued [tail, head) */
+static int s_gt_open;
+static uint32_t s_gt_cur_va;
+#define GT_SURFS 16
+static struct { uint32_t va; double ms; } s_gt_sum[GT_SURFS];
+static double s_gt_total;
+static uint32_t s_gt_frames;
+
+static void gt_close(void)
+{
+    if (s_gt_open) {
+        glEndQuery(GL_TIME_ELAPSED);
+        s_gt_open = 0;
+    }
+}
+
+static void gt_poll(void)
+{
+    while (s_gt_tail != s_gt_head) {
+        unsigned k = s_gt_tail % GT_RING;
+        GLuint avail = 0, ns = 0;
+        int j;
+        if (k == (s_gt_head - 1) % GT_RING && s_gt_open)
+            break;                          /* still open */
+        glGetQueryObjectuiv(s_gt_q[k], GL_QUERY_RESULT_AVAILABLE, &avail);
+        if (!avail)
+            break;
+        glGetQueryObjectuiv(s_gt_q[k], GL_QUERY_RESULT, &ns);
+        s_gt_total += ns / 1e6;
+        for (j = 0; j < GT_SURFS; j++)
+            if (s_gt_sum[j].va == s_gt_va[k] || !s_gt_sum[j].va) {
+                s_gt_sum[j].va = s_gt_va[k];
+                s_gt_sum[j].ms += ns / 1e6;
+                break;
+            }
+        s_gt_tail++;
+    }
+}
+
+static void gt_surface(uint32_t va)
+{
+    if (s_gt_on < 0) {
+        s_gt_on = genv("VC3_GPU_TIME") && genv("VC3_GPU_TIME")[0] == '1';
+        if (s_gt_on)
+            glGenQueries(GT_RING, s_gt_q);
+    }
+    if (!s_gt_on || (s_gt_open && va == s_gt_cur_va))
+        return;
+    gt_close();
+    gt_poll();
+    if (s_gt_head - s_gt_tail >= GT_RING - 1)
+        return;                             /* all in flight: skip */
+    s_gt_va[s_gt_head % GT_RING] = va;
+    glBeginQuery(GL_TIME_ELAPSED, s_gt_q[s_gt_head % GT_RING]);
+    s_gt_head++;
+    s_gt_open = 1;
+    s_gt_cur_va = va;
+}
+
+/* At the flip: close the frame's last query; once a second, the log. */
+static void gt_flip(void)
+{
+    static uint64_t t0;
+    uint64_t now;
+    struct timespec ts;
+    int j;
+    if (s_gt_on <= 0)
+        return;
+    gt_close();
+    gt_poll();
+    s_gt_frames++;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    now = (uint64_t)ts.tv_sec * 1000000000ull + (uint64_t)ts.tv_nsec;
+    if (!t0)
+        t0 = now;
+    if (now - t0 < 1000000000ull)
+        return;
+    {
+        char line[512];
+        int n = snprintf(line, sizeof line, "[GPUTIME] %.1f ms/frame over %u frames"
+                         " (fixed-function %u draws, %u triangles a frame):",
+                         s_gt_frames ? s_gt_total / s_gt_frames : 0.0, s_gt_frames,
+                         s_gt_frames ? s_rst.draws / s_gt_frames : 0,
+                         s_gt_frames ? s_rst.tris / s_gt_frames : 0);
+        s_rst.draws = s_rst.tris = 0;
+        for (j = 0; j < GT_SURFS && s_gt_sum[j].va && n < (int)sizeof line - 40; j++)
+            if (s_gt_sum[j].ms / s_gt_frames >= 0.3) {
+                const Surf *q = surf_find(s_gt_sum[j].va);
+                n += snprintf(line + n, sizeof line - (size_t)n, " %08X(%dx%d%s) %.1f",
+                              s_gt_sum[j].va, q ? q->w : 0, q ? q->h : 0,
+                              q && q->st ? " st" : "", s_gt_sum[j].ms / s_gt_frames);
+            }
+        fprintf(stderr, "%s\n", line);
+    }
+    memset(s_gt_sum, 0, sizeof s_gt_sum);
+    s_gt_total = 0;
+    s_gt_frames = 0;
+    t0 = now;
+}
+
 /* The framebuffer for a guest surface, created or grown to fit, and bound.
  * A change of scale or aspect remakes it at the first draw after the flip
  * that took the change; VC3 redraws every surface each frame. */
@@ -1197,6 +1308,7 @@ static Surf *surf_bind(const Nv2aSurface *s)
         surf_alloc(f, w > f->w ? w : f->w, h > f->h ? h : f->h);
     f->pitch = s->pitch;
     f->bpp = bpp;
+    gt_surface(f->va);
     glBindFramebuffer(GL_FRAMEBUFFER, f->fbo);
     glViewport(0, 0, f->pw, f->ph);
     return f;
@@ -2603,7 +2715,6 @@ static int raw_submit(const Nv2aRawGeometry *g, GLsizeiptr *ioff)
 }
 
 /* VC3_GL_STATS: raw draws and why some were declined. */
-static struct { uint32_t draws, tris, declined; } s_rst;
 
 /* VC3_GL_TIMING=1: wall time spent in gl_draw's stages, per second -- to
  * tell CPU work from a driver wait. TM(k) closes stage k-1 at mark k. */
@@ -3993,6 +4104,7 @@ static void gl_flip(void)
                 surf_readback(&s_surfs[i]);
         }
     }
+    gt_flip();
     /* The frame's projection (the HUD panel, the aim): the one of the
      * stereo surface the most 3D went into -- the scene. */
     {
