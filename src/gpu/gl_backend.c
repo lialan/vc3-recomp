@@ -60,7 +60,7 @@
 #define GL_SAMPLES_PASSED           GL_ANY_SAMPLES_PASSED
 #define glClearDepth(d)             glClearDepthf((GLfloat)(d))
 extern int vc3_quest_gl_context(void);         /* src/android/quest_host.c */
-extern void vc3_quest_frame(GLuint fbo, int pw, int ph, int lw, int lh);
+extern void vc3_quest_frame(GLuint fbo, int pw, int ph, int eyes, int lw, int lh);
 #else
 #define GL_SILENCE_DEPRECATION
 #include <OpenGL/OpenGL.h>
@@ -121,7 +121,7 @@ static GLuint s_vao, s_vao_raw, s_white;
  * uniforms a program lacks read -1, which GL ignores. */
 typedef struct {
     GLuint prog;
-    GLint surf, depth, texsize, textured, atest, afunc, aref, xs;
+    GLint surf, depth, texsize, textured, atest, afunc, aref, xs, eye, sbs;
     GLint rc, cicw, aicw, cocw, aocw, f0, f1, fin0, fin1, ctl, sprog, fc0, fc1,
           fogc, on, ts, iscube, dbgon, dbgcol, lmap, rcdbg;
     /* The fixed-function vertex shader (Nv2aFixedState). */
@@ -164,6 +164,7 @@ static const char *VS =
     "layout(location=8) in vec4 a_tc3;\n"
     "uniform vec2 u_surf;\n"                  /* framebuffer size */
     "uniform vec2 u_xs;\n"                    /* clip x scale, offset (16:9) */
+    "uniform vec2 u_eye;\n"                   /* stereo: h, convergence D */
     "uniform vec2 u_depth;\n"                 /* clip min, max */
     "uniform vec2 u_texsize;\n"
     "out vec4 v_col;\n"
@@ -174,6 +175,9 @@ static const char *VS =
     "void main() {\n"
     "  float w = (a_pos.w > 0.0 && a_pos.w < 1e30) ? 1.0 / a_pos.w : 1.0;\n"
     "  vec2 ndc = a_pos.xy / u_surf * 2.0 - 1.0;\n"
+    /* stereo, 3D only: rhw 1 is 2D, on the screen */
+    "  if (u_eye.x != 0.0 && a_pos.w != 1.0 && a_pos.w > 0.0)\n"
+    "    ndc.x += u_eye.x * (min(u_eye.y * a_pos.w, 4.0) - 1.0);\n"
     "  ndc.x = ndc.x * u_xs.x + u_xs.y;\n"
     "  float z = clamp((a_pos.z - u_depth.x) / (u_depth.y - u_depth.x), 0.0, 1.0) * 2.0 - 1.0;\n"
     "  gl_Position = vec4(ndc * w, z * w, w);\n"
@@ -208,6 +212,7 @@ static const char *VS_FF =
     "layout(location=7) in vec4 a_t3;\n"
     "uniform vec2 u_surf, u_depth, u_texsize;\n"
     "uniform vec2 u_xs;\n"
+    "uniform vec2 u_eye;\n"
     "uniform mat4 u_comp, u_mv[4], u_proj, u_tm[4];\n"   /* uploaded transposed */
     "uniform vec4 u_c59;\n"
     "uniform uint u_skin;\n"
@@ -351,6 +356,8 @@ static const char *VS_FF =
      * vertex the CPU could not place (w = 0, or not finite) takes every
      * triangle touching it with it. */
     "  vec2 ndc = s.xy / u_surf * 2.0 - 1.0;\n"
+    "  if (u_eye.x != 0.0 && w > 0.0)\n"
+    "    ndc.x += u_eye.x * (min(u_eye.y / w, 4.0) - 1.0);\n"
     "  ndc.x = ndc.x * u_xs.x + u_xs.y;\n"
     "  float zn = (s.z - u_depth.x) / (u_depth.y - u_depth.x) * 2.0 - 1.0;\n"
     "  bool bad = abs(w) <= 1e-6 || any(isnan(o_screen)) || any(isinf(o_screen));\n"
@@ -394,6 +401,7 @@ static const char *FS =
     "uniform vec2 u_surf;\n"
     "uniform int u_on[4];\n"                  /* stage has a usable texture */
     "uniform vec2 u_ts[4];\n"                 /* coordinate -> GL [0,1] scale */
+    "uniform vec4 u_sbs[2];\n"                /* per stage: stereo surface?, eye's half */
     "out vec4 o_col;\n"
     "vec4 R[16];\n"
     "float map_in(float x, uint b) {\n"
@@ -434,10 +442,14 @@ static const char *FS =
     "  if (mode <= 3u) return u_on[st] != 0 ? texel : vec4(1.0);\n"
     "  return vec4(0.0);\n"
     "}\n"
+    "vec2 sbs(int st, vec2 uv) {\n"
+    "  vec2 e = st == 0 ? u_sbs[0].xy : st == 1 ? u_sbs[0].zw : st == 2 ? u_sbs[1].xy : u_sbs[1].zw;\n"
+    "  return e.x != 0.0 ? vec2(clamp(uv.x, 0.0, 1.0) * 0.5 + e.y, uv.y) : uv;\n"
+    "}\n"
     "vec2 stage_uv(int st, vec4 tc) {\n"
     "  uint mode = (u_sprog >> uint(st * 5)) & 31u;\n"
     "  float q = tc.w != 0.0 ? tc.w : 1.0;\n"
-    "  return (mode == 3u ? tc.xy : tc.xy / q) * u_ts[st];\n"
+    "  return sbs(st, (mode == 3u ? tc.xy : tc.xy / q) * u_ts[st]);\n"
     "}\n"
     "vec4 combiners() {\n"
     "  vec4 t0 = stage(0, v_tc0, u_iscube[0] != 0 ? texture(u_c0, v_tc0.xyz) : texture(u_tex, stage_uv(0, v_tc0)));\n"
@@ -520,9 +532,9 @@ static const char *FS =
     "  if (u_rc != 0 && u_dbgon != 0 && u_rcdbg == 12) c = vec4(combiners().a, texture(u_tex, stage_uv(0, v_tc0)).a, texture(u_t1, stage_uv(1, v_tc1)).a, 1.0);\n"
     "  if (u_rc != 0 && u_dbgon != 0 && u_rcdbg == 13) c = vec4(v_col.a, float(u_on[0]), float(u_on[1]), 1.0);\n"
     "  if (u_rc != 0 && u_dbgon != 0 && u_rcdbg == 3 && gl_FragCoord.x < u_surf.x * 0.5)\n"
-    "    c = v_col * (u_textured != 0 ? texture(u_tex, v_uv) : vec4(1.0));\n"
+    "    c = v_col * (u_textured != 0 ? texture(u_tex, sbs(0, v_uv)) : vec4(1.0));\n"
     "  else if (u_textured != 0) {\n"
-    "    c *= texture(u_tex, v_uv);\n"
+    "    c *= texture(u_tex, sbs(0, v_uv));\n"
     "    if (u_lmap != 0) c.rgb *= texture(u_t1, stage_uv(1, v_tc1)).rgb;\n"
     "  }\n"
     "  if (u_atest != 0) {\n"
@@ -641,7 +653,7 @@ static int prog_link(Prog *p, GLuint vs, GLuint fs, int feedback)
     }
 #define LOC(field, name) p->field = glGetUniformLocation(p->prog, name)
     LOC(surf, "u_surf"); LOC(depth, "u_depth"); LOC(texsize, "u_texsize");
-    LOC(xs, "u_xs");
+    LOC(xs, "u_xs"); LOC(eye, "u_eye"); LOC(sbs, "u_sbs");
     LOC(textured, "u_textured"); LOC(atest, "u_atest"); LOC(afunc, "u_afunc");
     LOC(aref, "u_aref"); LOC(rc, "u_rc"); LOC(cicw, "u_cicw"); LOC(aicw, "u_aicw");
     LOC(cocw, "u_cocw"); LOC(aocw, "u_aocw"); LOC(f0, "u_f0"); LOC(f1, "u_f1");
@@ -877,6 +889,9 @@ typedef struct {
      * its 2D overlays (surf_xform). */
     uint32_t hor_frame;
     struct HudLayout *hud;
+    /* Stereo: both eyes side by side in one framebuffer twice pw wide, the
+     * left eye's picture at x 0 (what guest memory gets), the right's at pw. */
+    int st;
     GLuint fbo, color, depth;
     int dirty;                 /* drawn since the last readback */
     /* Guest memory as the GPU last left it, to spot the CPU writing the
@@ -893,6 +908,46 @@ static int s_nsurfs;
 static int surf_widens(GLsizei w, GLsizei h)
 {
     return s_wide && w * 3 == h * 4;
+}
+
+/* ── Stereo (VC3_STEREO, display_settings.c) ──────────────────
+
+   The game's view in 3D on a screen. A screen-shaped surface holds both eyes
+   side by side, and each batch drawn into it is drawn twice -- the same
+   state, vertices and textures, only the viewport (the eye's half), the
+   eye's shift and the texture halves changing -- so the framebuffer never
+   changes between the eyes (a change per draw ends a render pass, which
+   costs four times the frame on Apple's GL and more on a tile-based GPU).
+
+   The 3D is shifted sideways by depth, off-axis: what lies at the
+   convergence depth D stays on the screen, what is farther goes behind it,
+   what is nearer comes out of it:
+
+       x_ndc' = x_ndc + h * (D / w - 1),   h = +sep/2 left, -sep/2 right
+
+   w being the vertex's clip w and sep the separation at infinity in NDC
+   (the host sets it from the screen's size: infinity one eye distance
+   apart on it). 2D -- the HUD, full-screen passes, anything drawn with rhw
+   1 -- is not shifted and sits on the screen. A pass that samples a stereo
+   surface reads the half of the eye it draws, so composites and effects
+   stay per eye. Surfaces of other shapes (VC3's 256x256 comm-window
+   portrait) are drawn once, for both eyes. Guest memory and frame dumps get
+   the left eye. */
+static int s_stereo;                    /* this frame, latched at the flip */
+static float s_st_sep = 0.04f;          /* separation at infinity, NDC */
+static float s_st_depth = 8.0f;         /* convergence: clip w (VC3: ~metres) */
+static GLfloat s_sbs[4];                /* per texture unit 0-3: 1 = a stereo surface */
+
+static int surf_stereo(GLsizei w, GLsizei h)
+{
+    return s_stereo && w * 3 == h * 4;
+}
+
+/* The host's: the separation for its screen's physical size (Quest). */
+void vc3_gl_stereo_separation(float ndc)
+{
+    if (ndc > 0.0f && ndc < 0.5f)
+        s_st_sep = ndc;
 }
 
 static void surf_alloc(Surf *f, GLsizei w, GLsizei h)
@@ -914,15 +969,16 @@ static void surf_alloc(Surf *f, GLsizei w, GLsizei h)
         pw = (pw * 4 / 3 + 1) & ~1;
     f->pw = pw;
     f->ph = ph;
+    f->st = surf_stereo(w, h);
     glGenTextures(1, &f->color);
     glBindTexture(GL_TEXTURE_2D, f->color);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, pw, ph, 0, GL_BGRA,
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, pw * (f->st ? 2 : 1), ph, 0, GL_BGRA,
                  GL_UNSIGNED_INT_8_8_8_8_REV, NULL);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     glGenRenderbuffers(1, &f->depth);
     glBindRenderbuffer(GL_RENDERBUFFER, f->depth);
-    glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH24_STENCIL8, pw, ph);
+    glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH24_STENCIL8, pw * (f->st ? 2 : 1), ph);
     glGenFramebuffers(1, &f->fbo);
     glBindFramebuffer(GL_FRAMEBUFFER, f->fbo);
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
@@ -963,7 +1019,8 @@ static Surf *surf_bind(const Nv2aSurface *s)
         f->va = s->color_va;
     }
     if (!f->fbo || w > f->w || h > f->h || f->sc != s_scale
-        || f->wide != surf_widens(w > f->w ? w : f->w, h > f->h ? h : f->h))
+        || f->wide != surf_widens(w > f->w ? w : f->w, h > f->h ? h : f->h)
+        || f->st != surf_stereo(w > f->w ? w : f->w, h > f->h ? h : f->h))
         surf_alloc(f, w > f->w ? w : f->w, h > f->h ? h : f->h);
     f->pitch = s->pitch;
     f->bpp = bpp;
@@ -1285,7 +1342,8 @@ extern void xbox_FramebufferWindowSetPicture(uint32_t lw, uint32_t lh);
 /* Start reading f whole for the window, with its in-between frames. */
 static void show_read(Readback *r, const Surf *f, int fps)
 {
-    GLsizeiptr bytes = (GLsizeiptr)f->pw * f->ph * 4;
+    GLsizei sw = f->pw * (f->st ? 2 : 1);     /* stereo: left | right */
+    GLsizeiptr bytes = (GLsizeiptr)sw * f->ph * 4;
     int i;
 
     if (r->show_cap < bytes) {
@@ -1303,11 +1361,12 @@ static void show_read(Readback *r, const Surf *f, int fps)
     }
     glBindBuffer(GL_PIXEL_PACK_BUFFER, r->show_pbo);
     glBindFramebuffer(GL_READ_FRAMEBUFFER, f->fbo);
-    glReadPixels(0, 0, f->pw, f->ph, GL_BGRA, GL_UNSIGNED_INT_8_8_8_8_REV, NULL);
-    r->sw = f->pw;
+    glReadPixels(0, 0, sw, f->ph, GL_BGRA, GL_UNSIGNED_INT_8_8_8_8_REV, NULL);
+    r->sw = sw;
     r->sh = f->ph;
     s_ip_last_cut = 0;
-    r->nmid = interp_make(f, r->mid_pbo, fps / 60 - 1);
+    /* No in-between frames for a stereo pair. */
+    r->nmid = f->st ? 0 : interp_make(f, r->mid_pbo, fps / 60 - 1);
     r->cut = s_ip_last_cut;
     r->group = 1;
 }
@@ -1378,7 +1437,7 @@ static void surf_readback_async(Surf *f)
 #if !defined(VC3_GLES)
     /* The Quest shows the drawn frame itself (vc3_quest_frame), with the
      * headset making any in-between frames. */
-    if (fps > 60 || f->sc > 1 || f->wide)
+    if (fps > 60 || f->sc > 1 || f->wide || f->st)
         show_read(r, f, fps);
 #else
     (void)fps;
@@ -1693,6 +1752,8 @@ static int tex_bind(const Nv2aTexture *t, float *sw, float *sh)
         s_st.rt++;
         glBindTexture(GL_TEXTURE_2D, rt->color);
         bound = rt->color;
+        if (rt->st && s_unit < 4)
+            s_sbs[s_unit] = 1.0f;
         *sw = (float)rt->w;
         *sh = (float)rt->h;
     } else {
@@ -1817,14 +1878,16 @@ static int tex_bind_for(const Surf *f, const Nv2aTexture *t, float *sw, float *s
     if (!s_self_tex)
         glGenTextures(1, &s_self_tex);
     glBindTexture(GL_TEXTURE_2D, s_self_tex);
-    if (s_self_w != f->pw || s_self_h != f->ph) {
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, f->pw, f->ph, 0, GL_BGRA,
-                     GL_UNSIGNED_INT_8_8_8_8_REV, NULL);
-        s_self_w = f->pw;
+    if (s_self_w != f->pw * (f->st ? 2 : 1) || s_self_h != f->ph) {
+        s_self_w = f->pw * (f->st ? 2 : 1);
         s_self_h = f->ph;
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, s_self_w, s_self_h, 0, GL_BGRA,
+                     GL_UNSIGNED_INT_8_8_8_8_REV, NULL);
     }
     glBindFramebuffer(GL_READ_FRAMEBUFFER, f->fbo);
-    glCopyTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 0, 0, f->pw, f->ph);
+    glCopyTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 0, 0, s_self_w, s_self_h);
+    if (f->st && s_unit < 4)
+        s_sbs[s_unit] = 1.0f;          /* both eyes: each reads its half */
     tex_sampling(s_self_tex, t);
     *sw = (float)f->w;
     *sh = (float)f->h;
@@ -2367,6 +2430,7 @@ static void gl_draw(const Nv2aSurface *s, const Nv2aBatch *b)
     if ((!raw && !b->count) || !gl_ready() || !(f = surf_bind(s)))
         return;
     U = raw ? &s_praw : &s_pcpu;
+    memset(s_sbs, 0, sizeof s_sbs);
     {
         /* Consecutive batches mostly share program and layout. */
         GLuint vao = raw ? s_vao_raw : s_vao;
@@ -2606,6 +2670,9 @@ static void gl_draw(const Nv2aSurface *s, const Nv2aBatch *b)
         s_rst.tris += tris;
     }
     if (b->zpass_out) {
+        GLfloat sb0[8] = { 0 };
+        glUniform4fv(U->sbs, 2, sb0);
+        glUniform2f(U->eye, 0.0f, s_st_depth);
         /* A visibility test: count the pixels that pass, for GET_REPORT.
          * Reading the result waits for the GPU, but only test batches pay. */
         static GLuint q;
@@ -2623,11 +2690,31 @@ static void gl_draw(const Nv2aSurface *s, const Nv2aBatch *b)
         *b->zpass_out += passed;
         s_st.zpass_batches++;
         s_st.zpass_pixels += passed;
-    } else if (raw) {
-        glDrawElements(raw_mode(raw->prim), (GLsizei)raw->index_count,
-                       GL_UNSIGNED_SHORT, (void *)ioff);
     } else {
-        glDrawArrays(GL_TRIANGLES, 0, (GLsizei)b->count);
+        /* Stereo: the same draw for each eye, in its half. */
+        int eye, eyes = f->st ? 2 : 1;
+        for (eye = 0; eye < eyes; eye++) {
+            GLfloat sb[8];
+            int k;
+            for (k = 0; k < 4; k++) {
+                sb[2 * k] = s_sbs[k];
+                sb[2 * k + 1] = 0.5f * (GLfloat)eye;
+            }
+            glUniform4fv(U->sbs, 2, sb);
+            if (f->st) {
+                glViewport(eye * f->pw, 0, f->pw, f->ph);
+                glUniform2f(U->eye, eye ? -0.5f * s_st_sep : 0.5f * s_st_sep, s_st_depth);
+            } else {
+                glUniform2f(U->eye, 0.0f, s_st_depth);
+            }
+            if (raw)
+                glDrawElements(raw_mode(raw->prim), (GLsizei)raw->index_count,
+                               GL_UNSIGNED_SHORT, (void *)ioff);
+            else
+                glDrawArrays(GL_TRIANGLES, 0, (GLsizei)b->count);
+        }
+        if (f->st)
+            glViewport(0, 0, f->pw, f->ph);
     }
     if (raw) {
         if (s_has_clip) {
@@ -3383,7 +3470,7 @@ static void quest_present(void)
     lw = f->wide ? ((f->w * 4 / 3 + 1) & ~1) : f->w;
     lh = f->h;
     if (!f->cpu_owned) {
-        vc3_quest_frame(f->fbo, f->pw, f->ph, lw, lh);
+        vc3_quest_frame(f->fbo, f->pw, f->ph, f->st ? 2 : 1, lw, lh);
         return;
     }
     if (cap < (size_t)f->w * f->h * 4) {
@@ -3419,7 +3506,7 @@ static void quest_present(void)
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, f->w, f->h, 0, GL_RGBA, GL_UNSIGNED_BYTE, rgba);
     glBindFramebuffer(GL_FRAMEBUFFER, fbo);
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, tex, 0);
-    vc3_quest_frame(fbo, f->w, f->h, f->w, f->h);
+    vc3_quest_frame(fbo, f->w, f->h, 1, f->w, f->h);
 }
 #endif
 
@@ -3468,11 +3555,12 @@ static void gl_flip(void)
         Surf *pf = surf_find(nv2a_backend_presented_va());
         if (pf)
             xbox_FramebufferWindowSetPicture(
-                (uint32_t)(pf->wide ? (pf->w * 4 / 3 + 1) & ~1 : pf->w),
+                (uint32_t)(pf->wide ? (pf->w * 4 / 3 + 1) & ~1 : pf->w) * (pf->st ? 2 : 1),
                 (uint32_t)pf->h);
     }
     s_scale = vc3_scale_get();
     s_wide = vc3_wide_get();
+    s_stereo = vc3_stereo_get();
     s_frame++;
     if (genv("VC3_FPS_LOG")) {            /* wall-clock flips per second */
         /* With the vblanks delivered over the same second: flips below the
@@ -3550,6 +3638,11 @@ void vc3_gl_backend_register(void)
     s_st.on = genv("VC3_GL_STATS") != NULL;
     s_scale = vc3_scale_get();
     s_wide = vc3_wide_get();
+    s_stereo = vc3_stereo_get();
+    if (genv("VC3_STEREO_SEP"))
+        s_st_sep = (float)atof(genv("VC3_STEREO_SEP"));
+    if (genv("VC3_STEREO_DEPTH"))
+        s_st_depth = (float)atof(genv("VC3_STEREO_DEPTH"));
     e = genv("VC3_GL_COMBINERS");
     s_use_rc = e && e[0] == '1';
     nv2a_backend_register(&s_gl_backend);

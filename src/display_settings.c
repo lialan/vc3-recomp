@@ -9,6 +9,8 @@
  *           between each pair of real ones. Any multiple of 60 up to 240
  *           works the same way, with fps / 60 - 1 in-between frames.
  *   scale   1 (default) to 4: internal resolution, 640x480 times scale.
+ *   stereo  0 (default; 1 on the Quest): the 3D view in stereo, each eye
+ *           its own picture with depth (gl_backend.c).
  *   aspect  4:3 (default) or 16:9: at 16:9 the 3D view extends to the
  *           sides (hor+) and the HUD moves to the screen edges; movies
  *           and menus stay 4:3 (gl_backend.c, surf_xform).
@@ -31,7 +33,7 @@
 
 #include "display_settings.h"
 
-static int s_fps = 60, s_scale = 1, s_wide;
+static int s_fps = 60, s_scale = 1, s_wide, s_stereo;
 
 static int fps_ok(int fps)
 {
@@ -156,10 +158,18 @@ void vc3_display_init(void)
         fprintf(stderr, "[VC3] VC3_ASPECT=%s: not 4:3 or 16:9; using 4:3\n", v);
     __atomic_store_n(&s_wide, parse_wide(v), __ATOMIC_RELAXED);
 
-    fprintf(stderr, "[VC3] display %d fps (game 60)%s, %dx%d internal, %s\n",
+    v = setting("VC3_STEREO", "stereo=", &env);
+#if defined(__ANDROID__)
+    n = v ? atoi(v) != 0 : 1;          /* the Quest: 3D */
+#else
+    n = v ? atoi(v) != 0 : 0;
+#endif
+    __atomic_store_n(&s_stereo, n, __ATOMIC_RELAXED);
+
+    fprintf(stderr, "[VC3] display %d fps (game 60)%s, %dx%d internal, %s%s\n",
             vc3_fps_get(), vc3_fps_get() > 60 ? " motion-interpolated" : "",
             640 * vc3_scale_get(), 480 * vc3_scale_get(),
-            vc3_wide_get() ? "16:9" : "4:3");
+            vc3_wide_get() ? "16:9" : "4:3", vc3_stereo_get() ? ", stereo 3D" : "");
 }
 
 int vc3_fps_get(void)
@@ -211,6 +221,21 @@ void vc3_scale_set(int scale)
     snprintf(buf, sizeof buf, "%d", scale);
     vc3_setting_put("scale=", buf);
     fprintf(stderr, "[VC3] internal resolution %dx%d\n", 640 * scale, 480 * scale);
+}
+
+int vc3_stereo_get(void)
+{
+    return __atomic_load_n(&s_stereo, __ATOMIC_RELAXED);
+}
+
+void vc3_stereo_set(int on)
+{
+    on = on != 0;
+    if (on == vc3_stereo_get())
+        return;
+    __atomic_store_n(&s_stereo, on, __ATOMIC_RELAXED);
+    vc3_setting_put("stereo=", on ? "1" : "0");
+    fprintf(stderr, "[VC3] stereo 3D %s\n", on ? "on" : "off");
 }
 
 int vc3_wide_get(void)

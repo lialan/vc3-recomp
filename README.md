@@ -73,13 +73,18 @@ drawn, as BMPs (`<prefix><flip>_<k>.bmp`, last = real frame) while the file
 named by `VC3_FPS_DUMP_FLIPS` exists (or always, with `1`), whenever the
 window gets more than guest memory holds (above 1x, 16:9 or 60 fps);
 `VC3_FPS_DEBUG=1` logs the scene-cut measure per flip (stalls; debug only).
+`VC3_STEREO=1` shows the Quest's stereo pair side by side in the window (left
+eye, right eye), for checking the 3D without a headset.
 
 ## Meta Quest
 
 `quest/build.sh` builds `quest/VirtuaCop3VR.apk` (Quest 3 / 3S / 2 / Pro): the
 same recompiled game for arm64 Android, its GL back end on OpenGL ES 3.2, shown
 on a large screen in front of you (an OpenXR quad layer the headset keeps
-steady at its own refresh rate, 120 Hz asked for, while the game runs at 60).
+steady at its own refresh rate, 120 Hz asked for, while the game runs at 60),
+in stereo 3D: the 3D view is drawn once per eye with depth around the
+screen's plane -- the street behind the screen, what is near coming out of
+it -- while the HUD stays on the screen.
 It needs the lifted code (`scripts/lift.sh`), the Android SDK with NDK 27, a
 JDK 17+, and SDL2 and the OpenXR loader built for arm64 Android in `$DEPS`
 (default `~/Downloads/VR/deps`; the lindbergh-recomp-ports checkout's
@@ -93,9 +98,10 @@ the grip, to reload; the other hand's grip is the foot pedal. A / X inserts a
 coin and starts, B / Y inserts a coin, the
 left menu button is the cabinet's test switch. The other hand's thumbstick
 moves the screen (up/down: nearer/farther, left/right: smaller/larger); the
-left thumbstick click switches 4:3 / 16:9, the right one the internal
-resolution (1x-4x). The Quest defaults to 2x and 16:9; everything is saved in
-the app's settings file. `env.txt` in `/sdcard/VirtuaCop3`, one `NAME=value`
+left thumbstick click turns 3D on and off, the right one switches 4:3 / 16:9.
+The Quest defaults to 2x, 16:9 and 3D; everything is saved in the app's
+settings file (`scale=`, `aspect=`, `stereo=`; `VC3_STEREO_DEPTH` moves the
+depth the screen sits at, in the game's units, about metres, default 8). `env.txt` in `/sdcard/VirtuaCop3`, one `NAME=value`
 per line, sets the usual `VC3_*` options; the last run's log is
 `/sdcard/VirtuaCop3/vc3.log`. Without an OpenXR runtime (or with
 `VC3_NO_XR=1`) the game shows in the Android window instead, which is how it

@@ -25,6 +25,11 @@ void vc3_scale_set(int scale);
 int  vc3_wide_get(void);
 void vc3_wide_set(int wide);
 
+/* Stereo 3D (gl_backend.c): the 3D drawn once per eye, with depth. On the
+ * Quest each eye sees its own; on a desktop the two are side by side. */
+int  vc3_stereo_get(void);
+void vc3_stereo_set(int on);
+
 /* Any "<key>=" line of the settings file (key includes the '='). */
 const char *vc3_setting_get(const char *key);
 void vc3_setting_put(const char *key, const char *value);

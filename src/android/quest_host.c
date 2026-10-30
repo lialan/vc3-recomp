@@ -29,8 +29,15 @@
  * is the cabinet's foot pedal. A / X: coin and start;
  * B / Y: coin; left menu button: the cabinet's test switch. The other
  * hand's thumbstick moves the screen (up/down: nearer/farther; left/right:
- * smaller/larger); thumbstick clicks: aspect 4:3/16:9 (left), internal
- * resolution 1x-4x (right). All of it is saved in the settings file.
+ * smaller/larger); thumbstick clicks: stereo 3D on/off (left), aspect
+ * 4:3/16:9 (right). All of it is saved in the settings file.
+ *
+ * Stereo 3D (on by default here): the back end draws the 3D view once per
+ * eye, side by side in one frame (gl_backend.c), with depth around the
+ * screen's plane; each eye's half goes to a quad layer that eye alone sees,
+ * at the same place, so the screen is a window with depth behind it and
+ * things coming out of it. The separation is set from the screen's size:
+ * what is infinitely far lies one eye distance apart on the screen.
  *
  * Without an OpenXR runtime (a phone, the Android emulator) the frames go
  * to the SDL window instead, letterboxed, and the touch screen or mouse is
@@ -110,7 +117,8 @@ int vc3_quest_gl_context(void)
 
 typedef struct {
     GLuint tex;
-    GLsizei w, h;            /* as drawn */
+    GLsizei w, h;            /* as drawn: both eyes, side by side, in stereo */
+    int eyes;                /* 1, or 2 for a stereo pair (each w / 2 wide) */
     int lw, lh;              /* the picture's shape (guest pixels) */
     GLsync fence;
 } Frame;
@@ -121,12 +129,13 @@ static uint64_t s_ready_seq, s_shown_seq;
 static pthread_mutex_t s_lock = PTHREAD_MUTEX_INITIALIZER;
 static uint64_t s_frames_in;   /* for the log */
 
-void vc3_quest_frame(GLuint fbo, int pw, int ph, int lw, int lh)
+void vc3_quest_frame(GLuint fbo, int pw, int ph, int eyes, int lw, int lh)
 {
     static GLuint dst_fbo;
     Frame *f = &s_frame[s_back];        /* this thread alone touches s_back */
     int t;
 
+    pw *= eyes;                         /* the eyes are side by side */
     if (!dst_fbo)
         glGenFramebuffers(1, &dst_fbo);
     if (!f->tex || f->w != pw || f->h != ph) {
@@ -151,6 +160,7 @@ void vc3_quest_frame(GLuint fbo, int pw, int ph, int lw, int lh)
     glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, 0, 0);
     f->lw = lw;
     f->lh = lh;
+    f->eyes = eyes;
     f->fence = glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
     glFlush();                          /* the fence must reach the GPU */
 
@@ -188,6 +198,9 @@ static Frame *take_frame(int *is_new)
 /* ── Settings: where the screen is ────────────────────────────────────── */
 
 static float s_dist = 2.6f, s_height = 1.9f;    /* metres */
+#define EYE_DISTANCE 0.064f                       /* metres */
+
+void vc3_gl_stereo_separation(float ndc);         /* gl_backend.c */
 
 static void screen_load(void)
 {
@@ -645,16 +658,25 @@ static void gun_frame(XrTime t, const Frame *f)
         }
     }
     if (now[HAND_L][3] && !was[HAND_L][3])
-        vc3_wide_set(!vc3_wide_get());
+        vc3_stereo_set(!vc3_stereo_get());
     if (now[HAND_R][3] && !was[HAND_R][3])
-        vc3_scale_set(vc3_scale_get() % VC3_SCALE_MAX + 1);
+        vc3_wide_set(!vc3_wide_get());
+    /* Infinity one eye distance apart on the screen: 2 * eye / width in NDC. */
+    if (f)
+        vc3_gl_stereo_separation(2.0f * EYE_DISTANCE
+                                 / (s_height * (float)f->lw / (float)f->lh));
     memcpy(was, now, sizeof was);
 }
 
 /* The frame into the swapchain image, upright (the surfaces hold the picture
  * top row first, GL's bottom), with the aim dot. */
+/* The frame -- whole, or with eyes side by side as they are -- into the
+ * swapchain image, upright, with the aim dot in each eye's half (on the
+ * screen's plane: no disparity). */
 static void draw_frame(GLuint dst_fbo, const Frame *f, GLsizei w, GLsizei h, int dot)
 {
+    int e, ew = w / f->eyes;
+
     glBindFramebuffer(GL_READ_FRAMEBUFFER, s_read_fbo);
     glFramebufferTexture2D(GL_READ_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, f->tex, 0);
     glBindFramebuffer(GL_DRAW_FRAMEBUFFER, dst_fbo);
@@ -662,8 +684,9 @@ static void draw_frame(GLuint dst_fbo, const Frame *f, GLsizei w, GLsizei h, int
     if (s_srgb_control)
         glDisable(GL_FRAMEBUFFER_SRGB_EXT);
     glBlitFramebuffer(0, 0, f->w, f->h, 0, h, w, 0, GL_COLOR_BUFFER_BIT, GL_LINEAR);
+    for (e = 0; e < f->eyes; e++)
     if (dot && s_hit_u >= 0 && s_hit_u <= 1 && s_hit_v >= 0 && s_hit_v <= 1) {
-        int cx = (int)(s_hit_u * w), cy = (int)((1 - s_hit_v) * h);
+        int cx = e * ew + (int)(s_hit_u * ew), cy = (int)((1 - s_hit_v) * h);
         int r = h / 120 + 2;
         glEnable(GL_SCISSOR_TEST);
         glScissor(cx - r - 1, cy - r - 1, 2 * r + 2, 2 * r + 2);
@@ -683,8 +706,8 @@ static void xr_frame(void)
     XrFrameState fs = { XR_TYPE_FRAME_STATE };
     XrFrameBeginInfo bi = { XR_TYPE_FRAME_BEGIN_INFO };
     XrFrameEndInfo ei = { XR_TYPE_FRAME_END_INFO };
-    XrCompositionLayerQuad quad = { XR_TYPE_COMPOSITION_LAYER_QUAD };
-    const XrCompositionLayerBaseHeader *layers[1];
+    XrCompositionLayerQuad quad[2];
+    const XrCompositionLayerBaseHeader *layers[2];
     Frame *f;
     int is_new;
 
@@ -710,17 +733,24 @@ static void xr_frame(void)
             draw_frame(s_chain_fbo[idx], f, (GLsizei)s_chain_w, (GLsizei)s_chain_h, 1);
             xrReleaseSwapchainImage(s_chain, &ri);
 
-            quad.space = s_local;               /* opaque: no blend flags */
-            quad.eyeVisibility = XR_EYE_VISIBILITY_BOTH;
-            quad.subImage.swapchain = s_chain;
-            quad.subImage.imageRect.extent.width = (int32_t)s_chain_w;
-            quad.subImage.imageRect.extent.height = (int32_t)s_chain_h;
-            quad.pose.orientation.w = 1;
-            quad.pose.position.z = -s_dist;
-            quad.size.height = s_height;
-            quad.size.width = s_height * (float)f->lw / (float)f->lh;
-            layers[0] = (const XrCompositionLayerBaseHeader *)&quad;
-            ei.layerCount = 1;
+            uint32_t e;
+            for (e = 0; e < (uint32_t)f->eyes; e++) {
+                XrCompositionLayerQuad *q = &quad[e];
+                *q = (XrCompositionLayerQuad){ XR_TYPE_COMPOSITION_LAYER_QUAD };
+                q->space = s_local;            /* opaque: no blend flags */
+                q->eyeVisibility = f->eyes == 1 ? XR_EYE_VISIBILITY_BOTH
+                                 : e == 0 ? XR_EYE_VISIBILITY_LEFT : XR_EYE_VISIBILITY_RIGHT;
+                q->subImage.swapchain = s_chain;
+                q->subImage.imageRect.offset.x = (int32_t)(e * s_chain_w / (uint32_t)f->eyes);
+                q->subImage.imageRect.extent.width = (int32_t)(s_chain_w / (uint32_t)f->eyes);
+                q->subImage.imageRect.extent.height = (int32_t)s_chain_h;
+                q->pose.orientation.w = 1;
+                q->pose.position.z = -s_dist;
+                q->size.height = s_height;
+                q->size.width = s_height * (float)f->lw / (float)f->lh;
+                layers[e] = (const XrCompositionLayerBaseHeader *)q;
+            }
+            ei.layerCount = (uint32_t)f->eyes;
             ei.layers = layers;
         }
     }
@@ -754,8 +784,9 @@ static void flat_frame(void)
         glBindFramebuffer(GL_READ_FRAMEBUFFER, s_read_fbo);
         glFramebufferTexture2D(GL_READ_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, f->tex, 0);
         glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
-        glBlitFramebuffer(0, 0, f->w, f->h, (ww - dw) / 2, (wh + dh) / 2, (ww + dw) / 2,
-                          (wh - dh) / 2, GL_COLOR_BUFFER_BIT, GL_LINEAR);
+        /* the left eye of a stereo pair */
+        glBlitFramebuffer(0, 0, f->w / f->eyes, f->h, (ww - dw) / 2, (wh + dh) / 2,
+                          (ww + dw) / 2, (wh - dh) / 2, GL_COLOR_BUFFER_BIT, GL_LINEAR);
     }
     SDL_GL_SwapWindow(s_win);
 }
