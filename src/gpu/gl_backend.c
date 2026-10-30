@@ -781,8 +781,8 @@ static void gl_clear(const Nv2aSurface *s, const Nv2aRenderState *rs,
         bits |= GL_STENCIL_BUFFER_BIT;
     }
     if (s_ftr == 1)
-        fprintf(stderr, "[GLTR] clear surf %08X flags %X colour %08X\n",
-                f->va, flags, argb);
+        fprintf(stderr, "[GLTR] clear surf %08X flags %X colour %08X zstencil %08X "
+                "zeta %08X\n", f->va, flags, argb, zstencil, rs->zeta_va);
     if (bits)
         glClear(bits);
     f->dirty = 1;
@@ -911,7 +911,7 @@ static void gl_draw(const Nv2aSurface *s, const Nv2aBatch *b)
                 b->texture->color, b->texture->pitch, tw, th);
     }
     if (s_ftr == 1) {
-        float x0 = 1e9f, x1 = -1e9f, y0 = 1e9f, y1 = -1e9f;
+        float x0 = 1e9f, x1 = -1e9f, y0 = 1e9f, y1 = -1e9f, z0 = 1e30f, z1 = -1e30f;
         uint32_t k;
         for (k = 0; k < b->count; k++) {
             const Nv2aVertex *q = &b->vertices[k];
@@ -919,7 +919,11 @@ static void gl_draw(const Nv2aSurface *s, const Nv2aBatch *b)
             if (q->x > x1) x1 = q->x;
             if (q->y < y0) y0 = q->y;
             if (q->y > y1) y1 = q->y;
+            if (q->z < z0) z0 = q->z;
+            if (q->z > z1) z1 = q->z;
         }
+        fprintf(stderr, "[GLTR]   depth func %X z %.6g..%.6g clip %.6g..%.6g\n",
+                b->state->depth_func, z0, z1, b->state->depth_min, b->state->depth_max);
         fprintf(stderr, "[GLTR] %s surf %08X n %u box %.0f..%.0f x %.0f..%.0f diff %08X "
                 "tex %08X%s s1 %08X blend %u %X/%X z %u/%u sprog %05X fin %08X fog %.2f\n",
                 b->rc ? "RC " : "FF ", f->va, b->count, x0, x1, y0, y1,

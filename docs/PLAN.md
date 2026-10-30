@@ -100,29 +100,48 @@ Later and out of scope here: a 2P (second gun) mapping, a Quest VR build like th
 Lindbergh ports, and Ghost Squad / HOTD3 (also on Chihiro, in the same Batocera
 folder), which should reuse `src/chihiro/`.
 
-## Status (2026-10-29)
+## Status (2026-10-30)
 
-* Phases 0–3 are done. `cmake -S . -B build -G Ninja && cmake --build build` gives an
-  arm64 `build/vc3`. `scripts/run-test.sh` boots it muted, with a watchdog.
-* What booting needed so far:
-  * a 128 MB contiguous window (submodule branch `vc3-chihiro`, `XBOX_CONTIG_SIZE`);
-  * `RECOMP_HEAP_RECLAIM=1`, because the boot memory probe at 0x34F60
-    allocates and frees blocks up to 256 MB, and without reclaim the frees are
-    dropped.
-* Step 1 of phase 4 is done: backup RAM, EEPROM and the clock are host
-  replacements (`src/chihiro/storage.c`). They use the toolkit's
-  replace-by-`sub_XXXXXXXX` mechanism (`--exclude-manual`); see
-  `docs/chihiro-symbols.md`.
-* Where it gets to: D3D init (framebuffer allocated, vblank ISR vector 3
-  connected), the baseboard interrupt connected (vector 1 → 0x13A3F4),
-  partition1 TDATA/UDATA created, and the main loop polling EEPROM and backup
-  through our replacements.
-* Current blocker: D3D device creation (0x10B1D0) fails inside 0x10EC40.
-  Teardown (0x10F1A0) then spins at 0x10F1E0, waiting for the GPU reference
-  counter `[[dev+0x17BC]+0x44]` to match, and the NV2A model never advances it
-  (REF=0). An earlier reading blamed backup RAM; that came from stale stack
-  values. Backup writes, persistence and the RTC are untested until the game
-  gets past this.
+Playable end to end on Apple Silicon: boot, region warning, attract, coin,
+START, Mission Select, mission briefing, combat (hits score, ammo and lives
+count down), CONTINUE?. Runs at about 45 fps through the GL back end.
+
+What it took, beyond the phase 0-3 setup:
+
+* **Chihiro hardware** (`src/chihiro/`): backup RAM, EEPROM and RTC on host
+  files; the baseboard firmware handshake; a software JVS I/O board answering
+  the game's own packets (switch replies sized to the feature list); the
+  Chihiro-hardware flag (`[0x36983C]`, set when memory > 64 MB) forced on, or
+  the game reads Xbox gamepads and never polls JVS; DIP switches selecting
+  640x480 progressive (no board means 1024x768, but the 2D is laid out for
+  640x480). TestLaunch data only with `VC3_TEST_LAUNCH=1` (boots to test mode).
+* **D3D/NV2A**: VGA AV pack, the push-buffer executor, vblank/KEVENT pacing,
+  the fence wait (`src/d3d_fence.c`), relaunch on leaving test mode.
+* **Rendering** (`src/gpu/gl_backend.c`): an OpenGL 4.1 back end on a
+  windowless CGL context. The executor's CPU rasteriser held the game at
+  ~7 fps (and its logic ticks per frame). The back end evaluates the register
+  combiners in GLSL, samples render targets and the surface being drawn,
+  reads no-alpha formats as alpha 1, and resolves drawn surfaces into guest
+  memory at the flip. xboxrecomp (`vc3-chihiro`): POSIX raster worker pool,
+  back-end flip before present, combiner state/inputs handed to back ends,
+  fixed-function vertex blending.
+
+Known issues:
+
+* **Combat views lack most of the room geometry**: the HUD, enemies, effects
+  and some set pieces draw, but walls do not land on screen, so the clear
+  colour (0x404080, darkened by the tint passes) shows. Transform (composite
+  matrix checked by hand), depth, fog, combiners and compositing have been
+  ruled out one by one; next is a same-frame comparison of the executor's
+  batches against the software rasteriser (`VC3_GL=0`) and xemu.
+* The attract background is white (probably the Sofdec movie
+  `vc3_title2_100mh.sfd`, not decoded).
+* Sound is untested (muted by default; `VC3_SOUND=1`).
+
+Debug switches: `VC3_GL=0` (software rasteriser), `VC3_GL_STATS`,
+`VC3_GL_FTRACE=<flag>`, `VC3_GL_RCDBG=1..7`, `VC3_JVS_TRACE`,
+`RECOMP_FFP_TRACE=<flag>`, `RECOMP_FRAME_TRACE=<flag>`, `VC3_AUTOKEYS`,
+`VC3_AUTOAIM`.
 
 ## Risks
 
