@@ -32,7 +32,7 @@ add_executable(vc3
     src/chihiro/baseboard.c
     src/d3d_fence.c
     src/host_input.c
-    src/display_rate.c
+    src/display_settings.c
     src/gpu/gl_backend.c
     ${RECOMP_GEN_SOURCES}
 )

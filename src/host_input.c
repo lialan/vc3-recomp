@@ -11,7 +11,7 @@
  *   5 / 6            coin, slot 1 / 2
  *   1 / 2            start, player 1 / 2
  *   F2               test       F1   service
- *   F10              display 60 <-> 120 fps (display_rate.c; not the board)
+ *   F10              display 60 <-> 120 fps (display_settings.c; not the board)
  *
  * VC3_AUTOKEYS scripts presses for unattended runs: "t:key,t:key", with t in
  * seconds since the first poll and key one of test, service, coin, start,
@@ -28,7 +28,7 @@
 #include <SDL.h>
 
 #include "chihiro/chihiro.h"
-#include "display_rate.h"
+#include "display_settings.h"
 
 #define AUTO_MAX     32
 #define AUTO_HOLD_MS 500   /* > one poll at the current frame rate */
@@ -264,9 +264,14 @@ static void mouse_in_picture(int mx, int my, double *ux, double *uy)
         if (r)
             SDL_RenderGetLogicalSize(r, &lw, &lh);
         if (lw > 0 && lh > 0) {
-            if (mx >= lw || my >= lh)
+            /* A 16:9 picture (display_settings.c) holds the game's 4:3
+             * screen in its middle; the sides are view the game does not
+             * aim into, so they read as off the screen. */
+            double gw = lw * 3 > lh * 4 ? lh * 4.0 / 3.0 : (double)lw;
+            double gx = mx - (lw - gw) / 2.0;
+            if (gx < 0 || gx >= gw || my >= lh)
                 return;
-            *ux = (double)mx / lw;
+            *ux = gx / gw;
             *uy = (double)my / lh;
             return;
         }

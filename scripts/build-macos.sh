@@ -5,9 +5,10 @@
 #
 # Game folder, first that exists: $VC3_GAME_DIR, the folder saved in
 # ~/Library/Application Support/VC3/game_dir, ~/Downloads/VR/VC3/extracted,
-# else a folder picker (the choice is saved). The display frame rate needs
-# nothing here: vc3 reads fps= from ~/Library/Application Support/VC3/settings
-# itself, and its Display menu writes it.
+# else a folder picker (the choice is saved). The display settings need
+# nothing here: vc3 reads them (fps=, scale=, aspect=) from
+# ~/Library/Application Support/VC3/settings itself, and its Display menu
+# writes them.
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BUILD="${VC3_BUILD_DIR:-$ROOT/build}"

@@ -37,7 +37,7 @@
 #include <time.h>
 
 #include "nv2a_backend.h"
-#include "../display_rate.h"
+#include "../display_settings.h"
 #include "../d3d/d3d8_swizzle.h"   /* relative to src/kernel, as the executor */
 
 /* getenv, looked up once per name: several debug switches are tested per
@@ -73,7 +73,7 @@ static GLuint s_vao, s_vao_raw, s_white;
  * uniforms a program lacks read -1, which GL ignores. */
 typedef struct {
     GLuint prog;
-    GLint surf, depth, texsize, textured, atest, afunc, aref;
+    GLint surf, depth, texsize, textured, atest, afunc, aref, xs;
     GLint rc, cicw, aicw, cocw, aocw, f0, f1, fin0, fin1, ctl, sprog, fc0, fc1,
           fogc, on, ts, iscube, dbgon, dbgcol, lmap, rcdbg;
     /* The fixed-function vertex shader (Nv2aFixedState). */
@@ -115,6 +115,7 @@ static const char *VS =
     "layout(location=7) in vec4 a_tc2;\n"
     "layout(location=8) in vec4 a_tc3;\n"
     "uniform vec2 u_surf;\n"                  /* framebuffer size */
+    "uniform float u_xs;\n"                   /* clip x scale (16:9) */
     "uniform vec2 u_depth;\n"                 /* clip min, max */
     "uniform vec2 u_texsize;\n"
     "out vec4 v_col;\n"
@@ -124,7 +125,7 @@ static const char *VS =
     "out vec4 v_tc0, v_tc1, v_tc2, v_tc3;\n"
     "void main() {\n"
     "  float w = (a_pos.w > 0.0 && a_pos.w < 1e30) ? 1.0 / a_pos.w : 1.0;\n"
-    "  vec2 ndc = a_pos.xy / u_surf * 2.0 - 1.0;\n"
+    "  vec2 ndc = (a_pos.xy / u_surf * 2.0 - 1.0) * vec2(u_xs, 1.0);\n"
     "  float z = clamp((a_pos.z - u_depth.x) / (u_depth.y - u_depth.x), 0.0, 1.0) * 2.0 - 1.0;\n"
     "  gl_Position = vec4(ndc * w, z * w, w);\n"
     "  v_col = a_col.zyxw;\n"
@@ -157,6 +158,7 @@ static const char *VS_FF =
     "layout(location=6) in vec4 a_t2;\n"
     "layout(location=7) in vec4 a_t3;\n"
     "uniform vec2 u_surf, u_depth, u_texsize;\n"
+    "uniform float u_xs;\n"
     "uniform mat4 u_comp, u_mv[4], u_proj, u_tm[4];\n"   /* uploaded transposed */
     "uniform vec4 u_c59;\n"
     "uniform uint u_skin;\n"
@@ -297,7 +299,7 @@ static const char *VS_FF =
      * w = 1e-3 and at the near plane z = c59.z; so do the clip distances. A
      * vertex the CPU could not place (w = 0, or not finite) takes every
      * triangle touching it with it. */
-    "  vec2 ndc = s.xy / u_surf * 2.0 - 1.0;\n"
+    "  vec2 ndc = (s.xy / u_surf * 2.0 - 1.0) * vec2(u_xs, 1.0);\n"
     "  float zn = (s.z - u_depth.x) / (u_depth.y - u_depth.x) * 2.0 - 1.0;\n"
     "  bool bad = abs(w) <= 1e-6 || any(isnan(o_screen)) || any(isinf(o_screen));\n"
     "  gl_Position = bad ? vec4(0.0, 0.0, 0.0, 1.0) : vec4(ndc * w, zn * w, w);\n"
@@ -535,6 +537,7 @@ static int prog_link(Prog *p, GLuint vs, GLuint fs, int feedback)
     }
 #define LOC(field, name) p->field = glGetUniformLocation(p->prog, name)
     LOC(surf, "u_surf"); LOC(depth, "u_depth"); LOC(texsize, "u_texsize");
+    LOC(xs, "u_xs");
     LOC(textured, "u_textured"); LOC(atest, "u_atest"); LOC(afunc, "u_afunc");
     LOC(aref, "u_aref"); LOC(rc, "u_rc"); LOC(cicw, "u_cicw"); LOC(aicw, "u_aicw");
     LOC(cocw, "u_cocw"); LOC(aocw, "u_aocw"); LOC(f0, "u_f0"); LOC(f1, "u_f1");
@@ -681,10 +684,20 @@ static int gl_ready(void)
 
 /* ── Surfaces ──────────────────────────────────────────────── */
 
+/* Internal resolution and aspect (display_settings.c), as this frame draws
+ * them: taken at each flip, so a frame never mixes two. A surface drawn at
+ * scale s is s times its guest size; a widened one (16:9: a 4:3 surface,
+ * 640x480 in VC3) is also a third wider, with the guest's picture in the
+ * middle -- see surf_xscale. Guest memory always gets the guest size and
+ * the middle part (surf_resolve). */
+static int s_scale = 1, s_wide;
+
 #define MAX_SURFS 32
 typedef struct {
     uint32_t va, pitch, bpp;
-    GLsizei w, h;
+    GLsizei w, h;              /* guest size: what coordinates are in */
+    GLsizei pw, ph;            /* drawn size: w, h times sc, widened */
+    int sc, wide;
     GLuint fbo, color, depth;
     int dirty;                 /* drawn since the last readback */
     /* Guest memory as the GPU last left it, to spot the CPU writing the
@@ -696,8 +709,17 @@ typedef struct {
 static Surf s_surfs[MAX_SURFS];
 static int s_nsurfs;
 
+/* Only the screen-shaped surfaces widen: render targets of other shapes
+ * (VC3's 128x128 and 256x256 effect maps) are sampled whole. */
+static int surf_widens(GLsizei w, GLsizei h)
+{
+    return s_wide && w * 3 == h * 4;
+}
+
 static void surf_alloc(Surf *f, GLsizei w, GLsizei h)
 {
+    GLsizei pw, ph;
+
     if (f->fbo) {
         glDeleteFramebuffers(1, &f->fbo);
         glDeleteTextures(1, &f->color);
@@ -705,15 +727,23 @@ static void surf_alloc(Surf *f, GLsizei w, GLsizei h)
     }
     f->w = w;
     f->h = h;
+    f->sc = s_scale;
+    f->wide = surf_widens(w, h);
+    pw = w * f->sc;
+    ph = h * f->sc;
+    if (f->wide)
+        pw = (pw * 4 / 3 + 1) & ~1;
+    f->pw = pw;
+    f->ph = ph;
     glGenTextures(1, &f->color);
     glBindTexture(GL_TEXTURE_2D, f->color);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, w, h, 0, GL_BGRA,
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, pw, ph, 0, GL_BGRA,
                  GL_UNSIGNED_INT_8_8_8_8_REV, NULL);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     glGenRenderbuffers(1, &f->depth);
     glBindRenderbuffer(GL_RENDERBUFFER, f->depth);
-    glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH24_STENCIL8, w, h);
+    glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH24_STENCIL8, pw, ph);
     glGenFramebuffers(1, &f->fbo);
     glBindFramebuffer(GL_FRAMEBUFFER, f->fbo);
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
@@ -721,7 +751,7 @@ static void surf_alloc(Surf *f, GLsizei w, GLsizei h)
     glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT,
                               GL_RENDERBUFFER, f->depth);
     if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
-        fprintf(stderr, "[GL] surface %08X %dx%d incomplete\n", f->va, w, h);
+        fprintf(stderr, "[GL] surface %08X %dx%d incomplete\n", f->va, pw, ph);
 }
 
 static Surf *surf_find(uint32_t va)
@@ -733,7 +763,9 @@ static Surf *surf_find(uint32_t va)
     return NULL;
 }
 
-/* The framebuffer for a guest surface, created or grown to fit, and bound. */
+/* The framebuffer for a guest surface, created or grown to fit, and bound.
+ * A change of scale or aspect remakes it at the first draw after the flip
+ * that took the change; VC3 redraws every surface each frame. */
 static Surf *surf_bind(const Nv2aSurface *s)
 {
     Surf *f = surf_find(s->color_va);
@@ -751,13 +783,73 @@ static Surf *surf_bind(const Nv2aSurface *s)
         memset(f, 0, sizeof *f);
         f->va = s->color_va;
     }
-    if (!f->fbo || w > f->w || h > f->h)
+    if (!f->fbo || w > f->w || h > f->h || f->sc != s_scale
+        || f->wide != surf_widens(w > f->w ? w : f->w, h > f->h ? h : f->h))
         surf_alloc(f, w > f->w ? w : f->w, h > f->h ? h : f->h);
     f->pitch = s->pitch;
     f->bpp = bpp;
     glBindFramebuffer(GL_FRAMEBUFFER, f->fbo);
-    glViewport(0, 0, f->w, f->h);
+    glViewport(0, 0, f->pw, f->ph);
     return f;
+}
+
+/* Clip-space x scale for a batch drawn into f. On a widened surface the
+ * guest's picture is the middle w * sc of pw, so x shrinks by that much and
+ * whatever the 3D view has beyond its old edges lands in the new sides --
+ * the game's own frustum culling decides how much that is. A screen-space
+ * batch spanning the whole guest width (VC3's composite of the 3D surface
+ * onto the back buffer, its fades) is a full-screen pass, and is stretched
+ * to the full width instead. */
+static float surf_xscale(const Surf *f, const Nv2aBatch *b)
+{
+    uint32_t k;
+    float x0 = 1e30f, x1 = -1e30f;
+
+    if (!f->wide)
+        return 1.0f;
+    if (!b->raw && b->count) {
+        for (k = 0; k < b->count; k++) {
+            float x = b->vertices[k].x;
+            if (x < x0) x0 = x;
+            if (x > x1) x1 = x;
+        }
+        if (x0 <= 1.0f && x1 >= (float)f->w - 1.0f)
+            return 1.0f;
+    }
+    return (float)(f->w * f->sc) / (float)f->pw;
+}
+
+/* A framebuffer holding f at its guest size, for reading into guest memory:
+ * f's own at 1x, else the middle part of it scaled down into a shared one. */
+static GLuint surf_resolve(const Surf *f)
+{
+    static GLuint fbo, tex;
+    static GLsizei rw, rh;
+    GLint x0;
+
+    if (f->sc == 1 && !f->wide)
+        return f->fbo;
+    if (!fbo || rw != f->w || rh != f->h) {
+        if (!tex)
+            glGenTextures(1, &tex);
+        glBindTexture(GL_TEXTURE_2D, tex);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, f->w, f->h, 0, GL_BGRA,
+                     GL_UNSIGNED_INT_8_8_8_8_REV, NULL);
+        if (!fbo)
+            glGenFramebuffers(1, &fbo);
+        glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
+                               GL_TEXTURE_2D, tex, 0);
+        rw = f->w;
+        rh = f->h;
+    }
+    x0 = (f->pw - f->w * f->sc) / 2;
+    glDisable(GL_SCISSOR_TEST);
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, f->fbo);
+    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, fbo);
+    glBlitFramebuffer(x0, 0, x0 + f->w * f->sc, f->ph, 0, 0, f->w, f->h,
+                      GL_COLOR_BUFFER_BIT, GL_LINEAR);
+    return fbo;
 }
 
 /* Write a surface back into guest memory, row 0 first. */
@@ -766,7 +858,7 @@ static void surf_readback(Surf *f)
     uint8_t *dst = (uint8_t *)xbox_GetMemoryOffset() + f->va;
     GLsizei rows = f->h;
 
-    glBindFramebuffer(GL_READ_FRAMEBUFFER, f->fbo);
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, surf_resolve(f));
     glPixelStorei(GL_PACK_ROW_LENGTH, (GLint)(f->pitch / f->bpp));
     if (f->bpp == 2)
         glReadPixels(0, 0, f->w, rows, GL_RGB, GL_UNSIGNED_SHORT_5_6_5, dst);
@@ -781,36 +873,101 @@ static void surf_readback(Surf *f)
  * into one pixel-pack buffer and copies the other -- started a flip earlier,
  * long finished -- into guest memory. A synchronous glReadPixels waited for
  * everything queued on the GPU, the window's vsync'd present included, so the
- * title waited on the display; this shows frames one flip late instead. */
+ * title waited on the display; this shows frames one flip late instead.
+ *
+ * When the window should show more than guest memory holds -- a higher
+ * internal resolution, 16:9, or in-between frames -- the drawn frame is
+ * read too, whole (BGRA, pw x ph), with any frames made between it and the
+ * one before, and at the next flip they go to the window as a group
+ * (xbox_FramebufferWindowPresentFrames). Otherwise the window copies guest
+ * memory as it always has. */
 typedef struct {
     GLuint pbo;
     GLsizeiptr cap;
     uint32_t va, bytes;          /* where and how much, 0 when none pending */
-    /* VC3_FPS > 60: the frames made between this one and the one before,
-     * read back alongside it (nmid of them), and what the window needs to
-     * show the group. group is set when it goes to the window as one. */
-    GLuint mid_pbo[VC3_FPS_MAX / 60 - 1];
-    GLsizeiptr mid_cap;
-    int nmid, group;
+    /* The window's group: the drawn frame (show_pbo) and nmid frames made
+     * before it, each sw x sh BGRA. */
+    int group, nmid;
+    GLuint show_pbo, mid_pbo[VC3_FPS_MAX / 60 - 1];
+    GLsizeiptr show_cap;
+    GLsizei sw, sh;
     int cut;                     /* VC3_FPS_DEBUG: made as a scene cut */
-    uint32_t pitch, bpp;
-    GLsizei w, h;
 } Readback;
 
 static Readback s_rb[2];
 static int s_rb_next;
 
 static int interp_make(const Surf *f, GLuint *pbos, int n);
+static void interp_scene_snap(const Surf *f, const Nv2aBatch *b);
 static void interp_dump(const void *const *px, int n, uint32_t pitch,
                         uint32_t bpp, GLsizei w, GLsizei h, int cut);
 static int s_ip_last_cut;
 extern void xbox_FramebufferWindowPresentFrames(const void *const *frames, int n,
-                                                uint32_t pitch, uint32_t bpp);
+                                                uint32_t w, uint32_t h, uint32_t pitch,
+                                                uint32_t bpp);
+extern void xbox_FramebufferWindowSetPicture(uint32_t lw, uint32_t lh);
+
+/* Start reading f whole for the window, with its in-between frames. */
+static void show_read(Readback *r, const Surf *f, int fps)
+{
+    GLsizeiptr bytes = (GLsizeiptr)f->pw * f->ph * 4;
+    int i;
+
+    if (r->show_cap < bytes) {
+        if (!r->show_pbo)
+            glGenBuffers(1, &r->show_pbo);
+        glBindBuffer(GL_PIXEL_PACK_BUFFER, r->show_pbo);
+        glBufferData(GL_PIXEL_PACK_BUFFER, bytes, NULL, GL_STREAM_READ);
+        for (i = 0; i < VC3_FPS_MAX / 60 - 1; i++) {
+            if (!r->mid_pbo[i])
+                glGenBuffers(1, &r->mid_pbo[i]);
+            glBindBuffer(GL_PIXEL_PACK_BUFFER, r->mid_pbo[i]);
+            glBufferData(GL_PIXEL_PACK_BUFFER, bytes, NULL, GL_STREAM_READ);
+        }
+        r->show_cap = bytes;
+    }
+    glBindBuffer(GL_PIXEL_PACK_BUFFER, r->show_pbo);
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, f->fbo);
+    glReadPixels(0, 0, f->pw, f->ph, GL_BGRA, GL_UNSIGNED_INT_8_8_8_8_REV, NULL);
+    r->sw = f->pw;
+    r->sh = f->ph;
+    s_ip_last_cut = 0;
+    r->nmid = interp_make(f, r->mid_pbo, fps / 60 - 1);
+    r->cut = s_ip_last_cut;
+    r->group = 1;
+}
+
+/* Map last flip's group and hand it to the window. */
+static void show_publish(Readback *r)
+{
+    const void *px[VC3_FPS_MAX / 60];
+    GLsizeiptr bytes = (GLsizeiptr)r->sw * r->sh * 4;
+    int n = 0, i;
+
+    for (i = 0; i <= r->nmid; i++) {
+        glBindBuffer(GL_PIXEL_PACK_BUFFER, i < r->nmid ? r->mid_pbo[i] : r->show_pbo);
+        px[n] = glMapBufferRange(GL_PIXEL_PACK_BUFFER, 0, bytes, GL_MAP_READ_BIT);
+        if (!px[n])
+            break;
+        n++;
+    }
+    if (n == r->nmid + 1) {
+        xbox_FramebufferWindowPresentFrames(px, n, (uint32_t)r->sw, (uint32_t)r->sh,
+                                            (uint32_t)r->sw * 4, 4);
+        interp_dump(px, n, (uint32_t)r->sw * 4, 4, r->sw, r->sh, r->cut);
+    }
+    for (i = 0; i < n; i++) {
+        glBindBuffer(GL_PIXEL_PACK_BUFFER, i < r->nmid ? r->mid_pbo[i] : r->show_pbo);
+        glUnmapBuffer(GL_PIXEL_PACK_BUFFER);
+    }
+    r->group = 0;
+}
 
 static void surf_readback_async(Surf *f)
 {
     Readback *r = &s_rb[s_rb_next], *prev = &s_rb[s_rb_next ^ 1];
     GLsizeiptr bytes = (GLsizeiptr)f->pitch * f->h;
+    int fps = vc3_fps_get();
 
     if (!r->pbo)
         glGenBuffers(1, &r->pbo);
@@ -819,7 +976,7 @@ static void surf_readback_async(Surf *f)
         glBufferData(GL_PIXEL_PACK_BUFFER, bytes, NULL, GL_STREAM_READ);
         r->cap = bytes;
     }
-    glBindFramebuffer(GL_READ_FRAMEBUFFER, f->fbo);
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, surf_resolve(f));
     glPixelStorei(GL_PACK_ROW_LENGTH, (GLint)(f->pitch / f->bpp));
     if (f->bpp == 2)
         glReadPixels(0, 0, f->w, f->h, GL_RGB, GL_UNSIGNED_SHORT_5_6_5, NULL);
@@ -828,34 +985,11 @@ static void surf_readback_async(Surf *f)
     glPixelStorei(GL_PACK_ROW_LENGTH, 0);
     r->va = f->va;
     r->bytes = (uint32_t)bytes;
-    r->pitch = f->pitch;
-    r->bpp = f->bpp;
-    r->w = f->w;
-    r->h = f->h;
-    r->nmid = 0;
     r->group = 0;
     f->dirty = 0;
 
-    /* Above 60 fps: make the in-between frames for this one now, so they
-     * come back with it at the next flip. */
-    {
-        int fps = vc3_fps_get(), n = fps / 60 - 1, i;
-        if (n > 0) {
-            if (r->mid_cap < bytes) {
-                for (i = 0; i < VC3_FPS_MAX / 60 - 1; i++) {
-                    if (!r->mid_pbo[i])
-                        glGenBuffers(1, &r->mid_pbo[i]);
-                    glBindBuffer(GL_PIXEL_PACK_BUFFER, r->mid_pbo[i]);
-                    glBufferData(GL_PIXEL_PACK_BUFFER, bytes, NULL, GL_STREAM_READ);
-                }
-                r->mid_cap = bytes;
-            }
-            s_ip_last_cut = 0;
-            r->nmid = interp_make(f, r->mid_pbo, n);
-            r->cut = s_ip_last_cut;
-            r->group = 1;
-        }
-    }
+    if (fps > 60 || f->sc > 1 || f->wide)
+        show_read(r, f, fps);
 
     if (prev->pbo && prev->bytes) {
         const void *src;
@@ -866,35 +1000,13 @@ static void surf_readback_async(Surf *f)
             memcpy((uint8_t *)xbox_GetMemoryOffset() + prev->va, src, prev->bytes);
             if (pf)
                 pf->memq_valid = 0;
-            /* The group: made frames, then this real one. A frame read
-             * at 60 fps (group 0) is left to the window's plain copy. */
-            if (prev->group && vc3_fps_get() > 60) {
-                const void *px[VC3_FPS_MAX / 60];
-                int nm = 0, i;
-                for (i = 0; i < prev->nmid; i++) {
-                    glBindBuffer(GL_PIXEL_PACK_BUFFER, prev->mid_pbo[i]);
-                    px[nm] = glMapBufferRange(GL_PIXEL_PACK_BUFFER, 0, prev->bytes,
-                                              GL_MAP_READ_BIT);
-                    if (!px[nm])
-                        break;
-                    nm++;
-                }
-                if (nm == prev->nmid) {
-                    px[nm] = src;
-                    xbox_FramebufferWindowPresentFrames(px, nm + 1, prev->pitch,
-                                                        prev->bpp);
-                    interp_dump(px, nm + 1, prev->pitch, prev->bpp, prev->w, prev->h,
-                                prev->cut);
-                }
-                for (i = 0; i < nm; i++) {
-                    glBindBuffer(GL_PIXEL_PACK_BUFFER, prev->mid_pbo[i]);
-                    glUnmapBuffer(GL_PIXEL_PACK_BUFFER);
-                }
-                glBindBuffer(GL_PIXEL_PACK_BUFFER, prev->pbo);
-            }
             glUnmapBuffer(GL_PIXEL_PACK_BUFFER);
         }
         prev->bytes = 0;
+        /* Read at 1x, 4:3 and 60 fps (no group), the frame is left to the
+         * window's plain copy of guest memory. */
+        if (prev->group)
+            show_publish(prev);
     }
     glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
     s_rb_next ^= 1;
@@ -1305,14 +1417,14 @@ static int tex_bind_for(const Surf *f, const Nv2aTexture *t, float *sw, float *s
     if (!s_self_tex)
         glGenTextures(1, &s_self_tex);
     glBindTexture(GL_TEXTURE_2D, s_self_tex);
-    if (s_self_w != f->w || s_self_h != f->h) {
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, f->w, f->h, 0, GL_BGRA,
+    if (s_self_w != f->pw || s_self_h != f->ph) {
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, f->pw, f->ph, 0, GL_BGRA,
                      GL_UNSIGNED_INT_8_8_8_8_REV, NULL);
-        s_self_w = f->w;
-        s_self_h = f->h;
+        s_self_w = f->pw;
+        s_self_h = f->ph;
     }
     glBindFramebuffer(GL_READ_FRAMEBUFFER, f->fbo);
-    glCopyTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 0, 0, f->w, f->h);
+    glCopyTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 0, 0, f->pw, f->ph);
     tex_sampling(s_self_tex, t);
     *sw = (float)f->w;
     *sh = (float)f->h;
@@ -1861,6 +1973,7 @@ static void gl_draw(const Nv2aSurface *s, const Nv2aBatch *b)
     }
     apply_state(b->state);
     glUniform2f(U->surf, (float)f->w, (float)f->h);
+    glUniform1f(U->xs, surf_xscale(f, b));
     active_tex(0);
     if (b->texture)
         textured = tex_bind_for(f, b->texture, &tw, &th);
@@ -2140,6 +2253,8 @@ static void gl_draw(const Nv2aSurface *s, const Nv2aBatch *b)
     f->dirty = 1;
     f->memq_valid = 0;
     f->cpu_owned = 0;
+    if (vc3_fps_get() > 60)
+        interp_scene_snap(f, b);
 }
 
 /* Nv2aBackend.draw_raw: fixed-function batches, when the shader linked and
@@ -2164,11 +2279,23 @@ static int gl_draw_raw(const Nv2aSurface *s, const Nv2aBatch *b)
 /* ── Display frame interpolation (VC3_FPS > 60) ────────────── */
 
 /* At 120 fps the window shows a made frame between each pair of real ones;
- * the game still renders and flips at 60 (display_rate.c). It is made here,
+ * the game still renders and flips at 60 (display_settings.c). It is made here,
  * on the GPU, from the presented surface of this flip and the last:
  *
- *   1. Each flip copies the presented surface into a history texture and a
- *      luma texture with mipmaps (1, 1/2, 1/4, 1/8 size).
+ *   0. The 3D scene and the 2D overlays are told apart: VC3 draws its 3D
+ *      view into a surface of its own and composites it onto the back buffer
+ *      with one full-screen quad, then draws the HUD over it. A copy taken
+ *      right after that quad (interp_scene_snap) is the frame without HUD.
+ *      Steps 1-4 interpolate that scene layer; every pixel where the real
+ *      frame differs from its scene layer -- HUD, text, the lock-on rings,
+ *      which scale and turn in ways no block vector follows -- comes from
+ *      the nearer real frame as it is. Without such a copy (menus, movies)
+ *      the whole frame is interpolated.
+ *   1. Each flip copies the presented surface, as drawn, into a history
+ *      texture, and makes a luma texture at the guest's size (640x480, or
+ *      854x480 at 16:9) with mipmaps (1, 1/2, 1/4, 1/8). Steps 2 and 3 run
+ *      at that size whatever the internal resolution, so their cost does
+ *      not grow with it.
  *   2. A motion field, one vector per 8x8 block, is found by symmetric block
  *      matching: v such that prev(p - v/2) matches cur(p + v/2), which puts
  *      the field on the in-between frame's own grid -- no splatting, no
@@ -2177,15 +2304,17 @@ static int gl_draw_raw(const Nv2aSurface *s, const Nv2aBatch *b)
  *      own vector and its four neighbours'. Every level adds a cost per
  *      pixel of motion and gives the zero vector a head start, so a block
  *      whose match is about as good standing still stays still.
- *   3. Each output pixel takes, of its block's and the eight neighbours'
- *      vectors and zero, the one with the least colour error over a 3x3
- *      patch (sharp motion edges), samples prev at p - t v and cur at
- *      p + (1 - t) v and blends them. Where even the best error is large
- *      (occlusion, transparency, a flash) it falls back to the nearer real
- *      frame, unwarped; a pixel equal in both frames is copied exactly, so
- *      the HUD and anything else static stays bit-identical; and when the
- *      mean block error says the two frames are unrelated (a cut), the
- *      whole frame is the nearer real one, i.e. a repeat.
+ *   3. Each pixel takes, of its block's and the eight neighbours' vectors
+ *      and zero, the one with the least colour error over a 3x3 patch
+ *      (sharp motion edges), and a weight that falls from 1 to 0 as that
+ *      error grows (occlusion, transparency, a flash).
+ *   4. Each output pixel, at the drawn size, samples prev at p - t v and
+ *      cur at p + (1 - t) v and blends them, faded by the weight towards
+ *      the nearer real frame, unwarped. A pixel equal in both frames is
+ *      copied exactly, so the HUD and anything else static stays
+ *      bit-identical; and when the mean block error says the two frames
+ *      are unrelated (a cut), the whole frame is the nearer real one, i.e.
+ *      a repeat.
  *
  * The made frames are read back like the real one, without waiting, and at
  * the next flip go to the window as a group with it: made frames first,
@@ -2207,12 +2336,14 @@ static const char *VS_QUAD =
     "  gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0);\n"
     "}\n";
 
+/* At the guest size, from the frame as drawn (filtered down when larger). */
 static const char *FS_LUMA =
     "#version 410\n"
     "uniform sampler2D u_img;\n"
+    "uniform vec2 u_size;\n"
     "out float o;\n"
     "void main() {\n"
-    "  vec3 c = texelFetch(u_img, ivec2(gl_FragCoord.xy), 0).rgb;\n"
+    "  vec3 c = textureLod(u_img, gl_FragCoord.xy / u_size, 0.0).rgb;\n"
     "  o = dot(c, vec3(0.299, 0.587, 0.114));\n"
     "}\n";
 
@@ -2270,13 +2401,15 @@ static const char *FS_SEARCH =
     "  o = vec4(bv, braw, 0.0);\n"
     "}\n";
 
-/* One fragment per output pixel, at time u_t between prev (A) and cur (B). */
-static const char *FS_MIX =
+/* One fragment per guest-size pixel, at time u_t between prev (A) and cur
+ * (B), sampled from the frames as drawn: the vector to use (guest pixels)
+ * and how far to trust it. */
+static const char *FS_SELECT =
     "#version 410\n"
     "uniform sampler2D u_a, u_b, u_field;\n"
     "uniform vec2 u_size;\n"
     "uniform ivec2 u_fsize;\n"
-    "uniform float u_t, u_flod, u_cut, u_lo, u_hi, u_zbias;\n"
+    "uniform float u_t, u_lo, u_hi, u_zbias;\n"
     "out vec4 o;\n"
     "vec3 A(vec2 p) { return textureLod(u_a, p / u_size, 0.0).rgb; }\n"
     "vec3 B(vec2 p) { return textureLod(u_b, p / u_size, 0.0).rgb; }\n"
@@ -2292,14 +2425,7 @@ static const char *FS_MIX =
     "}\n"
     "void main() {\n"
     "  vec2 p = gl_FragCoord.xy;\n"
-    "  ivec2 pi = ivec2(p);\n"
-    "  vec4 a0 = texelFetch(u_a, pi, 0), b0 = texelFetch(u_b, pi, 0);\n"
-    "  vec4 near0 = u_t < 0.5 ? a0 : b0;\n"
-    /* A cut: the frames have nothing to interpolate. */
-    "  if (textureLod(u_field, vec2(0.5), u_flod).z > u_cut) { o = near0; return; }\n"
-    /* Unchanged here: exactly as it is (HUD, text, still background). */
-    "  if (all(lessThan(abs(a0.rgb - b0.rgb), vec3(1.5 / 255.0)))) { o = near0; return; }\n"
-    "  ivec2 bc = clamp(pi / 8, ivec2(0), u_fsize - 1);\n"
+    "  ivec2 bc = clamp(ivec2(p) / 8, ivec2(0), u_fsize - 1);\n"
     "  float best = perr(p, vec2(0.0)) - u_zbias;\n"
     "  vec2 bv = vec2(0.0);\n"
     "  for (int j = -1; j <= 1; j++)\n"
@@ -2309,11 +2435,43 @@ static const char *FS_MIX =
     "      float e = perr(p, v);\n"
     "      if (e < best) { best = e; bv = v; }\n"
     "    }\n"
-    "  vec3 a = bv == vec2(0.0) ? a0.rgb : A(p - u_t * bv);\n"
-    "  vec3 b = bv == vec2(0.0) ? b0.rgb : B(p + (1.0 - u_t) * bv);\n"
+    /* And one pixel either way: an overlay that creeps (VC3's lock-on
+     * reticle) moves with none of the blocks behind it, and a thin line is
+     * otherwise matched away to the background on both sides. */
+    "  for (int k = 0; k < 4; k++) {\n"
+    "    vec2 v = vec2(k == 0 ? 1.0 : k == 1 ? -1.0 : 0.0, k == 2 ? 1.0 : k == 3 ? -1.0 : 0.0);\n"
+    "    float e = perr(p, v);\n"
+    "    if (e < best) { best = e; bv = v; }\n"
+    "  }\n"
     "  if (bv == vec2(0.0)) best += u_zbias;\n"
-    "  float w = 1.0 - smoothstep(u_lo, u_hi, best);\n"
-    "  o = vec4(mix(near0.rgb, mix(a, b, u_t), w), 1.0);\n"
+    "  o = vec4(bv, 1.0 - smoothstep(u_lo, u_hi, best), 0.0);\n"
+    "}\n";
+
+/* One fragment per output pixel, at the drawn size. */
+static const char *FS_MIX =
+    "#version 410\n"
+    "uniform sampler2D u_a, u_b, u_field, u_sel, u_fa, u_fb;\n"
+    "uniform vec2 u_size, u_k;\n"          /* drawn size; drawn px per guest px */
+    "uniform float u_t, u_flod, u_cut;\n"
+    "uniform int u_layers;\n"              /* a, b are scene layers of fa, fb */
+    "out vec4 o;\n"
+    "void main() {\n"
+    "  vec2 p = gl_FragCoord.xy;\n"
+    "  ivec2 pi = ivec2(p);\n"
+    "  vec4 a0 = texelFetch(u_a, pi, 0), b0 = texelFetch(u_b, pi, 0);\n"
+    "  vec4 near0 = u_t < 0.5 ? a0 : b0;\n"
+    "  vec4 fnear = u_t < 0.5 ? texelFetch(u_fa, pi, 0) : texelFetch(u_fb, pi, 0);\n"
+    /* Overlay drawn here in the nearer frame: that frame's pixel. */
+    "  if (u_layers != 0 && any(greaterThan(abs(fnear.rgb - near0.rgb), vec3(0.5 / 255.0)))) { o = fnear; return; }\n"
+    /* A cut: the frames have nothing to interpolate. */
+    "  if (textureLod(u_field, vec2(0.5), u_flod).z > u_cut) { o = fnear; return; }\n"
+    /* Unchanged here: exactly as it is (HUD, text, still background). */
+    "  if (all(lessThan(abs(a0.rgb - b0.rgb), vec3(1.5 / 255.0)))) { o = fnear; return; }\n"
+    "  vec4 sel = texelFetch(u_sel, ivec2(p / u_k), 0);\n"
+    "  vec2 v = sel.xy * u_k;\n"
+    "  vec3 a = v == vec2(0.0) ? a0.rgb : textureLod(u_a, (p - u_t * v) / u_size, 0.0).rgb;\n"
+    "  vec3 b = v == vec2(0.0) ? b0.rgb : textureLod(u_b, (p + (1.0 - u_t) * v) / u_size, 0.0).rgb;\n"
+    "  o = vec4(mix(near0.rgb, mix(a, b, u_t), sel.z), 1.0);\n"
     "}\n";
 
 typedef struct {
@@ -2324,12 +2482,20 @@ typedef struct {
 static struct {
     int state;                       /* 0 not set up, 1 ready, -1 failed */
     GLuint vao;
-    GLuint p_luma, p_mix;
-    GLint luma_img;
-    GLint m_a, m_b, m_field, m_size, m_fsize, m_t, m_flod, m_cut, m_lo, m_hi, m_zbias;
+    GLuint p_luma, p_sel, p_mix;
+    GLint luma_img, luma_size;
+    GLint s_a, s_b, s_field, s_size, s_fsize, s_t, s_lo, s_hi, s_zbias;
+    GLint m_a, m_b, m_field, m_sel, m_size, m_k, m_t, m_flod, m_cut, m_fa, m_fb, m_layers;
     SearchProg s;
-    GLsizei w, h, fw, fh;            /* surface, field size */
+    GLsizei w, h;                    /* the frame as drawn */
+    GLsizei gw, gh, fw, fh;          /* guest size, field size */
+    GLuint sel, sel_fbo;             /* per guest pixel: vector, weight */
     GLuint hist[2], hist_fbo[2];     /* RGBA8 copies of the last two frames */
+    GLuint shist[2], shist_fbo[2];   /* and of their scene layers */
+    int has_scene[2];
+    GLuint scene, scene_fbo;         /* this frame's scene layer, as drawn */
+    GLsizei scene_w, scene_h;
+    uint32_t scene_va, scene_frame;
     GLuint luma[2], luma_fbo[2];     /* their luma, with mipmaps */
     uint32_t hist_frame[2];          /* s_frame each was taken at */
     int cur;                         /* the newest of the two */
@@ -2373,23 +2539,29 @@ static int interp_setup(void)
         return s_ip.state > 0;
     s_ip.state = -1;
     s_ip.p_luma = link_quad(FS_LUMA);
+    s_ip.p_sel = link_quad(FS_SELECT);
     s_ip.p_mix = link_quad(FS_MIX);
     s_ip.s.prog = p = link_quad(FS_SEARCH);
-    if (!s_ip.p_luma || !s_ip.p_mix || !p) {
+    if (!s_ip.p_luma || !s_ip.p_sel || !s_ip.p_mix || !p) {
         fprintf(stderr, "[GL] frame interpolation unavailable; showing real frames\n");
         return 0;
     }
     s_ip.luma_img = glGetUniformLocation(s_ip.p_luma, "u_img");
+    s_ip.luma_size = glGetUniformLocation(s_ip.p_luma, "u_size");
 #define SL(f, n) s_ip.s.f = glGetUniformLocation(p, n)
     SL(la, "u_la"); SL(lb, "u_lb"); SL(prev, "u_prev"); SL(size, "u_size");
     SL(lod, "u_lod"); SL(lambda, "u_lambda"); SL(zbias, "u_zbias"); SL(win, "u_win");
     SL(range, "u_range"); SL(coarse, "u_coarse"); SL(fsize, "u_fsize");
 #undef SL
-    p = s_ip.p_mix;
 #define ML(f, n) s_ip.f = glGetUniformLocation(p, n)
-    ML(m_a, "u_a"); ML(m_b, "u_b"); ML(m_field, "u_field"); ML(m_size, "u_size");
-    ML(m_fsize, "u_fsize"); ML(m_t, "u_t"); ML(m_flod, "u_flod"); ML(m_cut, "u_cut");
-    ML(m_lo, "u_lo"); ML(m_hi, "u_hi"); ML(m_zbias, "u_zbias");
+    p = s_ip.p_sel;
+    ML(s_a, "u_a"); ML(s_b, "u_b"); ML(s_field, "u_field"); ML(s_size, "u_size");
+    ML(s_fsize, "u_fsize"); ML(s_t, "u_t"); ML(s_lo, "u_lo"); ML(s_hi, "u_hi");
+    ML(s_zbias, "u_zbias");
+    p = s_ip.p_mix;
+    ML(m_a, "u_a"); ML(m_b, "u_b"); ML(m_field, "u_field"); ML(m_sel, "u_sel");
+    ML(m_size, "u_size"); ML(m_k, "u_k"); ML(m_t, "u_t"); ML(m_flod, "u_flod");
+    ML(m_cut, "u_cut"); ML(m_fa, "u_fa"); ML(m_fb, "u_fb"); ML(m_layers, "u_layers");
 #undef ML
     glGenVertexArrays(1, &s_ip.vao);
     /* Thresholds, tuned on combat footage: mean block luma error above
@@ -2431,21 +2603,27 @@ static void fbo_for(GLuint *fbo, GLuint tex)
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, tex, 0);
 }
 
-/* (Re)size every target for a w x h surface. */
-static void interp_alloc(GLsizei w, GLsizei h)
+/* (Re)size every target for a frame drawn w x h, guest size gw x gh. */
+static void interp_alloc(GLsizei w, GLsizei h, GLsizei gw, GLsizei gh)
 {
     int i;
     GLsizei m;
 
     s_ip.w = w;
     s_ip.h = h;
-    s_ip.fw = (w + INTERP_BLK - 1) / INTERP_BLK;
-    s_ip.fh = (h + INTERP_BLK - 1) / INTERP_BLK;
+    s_ip.gw = gw;
+    s_ip.gh = gh;
+    s_ip.fw = (gw + INTERP_BLK - 1) / INTERP_BLK;
+    s_ip.fh = (gh + INTERP_BLK - 1) / INTERP_BLK;
     for (i = 0; i < 2; i++) {
         tex_image(&s_ip.hist[i], GL_RGBA8, GL_BGRA, GL_UNSIGNED_INT_8_8_8_8_REV,
                   w, h, 0, GL_LINEAR);
         fbo_for(&s_ip.hist_fbo[i], s_ip.hist[i]);
-        tex_image(&s_ip.luma[i], GL_R16F, GL_RED, GL_FLOAT, w, h, 1, GL_LINEAR);
+        tex_image(&s_ip.shist[i], GL_RGBA8, GL_BGRA, GL_UNSIGNED_INT_8_8_8_8_REV,
+                  w, h, 0, GL_LINEAR);
+        fbo_for(&s_ip.shist_fbo[i], s_ip.shist[i]);
+        s_ip.has_scene[i] = 0;
+        tex_image(&s_ip.luma[i], GL_R16F, GL_RED, GL_FLOAT, gw, gh, 1, GL_LINEAR);
         fbo_for(&s_ip.luma_fbo[i], s_ip.luma[i]);
         tex_image(&s_ip.field[i], GL_RGBA16F, GL_RGBA, GL_FLOAT, s_ip.fw, s_ip.fh,
                   1, GL_NEAREST);
@@ -2455,6 +2633,8 @@ static void interp_alloc(GLsizei w, GLsizei h)
     /* The field's 1x1 level holds the mean block error. */
     for (s_ip.field_levels = 0, m = s_ip.fw > s_ip.fh ? s_ip.fw : s_ip.fh; m > 1; m >>= 1)
         s_ip.field_levels++;
+    tex_image(&s_ip.sel, GL_RGBA16F, GL_RGBA, GL_FLOAT, gw, gh, 0, GL_NEAREST);
+    fbo_for(&s_ip.sel_fbo, s_ip.sel);
     tex_image(&s_ip.mid, GL_RGBA8, GL_BGRA, GL_UNSIGNED_INT_8_8_8_8_REV, w, h, 0,
               GL_NEAREST);
     fbo_for(&s_ip.mid_fbo, s_ip.mid);
@@ -2490,7 +2670,7 @@ static void search_pass(int coarse, float lod, int win, int range, int dst)
     glUniform1i(sp->la, 0);
     glUniform1i(sp->lb, 1);
     glUniform1i(sp->prev, 2);
-    glUniform2f(sp->size, (float)s_ip.w, (float)s_ip.h);
+    glUniform2f(sp->size, (float)s_ip.gw, (float)s_ip.gh);
     glUniform2i(sp->fsize, s_ip.fw, s_ip.fh);
     glUniform1f(sp->lod, lod);
     /* A pixel of motion costs 1/2500 of luma range; zero starts 1/250
@@ -2504,18 +2684,63 @@ static void search_pass(int coarse, float lod, int win, int range, int dst)
     quad_into(s_ip.field_fbo[dst], s_ip.fw, s_ip.fh);
 }
 
-/* Copy the presented surface into the history and, when the frame before
- * it is there too, make the in-between frames into the readback's buffers.
- * Returns how many were made. */
+/* After each draw, above 60 fps: a batch that covers a screen-shaped
+ * surface edge to edge with another surface's picture is VC3's composite
+ * of its 3D view onto the back buffer; what that surface holds right after
+ * it is the frame without HUD. The first such composite per frame and
+ * surface is kept (a later full-screen pass would already have HUD under
+ * it); which surface is presented is known only at the flip. */
+static void interp_scene_snap(const Surf *f, const Nv2aBatch *b)
+{
+    float x0 = 1e30f, x1 = -1e30f, y0 = 1e30f, y1 = -1e30f;
+    const Surf *src;
+    uint32_t k;
+
+    if (b->raw || !b->count || !b->texture || f->w * 3 != f->h * 4
+        || (s_ip.scene_frame == s_frame && s_ip.scene_va == f->va))
+        return;
+    src = surf_find(b->texture->offset);
+    if (!src || src == f || src->cpu_owned)
+        return;
+    for (k = 0; k < b->count; k++) {
+        const Nv2aVertex *q = &b->vertices[k];
+        if (q->x < x0) x0 = q->x;
+        if (q->x > x1) x1 = q->x;
+        if (q->y < y0) y0 = q->y;
+        if (q->y > y1) y1 = q->y;
+    }
+    if (x0 > 1.0f || y0 > 1.0f || x1 < (float)f->w - 1.0f || y1 < (float)f->h - 1.0f)
+        return;
+    if (!s_ip.scene || s_ip.scene_w != f->pw || s_ip.scene_h != f->ph) {
+        tex_image(&s_ip.scene, GL_RGBA8, GL_BGRA, GL_UNSIGNED_INT_8_8_8_8_REV,
+                  f->pw, f->ph, 0, GL_NEAREST);
+        fbo_for(&s_ip.scene_fbo, s_ip.scene);
+        s_ip.scene_w = f->pw;
+        s_ip.scene_h = f->ph;
+    }
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, f->fbo);
+    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, s_ip.scene_fbo);
+    glBlitFramebuffer(0, 0, f->pw, f->ph, 0, 0, f->pw, f->ph,
+                      GL_COLOR_BUFFER_BIT, GL_NEAREST);
+    glBindFramebuffer(GL_FRAMEBUFFER, f->fbo);
+    s_ip.scene_va = f->va;
+    s_ip.scene_frame = s_frame;
+}
+
+/* Copy the presented surface (as drawn: pw x ph) into the history and,
+ * when the frame before it is there too, make the in-between frames into
+ * the readback's buffers (BGRA, pw x ph). Returns how many were made. */
 static int interp_make(const Surf *f, GLuint *pbos, int n)
 {
-    int prev, i;
-    GLsizei w = f->w, h = f->h;
+    int prev, i, layers;
+    GLsizei w = f->pw, h = f->ph;
+    GLsizei gw = (f->pw + f->sc / 2) / f->sc, gh = f->ph / f->sc;
+    GLuint ta, tb;                   /* what is interpolated: scene or frame */
 
     if (n < 1 || !interp_setup())
         return 0;
-    if (w != s_ip.w || h != s_ip.h)
-        interp_alloc(w, h);
+    if (w != s_ip.w || h != s_ip.h || gw != s_ip.gw || gh != s_ip.gh)
+        interp_alloc(w, h, gw, gh);
 
     s_ip.cur ^= 1;
     prev = s_ip.cur ^ 1;
@@ -2531,14 +2756,25 @@ static int interp_make(const Surf *f, GLuint *pbos, int n)
     glBindFramebuffer(GL_DRAW_FRAMEBUFFER, s_ip.hist_fbo[s_ip.cur]);
     glBlitFramebuffer(0, 0, w, h, 0, 0, w, h, GL_COLOR_BUFFER_BIT, GL_NEAREST);
     s_ip.hist_frame[s_ip.cur] = s_frame;
+    s_ip.has_scene[s_ip.cur] = s_ip.scene && s_ip.scene_frame == s_frame
+        && s_ip.scene_va == f->va && s_ip.scene_w == w && s_ip.scene_h == h;
+    if (s_ip.has_scene[s_ip.cur]) {
+        glBindFramebuffer(GL_READ_FRAMEBUFFER, s_ip.scene_fbo);
+        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, s_ip.shist_fbo[s_ip.cur]);
+        glBlitFramebuffer(0, 0, w, h, 0, 0, w, h, GL_COLOR_BUFFER_BIT, GL_NEAREST);
+    }
+    layers = s_ip.has_scene[0] && s_ip.has_scene[1];
+    ta = layers ? s_ip.shist[prev] : s_ip.hist[prev];
+    tb = layers ? s_ip.shist[s_ip.cur] : s_ip.hist[s_ip.cur];
 
     glBindVertexArray(s_ip.vao);
     s_cur_vao = 0;
     glUseProgram(s_ip.p_luma);
     s_cur_prog = 0;
-    bind_tex(0, s_ip.hist[s_ip.cur]);
+    bind_tex(0, tb);
     glUniform1i(s_ip.luma_img, 0);
-    quad_into(s_ip.luma_fbo[s_ip.cur], w, h);
+    glUniform2f(s_ip.luma_size, (float)gw, (float)gh);
+    quad_into(s_ip.luma_fbo[s_ip.cur], gw, gh);
     glBindTexture(GL_TEXTURE_2D, s_ip.luma[s_ip.cur]);
     glGenerateMipmap(GL_TEXTURE_2D);
 
@@ -2557,32 +2793,46 @@ static int interp_make(const Surf *f, GLuint *pbos, int n)
     glBindTexture(GL_TEXTURE_2D, s_ip.field[1]);
     glGenerateMipmap(GL_TEXTURE_2D);
 
-    glUseProgram(s_ip.p_mix);
-    bind_tex(0, s_ip.hist[prev]);
-    bind_tex(1, s_ip.hist[s_ip.cur]);
+    bind_tex(0, ta);
+    bind_tex(1, tb);
     bind_tex(2, s_ip.field[1]);
-    glUniform1i(s_ip.m_a, 0);
-    glUniform1i(s_ip.m_b, 1);
-    glUniform1i(s_ip.m_field, 2);
-    glUniform2f(s_ip.m_size, (float)w, (float)h);
-    glUniform2i(s_ip.m_fsize, s_ip.fw, s_ip.fh);
-    glUniform1f(s_ip.m_flod, (float)s_ip.field_levels);
-    glUniform1f(s_ip.m_cut, s_ip.cut);
-    glUniform1f(s_ip.m_lo, s_ip.lo);
-    glUniform1f(s_ip.m_hi, s_ip.hi);
-    glUniform1f(s_ip.m_zbias, 0.01f);
-    glBindFramebuffer(GL_READ_FRAMEBUFFER, s_ip.mid_fbo);
-    glPixelStorei(GL_PACK_ROW_LENGTH, (GLint)(f->pitch / f->bpp));
+    bind_tex(3, s_ip.sel);
+    bind_tex(4, s_ip.hist[prev]);
+    bind_tex(5, s_ip.hist[s_ip.cur]);
     for (i = 0; i < n; i++) {
-        glUniform1f(s_ip.m_t, (float)(i + 1) / (float)(n + 1));
+        float t = (float)(i + 1) / (float)(n + 1);
+
+        glUseProgram(s_ip.p_sel);
+        glUniform1i(s_ip.s_a, 0);
+        glUniform1i(s_ip.s_b, 1);
+        glUniform1i(s_ip.s_field, 2);
+        glUniform2f(s_ip.s_size, (float)gw, (float)gh);
+        glUniform2i(s_ip.s_fsize, s_ip.fw, s_ip.fh);
+        glUniform1f(s_ip.s_t, t);
+        glUniform1f(s_ip.s_lo, s_ip.lo);
+        glUniform1f(s_ip.s_hi, s_ip.hi);
+        glUniform1f(s_ip.s_zbias, 0.01f);
+        quad_into(s_ip.sel_fbo, gw, gh);
+
+        glUseProgram(s_ip.p_mix);
+        glUniform1i(s_ip.m_a, 0);
+        glUniform1i(s_ip.m_b, 1);
+        glUniform1i(s_ip.m_field, 2);
+        glUniform1i(s_ip.m_sel, 3);
+        glUniform2f(s_ip.m_size, (float)w, (float)h);
+        glUniform2f(s_ip.m_k, (float)w / (float)gw, (float)h / (float)gh);
+        glUniform1f(s_ip.m_t, t);
+        glUniform1f(s_ip.m_flod, (float)s_ip.field_levels);
+        glUniform1f(s_ip.m_cut, s_ip.cut);
+        glUniform1i(s_ip.m_fa, 4);
+        glUniform1i(s_ip.m_fb, 5);
+        glUniform1i(s_ip.m_layers, layers);
         quad_into(s_ip.mid_fbo, w, h);
+        glBindFramebuffer(GL_READ_FRAMEBUFFER, s_ip.mid_fbo);
         glBindBuffer(GL_PIXEL_PACK_BUFFER, pbos[i]);
-        if (f->bpp == 2)
-            glReadPixels(0, 0, w, h, GL_RGB, GL_UNSIGNED_SHORT_5_6_5, NULL);
-        else
-            glReadPixels(0, 0, w, h, GL_BGRA, GL_UNSIGNED_INT_8_8_8_8_REV, NULL);
+        glReadPixels(0, 0, w, h, GL_BGRA, GL_UNSIGNED_INT_8_8_8_8_REV, NULL);
+        glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
     }
-    glPixelStorei(GL_PACK_ROW_LENGTH, 0);
     glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
     active_tex(0);
     if (genv("VC3_FPS_DEBUG")) {
@@ -2711,6 +2961,17 @@ static void gl_flip(void)
                 surf_readback(&s_surfs[i]);
         }
     }
+    /* The picture the window shows: the presented surface's guest size,
+     * widened as it is drawn. Then the next frame's scale and aspect. */
+    {
+        Surf *pf = surf_find(nv2a_backend_presented_va());
+        if (pf)
+            xbox_FramebufferWindowSetPicture(
+                (uint32_t)(pf->wide ? (pf->w * 4 / 3 + 1) & ~1 : pf->w),
+                (uint32_t)pf->h);
+    }
+    s_scale = vc3_scale_get();
+    s_wide = vc3_wide_get();
     s_frame++;
     if (genv("VC3_FPS_LOG")) {            /* wall-clock flips per second */
         /* With the vblanks delivered over the same second: flips below the
@@ -2786,6 +3047,8 @@ void vc3_gl_backend_register(void)
         return;
     }
     s_st.on = genv("VC3_GL_STATS") != NULL;
+    s_scale = vc3_scale_get();
+    s_wide = vc3_wide_get();
     e = genv("VC3_GL_COMBINERS");
     s_use_rc = e && e[0] == '1';
     nv2a_backend_register(&s_gl_backend);

@@ -32,18 +32,35 @@ Controls: mouse aims the gun, left button fires, right button reloads;
 5/6 coin, 1/2 start, F2 test, F1 service. Saves go to
 `~/Library/Application Support/vc3-recomp` (`VC3_SAVE_DIR` to change).
 
-Display frame rate: the game runs at 60 either way; at 120 fps the window
-shows a motion-interpolated frame between each pair of real ones (made on
-the GPU by block-matching motion search; HUD and other still pixels are
-copied exactly, scene cuts repeat the real frame). It costs one 120 Hz frame
-(8.3 ms) of display latency; the gun reads the mouse as before. Choose it
-from the **Display > Frame Rate** menu (60 fps / 120 fps; F10 toggles), which
-saves `fps=120` to `~/Library/Application Support/VC3/settings` for the next
-launch; `VC3_FPS=60|120` overrides the saved choice for one run
-(`VC3_CONFIG_DIR` moves the settings folder). Best on a 120 Hz display.
+Display settings, from the **Display** menu (each choice is saved to
+`~/Library/Application Support/VC3/settings` for the next launch; an
+environment variable overrides it for one run, and `VC3_CONFIG_DIR` moves
+the settings folder). The game itself always runs at 640x480 and 60 fps;
+these change only how it is drawn and shown.
+
+- **Internal Resolution** (`scale=`, `VC3_SCALE=1..4`): draws at 1x
+  (640x480, default) up to 4x (2560x1920). The window shows the full
+  resolution; guest memory and frame dumps still get 640x480.
+- **Aspect Ratio** (`aspect=`, `VC3_ASPECT=4:3|16:9`): 16:9 draws the
+  screen a third wider and extends the 3D view into the sides (hor+); the
+  HUD stays in the middle 4:3 where it was, and full-screen passes and
+  fades stretch to the edges. The gun aims at the middle 4:3 as before; the
+  sides count as off the screen (a shot there reloads). The game culls
+  what its own 4:3 view cannot see, so objects can appear late at the side
+  edges, and 2D banners sliding in from off screen show in the sides.
+- **Frame Rate** (`fps=`, `VC3_FPS=60|120`; F10 toggles): at 120 fps the
+  window shows a motion-interpolated frame between each pair of real ones
+  (made on the GPU by block-matching motion search on the 3D view; the HUD,
+  text and lock-on rings come from the real frame as they are, still pixels
+  are copied exactly, scene cuts repeat the real frame). It costs one 120 Hz
+  frame (8.3 ms) of display latency; the gun reads the mouse as before.
+  Best on a 120 Hz display. Effects that appear between two frames
+  (tracers, muzzle flashes) can look partial in the made frames.
+
 With `VC3_FPS_LOG=1` the `[FPS]` lines add `shown` (frames put on screen per
 second) and `made` (interpolated frames per second). For checking frames
-headless: `VC3_FPS_DUMP=<prefix>` writes each group as BMPs
-(`<prefix><flip>_<k>.bmp`, last = real frame) while the file named by
-`VC3_FPS_DUMP_FLIPS` exists (or always, with `1`); `VC3_FPS_DEBUG=1` logs
-the scene-cut measure per flip (stalls; debug only).
+headless: `VC3_FPS_DUMP=<prefix>` writes what the window would get, as
+drawn, as BMPs (`<prefix><flip>_<k>.bmp`, last = real frame) while the file
+named by `VC3_FPS_DUMP_FLIPS` exists (or always, with `1`), whenever the
+window gets more than guest memory holds (above 1x, 16:9 or 60 fps);
+`VC3_FPS_DEBUG=1` logs the scene-cut measure per flip (stalls; debug only).

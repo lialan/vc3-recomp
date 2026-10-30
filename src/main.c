@@ -30,7 +30,7 @@
 #include "recomp_types.h"
 #include "kernel.h"
 #include "xbox_memory_layout.h"
-#include "display_rate.h"
+#include "display_settings.h"
 
 #define VC3_ENTRY_POINT 0x000B6407 /* XBE entry, debug-key decoded */
 #define VC3_XBE_NAME    "vc3.xbe"
@@ -322,7 +322,7 @@ int main(int argc, char **argv)
 
     /* Shown frames per game frame (VC3_FPS, else the saved setting); the
      * Display menu changes it from the window. */
-    vc3_fps_init();
+    vc3_display_init();
 #if defined(VC3_MACOS_MENU)
     xbox_HostWindowOnOpen(vc3_menu_install);
 #endif
