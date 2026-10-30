@@ -115,7 +115,7 @@ static const char *VS =
     "layout(location=7) in vec4 a_tc2;\n"
     "layout(location=8) in vec4 a_tc3;\n"
     "uniform vec2 u_surf;\n"                  /* framebuffer size */
-    "uniform float u_xs;\n"                   /* clip x scale (16:9) */
+    "uniform vec2 u_xs;\n"                    /* clip x scale, offset (16:9) */
     "uniform vec2 u_depth;\n"                 /* clip min, max */
     "uniform vec2 u_texsize;\n"
     "out vec4 v_col;\n"
@@ -125,7 +125,8 @@ static const char *VS =
     "out vec4 v_tc0, v_tc1, v_tc2, v_tc3;\n"
     "void main() {\n"
     "  float w = (a_pos.w > 0.0 && a_pos.w < 1e30) ? 1.0 / a_pos.w : 1.0;\n"
-    "  vec2 ndc = (a_pos.xy / u_surf * 2.0 - 1.0) * vec2(u_xs, 1.0);\n"
+    "  vec2 ndc = a_pos.xy / u_surf * 2.0 - 1.0;\n"
+    "  ndc.x = ndc.x * u_xs.x + u_xs.y;\n"
     "  float z = clamp((a_pos.z - u_depth.x) / (u_depth.y - u_depth.x), 0.0, 1.0) * 2.0 - 1.0;\n"
     "  gl_Position = vec4(ndc * w, z * w, w);\n"
     "  v_col = a_col.zyxw;\n"
@@ -158,7 +159,7 @@ static const char *VS_FF =
     "layout(location=6) in vec4 a_t2;\n"
     "layout(location=7) in vec4 a_t3;\n"
     "uniform vec2 u_surf, u_depth, u_texsize;\n"
-    "uniform float u_xs;\n"
+    "uniform vec2 u_xs;\n"
     "uniform mat4 u_comp, u_mv[4], u_proj, u_tm[4];\n"   /* uploaded transposed */
     "uniform vec4 u_c59;\n"
     "uniform uint u_skin;\n"
@@ -299,7 +300,8 @@ static const char *VS_FF =
      * w = 1e-3 and at the near plane z = c59.z; so do the clip distances. A
      * vertex the CPU could not place (w = 0, or not finite) takes every
      * triangle touching it with it. */
-    "  vec2 ndc = (s.xy / u_surf * 2.0 - 1.0) * vec2(u_xs, 1.0);\n"
+    "  vec2 ndc = s.xy / u_surf * 2.0 - 1.0;\n"
+    "  ndc.x = ndc.x * u_xs.x + u_xs.y;\n"
     "  float zn = (s.z - u_depth.x) / (u_depth.y - u_depth.x) * 2.0 - 1.0;\n"
     "  bool bad = abs(w) <= 1e-6 || any(isnan(o_screen)) || any(isinf(o_screen));\n"
     "  gl_Position = bad ? vec4(0.0, 0.0, 0.0, 1.0) : vec4(ndc * w, zn * w, w);\n"
@@ -688,7 +690,7 @@ static int gl_ready(void)
  * them: taken at each flip, so a frame never mixes two. A surface drawn at
  * scale s is s times its guest size; a widened one (16:9: a 4:3 surface,
  * 640x480 in VC3) is also a third wider, with the guest's picture in the
- * middle -- see surf_xscale. Guest memory always gets the guest size and
+ * middle -- see surf_xform. Guest memory always gets the guest size and
  * the middle part (surf_resolve). */
 static int s_scale = 1, s_wide;
 
@@ -698,6 +700,10 @@ typedef struct {
     GLsizei w, h;              /* guest size: what coordinates are in */
     GLsizei pw, ph;            /* drawn size: w, h times sc, widened */
     int sc, wide;
+    /* 16:9: the frame a widened view was composited onto this surface, and
+     * its 2D overlays (surf_xform). */
+    uint32_t hor_frame;
+    struct HudLayout *hud;
     GLuint fbo, color, depth;
     int dirty;                 /* drawn since the last readback */
     /* Guest memory as the GPU last left it, to spot the CPU writing the
@@ -793,30 +799,188 @@ static Surf *surf_bind(const Nv2aSurface *s)
     return f;
 }
 
-/* Clip-space x scale for a batch drawn into f. On a widened surface the
- * guest's picture is the middle w * sc of pw, so x shrinks by that much and
- * whatever the 3D view has beyond its old edges lands in the new sides --
- * the game's own frustum culling decides how much that is. A screen-space
- * batch spanning the whole guest width (VC3's composite of the 3D surface
- * onto the back buffer, its fades) is a full-screen pass, and is stretched
- * to the full width instead. */
-static float surf_xscale(const Surf *f, const Nv2aBatch *b)
+/* 16:9 HUD layout, per surface: the boxes of this frame's 2D overlays, and
+ * the widgets the last frame's made -- boxes that overlap, or glyphs of one
+ * text row, joined -- each with its placement. */
+#define HUD_BOXES 512
+#define HUD_WIDGETS 128
+typedef struct { float x0, x1, y0, y1; } HudBox;
+struct HudLayout {
+    uint32_t frame;              /* the frame boxes[] belongs to */
+    int nbox, nwidget;
+    HudBox box[HUD_BOXES];
+    HudBox widget[HUD_WIDGETS];
+    signed char place[HUD_WIDGETS];
+};
+
+static int hud_joined(const HudBox *a, const HudBox *b)
+{
+    float ix = (a->x1 < b->x1 ? a->x1 : b->x1) - (a->x0 > b->x0 ? a->x0 : b->x0);
+    float iy = (a->y1 < b->y1 ? a->y1 : b->y1) - (a->y0 > b->y0 ? a->y0 : b->y0);
+
+    if (ix > 2.0f && iy > 2.0f)                     /* parts of one widget */
+        return 1;
+    return fabsf(a->y0 - b->y0) <= 2.0f && fabsf(a->y1 - b->y1) <= 2.0f
+        && ix > -8.0f;                              /* glyphs of one row */
+}
+
+/* Where a widget goes: -1 left edge, 1 right edge, 0 middle. */
+static int hud_place_of(const HudBox *b, float w)
+{
+    if (b->x1 <= w * 0.375f)
+        return -1;
+    if (b->x0 >= w * 0.625f)
+        return 1;
+    return 0;
+}
+
+/* The finished frame's boxes into widgets (union of joined boxes). */
+static void hud_close_frame(struct HudLayout *L, float w)
+{
+    static int parent[HUD_BOXES];
+    int i, j, n = L->nbox;
+
+    for (i = 0; i < n; i++)
+        parent[i] = i;
+    for (i = 0; i < n; i++)
+        for (j = i + 1; j < n; j++)
+            if (hud_joined(&L->box[i], &L->box[j])) {
+                int a = i, b = j;
+                while (parent[a] != a) a = parent[a];
+                while (parent[b] != b) b = parent[b];
+                if (a != b)
+                    parent[b] = a;
+            }
+    /* One widget per root, its box the union of its boxes. */
+    {
+        static int root_of_widget[HUD_WIDGETS];
+        L->nwidget = 0;
+        for (i = 0; i < n; i++) {
+            int r = i, k;
+            while (parent[r] != r) r = parent[r];
+            for (k = 0; k < L->nwidget; k++)
+                if (root_of_widget[k] == r)
+                    break;
+            if (k == L->nwidget) {
+                if (k == HUD_WIDGETS)
+                    continue;
+                root_of_widget[k] = r;
+                L->widget[k] = L->box[i];
+                L->nwidget++;
+            } else {
+                HudBox *u = &L->widget[k];
+                if (L->box[i].x0 < u->x0) u->x0 = L->box[i].x0;
+                if (L->box[i].x1 > u->x1) u->x1 = L->box[i].x1;
+                if (L->box[i].y0 < u->y0) u->y0 = L->box[i].y0;
+                if (L->box[i].y1 > u->y1) u->y1 = L->box[i].y1;
+            }
+        }
+        for (i = 0; i < L->nwidget; i++)
+            L->place[i] = (signed char)hud_place_of(&L->widget[i], w);
+    }
+    L->nbox = 0;
+}
+
+/* Clip-space x transform for a batch drawn into f: x' = x * scale + offset.
+ *
+ * On a widened surface the guest's picture is the middle w * sc of pw. What
+ * goes where:
+ *
+ *   3D (fixed-function batches, VC3's world and its lock-on rings): x
+ *     shrinks to the middle, and whatever the view has beyond its old edges
+ *     lands in the new sides -- the game's own frustum culling decides how
+ *     much that is.
+ *   Full-screen passes (a screen-space batch spanning the whole guest
+ *     width): stretched edge to edge when they carry the widened view (they
+ *     sample a widened surface: VC3's composite of its 3D surface onto the
+ *     back buffer) or are one flat colour (fades, tints, letterbox bars). A
+ *     full-screen picture (a texture 320 wide or more: the attract movie,
+ *     which the CPU decodes into a surface of its own, menu backgrounds)
+ *     stays 4:3 in the middle, and the frame counts as 4:3 from there on,
+ *     so its overlays stay with it. A small texture spread over the screen
+ *     (an effect) is stretched after a widened composite, else kept 4:3.
+ *   2D overlays: after a widened composite this frame (gameplay, in-game
+ *     cutscenes), the HUD goes to the screen's edges: a batch wholly in the
+ *     left 3/8 moves to the left edge, one wholly in the right 3/8 to the
+ *     right edge, the rest stays in the middle; a batch overlapping the one
+ *     before keeps its placement, so a widget's parts stay together.
+ *     Otherwise (menus, attract) overlays stay 4:3 in the middle with the
+ *     rest of the picture. */
+static void surf_xform(Surf *f, const Nv2aBatch *b, float *scale, float *offset)
 {
     uint32_t k;
-    float x0 = 1e30f, x1 = -1e30f;
+    float x0 = 1e30f, x1 = -1e30f, y0 = 1e30f, y1 = -1e30f;
+    float u0 = 1e30f, u1 = -1e30f, v0 = 1e30f, v1 = -1e30f;
+    float mid = (float)(f->w * f->sc) / (float)f->pw;
+    const Surf *src;
+    int place;
 
+    *scale = 1.0f;
+    *offset = 0.0f;
     if (!f->wide)
-        return 1.0f;
-    if (!b->raw && b->count) {
-        for (k = 0; k < b->count; k++) {
-            float x = b->vertices[k].x;
-            if (x < x0) x0 = x;
-            if (x > x1) x1 = x;
-        }
-        if (x0 <= 1.0f && x1 >= (float)f->w - 1.0f)
-            return 1.0f;
+        return;
+    *scale = mid;
+    if (b->raw || !b->count)
+        return;
+    for (k = 0; k < b->count; k++) {
+        const Nv2aVertex *q = &b->vertices[k];
+        if (q->x < x0) x0 = q->x;
+        if (q->x > x1) x1 = q->x;
+        if (q->y < y0) y0 = q->y;
+        if (q->y > y1) y1 = q->y;
+        if (q->u < u0) u0 = q->u;
+        if (q->u > u1) u1 = q->u;
+        if (q->v < v0) v0 = q->v;
+        if (q->v > v1) v1 = q->v;
     }
-    return (float)(f->w * f->sc) / (float)f->pw;
+    if (x0 <= 1.0f && x1 >= (float)f->w - 1.0f) {
+        src = b->texture ? surf_find(b->texture->offset) : NULL;
+        if (!b->texture || (u1 - u0 < 1e-3f && v1 - v0 < 1e-3f)) {
+            *scale = 1.0f;                        /* a flat colour */
+        } else if (src && src->wide && !src->cpu_owned) {
+            *scale = 1.0f;                        /* the widened view */
+            if (src != f)
+                f->hor_frame = s_frame;
+        } else if (b->texture->width >= 320) {
+            f->hor_frame = 0;                     /* a 4:3 picture: movie, menu */
+        } else if (f->hor_frame == s_frame) {
+            *scale = 1.0f;                        /* a screen effect in play */
+        }
+        return;
+    }
+    if (f->hor_frame != s_frame)
+        return;
+    {
+        struct HudLayout *L = f->hud;
+        HudBox bx;
+        int i;
+
+        if (!L && !(L = f->hud = (struct HudLayout *)calloc(1, sizeof *L)))
+            return;
+        /* A new frame: the last one drawn makes the widgets. Frames a few
+         * flips apart still count (VC3's attract draws every other flip). */
+        if (L->frame != s_frame) {
+            if (s_frame - L->frame <= 4)
+                hud_close_frame(L, (float)f->w);
+            else
+                L->nwidget = L->nbox = 0;
+            L->frame = s_frame;
+        }
+        bx.x0 = x0; bx.x1 = x1; bx.y0 = y0; bx.y1 = y1;
+        if (L->nbox < HUD_BOXES)
+            L->box[L->nbox++] = bx;
+        /* The last frame's widget this batch falls in, else the batch's
+         * own box (a new element, for its first frame). */
+        place = hud_place_of(&bx, (float)f->w);
+        for (i = 0; i < L->nwidget; i++) {
+            const HudBox *u = &L->widget[i];
+            if (x0 < u->x1 && x1 > u->x0 && y0 < u->y1 && y1 > u->y0) {
+                place = L->place[i];
+                break;
+            }
+        }
+    }
+    *offset = (float)place * (1.0f - mid);
 }
 
 /* A framebuffer holding f at its guest size, for reading into guest memory:
@@ -1973,7 +2137,11 @@ static void gl_draw(const Nv2aSurface *s, const Nv2aBatch *b)
     }
     apply_state(b->state);
     glUniform2f(U->surf, (float)f->w, (float)f->h);
-    glUniform1f(U->xs, surf_xscale(f, b));
+    {
+        float xs, xo;
+        surf_xform(f, b, &xs, &xo);
+        glUniform2f(U->xs, xs, xo);
+    }
     active_tex(0);
     if (b->texture)
         textured = tex_bind_for(f, b->texture, &tw, &th);

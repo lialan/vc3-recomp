@@ -101,7 +101,7 @@ void vc3_menu_install(void)
 
         aspect = [[NSMenu alloc] initWithTitle:@"Aspect Ratio"];
         [aspect addItem:choice(@"4:3", @selector(pickAspect:), 0)];
-        [aspect addItem:choice(@"16:9 (wider view, HUD in the middle)",
+        [aspect addItem:choice(@"16:9 (wider view)",
                                @selector(pickAspect:), 1)];
 
         rates = [[NSMenu alloc] initWithTitle:@"Frame Rate"];

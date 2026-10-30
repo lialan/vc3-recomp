@@ -42,12 +42,15 @@ these change only how it is drawn and shown.
   (640x480, default) up to 4x (2560x1920). The window shows the full
   resolution; guest memory and frame dumps still get 640x480.
 - **Aspect Ratio** (`aspect=`, `VC3_ASPECT=4:3|16:9`): 16:9 draws the
-  screen a third wider and extends the 3D view into the sides (hor+); the
-  HUD stays in the middle 4:3 where it was, and full-screen passes and
-  fades stretch to the edges. The gun aims at the middle 4:3 as before; the
-  sides count as off the screen (a shot there reloads). The game culls
-  what its own 4:3 view cannot see, so objects can appear late at the side
-  edges, and 2D banners sliding in from off screen show in the sides.
+  screen a third wider and extends the 3D view into the sides (hor+). In
+  play the HUD moves out to the screen edges (left-side widgets to the left
+  edge, right-side ones to the right, the rest stays centred) while the
+  lock-on rings stay on their targets; fades and full-screen passes cover
+  the whole width. Movies and full-screen 2D pictures (menus, logos) stay
+  4:3 in the middle with black sides, not stretched. The gun aims at the
+  middle 4:3 as before; the sides count as off the screen (a shot there
+  reloads). The game culls what its own 4:3 view cannot see, so objects can
+  appear late at the side edges.
 - **Frame Rate** (`fps=`, `VC3_FPS=60|120`; F10 toggles): at 120 fps the
   window shows a motion-interpolated frame between each pair of real ones
   (made on the GPU by block-matching motion search on the 3D view; the HUD,

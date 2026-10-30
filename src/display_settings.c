@@ -10,7 +10,8 @@
  *           works the same way, with fps / 60 - 1 in-between frames.
  *   scale   1 (default) to 4: internal resolution, 640x480 times scale.
  *   aspect  4:3 (default) or 16:9: at 16:9 the 3D view extends to the
- *           sides and the HUD stays in the middle 4:3 (hor+).
+ *           sides (hor+) and the HUD moves to the screen edges; movies
+ *           and menus stay 4:3 (gl_backend.c, surf_xform).
  *
  * Each comes from, first that applies: VC3_FPS / VC3_SCALE / VC3_ASPECT,
  * the "fps=" / "scale=" / "aspect=" line of

@@ -21,7 +21,7 @@ int  vc3_scale_get(void);
 void vc3_scale_set(int scale);
 
 /* 16:9: the 640x480 surfaces drawn a third wider, the 3D view extended to
- * the sides (hor+) and the 2D overlays left in the middle 4:3. */
+ * the sides (hor+), the HUD at the screen edges, movies and menus kept 4:3. */
 int  vc3_wide_get(void);
 void vc3_wide_set(int wide);
 
