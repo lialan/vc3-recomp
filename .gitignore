@@ -63,3 +63,11 @@ build.log
 build-configure.log
 run*.log
 xbox_kernel.log
+
+# Quest build output (quest/build.sh)
+quest/*.apk
+quest/local.properties
+quest/.gradle/
+quest/vc3/build/
+quest/vc3/src/main/libs/
+quest/vc3/src/main/java/org/libsdl/

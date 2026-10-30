@@ -15,7 +15,9 @@
 #endif
 
 #include <dlfcn.h>
+#if defined(__APPLE__)
 #include <mach-o/dyld.h>   /* _NSGetExecutablePath */
+#endif
 #include <limits.h>
 #include <sys/ucontext.h>
 #include <signal.h>
@@ -77,6 +79,8 @@ static void dump_guest(uintptr_t fault)
     fprintf(stderr, "\n");
 }
 
+static struct sigaction s_old_segv, s_old_bus;
+
 static void fault_handler(int sig, siginfo_t *si, void *ucv)
 {
     uintptr_t fault = (uintptr_t)si->si_addr;
@@ -94,6 +98,9 @@ static void fault_handler(int sig, siginfo_t *si, void *ucv)
 #if defined(__APPLE__) && defined(__aarch64__)
         pc = (uintptr_t)((ucontext_t *)ucv)->uc_mcontext->__ss.__pc;
         lr = (uintptr_t)((ucontext_t *)ucv)->uc_mcontext->__ss.__lr;
+#elif defined(__linux__) && defined(__aarch64__)
+        pc = (uintptr_t)((ucontext_t *)ucv)->uc_mcontext.pc;
+        lr = (uintptr_t)((ucontext_t *)ucv)->uc_mcontext.regs[30];
 #endif
         if (pc && dladdr((void *)pc, &di) && di.dli_sname)
             fprintf(stderr, "  host pc %p in %s+0x%lx\n", (void *)pc, di.dli_sname,
@@ -102,7 +109,9 @@ static void fault_handler(int sig, siginfo_t *si, void *ucv)
             fprintf(stderr, "  host lr %p in %s+0x%lx\n", (void *)lr, di.dli_sname,
                     (unsigned long)(lr - (uintptr_t)di.dli_saddr));
     }
-    signal(sig, SIG_DFL); /* re-raise for the crash reporter / debugger */
+    /* Re-raise for whoever handled it before: the crash reporter, the
+     * debugger, Android's debuggerd (which writes the tombstone). */
+    sigaction(sig, sig == SIGBUS ? &s_old_bus : &s_old_segv, NULL);
 }
 
 static void install_fault_handler(void)
@@ -113,8 +122,8 @@ static void install_fault_handler(void)
     sa.sa_sigaction = fault_handler;
     sa.sa_flags = SA_SIGINFO | SA_ONSTACK;
     sigemptyset(&sa.sa_mask);
-    sigaction(SIGSEGV, &sa, NULL);
-    sigaction(SIGBUS, &sa, NULL);
+    sigaction(SIGSEGV, &sa, &s_old_segv);
+    sigaction(SIGBUS, &sa, &s_old_bus);
 }
 
 /* ── Helpers ───────────────────────────────────────────────── */
@@ -166,7 +175,7 @@ static char **s_argv;
  * stdcall (path, launch data); returns only if exec fails. */
 void vc3_relaunch(void)
 {
-    char exe[PATH_MAX];
+    char exe[PATH_MAX] = { 0 };
     uint32_t size = sizeof(exe);
     uint32_t path = MEM32(g_esp + 4);
 
@@ -182,8 +191,21 @@ void vc3_relaunch(void)
         unsetenv("VC3_AUTOKEYS");
     unsetenv("VC3_AUTOKEYS_RELAUNCH");
     unsetenv("VC3_TEST_LAUNCH");      /* leaving test mode boots the game */
+#if defined(__ANDROID__)
+    /* An app cannot exec itself: the activity starts a fresh process. */
+    (void)exe; (void)size;
+    {
+        extern void vc3_quest_restart(void);   /* src/android/quest_host.c */
+        vc3_quest_restart();
+    }
+#else
+#if defined(__APPLE__)
     if (s_argv && _NSGetExecutablePath(exe, &size) == 0)
+#else
+    if (s_argv && readlink("/proc/self/exe", exe, size - 1) > 0)   /* exe zeroed */
+#endif
         execv(exe, s_argv);
+#endif
     perror("[VC3] relaunch failed");
     g_eax = 0x80004005u;
     g_esp += 12;
@@ -192,6 +214,7 @@ void vc3_relaunch(void)
 /* ── Boot (on the guest thread) ────────────────────────────── */
 
 extern int xbox_HostWindowMain(int (*guest_main)(void));
+extern int vc3_quest_run(int (*guest_main)(void));   /* src/android/quest_host.c */
 extern void xbox_HostWindowOnOpen(void (*fn)(void));
 extern void vc3_menu_install(void);          /* src/macos_menu.m */
 
@@ -295,8 +318,11 @@ int main(int argc, char **argv)
     setenv("RECOMP_TITLE_KEVENTS", "1", 0);
     setenv("RECOMP_VBLANK", "paced", 0);
     /* A window by default, sized for the display mode the DIP switches pick:
-     * 640x480 shown at 2x, the larger modes at 1x. */
+     * 640x480 shown at 2x, the larger modes at 1x. On the Quest the headset
+     * shows the frames (src/android/quest_host.c), not the toolkit's window. */
+#if !defined(__ANDROID__)
     setenv("RECOMP_FB_WINDOW", "1", 0);
+#endif
     {
         const char *res = getenv("VC3_RES");
         if (res && !strcmp(res, "1024")) {
@@ -327,7 +353,11 @@ int main(int argc, char **argv)
     xbox_HostWindowOnOpen(vc3_menu_install);
 #endif
 
+#if defined(__ANDROID__)
+    rc = vc3_quest_run(guest_main);
+#else
     rc = xbox_HostWindowMain(guest_main);
+#endif
     free(s_xbe);
     return rc;
 }

@@ -55,7 +55,7 @@ static void settings_path(char *buf, size_t n, int dir_only)
 }
 
 /* The saved value of "<key>=" (key includes the '='), or NULL. */
-static const char *settings_get(const char *key)
+const char *vc3_setting_get(const char *key)
 {
     static char val[64];
     char path[1024], line[256];
@@ -78,7 +78,7 @@ static const char *settings_get(const char *key)
 }
 
 /* Rewrite the file with "<key>=" set to value, keeping every other line. */
-static void settings_put(const char *key, const char *value)
+void vc3_setting_put(const char *key, const char *value)
 {
     char path[1024], tmp[1100], line[256];
     size_t k = strlen(key);
@@ -108,7 +108,7 @@ static const char *setting(const char *name, const char *key, int *from_env)
 {
     const char *e = getenv(name);
     *from_env = e != NULL;
-    return e ? e : settings_get(key);
+    return e ? e : vc3_setting_get(key);
 }
 
 static int parse_wide(const char *v)
@@ -123,6 +123,9 @@ void vc3_display_init(void)
 
     v = setting("VC3_FPS", "fps=", &env);
     n = v ? atoi(v) : 60;
+#if defined(__ANDROID__)
+    n = 60;            /* the headset makes its own in-between frames */
+#endif
     if (!fps_ok(n)) {
         if (env)
             fprintf(stderr, "[VC3] VC3_FPS=%s: not 60..%d in steps of 60; using 60\n",
@@ -132,7 +135,11 @@ void vc3_display_init(void)
     __atomic_store_n(&s_fps, n, __ATOMIC_RELAXED);
 
     v = setting("VC3_SCALE", "scale=", &env);
+#if defined(__ANDROID__)
+    n = v ? atoi(v) : 2;               /* the Quest: a sharper big screen */
+#else
     n = v ? atoi(v) : 1;
+#endif
     if (!scale_ok(n)) {
         if (env)
             fprintf(stderr, "[VC3] VC3_SCALE=%s: not 1..%d; using 1\n", v, VC3_SCALE_MAX);
@@ -141,6 +148,10 @@ void vc3_display_init(void)
     __atomic_store_n(&s_scale, n, __ATOMIC_RELAXED);
 
     v = setting("VC3_ASPECT", "aspect=", &env);
+#if defined(__ANDROID__)
+    if (!v)
+        v = "16:9";                    /* the Quest: a wide screen in front */
+#endif
     if (env && !parse_wide(v) && strcmp(v, "4:3"))
         fprintf(stderr, "[VC3] VC3_ASPECT=%s: not 4:3 or 16:9; using 4:3\n", v);
     __atomic_store_n(&s_wide, parse_wide(v), __ATOMIC_RELAXED);
@@ -164,7 +175,7 @@ void vc3_fps_set(int fps)
         return;
     __atomic_store_n(&s_fps, fps, __ATOMIC_RELAXED);
     snprintf(buf, sizeof buf, "%d", fps);
-    settings_put("fps=", buf);
+    vc3_setting_put("fps=", buf);
     fprintf(stderr, "[VC3] display %d fps\n", fps);
 }
 
@@ -198,7 +209,7 @@ void vc3_scale_set(int scale)
         return;
     __atomic_store_n(&s_scale, scale, __ATOMIC_RELAXED);
     snprintf(buf, sizeof buf, "%d", scale);
-    settings_put("scale=", buf);
+    vc3_setting_put("scale=", buf);
     fprintf(stderr, "[VC3] internal resolution %dx%d\n", 640 * scale, 480 * scale);
 }
 
@@ -213,6 +224,6 @@ void vc3_wide_set(int wide)
     if (wide == vc3_wide_get())
         return;
     __atomic_store_n(&s_wide, wide, __ATOMIC_RELAXED);
-    settings_put("aspect=", wide ? "16:9" : "4:3");
+    vc3_setting_put("aspect=", wide ? "16:9" : "4:3");
     fprintf(stderr, "[VC3] aspect %s\n", wide ? "16:9" : "4:3");
 }

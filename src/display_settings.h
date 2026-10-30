@@ -25,4 +25,8 @@ void vc3_scale_set(int scale);
 int  vc3_wide_get(void);
 void vc3_wide_set(int wide);
 
+/* Any "<key>=" line of the settings file (key includes the '='). */
+const char *vc3_setting_get(const char *key);
+void vc3_setting_put(const char *key, const char *value);
+
 #endif

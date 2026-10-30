@@ -23,7 +23,7 @@ if(NOT RECOMP_GEN_SOURCES)
     message(FATAL_ERROR "src/recomp/gen is empty: run scripts/lift.sh first")
 endif()
 
-add_executable(vc3
+set(VC3_SOURCES
     src/main.c
     src/recomp_manual.c
     src/chihiro/chihiro.c
@@ -37,7 +37,27 @@ add_executable(vc3
     ${RECOMP_GEN_SOURCES}
 )
 
-target_link_libraries(vc3 PRIVATE xboxrecomp "-framework OpenGL")
+if(ANDROID)
+    # Meta Quest (quest/build.sh): SDL's Java side loads libmain.so and calls
+    # SDL_main (src/android/android_main.c), which runs main.c's main; the
+    # headset, its controllers and the window are src/android/quest_host.c.
+    # The GL back end is the same file built for GLES 3.2 on EGL.
+    set(OPENXR_DIR "" CACHE PATH "OpenXR headers (the loader .aar's prefab headers)")
+    set(OPENXR_LIB "" CACHE FILEPATH "libopenxr_loader.so for arm64-v8a")
+    find_package(SDL2 REQUIRED)
+    add_library(vc3 SHARED ${VC3_SOURCES}
+        src/android/android_main.c
+        src/android/quest_host.c)
+    set_target_properties(vc3 PROPERTIES OUTPUT_NAME main)
+    set_source_files_properties(src/main.c PROPERTIES COMPILE_DEFINITIONS main=vc3_main)
+    target_compile_definitions(vc3 PRIVATE VC3_GLES=1)
+    target_include_directories(vc3 PRIVATE ${OPENXR_DIR})
+    target_link_libraries(vc3 PRIVATE xboxrecomp SDL2::SDL2 ${OPENXR_LIB}
+        EGL GLESv3 android log m)
+else()
+    add_executable(vc3 ${VC3_SOURCES})
+    target_link_libraries(vc3 PRIVATE xboxrecomp "-framework OpenGL")
+endif()
 
 # The Display menu (frame rate) in the menu bar SDL builds; Cocoa, so macOS
 # only. Elsewhere there is no menu and VC3_FPS / F10 / the settings file
@@ -64,4 +84,6 @@ set_source_files_properties(${RECOMP_GEN_SOURCES} PROPERTIES
     COMPILE_OPTIONS "${VC3_GEN_OPT};-Wno-everything")
 
 # Let the crash handler name the lifted function at a host PC (dladdr).
-target_link_options(vc3 PRIVATE -Wl,-export_dynamic)
+if(APPLE)
+    target_link_options(vc3 PRIVATE -Wl,-export_dynamic)
+endif()

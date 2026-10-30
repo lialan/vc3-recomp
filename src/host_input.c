@@ -29,6 +29,7 @@
 
 #include "chihiro/chihiro.h"
 #include "display_settings.h"
+#include "host_input.h"
 
 #define AUTO_MAX     32
 #define AUTO_HOLD_MS 500   /* > one poll at the current frame rate */
@@ -126,6 +127,20 @@ static int SDLCALL input_watch(void *ud, SDL_Event *e)
         break;
     }
     return 0;
+}
+
+/* The Quest's controllers (src/android/quest_host.c), set by the headset
+ * loop and read at the next poll: where the gun points in the game's 4:3
+ * picture (0..1; negative off it) and VC3_VR_* buttons held. */
+static volatile int s_vr_on, s_vr_buttons;
+static volatile double s_vr_ux = -1.0, s_vr_uy = -1.0;
+
+void vc3_input_vr(double ux, double uy, int buttons)
+{
+    s_vr_ux = ux;
+    s_vr_uy = uy;
+    s_vr_buttons = buttons;
+    s_vr_on = 1;
 }
 
 /* VC3_INPUT_SELFTEST=1: play through the input stack without a person or OS
@@ -364,6 +379,13 @@ void host_input_poll(chihiro_input_t *in)
 
     fire = (buttons & SDL_BUTTON(SDL_BUTTON_LEFT)) || auto_held("fire", t);
     reload = (buttons & SDL_BUTTON(SDL_BUTTON_RIGHT)) || auto_held("reload", t);
+    if (s_vr_on) {                      /* a headset's gun replaces the mouse */
+        int vb = s_vr_buttons;
+        ux = s_vr_ux;
+        uy = s_vr_uy;
+        fire = fire || (vb & VC3_VR_FIRE);
+        reload = reload || (vb & VC3_VR_RELOAD);
+    }
 
     /* A scripted shot with no window under the mouse aims at VC3_AUTOAIM
      * ("x,y" in 0..1, default the centre), so unattended runs can shoot; an
@@ -376,10 +398,12 @@ void host_input_poll(chihiro_input_t *in)
             sscanf(aim, "%lf,%lf", &ux, &uy);
     }
 
-    in->test = (k && k[SDL_SCANCODE_F2]) || auto_held("test", t);
+    in->test = (k && k[SDL_SCANCODE_F2]) || auto_held("test", t)
+        || (s_vr_on && (s_vr_buttons & VC3_VR_TEST));
     if ((k && k[SDL_SCANCODE_F1]) || auto_held("service", t))
         in->player[0] |= JVS_SW_SERVICE;
-    if ((k && k[SDL_SCANCODE_1]) || auto_held("start", t))
+    if ((k && k[SDL_SCANCODE_1]) || auto_held("start", t)
+        || (s_vr_on && (s_vr_buttons & VC3_VR_START)))
         in->player[0] |= JVS_SW_START;
     if (k && k[SDL_SCANCODE_2])
         in->player[1] |= JVS_SW_START;
@@ -438,7 +462,8 @@ void host_input_poll(chihiro_input_t *in)
         in->screen_x[0] = in->screen_y[0] = 0xFFFF;
     }
 
-    coin[0] = (k && k[SDL_SCANCODE_5]) || auto_held("coin", t);
+    coin[0] = (k && k[SDL_SCANCODE_5]) || auto_held("coin", t)
+        || (s_vr_on && (s_vr_buttons & VC3_VR_COIN));
     coin[1] = k && k[SDL_SCANCODE_6];
     for (i = 0; i < 2; i++) {
         if (coin[i] && !coin_was[i])

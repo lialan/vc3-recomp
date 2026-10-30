@@ -25,9 +25,47 @@
  * game. Palettised textures are not decoded by nv2a_backend_decode_texture
  * and draw untextured.
  */
+#if defined(VC3_GLES)
+/* Meta Quest (VC3_GLES): the same back end on OpenGL ES 3.2, in an EGL
+ * context the Quest host makes (src/android/quest_host.c), sharing its
+ * objects with the host's so a frame reaches the headset as a texture.
+ * What desktop GL 4.1 has and ES lacks:
+ *
+ *   BGRA pixels     ES moves RGBA bytes. Decoded textures are uploaded as
+ *                   they are and swizzled back when sampled (es_bgra), and
+ *                   reads into guest memory swap R and B on the copy
+ *                   (es_to_guest). GL_BGRA / 8_8_8_8_REV below name RGBA /
+ *                   unsigned byte, so the calls read the same.
+ *   BGRA attributes size GL_BGRA has no ES form: D3DCOLOR attributes go in
+ *                   as RGBA and the shader swaps them (u_bgra).
+ *   GLSL 4.10       es_source() puts an ES 3.20 prologue in its place; the
+ *                   sources are otherwise valid for both.
+ *   clip distances, depth clamp
+ *                   EXT_clip_cull_distance and EXT_depth_clamp, where the
+ *                   driver has them; without, GL's own near-plane clip
+ *                   stands in.
+ */
+#include <EGL/egl.h>
+#include <GLES3/gl32.h>
+#include <GLES2/gl2ext.h>
+#define GL_BGRA                     GL_RGBA
+#define GL_UNSIGNED_INT_8_8_8_8_REV GL_UNSIGNED_BYTE
+#ifndef GL_DEPTH_CLAMP
+#define GL_DEPTH_CLAMP              0x864F      /* EXT_depth_clamp */
+#endif
+#ifndef GL_CLIP_DISTANCE0
+#define GL_CLIP_DISTANCE0           0x3000      /* EXT_clip_cull_distance */
+#define GL_CLIP_DISTANCE1           0x3001
+#endif
+#define GL_SAMPLES_PASSED           GL_ANY_SAMPLES_PASSED
+#define glClearDepth(d)             glClearDepthf((GLfloat)(d))
+extern int vc3_quest_gl_context(void);         /* src/android/quest_host.c */
+extern void vc3_quest_frame(GLuint fbo, int pw, int ph, int lw, int lh);
+#else
 #define GL_SILENCE_DEPRECATION
 #include <OpenGL/OpenGL.h>
 #include <OpenGL/gl3.h>
+#endif
 #include <math.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -38,6 +76,8 @@
 
 #include "nv2a_backend.h"
 #include "../display_settings.h"
+
+static void es_bgra(GLenum target);
 #include "../d3d/d3d8_swizzle.h"   /* relative to src/kernel, as the executor */
 
 /* getenv, looked up once per name: several debug switches are tested per
@@ -63,7 +103,15 @@ extern ptrdiff_t xbox_GetMemoryOffset(void);
 
 /* ── Context and shaders ───────────────────────────────────── */
 
+/* Clip distances and depth clamp: core on desktop GL 4.1, extensions on ES
+ * (where enabling an absent one is a GL error per draw). */
+static int s_has_clip = 1, s_has_dclamp = 1;
+
+#if defined(VC3_GLES)
+static int s_ctx;                  /* the host's EGL context is current */
+#else
 static CGLContextObj s_ctx;
+#endif
 static int s_failed;
 static GLuint s_vao, s_vao_raw, s_white;
 
@@ -79,7 +127,7 @@ typedef struct {
     /* The fixed-function vertex shader (Nv2aFixedState). */
     GLint comp, mv, proj, tm, c59, skin, usecomp, lighting, lkind, light, samb,
           matalpha, colmat, flipn, hasnrm, hascol, texgen, tgon, tmon, ascale,
-          packed, aa, vpz, nearz, fogen, fogmode, fogp, uvs0;
+          packed, aa, vpz, nearz, fogen, fogmode, fogp, uvs0, bgra;
 } Prog;
 static Prog s_pcpu, s_praw, *U = &s_pcpu;
 static uint32_t s_frame = 1;
@@ -173,6 +221,7 @@ static const char *VS_FF =
     "uniform int u_tgon[4], u_tmon[4];\n"
     "uniform vec4 u_ascale[8];\n"
     "uniform int u_packed;\n"
+    "uniform int u_bgra;\n"            /* attributes given as RGBA bytes: swap (ES) */
     "uniform vec2 u_aa;\n"
     "uniform float u_vpz;\n"
     "uniform int u_nearz;\n"
@@ -193,6 +242,7 @@ static const char *VS_FF =
     "                float(bitfieldExtract(v, 11, 11)) / 1023.0,\n"
     "                float(bitfieldExtract(v, 22, 10)) / 511.0, 1.0);\n"
     "  }\n"
+    "  if (((u_bgra >> r) & 1) != 0) a = a.zyxw;\n"
     "  return a * u_ascale[r];\n"
     "}\n"
     /* executor fog_factor() */
@@ -305,8 +355,10 @@ static const char *VS_FF =
     "  float zn = (s.z - u_depth.x) / (u_depth.y - u_depth.x) * 2.0 - 1.0;\n"
     "  bool bad = abs(w) <= 1e-6 || any(isnan(o_screen)) || any(isinf(o_screen));\n"
     "  gl_Position = bad ? vec4(0.0, 0.0, 0.0, 1.0) : vec4(ndc * w, zn * w, w);\n"
+    "#if !defined(GL_ES) || defined(GL_EXT_clip_cull_distance)\n"
     "  gl_ClipDistance[0] = bad ? -1e30 : w - 1e-3;\n"
     "  gl_ClipDistance[1] = bad ? -1e30 : (u_nearz != 0 ? (s.z - u_vpz) * w : 1.0);\n"
+    "#endif\n"
     "}\n";
 
 /* The register combiners: xboxrecomp's nv2a_combiner.c (which follows xemu's
@@ -490,13 +542,63 @@ static const char *FS =
     "  o_col = c;\n"
     "}\n";
 
+#if defined(VC3_GLES)
+/* The sources start "#version 410\n"; ES gets its own version in its
+ * place -- 3.20 on the Quest; 3.10 or 3.00 on lesser contexts such as the
+ * Android emulator's, where 3.00 lacks only bitfieldExtract, given here --
+ * the clip distance extension where there is one, and default precisions. */
+static const char *es_source(const char *src, char **owned)
+{
+    static const char tail[] =
+        "#extension GL_EXT_clip_cull_distance : enable\n"
+        "precision highp float;\n"
+        "precision highp int;\n"
+        "precision highp sampler2D;\n"
+        "precision highp samplerCube;\n";
+    static const char poly300[] =
+        "int bitfieldExtract(int v, int o, int b) { return (v << (32 - o - b)) >> (32 - b); }\n";
+    const char *v = (const char *)glGetString(GL_VERSION);
+    const char *ver = "#version 320 es\n";
+    size_t n, k;
+
+    *owned = NULL;
+    if (strncmp(src, "#version 410\n", 13))
+        return src;
+    if (v && strstr(v, "OpenGL ES 3.1"))
+        ver = "#version 310 es\n";
+    else if (v && strstr(v, "OpenGL ES 3.0"))
+        ver = "#version 300 es\n";
+    n = strlen(src + 13);
+    *owned = (char *)malloc(16 + sizeof tail + sizeof poly300 + n);
+    if (!*owned)
+        return src;
+    k = strlen(ver);
+    memcpy(*owned, ver, k);
+    memcpy(*owned + k, tail, sizeof tail - 1);
+    k += sizeof tail - 1;
+    if (ver[10] == '0') {
+        memcpy(*owned + k, poly300, sizeof poly300 - 1);
+        k += sizeof poly300 - 1;
+    }
+    memcpy(*owned + k, src + 13, n + 1);
+    return *owned;
+}
+#endif
+
 static GLuint compile(GLenum type, const char *src)
 {
     GLuint s = glCreateShader(type);
     GLint ok = 0;
     char log[1024];
+#if defined(VC3_GLES)
+    char *owned;
+    src = es_source(src, &owned);
+#endif
 
     glShaderSource(s, 1, &src, NULL);
+#if defined(VC3_GLES)
+    free(owned);
+#endif
     glCompileShader(s);
     glGetShaderiv(s, GL_COMPILE_STATUS, &ok);
     if (!ok) {
@@ -556,6 +658,7 @@ static int prog_link(Prog *p, GLuint vs, GLuint fs, int feedback)
     LOC(ascale, "u_ascale"); LOC(packed, "u_packed"); LOC(aa, "u_aa");
     LOC(vpz, "u_vpz"); LOC(nearz, "u_nearz"); LOC(fogen, "u_fogen");
     LOC(fogmode, "u_fogmode"); LOC(fogp, "u_fogp"); LOC(uvs0, "u_uvs0");
+    LOC(bgra, "u_bgra");
 #undef LOC
     glUseProgram(p->prog);
     glUniform1i(glGetUniformLocation(p->prog, "u_tex"), 0);
@@ -629,11 +732,43 @@ static int gl_ready(void)
     if (s_failed)
         return 0;
     if (s_ctx) {
+#if !defined(VC3_GLES)
         if (CGLGetCurrentContext() != s_ctx)
             CGLSetCurrentContext(s_ctx);
+#endif
         return 1;
     }
     {
+#if defined(VC3_GLES)
+        GLuint fs;
+        uint32_t white = 0xFFFFFFFFu;
+
+        if (!vc3_quest_gl_context()) {
+            fprintf(stderr, "[GL] no OpenGL ES 3.2 context; back end off\n");
+            s_failed = 1;
+            return 0;
+        }
+        s_ctx = 1;
+        fprintf(stderr, "[GL] %s, %s\n", glGetString(GL_RENDERER),
+                glGetString(GL_VERSION));
+        {
+            GLint i, n = 0;
+            s_has_clip = s_has_dclamp = 0;
+            glGetIntegerv(GL_NUM_EXTENSIONS, &n);
+            for (i = 0; i < n; i++) {
+                const char *e = (const char *)glGetStringi(GL_EXTENSIONS, (GLuint)i);
+                if (!e)
+                    continue;
+                if (!strcmp(e, "GL_EXT_clip_cull_distance"))
+                    s_has_clip = 1;
+                if (!strcmp(e, "GL_EXT_depth_clamp"))
+                    s_has_dclamp = 1;
+            }
+            fprintf(stderr, "[GL] clip distances %s, depth clamp %s\n",
+                    s_has_clip ? "yes" : "no (GL's near clip instead)",
+                    s_has_dclamp ? "yes" : "no");
+        }
+#else
         CGLPixelFormatAttribute attrs[] = {
             kCGLPFAOpenGLProfile, (CGLPixelFormatAttribute)kCGLOGLPVersion_GL4_Core,
             kCGLPFAAccelerated, kCGLPFAAllowOfflineRenderers,
@@ -654,6 +789,7 @@ static int gl_ready(void)
         CGLSetCurrentContext(s_ctx);
         fprintf(stderr, "[GL] %s, %s\n", glGetString(GL_RENDERER),
                 glGetString(GL_VERSION));
+#endif
 
         fs = compile(GL_FRAGMENT_SHADER, FS);
         if (!prog_link(&s_pcpu, compile(GL_VERTEX_SHADER, VS), fs, 0)) {
@@ -678,10 +814,47 @@ static int gl_ready(void)
         glBindTexture(GL_TEXTURE_2D, s_white);
         glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, 1, 1, 0, GL_BGRA,
                      GL_UNSIGNED_INT_8_8_8_8_REV, &white);
+        es_bgra(GL_TEXTURE_2D);
         glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
         glPixelStorei(GL_PACK_ALIGNMENT, 1);
     }
     return 1;
+}
+
+/* ES: a texture uploaded from BGRA bytes as RGBA reads back R and B
+ * swapped; a swizzle on the texture puts them right when sampled. */
+static void es_bgra(GLenum target)
+{
+#if defined(VC3_GLES)
+    glTexParameteri(target, GL_TEXTURE_SWIZZLE_R, GL_BLUE);
+    glTexParameteri(target, GL_TEXTURE_SWIZZLE_B, GL_RED);
+#else
+    (void)target;
+#endif
+}
+
+/* Guest memory from RGBA8 rows (ES reads): BGRA8, or R5G6B5 for 2-byte
+ * surfaces, at the guest pitch. */
+static void es_to_guest(uint8_t *dst, uint32_t pitch, uint32_t bpp,
+                        const uint8_t *src, GLsizei w, GLsizei h)
+{
+    GLsizei x, y;
+
+    for (y = 0; y < h; y++) {
+        const uint8_t *s = src + (size_t)y * w * 4;
+        uint8_t *d = dst + (size_t)y * pitch;
+        if (bpp == 4) {
+            for (x = 0; x < w; x++, s += 4, d += 4) {
+                d[0] = s[2]; d[1] = s[1]; d[2] = s[0]; d[3] = s[3];
+            }
+        } else {
+            for (x = 0; x < w; x++, s += 4, d += 2) {
+                uint16_t v = (uint16_t)(((s[0] >> 3) << 11) | ((s[1] >> 2) << 5) | (s[2] >> 3));
+                d[0] = (uint8_t)v;
+                d[1] = (uint8_t)(v >> 8);
+            }
+        }
+    }
 }
 
 /* ── Surfaces ──────────────────────────────────────────────── */
@@ -974,7 +1147,10 @@ static void surf_xform(Surf *f, const Nv2aBatch *b, float *scale, float *offset)
         place = hud_place_of(&bx, (float)f->w);
         for (i = 0; i < L->nwidget; i++) {
             const HudBox *u = &L->widget[i];
-            if (x0 < u->x1 && x1 > u->x0 && y0 < u->y1 && y1 > u->y0) {
+            /* Inside it, or the next glyph of its text row (VC3 types its
+             * briefings out a letter a frame). */
+            if ((x0 < u->x1 && x1 > u->x0 && y0 < u->y1 && y1 > u->y0)
+                || hud_joined(&bx, u)) {
                 place = L->place[i];
                 break;
             }
@@ -1023,12 +1199,29 @@ static void surf_readback(Surf *f)
     GLsizei rows = f->h;
 
     glBindFramebuffer(GL_READ_FRAMEBUFFER, surf_resolve(f));
+#if defined(VC3_GLES)
+    {
+        static uint8_t *tmp;
+        static size_t cap;
+        size_t need = (size_t)f->w * rows * 4;
+        if (cap < need) {
+            free(tmp);
+            tmp = (uint8_t *)malloc(need);
+            cap = tmp ? need : 0;
+        }
+        if (tmp) {
+            glReadPixels(0, 0, f->w, rows, GL_RGBA, GL_UNSIGNED_BYTE, tmp);
+            es_to_guest(dst, f->pitch, f->bpp, tmp, f->w, rows);
+        }
+    }
+#else
     glPixelStorei(GL_PACK_ROW_LENGTH, (GLint)(f->pitch / f->bpp));
     if (f->bpp == 2)
         glReadPixels(0, 0, f->w, rows, GL_RGB, GL_UNSIGNED_SHORT_5_6_5, dst);
     else
         glReadPixels(0, 0, f->w, rows, GL_BGRA, GL_UNSIGNED_INT_8_8_8_8_REV, dst);
     glPixelStorei(GL_PACK_ROW_LENGTH, 0);
+#endif
     f->dirty = 0;
     f->memq_valid = 0;
 }
@@ -1049,6 +1242,8 @@ typedef struct {
     GLuint pbo;
     GLsizeiptr cap;
     uint32_t va, bytes;          /* where and how much, 0 when none pending */
+    GLsizei gw, gh;              /* ES: read as RGBA8 rows, converted on the copy */
+    uint32_t gpitch, gbpp;
     /* The window's group: the drawn frame (show_pbo) and nmid frames made
      * before it, each sw x sh BGRA. */
     int group, nmid;
@@ -1130,7 +1325,11 @@ static void show_publish(Readback *r)
 static void surf_readback_async(Surf *f)
 {
     Readback *r = &s_rb[s_rb_next], *prev = &s_rb[s_rb_next ^ 1];
+#if defined(VC3_GLES)
+    GLsizeiptr bytes = (GLsizeiptr)f->w * f->h * 4;
+#else
     GLsizeiptr bytes = (GLsizeiptr)f->pitch * f->h;
+#endif
     int fps = vc3_fps_get();
 
     if (!r->pbo)
@@ -1141,19 +1340,33 @@ static void surf_readback_async(Surf *f)
         r->cap = bytes;
     }
     glBindFramebuffer(GL_READ_FRAMEBUFFER, surf_resolve(f));
+#if defined(VC3_GLES)
+    glReadPixels(0, 0, f->w, f->h, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+#else
     glPixelStorei(GL_PACK_ROW_LENGTH, (GLint)(f->pitch / f->bpp));
     if (f->bpp == 2)
         glReadPixels(0, 0, f->w, f->h, GL_RGB, GL_UNSIGNED_SHORT_5_6_5, NULL);
     else
         glReadPixels(0, 0, f->w, f->h, GL_BGRA, GL_UNSIGNED_INT_8_8_8_8_REV, NULL);
     glPixelStorei(GL_PACK_ROW_LENGTH, 0);
+#endif
     r->va = f->va;
     r->bytes = (uint32_t)bytes;
+    r->gw = f->w;
+    r->gh = f->h;
+    r->gpitch = f->pitch;
+    r->gbpp = f->bpp;
     r->group = 0;
     f->dirty = 0;
 
+#if !defined(VC3_GLES)
+    /* The Quest shows the drawn frame itself (vc3_quest_frame), with the
+     * headset making any in-between frames. */
     if (fps > 60 || f->sc > 1 || f->wide)
         show_read(r, f, fps);
+#else
+    (void)fps;
+#endif
 
     if (prev->pbo && prev->bytes) {
         const void *src;
@@ -1161,7 +1374,12 @@ static void surf_readback_async(Surf *f)
         src = glMapBufferRange(GL_PIXEL_PACK_BUFFER, 0, prev->bytes, GL_MAP_READ_BIT);
         if (src) {
             Surf *pf = surf_find(prev->va);
+#if defined(VC3_GLES)
+            es_to_guest((uint8_t *)xbox_GetMemoryOffset() + prev->va, prev->gpitch,
+                        prev->gbpp, (const uint8_t *)src, prev->gw, prev->gh);
+#else
             memcpy((uint8_t *)xbox_GetMemoryOffset() + prev->va, src, prev->bytes);
+#endif
             if (pf)
                 pf->memq_valid = 0;
             glUnmapBuffer(GL_PIXEL_PACK_BUFFER);
@@ -1419,6 +1637,7 @@ static int tex_bind_cube(const Nv2aTexture *t)
                 glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X + f, 0, GL_RGBA8,
                              (GLsizei)t->width, (GLsizei)t->height, 0, GL_BGRA,
                              GL_UNSIGNED_INT_8_8_8_8_REV, s_decode);
+                es_bgra(GL_TEXTURE_CUBE_MAP);
             }
             s_st.uploads++;
             e->hash = h;
@@ -1553,6 +1772,7 @@ static int tex_bind(const Nv2aTexture *t, float *sw, float *sh)
                 glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, (GLsizei)t->width,
                              (GLsizei)t->height, 0, GL_BGRA,
                              GL_UNSIGNED_INT_8_8_8_8_REV, s_decode);
+                es_bgra(GL_TEXTURE_2D);
                 e->hash = h;
             }
         }
@@ -1923,7 +2143,7 @@ static int raw_attribs(const Nv2aRawGeometry *g, const int slot[8])
     struct { const uint8_t *base; uint32_t stride, bytes; GLsizeiptr off; } grp[8];
     int ngrp = 0, gi[8], r, k;
     GLfloat scale[8][4];
-    GLint packed = 0;
+    GLint packed = 0, bgra = 0;
     GLsizeiptr total = 0, off = 0;
     uint8_t *dst;
 
@@ -1990,7 +2210,14 @@ static int raw_attribs(const Nv2aRawGeometry *g, const int slot[8])
                              + ((const uint8_t *)a->data - grp[gi[r]].base));
             GLint n = (GLint)a->size;
             switch (a->type) {
+#if defined(VC3_GLES)
+            case 0:
+                glVertexAttribPointer(loc, 4, GL_UNSIGNED_BYTE, GL_TRUE, stride, at);
+                bgra |= 1 << r;
+                break;
+#else
             case 0:  glVertexAttribPointer(loc, GL_BGRA, GL_UNSIGNED_BYTE, GL_TRUE, stride, at); break;
+#endif
             case 4:  glVertexAttribPointer(loc, n, GL_UNSIGNED_BYTE, GL_TRUE, stride, at); break;
             case 1:
                 for (c = 0; c < n; c++)
@@ -2008,6 +2235,7 @@ static int raw_attribs(const Nv2aRawGeometry *g, const int slot[8])
     }
     glUniform4fv(U->ascale, 8, &scale[0][0]);
     glUniform1i(U->packed, packed);
+    glUniform1i(U->bgra, bgra);
     return 1;
 }
 
@@ -2334,9 +2562,12 @@ static void gl_draw(const Nv2aSurface *s, const Nv2aBatch *b)
     if (raw) {
         if (raw->check_out)
             raw_capture(raw);
-        glEnable(GL_CLIP_DISTANCE0);
-        glEnable(GL_CLIP_DISTANCE1);
-        glEnable(GL_DEPTH_CLAMP);
+        if (s_has_clip) {
+            glEnable(GL_CLIP_DISTANCE0);
+            glEnable(GL_CLIP_DISTANCE1);
+        }
+        if (s_has_dclamp)
+            glEnable(GL_DEPTH_CLAMP);
         s_rst.draws++;
         s_rst.tris += tris;
     }
@@ -2365,9 +2596,12 @@ static void gl_draw(const Nv2aSurface *s, const Nv2aBatch *b)
         glDrawArrays(GL_TRIANGLES, 0, (GLsizei)b->count);
     }
     if (raw) {
-        glDisable(GL_CLIP_DISTANCE0);
-        glDisable(GL_CLIP_DISTANCE1);
-        glDisable(GL_DEPTH_CLAMP);
+        if (s_has_clip) {
+            glDisable(GL_CLIP_DISTANCE0);
+            glDisable(GL_CLIP_DISTANCE1);
+        }
+        if (s_has_dclamp)
+            glDisable(GL_DEPTH_CLAMP);
     }
     if (!raw && genv("VC3_GL_RCCHECK") && b->rc && b->ext && s_use_rc
         && b->state->alpha_test_enable && (b->state->alpha_ref & 0xFF) == 0x80
@@ -3093,6 +3327,68 @@ static void interp_dump(const void *const *px, int n, uint32_t pitch,
     free(line);
 }
 
+#if defined(VC3_GLES)
+/* The Quest: the presented surface goes to the headset as it is drawn, a
+ * texture handed over in GL (vc3_quest_frame), never read back. A surface
+ * the CPU wrote (VC3's movie decoder) goes up from guest memory first. */
+static void quest_present(void)
+{
+    static GLuint tex, fbo;
+    static uint8_t *rgba;
+    static size_t cap;
+    Surf *f = surf_find(nv2a_backend_presented_va());
+    int lw, lh, x, y;
+    const uint8_t *mem;
+
+    if (!f || !f->fbo)
+        return;
+    /* The host blits: the scissor and colour mask apply to blits too. */
+    glDisable(GL_SCISSOR_TEST);
+    glColorMask(1, 1, 1, 1);
+    s_rs_valid = 0;
+    lw = f->wide ? ((f->w * 4 / 3 + 1) & ~1) : f->w;
+    lh = f->h;
+    if (!f->cpu_owned) {
+        vc3_quest_frame(f->fbo, f->pw, f->ph, lw, lh);
+        return;
+    }
+    if (cap < (size_t)f->w * f->h * 4) {
+        free(rgba);
+        cap = (size_t)f->w * f->h * 4;
+        if (!(rgba = (uint8_t *)malloc(cap))) {
+            cap = 0;
+            return;
+        }
+    }
+    mem = (const uint8_t *)xbox_GetMemoryOffset() + f->va;
+    for (y = 0; y < f->h; y++) {
+        const uint8_t *src = mem + (size_t)y * f->pitch;
+        uint8_t *d = rgba + (size_t)y * f->w * 4;
+        for (x = 0; x < f->w; x++, d += 4) {
+            if (f->bpp == 4) {
+                d[0] = src[x * 4 + 2]; d[1] = src[x * 4 + 1]; d[2] = src[x * 4]; d[3] = 255;
+            } else {
+                uint16_t v = (uint16_t)(src[x * 2] | src[x * 2 + 1] << 8);
+                d[0] = (uint8_t)((v >> 11) << 3);
+                d[1] = (uint8_t)(((v >> 5) & 0x3F) << 2);
+                d[2] = (uint8_t)((v & 0x1F) << 3);
+                d[3] = 255;
+            }
+        }
+    }
+    if (!tex) {
+        glGenTextures(1, &tex);
+        glGenFramebuffers(1, &fbo);
+    }
+    active_tex(0);
+    glBindTexture(GL_TEXTURE_2D, tex);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, f->w, f->h, 0, GL_RGBA, GL_UNSIGNED_BYTE, rgba);
+    glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, tex, 0);
+    vc3_quest_frame(fbo, f->w, f->h, f->w, f->h);
+}
+#endif
+
 static void gl_flip(void)
 {
     int i;
@@ -3129,6 +3425,9 @@ static void gl_flip(void)
                 surf_readback(&s_surfs[i]);
         }
     }
+#if defined(VC3_GLES)
+    quest_present();
+#endif
     /* The picture the window shows: the presented surface's guest size,
      * widened as it is drawn. Then the next frame's scale and aspect. */
     {

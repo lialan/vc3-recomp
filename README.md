@@ -67,3 +67,29 @@ drawn, as BMPs (`<prefix><flip>_<k>.bmp`, last = real frame) while the file
 named by `VC3_FPS_DUMP_FLIPS` exists (or always, with `1`), whenever the
 window gets more than guest memory holds (above 1x, 16:9 or 60 fps);
 `VC3_FPS_DEBUG=1` logs the scene-cut measure per flip (stalls; debug only).
+
+## Meta Quest
+
+`quest/build.sh` builds `quest/VirtuaCop3VR.apk` (Quest 3 / 3S / 2 / Pro): the
+same recompiled game for arm64 Android, its GL back end on OpenGL ES 3.2, shown
+on a large screen in front of you (an OpenXR quad layer the headset keeps
+steady at its own refresh rate, 120 Hz asked for, while the game runs at 60).
+It needs the lifted code (`scripts/lift.sh`), the Android SDK with NDK 27, a
+JDK 17+, and SDL2 and the OpenXR loader built for arm64 Android in `$DEPS`
+(default `~/Downloads/VR/deps`; the lindbergh-recomp-ports checkout's
+`quest/deps.sh` makes the same folder). No game files go in the APK:
+`quest/install.sh /path/to/vc3` installs it over adb and copies your game
+folder to `/sdcard/VirtuaCop3` (the app asks for all-files access).
+
+In the headset the controller is the gun: aim at the screen (a red dot shows
+where) and pull the trigger; pull it pointing away from the screen, or squeeze
+the grip, to reload. A / X inserts a coin and starts, B / Y inserts a coin, the
+left menu button is the cabinet's test switch. The other hand's thumbstick
+moves the screen (up/down: nearer/farther, left/right: smaller/larger); the
+left thumbstick click switches 4:3 / 16:9, the right one the internal
+resolution (1x-4x). The Quest defaults to 2x and 16:9; everything is saved in
+the app's settings file. `env.txt` in `/sdcard/VirtuaCop3`, one `NAME=value`
+per line, sets the usual `VC3_*` options; the last run's log is
+`/sdcard/VirtuaCop3/vc3.log`. Without an OpenXR runtime (or with
+`VC3_NO_XR=1`) the game shows in the Android window instead, which is how it
+runs in the Android emulator.
