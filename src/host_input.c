@@ -249,6 +249,23 @@ static void mouse_in_picture(int mx, int my, double *ux, double *uy)
     *ux = *uy = -1.0;
     if (!w || mx < 0 || my < 0)
         return;
+    /* The presenter gives its renderer a logical size, and SDL then rewrites
+     * mouse events into that space (letterbox removed) before our watch sees
+     * them. Dividing those by the window size halved the aim in a 2x window,
+     * pulling every shot toward the top-left. */
+    {
+        SDL_Renderer *r = SDL_GetRenderer(w);
+        int lw = 0, lh = 0;
+        if (r)
+            SDL_RenderGetLogicalSize(r, &lw, &lh);
+        if (lw > 0 && lh > 0) {
+            if (mx >= lw || my >= lh)
+                return;
+            *ux = (double)mx / lw;
+            *uy = (double)my / lh;
+            return;
+        }
+    }
     SDL_GetWindowSize(w, &ww, &wh);
     if (ww <= 0 || wh <= 0)
         return;
