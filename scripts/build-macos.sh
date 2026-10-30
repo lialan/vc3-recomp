@@ -60,7 +60,10 @@ if ! ok "$DIR"; then
 fi
 mkdir -p "$CONF" && printf '%s' "$DIR" > "$CONF/game_dir"
 export VC3_SOUND="${VC3_SOUND:-1}"
-exec "$HERE/vc3-bin" "$DIR"
+# The last session's output, for bug reports (shot positions, errors).
+LOGS="$HOME/Library/Logs/VC3"
+mkdir -p "$LOGS"
+exec "$HERE/vc3-bin" "$DIR" > "$LOGS/vc3.log" 2>&1
 EOF
 chmod +x "$APP/Contents/MacOS/VC3"
 
