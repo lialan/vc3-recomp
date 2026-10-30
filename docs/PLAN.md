@@ -132,8 +132,15 @@ Known issues:
 * The full register-combiner path (`VC3_GL_COMBINERS=1`) still rejects the
   lightmapped walls in its alpha test; the default draws texture * diffuse,
   times the stage-1 lightmap where a batch uses one (VC3's walls).
-* The attract background is white (probably the Sofdec movie
-  `vc3_title2_100mh.sfd`, not decoded).
+* The attract background is white, identically on the GL backend and the
+  software rasteriser, so it is not a renderer bug. The game opens all seven
+  movies under `media/movie/` at boot (valid MPEG-PS, `00 00 01 BA`), but no
+  `[READ]` ever returns movie data and none is asynchronous: the Sofdec player
+  never starts streaming. No YUV textures are bound during attract, no thread
+  entry is missing and no kernel call is unimplemented. Next: trace the
+  Sofdec server (mwPly/ADXT, sections PSGSFD*) to see what it waits on.
+  (`vc3_title2_100mh.sfd`, `demo_100mh.sfd` and `bonfire.sfd` are unused
+  strings; those files do not ship.)
 * Input is verified from SDL's event queue onward (`VC3_INPUT_SELFTEST=1`:
   coin, start, aim, fire, reload through the emulated JVS board). Play with a
   physical mouse is not yet confirmed by a person; `scripts/real-input.swift`
