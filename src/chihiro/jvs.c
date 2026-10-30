@@ -157,6 +157,12 @@ static int do_command(const uint8_t *p, int len, int *pos, out_t *o, int *reset)
         n = p[*pos + 1];
         i = p[*pos + 2];
         *pos += 3;
+        /* VC3 asks for "2 players, 0 bytes" but sizes the reply it splits
+         * (0x104470, table at node+0x13AD) from the feature list's switch
+         * count. Answer with the advertised bytes, or every report after
+         * this one is read at the wrong offset and counted as an error. */
+        if (i == 0)
+            i = JVS_SWITCH_BYTES;
         put(o, JVS_REPORT_OK);
         put(o, s_in.test ? 0x80 : 0x00);
         for (int pl = 0; pl < n; pl++)

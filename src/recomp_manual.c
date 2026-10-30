@@ -62,7 +62,7 @@ extern void chihiro_sc_firmware_download(void);
 void sub_0013D120(void) { chihiro_jamma_firmware_load(); }  /* JammaFirmwareLoad     */
 void sub_0013D310(void) { chihiro_sc_firmware_download(); } /* JvsScFirmwareDownload */
 
-/* Development-unit flag from the boot memory probe: always retail. */
+/* Chihiro-hardware flag from the boot memory probe: always set (baseboard.c). */
 extern void chihiro_devunit_probe(void);
 void sub_0007D220(void) { chihiro_devunit_probe(); }
 

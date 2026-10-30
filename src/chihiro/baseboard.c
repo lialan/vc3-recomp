@@ -23,14 +23,16 @@ void chihiro_jamma_firmware_load(void)
     g_esp += 8;
 }
 
-/* 0x7D220: sets the development-unit flag [0x36983C] when the boot memory
- * probe (0x34F60) finds more than 64 MB of contiguous memory. Eight places
- * read it through 0x7D240, among them 0xAEF40, which then opens the test
- * menu at every boot. The toolkit's 128 MB contiguous window makes the probe
- * find ~112 MB; a cabinet must run as retail, so the flag stays 0. cdecl. */
+/* 0x7D220: sets [0x36983C] when the boot memory probe (0x34F60) finds more
+ * than 64 MB of contiguous memory -- that is, when the game runs on a
+ * Chihiro (128 MB) rather than an Xbox (64 MB). Eight places read it through
+ * 0x7D240: at 1 the game sets up the JVS I/O board (0x7D3A0 -> 0xF30E0) and
+ * polls it every frame; at 0 it reads Xbox gamepads and never touches JVS.
+ * Set it outright rather than trusting the probe against the toolkit's
+ * contiguous window. cdecl. */
 void chihiro_devunit_probe(void)
 {
-    MEM32(0x0036983Cu) = 0;
+    MEM32(0x0036983Cu) = 1;
     g_esp += 4;
 }
 
