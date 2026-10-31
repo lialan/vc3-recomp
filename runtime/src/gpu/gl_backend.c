@@ -6181,12 +6181,15 @@ static void gl_draw_inner(const Nv2aSurface *s, const Nv2aBatch *b)
     }
     if (s_ftr == 1 && raw) {
         fprintf(stderr, "[GLTR] RAW surf %08X idx %u verts %u..%u prim %u tex %08X s1 %08X"
-                " blend %u %X/%X z %u/%u sprog %05X fin %08X\n", f->va, raw->index_count,
+                " blend %u %X/%X z %u/%u sprog %05X fin %08X"
+                " depth-func %X range %.9g..%.9g near %u vpz %.9g\n", f->va, raw->index_count,
                 raw->min_index, raw->max_index, raw->prim,
                 b->texture ? b->texture->offset : 0, b->stage[1] ? b->stage[1]->offset : 0,
                 b->state->blend_enable, b->state->blend_src, b->state->blend_dst,
                 b->state->depth_test_enable, b->state->depth_write,
-                b->rc ? b->rc->stage_program : 0, b->rc ? b->rc->final0 : 0);
+                b->rc ? b->rc->stage_program : 0, b->rc ? b->rc->final0 : 0,
+                b->state->depth_func, b->state->depth_min, b->state->depth_max,
+                raw->near_z, raw->vp_off_z);
     } else if (s_ftr == 1) {
         float x0 = 1e9f, x1 = -1e9f, y0 = 1e9f, y1 = -1e9f, z0 = 1e30f, z1 = -1e30f;
         uint32_t k;
@@ -6471,6 +6474,16 @@ static void gl_draw_inner(const Nv2aSurface *s, const Nv2aBatch *b)
             cu2f(U->gw, 1.0f, g->inv_pz);
         } else {
             cu2f(U->gw, 0.0f, 0.0f);
+        }
+        if (s_ftr == 1) {
+            const VrGameProj *gp = rawff ? &s_bgp : f->gp_ok ? &f->gp : &s_gp;
+            const int gp_ok = rawff ? s_bgp_ok : f->gp_ok || s_gp_ok;
+            fprintf(stderr, "[GLTR] route %08X %s 3d %d immersive %d hud %d depth-space %s"
+                    " projection %s valid %d: k %.9g %.9g c %.9g %.9g inv-pz %.9g\n",
+                    f->va, rawff ? "FFP" : raw ? "VP" : "CPU", is3d, imm3d, hud,
+                    imm3d ? "headset" : "guest", rawff ? "batch" : f->gp_ok ? "surface" : "global",
+                    gp_ok, gp_ok ? gp->kx : 0.0f, gp_ok ? gp->ky : 0.0f,
+                    gp_ok ? gp->cx : 0.0f, gp_ok ? gp->cy : 0.0f, gp_ok ? gp->inv_pz : 0.0f);
         }
         GLCK("draw: eye / immersive uniforms", b, f->va);
         if (hud) {

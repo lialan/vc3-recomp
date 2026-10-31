@@ -30,6 +30,7 @@ harness = r'''
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include "host/vr_math.h"
 static void check(GLuint o, int program) {
     GLint ok;
     char log[4096];
@@ -116,7 +117,22 @@ int main(int argc, char **argv) {
     }
     assert(result[0][3] == -2 && result[0][10] == 1); /* legacy clip w */
     assert(result[0][4] < 0 && result[0][19] < 0); /* guest planes reject */
+    /* The replacement headset projection is conventional GL depth:
+     * nearer positive distances must produce smaller depth values. */
+    vr_proj_fov(-1, 1, 1, -1, 0.05f, 2000.0f, identity);
+    glUniformMatrix4fv(LOC("u_immvp"), 1, GL_FALSE, identity);
+    glBeginTransformFeedback(GL_POINTS);
+    glDrawArrays(GL_POINTS, 0, 3);
+    glEndTransformFeedback();
+    glGetBufferSubData(GL_TRANSFORM_FEEDBACK_BUFFER, 0, sizeof result[1], result[1]);
+    assert(glGetError() == GL_NO_ERROR);
+    const float *near_vertex = result[1] + 7, *far_vertex = result[1] + 14;
+    float near_depth = 0.5f * (near_vertex[2] / near_vertex[3] + 1);
+    float far_depth = 0.5f * (far_vertex[2] / far_vertex[3] + 1);
+    assert(near_vertex[3] == 1 && far_vertex[3] == 2);
+    assert(near_depth > 0 && near_depth < far_depth && far_depth < 1);
     puts("actual VP GLSL: consistent immersive reconstruction/headset clipping PASS");
+    puts("headset projection preserves near-to-far increasing GL depth: PASS");
     CGLSetCurrentContext(NULL);
     CGLDestroyContext(ctx);
     free(src);
@@ -127,6 +143,6 @@ with tempfile.TemporaryDirectory(prefix='vp-clip-') as temp:
     temp = Path(temp)
     (temp / 'shader.glsl').write_text(shader)
     (temp / 'test.c').write_text(harness)
-    subprocess.run(['cc', '-std=c11', '-Wall', '-Wextra', '-Werror', str(temp / 'test.c'),
+    subprocess.run(['cc', '-std=c11', '-Wall', '-Wextra', '-Werror', '-I', str(root / 'runtime/src'), str(temp / 'test.c'),
                     '-framework', 'OpenGL', '-o', str(temp / 'test')], check=True)
     subprocess.run([str(temp / 'test'), str(temp / 'shader.glsl')], check=True)
