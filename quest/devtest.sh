@@ -121,6 +121,7 @@ SCEN=(
   # E.S. entered and left three times (64-84, 98-106, 120-132 s), firing
   # throughout: run with --secs 150
   "immersive-native-es-multi|stereo=1;vr_screen=immersive;vr_res=native|VC3_AUTOKEYS=$KEYS,$PEDAL,$PEDAL2,$FIRE2 CHIHIRO_GL_EFFECT_LOG=1"
+  "immersive-native-xform-cpu|stereo=1;vr_screen=immersive;vr_res=native|RECOMP_GPU_XF=0 CHIHIRO_GL_ERRCHECK=1 CHIHIRO_GL_TIMING=1"
   "immersive-native-es-diagnostic|stereo=1;vr_screen=immersive;vr_res=native|VC3_AUTOKEYS=$KEYS,$PEDAL CHIHIRO_GL_ERRCHECK=1 CHIHIRO_GL_EFFECT_LOG=2 CHIHIRO_GL_TIMING=1"
   "immersive-native-es-errcheck|stereo=1;vr_screen=immersive;vr_res=native|VC3_AUTOKEYS=$KEYS,$PEDAL CHIHIRO_GL_ERRCHECK=1"
   "immersive-2x-foveation|stereo=1;vr_screen=immersive;vr_res=2x|CHIHIRO_FOVEATION=1"
