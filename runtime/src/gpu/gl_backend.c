@@ -112,12 +112,16 @@ static struct {
     GLint sref;
     GLuint smask_func, smask_write;
     int valid;
+    uint32_t made, skipped;                /* this second (the GPU time log) */
 } s_sh;
 
 static void sh_reset(void)
 {
+    uint32_t made = s_sh.made, skipped = s_sh.skipped;
     memset(&s_sh, 0xFF, sizeof s_sh);
     s_sh.valid = 0;
+    s_sh.made = made;
+    s_sh.skipped = skipped;
 }
 
 static int sh_cap(GLenum cap)
@@ -137,9 +141,10 @@ static void sh_glEnable(GLenum cap)
     int i = sh_cap(cap);
     if (i >= 0) {
         if (s_sh.cap[i] == 1)
-            return;
+            { s_sh.skipped++; return; }
         s_sh.cap[i] = 1;
     }
+    s_sh.made++;
     glEnable(cap);
 }
 
@@ -148,9 +153,10 @@ static void sh_glDisable(GLenum cap)
     int i = sh_cap(cap);
     if (i >= 0) {
         if (s_sh.cap[i] == 0)
-            return;
+            { s_sh.skipped++; return; }
         s_sh.cap[i] = 0;
     }
+    s_sh.made++;
     glDisable(cap);
 }
 
@@ -158,17 +164,18 @@ static void sh_glBindFramebuffer(GLenum target, GLuint fb)
 {
     if (target == GL_FRAMEBUFFER) {
         if (s_sh.draw_fb == fb && s_sh.read_fb == fb)
-            return;
+            { s_sh.skipped++; return; }
         s_sh.draw_fb = s_sh.read_fb = fb;
     } else if (target == GL_DRAW_FRAMEBUFFER) {
         if (s_sh.draw_fb == fb)
-            return;
+            { s_sh.skipped++; return; }
         s_sh.draw_fb = fb;
     } else if (target == GL_READ_FRAMEBUFFER) {
         if (s_sh.read_fb == fb)
-            return;
+            { s_sh.skipped++; return; }
         s_sh.read_fb = fb;
     }
+    s_sh.made++;
     glBindFramebuffer(target, fb);
 }
 
@@ -187,22 +194,24 @@ static void sh_glDeleteFramebuffers(GLsizei n, const GLuint *fbs)
 static void sh_glViewport(GLint x, GLint y, GLsizei w, GLsizei h)
 {
     if (s_sh.vp[0] == x && s_sh.vp[1] == y && s_sh.vp[2] == w && s_sh.vp[3] == h)
-        return;
+        { s_sh.skipped++; return; }
     s_sh.vp[0] = x;
     s_sh.vp[1] = y;
     s_sh.vp[2] = w;
     s_sh.vp[3] = h;
+    s_sh.made++;
     glViewport(x, y, w, h);
 }
 
 static void sh_glBlendFuncSeparate(GLenum s, GLenum d, GLenum sa, GLenum da)
 {
     if (s_sh.bsrc == s && s_sh.bdst == d && s_sh.bsrc_a == sa && s_sh.bdst_a == da)
-        return;
+        { s_sh.skipped++; return; }
     s_sh.bsrc = s;
     s_sh.bdst = d;
     s_sh.bsrc_a = sa;
     s_sh.bdst_a = da;
+    s_sh.made++;
     glBlendFuncSeparate(s, d, sa, da);
 }
 
@@ -214,35 +223,39 @@ static void sh_glBlendFunc(GLenum s, GLenum d)
 static void sh_glBlendEquation(GLenum eq)
 {
     if (s_sh.beq == eq)
-        return;
+        { s_sh.skipped++; return; }
     s_sh.beq = eq;
+    s_sh.made++;
     glBlendEquation(eq);
 }
 
 static void sh_glBlendColor(GLfloat r, GLfloat g, GLfloat b, GLfloat a)
 {
     if (s_sh.bcol[0] == r && s_sh.bcol[1] == g && s_sh.bcol[2] == b && s_sh.bcol[3] == a)
-        return;
+        { s_sh.skipped++; return; }
     s_sh.bcol[0] = r;
     s_sh.bcol[1] = g;
     s_sh.bcol[2] = b;
     s_sh.bcol[3] = a;
+    s_sh.made++;
     glBlendColor(r, g, b, a);
 }
 
 static void sh_glDepthFunc(GLenum f)
 {
     if (s_sh.dfunc == f)
-        return;
+        { s_sh.skipped++; return; }
     s_sh.dfunc = f;
+    s_sh.made++;
     glDepthFunc(f);
 }
 
 static void sh_glDepthMask(GLboolean m)
 {
     if (s_sh.dmask == (signed char)(m != 0))
-        return;
+        { s_sh.skipped++; return; }
     s_sh.dmask = (signed char)(m != 0);
+    s_sh.made++;
     glDepthMask(m);
 }
 
@@ -250,55 +263,61 @@ static void sh_glColorMask(GLboolean r, GLboolean g, GLboolean b, GLboolean a)
 {
     if (s_sh.cmask[0] == (r != 0) && s_sh.cmask[1] == (g != 0) && s_sh.cmask[2] == (b != 0)
         && s_sh.cmask[3] == (a != 0))
-        return;
+        { s_sh.skipped++; return; }
     s_sh.cmask[0] = (signed char)(r != 0);
     s_sh.cmask[1] = (signed char)(g != 0);
     s_sh.cmask[2] = (signed char)(b != 0);
     s_sh.cmask[3] = (signed char)(a != 0);
+    s_sh.made++;
     glColorMask(r, g, b, a);
 }
 
 static void sh_glStencilFunc(GLenum f, GLint ref, GLuint mask)
 {
     if (s_sh.sfunc == f && s_sh.sref == ref && s_sh.smask_func == mask)
-        return;
+        { s_sh.skipped++; return; }
     s_sh.sfunc = f;
     s_sh.sref = ref;
     s_sh.smask_func = mask;
+    s_sh.made++;
     glStencilFunc(f, ref, mask);
 }
 
 static void sh_glStencilMask(GLuint mask)
 {
     if (s_sh.smask_write == mask)
-        return;
+        { s_sh.skipped++; return; }
     s_sh.smask_write = mask;
+    s_sh.made++;
     glStencilMask(mask);
 }
 
 static void sh_glStencilOp(GLenum fail, GLenum zfail, GLenum zpass)
 {
     if (s_sh.sfail == fail && s_sh.szfail == zfail && s_sh.szpass == zpass)
-        return;
+        { s_sh.skipped++; return; }
     s_sh.sfail = fail;
     s_sh.szfail = zfail;
     s_sh.szpass = zpass;
+    s_sh.made++;
     glStencilOp(fail, zfail, zpass);
 }
 
 static void sh_glCullFace(GLenum f)
 {
     if (s_sh.cface == f)
-        return;
+        { s_sh.skipped++; return; }
     s_sh.cface = f;
+    s_sh.made++;
     glCullFace(f);
 }
 
 static void sh_glFrontFace(GLenum f)
 {
     if (s_sh.fface == f)
-        return;
+        { s_sh.skipped++; return; }
     s_sh.fface = f;
+    s_sh.made++;
     glFrontFace(f);
 }
 
@@ -423,7 +442,7 @@ static void uc_reset(Prog *p)
 }
 
 /* 1 if loc already holds these bytes (or is not a uniform); else records them. */
-static int uc_same(GLint loc, const void *d, size_t n)
+static int uc_same_(GLint loc, const void *d, size_t n)
 {
     struct UCache *c;
     unsigned h, k;
@@ -459,6 +478,20 @@ static int uc_same(GLint loc, const void *d, size_t n)
         }
     }
     return 0;                               /* full: send */
+}
+
+/* Uniform calls made and not repeated (the GPU time log). */
+static uint32_t s_uc_sent, s_uc_kept, s_vc_sent;
+static int uc_same(GLint loc, const void *d, size_t n)
+{
+    int same = uc_same_(loc, d, n);
+    if (loc >= 0) {
+        if (same)
+            s_uc_kept++;
+        else
+            s_uc_sent++;
+    }
+    return same;
 }
 
 static void cu1i(GLint l, GLint a) { if (!uc_same(l, &a, sizeof a)) glUniform1i(l, a); }
@@ -2488,7 +2521,12 @@ static void gt_flip(void)
         s_gt_nself = s_gt_nlazy = 0;
         s_rst.draws = s_rst.tris = 0;
         s_zp_frame = s_sw_frame = 0;
-        fprintf(stderr, "[GPUTIME]   attribute pointers kept %u, set %u\n", s_va_hit, s_va_miss);
+        fprintf(stderr, "[GPUTIME]   attribute pointers kept %u, set %u; state calls made %u,"
+                " not repeated %u; uniforms sent %u, not repeated %u; program constants"
+                " sent %u\n", s_va_hit, s_va_miss, s_sh.made, s_sh.skipped, s_uc_sent,
+                s_uc_kept, s_vc_sent);
+        s_sh.made = s_sh.skipped = 0;
+        s_uc_sent = s_uc_kept = s_vc_sent = 0;
         s_va_hit = s_va_miss = 0;
         for (j = 0; j < GT_SURFS && s_gt_sum[j].va && n < (int)sizeof line - 40; j++)
             if (s_gt_sum[j].ms / s_gt_frames >= 0.3) {
@@ -4360,6 +4398,7 @@ static int raw_submit(const Nv2aRawGeometry *g, GLsizeiptr *ioff)
                 return 0;
             glBindBufferRange(GL_UNIFORM_BUFFER, VC_BINDING, s_cring.buf, off, VC_BYTES);
             s_vc_gen_bound = g->const_gen;
+            s_vc_sent++;
         }
     } else {
         raw_roles(g, slot);
@@ -6302,7 +6341,25 @@ static void gl_flip(void)
     }
 }
 
-static const Nv2aBackend s_gl_backend = { gl_clear, gl_draw, gl_flip, gl_draw_raw };
+/* Whether the flip writes nothing into guest memory for the executor's
+ * present: the Quest shows the drawn frame itself and reads nothing back
+ * (unless VC3_GL_READBACK=1 or VC3_GL_READBACK_ALL); the Mac's window shows
+ * guest memory. Then the decode thread need not wait for the flip. */
+static int gl_flip_async(void)
+{
+#if defined(VC3_GLES)
+    /* on the decode thread: ch_env, not genv (whose cache is the GL thread's) */
+    const char *rb = ch_env("GL_READBACK");
+    return !(rb && rb[0] == '1') && !ch_env("GL_READBACK_ALL");
+#else
+    /* VC3_GL_FLIP_ASYNC=1: the same on the Mac, to measure the overlap (the
+     * window then shows guest memory as the readback left it: a frame late) */
+    const char *e = ch_env("GL_FLIP_ASYNC");
+    return e && e[0] == '1';
+#endif
+}
+
+static const Nv2aBackend s_gl_backend = { gl_clear, gl_draw, gl_flip, gl_draw_raw, gl_flip_async };
 
 /* Register unless VC3_GL=0 (the executor's software rasteriser then draws). */
 void vc3_gl_backend_register(void)
