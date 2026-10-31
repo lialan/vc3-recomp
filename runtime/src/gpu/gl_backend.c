@@ -2031,6 +2031,12 @@ static int gl_ready(void)
         }
         s_vs_cpu = compile(GL_VERTEX_SHADER, VS);   /* for rc_spec */
         s_vs_ff = compile(GL_VERTEX_SHADER, VS_FF);
+        if (genv("GL_RINGS_OLD") && genv("GL_RINGS_OLD")[0] == '1') {   /* the A/B: 16, 4, 16 MB */
+            s_vring.size = 16 << 20;
+            s_iring.size = 4 << 20;
+            s_cring.size = 16 << 20;
+            fprintf(stderr, "[GL] streaming rings at the old sizes (VC3_GL_RINGS_OLD=1)\n");
+        }
         /* Without it every batch is transformed on the CPU, as before. */
         if (!prog_link(&s_praw, compile(GL_VERTEX_SHADER, VS_FF), fs, 1))
             fprintf(stderr, "[GL] fixed-function shader failed; raw draws declined\n");
@@ -5180,8 +5186,10 @@ static void gl_draw_inner(const Nv2aSurface *s, const Nv2aBatch *b)
          * batch's extent ran the program over every vertex on the CPU --
          * VC3's E.S. meshes (first vertex behind the eye, so "screen
          * space" to batch_extent), 60 us each, a quarter of a second a
-         * second on the Quest. It gets what a 3D batch gets. */
-        if (s_imm && f->st && raw && raw->kind == NV2A_RAW_PROGRAM && raw_vp_3d(raw)) {
+         * second on the Quest. It gets what a 3D batch gets.
+         * VC3_GL_IMM_XFORM_CPU=1: asked as before (the A/B). */
+        if (s_imm && f->st && raw && raw->kind == NV2A_RAW_PROGRAM && raw_vp_3d(raw)
+            && !(genv("GL_IMM_XFORM_CPU") && genv("GL_IMM_XFORM_CPU")[0] == '1')) {
             xs = f->wide ? (float)f->cw / (float)f->pw : 1.0f;
             xo = 0.0f;
         } else {
