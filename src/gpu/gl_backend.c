@@ -1188,12 +1188,162 @@ typedef struct {
     uint32_t last_sampled, first_drawn;
     int not_copy, skipping;
     uint32_t copy_src;
+    /* Depth discard (z_*): this frame's first depth/stencil access (0 none,
+     * 1 a clear, 2 a draw), left for another surface this frame, came back
+     * and drew with depth before clearing it, frames in a row that began
+     * with a clear and never came back for the depth, discarded since. */
+    int z_state, z_left, z_ret, z_good, z_inv, z_sten, z_logged;   /* z_sten: stencil ever tested */
 } Surf;
 static void lazy_catch_up(Surf *rt);
-static int lazy_skip(Surf *f, const Nv2aBatch *b);
-static int batch_fullscreen(const Nv2aBatch *b, const Surf *f);
 static Surf s_surfs[MAX_SURFS];
 static int s_nsurfs;
+static int lazy_skip(Surf *f, const Nv2aBatch *b);
+
+/* ── Depth discard ──────────────────────────────────────────
+ *
+ * A tiler stores a pass's depth/stencil to memory when the pass ends --
+ * here, when the back end binds another surface -- unless told the contents
+ * are no longer needed (glInvalidateFramebuffer). Each surface has its own
+ * depth (never read back), so it is dead once nothing will test against it
+ * before the next clear. That is learned: a surface whose frames, Z_LEARN in
+ * a row, began with a depth clear and never came back to draw with its depth
+ * after binding another surface has its depth and stencil discarded when the
+ * back end leaves it (and at the flip). Coming back for the depth after a
+ * discard -- a pattern the learning had not seen -- is logged, and that
+ * surface is never discarded again.
+ *
+ * VC3_GL_ZDISCARD: 1 discard (GLES only), 0 off (the default), "dry" only
+ * count what would be discarded and the violations (any build; on the Mac,
+ * whose GL 4.1 has no glInvalidateFramebuffer, this is how the learning is
+ * checked).
+ *
+ * Off by default: in a Mac dry run (immersive 2x, attract to combat) VC3's
+ * 3D surface 808D0000 showed the pattern for 50 s and then, at the mission
+ * start, came back for its depth after another surface -- a frame with that
+ * depth discarded would have drawn wrong once. Only the HUD surface kept
+ * the pattern throughout. */
+#define Z_LEARN 120               /* frames: two seconds of the same pattern */
+static uint64_t tm_now(void);
+static int s_zd = -1;                  /* 0 off, 1 on, 2 dry */
+static uint32_t s_zd_n, s_zd_bad;      /* discards, violations (this second) */
+static Surf *s_z_prev;                 /* the surface surf_bind bound last */
+
+static int zd_mode(void)
+{
+    if (s_zd < 0) {
+        const char *e = getenv("VC3_GL_ZDISCARD");
+#if defined(VC3_GLES)
+        s_zd = !e ? 0 : !strcmp(e, "dry") ? 2 : *e != '0';
+#else
+        s_zd = e && !strcmp(e, "dry") ? 2 : 0;
+#endif
+        if (s_zd)
+            fprintf(stderr, "[GL] depth discard %s\n", s_zd == 2 ? "dry run" : "on");
+    }
+    return s_zd;
+}
+
+/* f's depth and stencil are not needed again: tell the driver (f bound). */
+static void z_discard(Surf *f)
+{
+    if (f->z_good < Z_LEARN || f->z_state != 1 || f->z_inv)
+        return;
+    s_zd_n++;
+    f->z_inv = 1;
+    if (!f->z_logged) {
+        f->z_logged = 1;
+        fprintf(stderr, "[GL] depth discard: surface %08X from now on\n", f->va);
+    }
+#if defined(VC3_GLES)
+    if (s_zd == 1) {
+        static const GLenum att[1] = { GL_DEPTH_STENCIL_ATTACHMENT };
+        glBindFramebuffer(GL_FRAMEBUFFER, f->fbo);
+        glInvalidateFramebuffer(GL_FRAMEBUFFER, 1, att);
+    }
+#endif
+}
+
+/* surf_bind is binding f: the surface it leaves ends its pass. */
+static void z_switch(Surf *f)
+{
+    Surf *p = s_z_prev;
+    s_z_prev = f;
+    if (!s_zd || p == f || !p)
+        return;
+    if (p->z_state)
+        p->z_left = 1;
+    z_discard(p);
+}
+
+/* a draw into f that tests or writes depth or stencil */
+static void z_use(Surf *f, const Nv2aRenderState *rs)
+{
+    if (!s_zd || !rs->zeta_va
+        || !(rs->depth_test_enable || rs->depth_write || rs->stencil_enable))
+        return;
+    if (rs->stencil_enable)
+        f->z_sten = 1;
+    if (!f->z_state)
+        f->z_state = 2;
+    if (f->z_left)
+        f->z_ret = 1;
+    if (f->z_inv) {                    /* the depth it needed was discarded */
+        s_zd_bad++;
+        if (f->z_good >= 0)
+            fprintf(stderr, "[GL] depth discard: surface %08X drew with the depth it had "
+                    "discarded; not discarding it again\n", f->va);
+        f->z_good = -1000000;
+        f->z_inv = 0;
+    }
+}
+
+/* a clear of f: depth and stencil (or depth, stencil never tested) */
+static void z_clear(Surf *f, GLbitfield bits)
+{
+    if (!s_zd || !(bits & GL_DEPTH_BUFFER_BIT))
+        return;
+    if (f->z_sten && !(bits & GL_STENCIL_BUFFER_BIT)) {  /* the stencil lives on */
+        if (!f->z_state)
+            f->z_state = 2;
+        return;
+    }
+    if (!f->z_state)
+        f->z_state = 1;
+    f->z_left = 0;
+    f->z_inv = 0;
+}
+
+/* the flip: the bound surface's pass ends too; the frames' verdicts */
+static void z_flip(void)
+{
+    static uint64_t t0;
+    int i;
+    uint64_t now;
+    if (!zd_mode())
+        return;
+    if (s_z_prev)
+        z_discard(s_z_prev);
+    for (i = 0; i < s_nsurfs; i++) {
+        Surf *f = &s_surfs[i];
+        if (f->z_state == 1 && !f->z_ret)
+            f->z_good++;
+        else if (f->z_state && f->z_good >= 0)
+            f->z_good = 0;
+        f->z_state = f->z_left = f->z_ret = 0;
+    }
+    s_z_prev = NULL;
+    now = tm_now();
+    if (!t0)
+        t0 = now;
+    if (now - t0 >= 1000000000ull) {
+        if (s_zd_n || s_zd_bad)
+            fprintf(stderr, "[GL] depth discard: %u a second%s, %u violations\n",
+                    s_zd_n, s_zd == 2 ? " (dry)" : "", s_zd_bad);
+        s_zd_n = s_zd_bad = 0;
+        t0 = now;
+    }
+}
+static int batch_fullscreen(const Nv2aBatch *b, const Surf *f);
 
 /* Only the screen-shaped surfaces widen: render targets of other shapes
  * (VC3's 128x128 and 256x256 effect maps) are sampled whole. */
@@ -1588,6 +1738,7 @@ static Surf *surf_bind(const Nv2aSurface *s)
     f->pitch = s->pitch;
     f->bpp = bpp;
     gt_surface(f->va);
+    z_switch(f);
     s_bound_fbo = f->fbo;
     glBindFramebuffer(GL_FRAMEBUFFER, f->fbo);
     glViewport(0, 0, f->pw, f->ph);
@@ -2614,6 +2765,7 @@ static void gl_clear(const Nv2aSurface *s, const Nv2aRenderState *rs,
                 "zeta %08X\n", f->va, flags, argb, zstencil, rs->zeta_va);
     if (bits)
         glClear(bits);
+    z_clear(f, bits);
     f->dirty = 1;
     f->memq_valid = 0;
     f->cpu_owned = 0;
@@ -3322,6 +3474,7 @@ static void gl_draw(const Nv2aSurface *s, const Nv2aBatch *b)
     }
     TM(0);
     apply_state(b->state);
+    z_use(f, b->state);
     TM(1);
     cu2f(U->surf, (float)f->w, (float)f->h);
     {
@@ -4525,8 +4678,10 @@ static void gl_flip(void)
 {
     int i;
 
-    if (gl_ready())
+    if (gl_ready()) {
         caps_off();                     /* the flip's own drawing has no clip planes */
+        z_flip();
+    }
 
     if (s_tm_on < 0)
         s_tm_on = genv("VC3_GL_TIMING") != NULL;
