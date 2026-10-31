@@ -84,6 +84,14 @@ SCEN=(
   "immersive-native-nofov|stereo=1;vr_screen=immersive;vr_res=native|CHIHIRO_FOVEATION=0"
   "immersive-native-direct|stereo=1;vr_screen=immersive;vr_res=native|CHIHIRO_XR_DIRECT=1"
   "immersive-native-fovgain8|stereo=1;vr_screen=immersive;vr_res=native|CHIHIRO_FOV_GAIN=8"
+  # the mission intro at native with fixed-function draw merging (runtime
+  # gl_backend.c, RECOMP_GL_MERGE; off by default), against immersive-native:
+  # GL thread per draw ([DEFER] submit busy), [GLMERGE] runs, GPU time.
+  # -cmp checks merged against unmerged vertices bit for bit (slow; the
+  # [GLMERGE] "differ" count must be 0).
+  "immersive-native-merge|stereo=1;vr_screen=immersive;vr_res=native|RECOMP_GL_MERGE=1 CHIHIRO_GL_TIMING=1"
+  "immersive-native-nomerge|stereo=1;vr_screen=immersive;vr_res=native|RECOMP_GL_MERGE=0 CHIHIRO_GL_TIMING=1"
+  "immersive-native-merge-cmp|stereo=1;vr_screen=immersive;vr_res=native|RECOMP_GL_MERGE=2"
   # attract with no coin and no input (run it with --secs 125): the title
   # logo must give way to the demo -- the attract stall on the device
   "attract-native|stereo=1;vr_screen=immersive;vr_res=native;vr_coins=manual|VC3_AUTOKEYS=none CHIHIRO_IMM_LOG=1"
