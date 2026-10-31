@@ -5100,7 +5100,18 @@ static void gl_draw_inner(const Nv2aSurface *s, const Nv2aBatch *b)
     cu2f(U->surf, (float)f->w, (float)f->h);
     {
         float xs, xo;
-        surf_xform(f, b, &xs, &xo);
+        /* An immersive frame's 3D program batch is drawn through the eyes'
+         * matrices: the 16:9 placement is not its, and asking it for the
+         * batch's extent ran the program over every vertex on the CPU --
+         * VC3's E.S. meshes (first vertex behind the eye, so "screen
+         * space" to batch_extent), 60 us each, a quarter of a second a
+         * second on the Quest. It gets what a 3D batch gets. */
+        if (s_imm && f->st && raw && raw->kind == NV2A_RAW_PROGRAM && raw_vp_3d(raw)) {
+            xs = f->wide ? (float)f->cw / (float)f->pw : 1.0f;
+            xo = 0.0f;
+        } else {
+            surf_xform(f, b, &xs, &xo);
+        }
         cu2f(U->xs, xs, xo);
         if (s_ftr == 1 && f->wide)
             fprintf(stderr, "[GLTR]   16:9 x scale %.3f offset %+.3f\n", xs, xo);
