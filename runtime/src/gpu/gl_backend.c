@@ -4895,6 +4895,8 @@ static void raw_capture(const Nv2aRawGeometry *g)
     if (p) {
         memcpy(g->check_out, p, (size_t)bytes);
         glUnmapBuffer(GL_TRANSFORM_FEEDBACK_BUFFER);
+        if (g->check_valid)
+            *g->check_valid = 1;
     } else {
         memset(g->check_out, 0, (size_t)bytes);
     }
@@ -5089,7 +5091,10 @@ static int lazy_skip(Surf *f, const Nv2aBatch *b)
                   && surf_find(b->texture->offset) != f && batch_fullscreen(b, f));
     if (!copy)
         f->not_copy = 1;
-    if (!lazy_on() || !f->st || f->not_copy || surf_shown(f) || f->cpu_owned
+    /* A checked draw must reach raw_capture; returning "taken" without
+     * capture used to compare the CPU batch against an older GPU batch. */
+    if ((b && b->raw && b->raw->check_out)
+        || !lazy_on() || !f->st || f->not_copy || surf_shown(f) || f->cpu_owned
         || s_frame - f->first_drawn < LAZY_FRAMES || s_frame - f->last_sampled < LAZY_FRAMES)
         return 0;
     if (b)
