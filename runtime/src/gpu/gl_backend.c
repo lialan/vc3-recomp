@@ -1856,6 +1856,27 @@ typedef struct {
     GLint pc_sten;
 } Surf;
 static void lazy_catch_up(Surf *rt);
+/* The effect target's run (see "The effect target" below): drawing into L
+ * for S; this draw goes there (surf_bind swaps S's framebuffer and size for
+ * L's while it lasts). */
+static struct {
+    int on, draw, swapped;
+    Surf *s;
+    GLuint fbo, color, depth;
+    GLsizei w, h;                    /* L, an eye */
+    GLuint save_fbo;
+    GLsizei save_pw, save_ph, save_cw;
+    uint32_t n_this, n_prev, runs;   /* qualifying batches this frame, the last */
+    /* the render target the run samples, reduced as L is, once a run */
+    GLuint small_fbo, small_tex;
+    GLsizei small_w, small_h;
+    uint32_t small_va, small_run;
+} s_fx;
+static GLuint fx_small(const Surf *rt);
+static void fx_pre(const Nv2aSurface *s, const Nv2aBatch *b);
+static void fx_post(void);
+static void fx_resolve(void);
+static int fx_scale(void);
 static Surf s_surfs[MAX_SURFS];
 static int s_nsurfs;
 static int lazy_skip(Surf *f, const Nv2aBatch *b);
@@ -2576,6 +2597,18 @@ static Surf *surf_bind(const Nv2aSurface *s)
         surf_alloc(f, w > f->w ? w : f->w, h > f->h ? h : f->h);
     f->pitch = s->pitch;
     f->bpp = bpp;
+    if (s_fx.draw && f == s_fx.s && !s_fx.swapped) {   /* into the effect target */
+        int sc = fx_scale();
+        s_fx.save_fbo = f->fbo;
+        s_fx.save_pw = f->pw;
+        s_fx.save_ph = f->ph;
+        s_fx.save_cw = f->cw;
+        f->fbo = s_fx.fbo;
+        f->pw = s_fx.w;
+        f->ph = s_fx.h;
+        f->cw = (f->cw + sc - 1) / sc;
+        s_fx.swapped = 1;
+    }
     gt_surface(f->va);
     z_switch(f);
     s_bound_fbo = f->fbo;
@@ -3432,8 +3465,9 @@ static int tex_bind(const Nv2aTexture *t, float *sw, float *sh)
                 cnt[k]++;
             }
         }
-        glBindTexture(GL_TEXTURE_2D, rt->color);
-        bound = rt->color;
+        /* drawing into the effect target: the render target reduced alike */
+        bound = s_fx.draw && rt != s_fx.s ? fx_small(rt) : rt->color;
+        glBindTexture(GL_TEXTURE_2D, bound);
         if (rt->st && s_unit < 4)
             s_sbs[s_unit] = 1.0f;
         *sw = (float)rt->w;
@@ -3684,7 +3718,10 @@ static void apply_state(const Nv2aRenderState *rs)
     s_rs_valid = 1;
     if (rs->blend_enable) {
         glEnable(GL_BLEND);
-        glBlendFunc(rs->blend_src, rs->blend_dst);
+        if (s_fx.draw)          /* the effect target: alpha keeps the scene's weight */
+            glBlendFuncSeparate(rs->blend_src, rs->blend_dst, GL_ZERO, GL_ONE_MINUS_SRC_ALPHA);
+        else
+            glBlendFunc(rs->blend_src, rs->blend_dst);
         glBlendEquation(rs->blend_eq ? rs->blend_eq : GL_FUNC_ADD);
         glBlendColor(((rs->blend_color >> 16) & 0xFF) / 255.0f,
                      ((rs->blend_color >> 8) & 0xFF) / 255.0f,
@@ -3839,6 +3876,8 @@ static void gl_clear(const Nv2aSurface *s, const Nv2aRenderState *rs,
     (void)rs;
     if (!gl_ready())
         return;
+    if (s_fx.on)
+        fx_resolve();
     GLCK("before clear (elsewhere)", NULL, s->color_va);
     if (!(f = surf_bind(s)))
         return;
@@ -4666,7 +4705,18 @@ static int batch_needs_rc(const Surf *f, const Nv2aBatch *b, int raw)
     return 0;
 }
 
+static void gl_draw_inner(const Nv2aSurface *s, const Nv2aBatch *b);
+
 static void gl_draw(const Nv2aSurface *s, const Nv2aBatch *b)
+{
+    if (!gl_ready())
+        return;
+    fx_pre(s, b);
+    gl_draw_inner(s, b);
+    fx_post();
+}
+
+static void gl_draw_inner(const Nv2aSurface *s, const Nv2aBatch *b)
 {
     const Nv2aRawGeometry *raw = b->raw;
     Surf *f;
@@ -5638,6 +5688,246 @@ static void quad_into(GLuint fbo, GLsizei w, GLsizei h)
     glDrawArrays(GL_TRIANGLES, 0, 3);
 }
 
+/* ── The effect target (reduced-resolution blended stacks) ─────────────
+ *
+ * VC3's E.S. mode redraws the scene through ~63 distortion meshes, each
+ * blended (SRC_ALPHA, ONE_MINUS_SRC_ALPHA) over the whole view through the
+ * combiners, sampling a copy of the scene at distorted coordinates, most of
+ * each one then discarded by its alpha test. At native size that is 63
+ * layers over two 2064x2208 eyes -- ~570 Mpx of combiner shading a frame,
+ * 6-9 fps even on the Mac -- for an effect that is a blur and a ripple.
+ *
+ * So a run of such batches (blended that way, sampling another render
+ * target, no depth or stencil writes, 3D, into a large stereo surface S,
+ * after a frame that had at least FX_MIN of them) is drawn into
+ * an effect target L of 1/scale the size each way instead: its depth is S's
+ * scaled down (the meshes are depth-tested against the scene); its colour
+ * starts as (0, 0, 0, 1) and each batch blends colour as it would over S
+ * and alpha as ZERO, ONE_MINUS_SRC_ALPHA -- so L holds the stack's own
+ * contribution C and the scene's remaining weight T. When the run ends (a
+ * draw or clear of anything else, the flip) L goes onto S once, filtered up:
+ * S = C + S * T -- exactly what the layers blended one by one over S would
+ * give, but with the contribution at the effect's resolution and the scene
+ * itself kept native wherever the effect leaves it.
+ *
+ * VC3_GL_EFFECT_SCALE: 2 (default: half each way, a quarter of the pixels),
+ * 3, 4, or 1 (off: every layer at full size). Only surfaces of FX_PX
+ * pixels an eye and up (native immersive), never at 2x. */
+#define FX_MIN 8                   /* qualifying batches in the frame before */
+#define FX_PX 2000000L             /* an eye's pixels for the effect target */
+
+static int fx_scale(void)
+{
+    static int sc = -1;
+    if (sc < 0) {
+        const char *e = genv("GL_EFFECT_SCALE");
+        sc = e ? atoi(e) : 2;
+        if (sc < 1 || sc > 8)
+            sc = 1;
+    }
+    return sc;
+}
+
+static int fx_qualifies(const Surf *f, const Nv2aBatch *b)
+{
+    const Nv2aRenderState *rs = b->state;
+    const Surf *rt;
+    if (!f || !f->st || !f->fbo || !rs || !b->texture || b->zpass_out)
+        return 0;
+    if (!rs->blend_enable || rs->blend_src != GL_SRC_ALPHA
+        || rs->blend_dst != GL_ONE_MINUS_SRC_ALPHA
+        || (rs->blend_eq && rs->blend_eq != GL_FUNC_ADD))
+        return 0;
+    if ((rs->depth_write && rs->zeta_va) || (rs->stencil_enable && rs->zeta_va)
+        || rs->color_mask != 0x01010101u)
+        return 0;
+    rt = surf_find(b->texture->offset);
+    if (!rt || rt == f || !rt->fbo || rt->cpu_owned)
+        return 0;
+    /* 3D (drawn into the eyes): never a 2D batch, which may go to the HUD */
+    if (b->raw)
+        return b->raw->kind != NV2A_RAW_PROGRAM || raw_vp_3d(b->raw);
+    return b->count && b->vertices[0].rhw != 1.0f && b->vertices[0].rhw > 0.0f;
+}
+
+static void fx_begin(Surf *f)
+{
+    int sc = fx_scale();
+    GLsizei w = (f->pw + sc - 1) / sc, h = (f->ph + sc - 1) / sc;
+    static int logged;
+
+    clear_flush(f, ~(GLbitfield)0);
+    if (!s_fx.fbo || s_fx.w != w || s_fx.h != h) {
+        if (!s_fx.fbo) {
+            glGenFramebuffers(1, &s_fx.fbo);
+            glGenTextures(1, &s_fx.color);
+            glGenRenderbuffers(1, &s_fx.depth);
+        }
+        glBindTexture(GL_TEXTURE_2D, s_fx.color);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, 2 * w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        glBindRenderbuffer(GL_RENDERBUFFER, s_fx.depth);
+        glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH24_STENCIL8, 2 * w, h);
+        glBindFramebuffer(GL_FRAMEBUFFER, s_fx.fbo);
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, s_fx.color, 0);
+        glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_RENDERBUFFER,
+                                  s_fx.depth);
+        if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
+            fprintf(stderr, "[GL] effect target %dx%d incomplete\n", 2 * w, h);
+        s_fx.w = w;
+        s_fx.h = h;
+    }
+    if (!logged) {
+        logged = 1;
+        fprintf(stderr, "[GL] effect target: a blended stack into %08X drawn at 1/%d"
+                " (%dx%d an eye; VC3_GL_EFFECT_SCALE)\n", f->va, sc, w, h);
+    }
+    /* the scene's depth, scaled down; the stack's contribution none yet */
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, f->fbo);
+    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, s_fx.fbo);
+    glDisable(GL_SCISSOR_TEST);
+    glBlitFramebuffer(0, 0, 2 * f->pw, f->ph, 0, 0, 2 * w, h,
+                      GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT, GL_NEAREST);
+    glBindFramebuffer(GL_FRAMEBUFFER, s_fx.fbo);
+    glColorMask(1, 1, 1, 1);
+    glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+    glClear(GL_COLOR_BUFFER_BIT);
+    s_rs_valid = 0;
+    s_fx.on = 1;
+    s_fx.s = f;
+    s_fx.runs++;
+    GLCK("effect target: begin", NULL, f->va);
+}
+
+/* rt reduced to the effect target's scale, for the batches of this run to
+ * sample: each pixel of L read the full-size copy of the scene at distorted
+ * coordinates, a scattered walk over 4128x2208 texels per layer -- half of
+ * what the stack cost. Made once per run (the copy changes every frame). */
+static GLuint fx_small(const Surf *rt)
+{
+    int sc = fx_scale();
+    GLsizei w = (rt->pw * (rt->st ? 2 : 1) + sc - 1) / sc, h = (rt->ph + sc - 1) / sc;
+    GLint rd = 0, dr = 0, tex = 0;
+    if (s_fx.small_run == s_fx.runs && s_fx.small_va == rt->va && s_fx.small_tex)
+        return s_fx.small_tex;
+    glGetIntegerv(GL_TEXTURE_BINDING_2D, &tex);
+    if (!s_fx.small_tex || s_fx.small_w != w || s_fx.small_h != h) {
+        if (!s_fx.small_tex) {
+            glGenTextures(1, &s_fx.small_tex);
+            glGenFramebuffers(1, &s_fx.small_fbo);
+        }
+        glBindTexture(GL_TEXTURE_2D, s_fx.small_tex);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glBindFramebuffer(GL_FRAMEBUFFER, s_fx.small_fbo);
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D,
+                               s_fx.small_tex, 0);
+        s_fx.small_w = w;
+        s_fx.small_h = h;
+    }
+    glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &rd);
+    glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &dr);
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, rt->fbo);
+    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, s_fx.small_fbo);
+    glDisable(GL_SCISSOR_TEST);
+    glBlitFramebuffer(0, 0, rt->pw * (rt->st ? 2 : 1), rt->ph, 0, 0, w, h, GL_COLOR_BUFFER_BIT,
+                      GL_LINEAR);
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, (GLuint)rd);
+    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, (GLuint)dr);
+    glBindTexture(GL_TEXTURE_2D, (GLuint)tex);
+    s_fx.small_run = s_fx.runs;
+    s_fx.small_va = rt->va;
+    return s_fx.small_tex;
+}
+
+/* L onto S: S = C + S * T (see above). */
+static void fx_resolve(void)
+{
+    static GLuint prog, vao;
+    static GLint u_img, u_org, u_size;
+    Surf *f = s_fx.s;
+
+    s_fx.on = 0;
+    if (!f || !f->fbo)
+        return;
+    if (!prog && (prog = link_quad(FS_HUD))) {
+        u_img = glGetUniformLocation(prog, "u_img");
+        u_org = glGetUniformLocation(prog, "u_org");
+        u_size = glGetUniformLocation(prog, "u_size");
+    }
+    if (!prog)
+        return;
+    if (!vao)
+        glGenVertexArrays(1, &vao);
+    glBindFramebuffer(GL_FRAMEBUFFER, f->fbo);
+    s_bound_fbo = f->fbo;
+    glViewport(0, 0, 2 * f->pw, f->ph);
+    glUseProgram(prog);
+    s_cur_prog = prog;
+    glBindVertexArray(vao);
+    s_cur_vao = vao;
+    bind_tex(0, s_fx.color);
+    glUniform1i(u_img, 0);
+    glUniform2f(u_org, 0.0f, 0.0f);
+    glUniform2f(u_size, (GLfloat)(2 * f->pw), (GLfloat)f->ph);
+    glDisable(GL_DEPTH_TEST);
+    glDisable(GL_STENCIL_TEST);
+    glDisable(GL_CULL_FACE);
+    glDisable(GL_SCISSOR_TEST);
+    caps_off();
+    glColorMask(1, 1, 1, 1);
+    glEnable(GL_BLEND);
+    glBlendEquation(GL_FUNC_ADD);
+    glBlendFuncSeparate(GL_ONE, GL_SRC_ALPHA, GL_ZERO, GL_ONE);
+    glDrawArrays(GL_TRIANGLES, 0, 3);
+    glViewport(0, 0, f->pw, f->ph);
+    s_rs_valid = 0;
+    f->dirty = 1;
+    GLCK("effect target: resolve", NULL, f->va);
+}
+
+/* Before a draw (gl_draw): end a run this batch does not continue; begin
+ * one when it should; mark the draw as going into L (surf_bind swaps it). */
+static void fx_pre(const Nv2aSurface *s, const Nv2aBatch *b)
+{
+    Surf *f = surf_find(s->color_va);
+    int q;
+    s_fx.draw = 0;
+    q = f ? fx_qualifies(f, b) : 0;
+    if (s_fx.on && (f != s_fx.s || !q))
+        fx_resolve();
+    if (!q)
+        return;
+    s_fx.n_this++;
+    if (!s_fx.on && s_fx.n_prev >= FX_MIN && fx_scale() > 1 && (long)f->pw * f->ph >= FX_PX)
+        fx_begin(f);
+    if (s_fx.on) {
+        s_fx.draw = 1;
+        s_rs_valid = 0;
+    }
+}
+
+/* After it: the surface as it was. */
+static void fx_post(void)
+{
+    if (s_fx.swapped) {
+        Surf *f = s_fx.s;
+        f->fbo = s_fx.save_fbo;
+        f->pw = s_fx.save_pw;
+        f->ph = s_fx.save_ph;
+        f->cw = s_fx.save_cw;
+        s_fx.swapped = 0;
+    }
+    if (s_fx.draw)
+        s_rs_valid = 0;
+    s_fx.draw = 0;
+}
+
+
 /* One matching level, from field[dst ^ 1] (the level before) into
  * field[dst]. */
 static void search_pass(int coarse, float lod, int win, int range, int dst)
@@ -6069,6 +6359,13 @@ static void scale_pick(int on)
 
 static void gl_flip(void)
 {
+    if (s_fx.on)                    /* the effect target's run ends with the frame */
+        fx_resolve();
+    if (genv("GL_EFFECT_LOG") && s_fx.n_this)   /* VC3_GL_EFFECT_LOG=1 */
+        fprintf(stderr, "[FX] frame %u: %u qualifying batches, %u runs so far\n", s_frame,
+                s_fx.n_this, s_fx.runs);
+    s_fx.n_prev = s_fx.n_this;
+    s_fx.n_this = 0;
     int i;
 
     if (gl_ready()) {

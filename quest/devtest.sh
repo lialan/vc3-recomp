@@ -88,6 +88,11 @@ SCEN=(
   "immersive-2x-es|stereo=1;vr_screen=immersive;vr_res=2x|VC3_AUTOKEYS=$KEYS,$PEDAL"
   "immersive-native-es|stereo=1;vr_screen=immersive;vr_res=native|VC3_AUTOKEYS=$KEYS,$PEDAL"
   "immersive-native-es-nofov|stereo=1;vr_screen=immersive;vr_res=native|VC3_AUTOKEYS=$KEYS,$PEDAL CHIHIRO_FOVEATION=0"
+  # the E.S. stack's effect target (gl_backend.c): off (every layer at full
+  # size), and at a third and a quarter each way (the default is half)
+  "immersive-native-es-fx1|stereo=1;vr_screen=immersive;vr_res=native|VC3_AUTOKEYS=$KEYS,$PEDAL CHIHIRO_GL_EFFECT_SCALE=1"
+  "immersive-native-es-fx3|stereo=1;vr_screen=immersive;vr_res=native|VC3_AUTOKEYS=$KEYS,$PEDAL CHIHIRO_GL_EFFECT_SCALE=3"
+  "immersive-native-es-fx4|stereo=1;vr_screen=immersive;vr_res=native|VC3_AUTOKEYS=$KEYS,$PEDAL CHIHIRO_GL_EFFECT_SCALE=4"
   "immersive-2x-foveation|stereo=1;vr_screen=immersive;vr_res=2x|CHIHIRO_FOVEATION=1"
   "immersive-2x-nofov|stereo=1;vr_screen=immersive;vr_res=2x|CHIHIRO_FOVEATION=0"
   "immersive-2x-bigcores|stereo=1;vr_screen=immersive;vr_res=2x|CHIHIRO_BIGCORES=1"
