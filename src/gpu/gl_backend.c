@@ -87,6 +87,7 @@ extern void vc3_quest_frame(GLuint fbo, int pw, int ph, int eyes, int lw, int lh
 static void es_bgra(GLenum target);
 #include "../d3d/d3d8_swizzle.h"   /* relative to src/kernel, as the executor */
 #include "chihiro/ch_env.h"
+#include "chihiro/chihiro_profile.h"
 
 /* getenv, looked up once per name: several debug switches are tested per
  * draw, and getenv walks the whole environment each time. They do not change
@@ -1719,7 +1720,18 @@ static VrGameProj s_gp, s_bgp;          /* the newest projection; this batch's *
 static int s_gp_ok, s_bgp_ok;
 static uint32_t s_gp_good, s_gp_bad;    /* for the log */
 static uint32_t s_3d_this, s_3d_prev;   /* 3D batches into a shown surface */
-static uint32_t s_shown_va[4];          /* the surfaces shown lately (VC3 triple buffers) */
+/* The surfaces shown lately: the game's swap chain (the profile's
+ * gpu.buffers, 4 for VC3, which triple buffers), at most SHOWN_MAX. */
+#define SHOWN_MAX 8
+static uint32_t s_shown_va[SHOWN_MAX];
+static int s_nshown = 4;
+
+/* The game's own rules (chihiro_profile.h, gpu), latched when the back end
+ * is registered: per-draw paths read these statics. */
+static int (*s_hud_place)(float x0, float x1, float w);   /* NULL: kept with the picture */
+static int s_pic_min_w = 320;           /* a full-screen texture this wide is a 4:3 picture */
+static int s_lazy_rt = 1;               /* the lazy copies allowed */
+static float s_zoom_tol = 0.5f;         /* focal lengths this close are one zoom */
 /* Clip distances 0-2 and depth clamp as last set (set_cap): a fixed-function
  * draw wants clip 0, 1 (the CPU path's planes), 2 (one-pass stereo) and the
  * clamp; a CPU-path draw only clip 0 (its one-pass half, else 1.0). Set when
@@ -1764,7 +1776,7 @@ static void zoom_note(float kx)
     if (!(a > 1.0f))
         return;
     for (i = 0; i < ZOOM_SLOTS; i++) {
-        if (s_zoom_hist[i].n && fabsf(s_zoom_hist[i].k - a) < 0.5f) {
+        if (s_zoom_hist[i].n && fabsf(s_zoom_hist[i].k - a) < s_zoom_tol) {
             s_zoom_hist[i].n++;
             break;
         }
@@ -2148,19 +2160,13 @@ static int hud_joined(const HudBox *a, const HudBox *b)
         && ix > -8.0f;                              /* glyphs of one row */
 }
 
-/* Where a widget goes: -1 left edge, 1 right edge, 0 middle. Only a widget
- * that sits against the screen's side (within 5% of it) and keeps to that
- * side's 3/8 is the side HUD -- VC3's score panel and gun panel, at x 8.
- * Anything else stays with the 4:3 picture: the Virtua City map's labels
- * and other things a player shoots at, whose hit areas the game keeps in
- * 4:3 coordinates, and the life bar, whose fill is drawn in 3D. */
+/* Where a widget goes: -1 left edge, 1 right edge, 0 middle -- the game's
+ * rule (profile gpu.hud_place; VC3: a widget against a side, within 5% of
+ * it, keeping to that side's 3/8 -- its score and gun panels). With none,
+ * everything stays with the 4:3 picture. */
 static int hud_place_of(const HudBox *b, float w)
 {
-    if (b->x0 <= w * 0.05f && b->x1 <= w * 0.375f)
-        return -1;
-    if (b->x1 >= w * 0.95f && b->x0 >= w * 0.625f)
-        return 1;
-    return 0;
+    return s_hud_place ? s_hud_place(b->x0, b->x1, w) : 0;
 }
 
 /* The finished frame's boxes into widgets (union of joined boxes). */
@@ -2263,7 +2269,7 @@ static void surf_xform(Surf *f, const Nv2aBatch *b, float *scale, float *offset)
             *scale = 1.0f;                        /* the widened view */
             if (src != f)
                 f->hor_frame = s_frame;
-        } else if (b->texture->width >= 320) {
+        } else if (b->texture->width >= (uint32_t)s_pic_min_w) {
             f->hor_frame = 0;                     /* a 4:3 picture: movie, menu */
         } else if (f->hor_frame == s_frame) {
             *scale = 1.0f;                        /* a screen effect in play */
@@ -3877,7 +3883,7 @@ static uint64_t tm_now(void)
 static int surf_shown(const Surf *f)
 {
     int k;
-    for (k = 0; k < 4; k++)
+    for (k = 0; k < s_nshown; k++)
         if (f->va && f->va == s_shown_va[k])
             return 1;
     return 0;
@@ -3897,8 +3903,8 @@ static int surf_shown(const Surf *f)
 static int lazy_on(void)
 {
     static int on = -1;
-    if (on < 0)
-        on = !(genv("LAZY_RT") && genv("LAZY_RT")[0] == '0');
+    if (on < 0)     /* the profile allows them (gpu.lazy_rt), VC3_LAZY_RT=0 not */
+        on = s_lazy_rt && !(genv("LAZY_RT") && genv("LAZY_RT")[0] == '0');
     return on;
 }
 
@@ -5603,9 +5609,11 @@ static void gl_flip(void)
     {
         uint32_t shown = nv2a_backend_presented_va();
         int on;
-        if (shown && shown != s_shown_va[0] && shown != s_shown_va[1]
-            && shown != s_shown_va[2] && shown != s_shown_va[3]) {
-            memmove(&s_shown_va[1], &s_shown_va[0], 3 * sizeof s_shown_va[0]);
+        int k;
+        for (k = 0; k < s_nshown && shown != s_shown_va[k]; k++)
+            ;
+        if (shown && k == s_nshown) {
+            memmove(&s_shown_va[1], &s_shown_va[0], (size_t)(s_nshown - 1) * sizeof s_shown_va[0]);
             s_shown_va[0] = shown;
         }
 
@@ -5711,6 +5719,21 @@ void vc3_gl_backend_register(void)
     s_scale = vc3_scale_get();
     s_wide = vc3_wide_get();
     s_stereo = vc3_stereo_get();
+    {
+        const ChihiroProfile *gp = chihiro_profile();
+        s_hud_place = gp->gpu.hud_place;
+        if (gp->gpu.picture_min_w > 0)
+            s_pic_min_w = gp->gpu.picture_min_w;
+        s_lazy_rt = gp->gpu.lazy_rt >= 0;
+        if (gp->gpu.stereo_depth > 0.0f)
+            s_st_depth = gp->gpu.stereo_depth;
+        if (gp->gpu.stereo_sep > 0.0f)
+            s_st_sep = gp->gpu.stereo_sep;
+        if (gp->gpu.zoom_tolerance > 0.0f)
+            s_zoom_tol = gp->gpu.zoom_tolerance;
+        if (gp->gpu.buffers > 0)
+            s_nshown = gp->gpu.buffers < SHOWN_MAX ? gp->gpu.buffers : SHOWN_MAX;
+    }
     if (genv("STEREO_SEP"))
         s_st_sep = (float)atof(genv("STEREO_SEP"));
     if (genv("STEREO_DEPTH"))
