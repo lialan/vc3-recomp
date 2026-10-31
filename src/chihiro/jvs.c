@@ -23,6 +23,7 @@
 #include "recomp_types.h"
 #include "chihiro.h"
 #include "chihiro/ch_env.h"
+#include "chihiro/chihiro_profile.h"
 
 #define STDCALL_ARG(n)  MEM32(g_esp + 4 + 4 * (n))
 
@@ -33,11 +34,14 @@
 #define JVS_REPORT_OK   0x01
 #define JVS_REPORT_UNSUPPORTED 0x02  /* "parameter error" */
 
-#define JVS_PLAYERS     2
-#define JVS_SWITCH_BYTES 2           /* per player */
-#define JVS_COIN_SLOTS  2
-#define JVS_ANALOG_CH   8
-#define JVS_SCREEN_CH   2
+/* The board the game is given: the profile's jvs block, within what the
+ * input snapshot (chihiro_input_t) holds. */
+static int jvs_cap(int v, int max) { return v < 1 ? 1 : v > max ? max : v; }
+#define JVS_PLAYERS      jvs_cap(chihiro_profile()->jvs.players, 2)
+#define JVS_SWITCH_BYTES jvs_cap(chihiro_profile()->jvs.switch_bytes, 2)   /* per player */
+#define JVS_COIN_SLOTS   jvs_cap(chihiro_profile()->jvs.coin_slots, 2)
+#define JVS_ANALOG_CH    jvs_cap(chihiro_profile()->jvs.analog_channels, 8)
+#define JVS_SCREEN_CH    jvs_cap(chihiro_profile()->jvs.screen_channels, 2)
 
 /* Identifies as a generic Sega-compatible I/O board; the game only checks
  * the feature list against its spec. */
@@ -131,8 +135,12 @@ static int do_command(const uint8_t *p, int len, int *pos, out_t *o, int *reset)
     case 0x10:                       /* identify */
         *pos += 1;
         put(o, JVS_REPORT_OK);
-        for (i = 0; i < (int)sizeof(k_ident); i++)
-            put(o, (uint8_t)k_ident[i]);
+        {   /* the profile's identification, with its terminating 0 */
+            const char *id = chihiro_profile()->jvs.ident ? chihiro_profile()->jvs.ident
+                                                          : k_ident;
+            for (i = 0; i <= (int)strlen(id); i++)
+                put(o, (uint8_t)id[i]);
+        }
         return 1;
     case 0x11: *pos += 1; put(o, JVS_REPORT_OK); put(o, 0x13); return 1; /* cmd rev 1.3 */
     case 0x12: *pos += 1; put(o, JVS_REPORT_OK); put(o, 0x30); return 1; /* JVS rev 3.0 */

@@ -37,6 +37,7 @@
 #include "display_settings.h"
 #include "host_input.h"
 #include "chihiro/ch_env.h"
+#include "chihiro/chihiro_profile.h"
 
 #define AUTO_MAX     32
 #define AUTO_HOLD_MS 500   /* > one poll at the current frame rate */
@@ -481,17 +482,20 @@ static double lerp_cal(double p, double c, double lo_px, double lo, double mid,
 
 static void gun_reading(double ux, double uy, uint16_t *ox, uint16_t *oy)
 {
-    static const int16_t def[10] = { 5, 233, -318, 17, -10, 15, 242, 34, -10, -204 };
+    /* the profile's aim block (VC3: dots at x 16/320/624, y 16/240/464 on
+     * 640x480; 2.5 and 1.875 gun units a reading step) */
+    const ChihiroProfile *gp = chihiro_profile();
+    const float *dx = gp->aim.dots_x, *dy = gp->aim.dots_y;
     int16_t c[10];
     double gx, gy, bx, by;
 
     if (!chihiro_gun_calibration(c))
-        memcpy(c, def, sizeof c);
-    /* x: LEFT (16) .. CENTER (320) .. RIGHT (624); y: TOP (16) .. BOTTOM (464) */
-    gx = lerp_cal(ux * 640.0, 320.0, 16.0, c[2], c[4], 624.0, c[6]);
-    gy = lerp_cal(uy * 480.0, 240.0, 16.0, c[1], c[5], 464.0, c[9]);
-    bx = 128.0 + gx / 2.5;
-    by = 128.0 - gy / 1.875;
+        memcpy(c, gp->aim.defaults, sizeof c);
+    /* x: LEFT .. CENTER .. RIGHT; y: TOP .. BOTTOM */
+    gx = lerp_cal(ux * gp->aim.screen_w, dx[1], dx[0], c[2], c[4], dx[2], c[6]);
+    gy = lerp_cal(uy * gp->aim.screen_h, dy[1], dy[0], c[1], c[5], dy[2], c[9]);
+    bx = 128.0 + gx / gp->aim.units_x;
+    by = 128.0 - gy / gp->aim.units_y;
     bx = bx < 0.0 ? 0.0 : bx > 255.99 ? 255.99 : bx;
     by = by < 0.0 ? 0.0 : by > 255.99 ? 255.99 : by;
     *ox = (uint16_t)(bx * 256.0);
@@ -578,20 +582,20 @@ void host_input_poll(chihiro_input_t *in)
             reload_since = 0;
         }
     }
+    /* The switches the profile names (VC3: trigger push 1; its reload is the
+     * gun's "off screen" switch, push 2, not the position -- with only an
+     * off-screen position the RELOAD prompt never cleared; the input test
+     * names push 3 CHANGE and push 4 PEDAL). */
     if (fire)
-        in->player[0] |= JVS_SW_PUSH1;
-    /* VC3 reloads on the gun's "off screen" switch (button 2), not on the
-     * position: with only an off-screen position the RELOAD prompt never
-     * cleared. */
+        in->player[0] |= chihiro_profile()->jvs.trigger;
     if (reload)
-        in->player[0] |= JVS_SW_PUSH2;
-    /* The input test names push 3 CHANGE and push 4 PEDAL. */
+        in->player[0] |= chihiro_profile()->jvs.offscreen;
     if ((buttons & SDL_BUTTON(SDL_BUTTON_MIDDLE)) || bound(k, VC3_KEY_CHANGE)
         || (s_vr_on && (s_vr_buttons & VC3_VR_CHANGE)))
-        in->player[0] |= JVS_SW_PUSH3;
+        in->player[0] |= chihiro_profile()->jvs.change;
     if (bound(k, VC3_KEY_PEDAL) || auto_held("pedal", t)
         || (s_vr_on && (s_vr_buttons & VC3_VR_PEDAL)))
-        in->player[0] |= JVS_SW_PUSH4;
+        in->player[0] |= chihiro_profile()->jvs.pedal;
     /* VC3_JVS_OR=<hex>: switch bits held on player 1, to see in the test
      * menu's input test which switch a bit is. */
     {

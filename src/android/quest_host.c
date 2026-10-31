@@ -72,6 +72,7 @@
 #include "vr_math.h"
 #include "vr_view.h"
 #include "chihiro/ch_env.h"
+#include "chihiro/chihiro_profile.h"
 
 void vc3_quest_restart(void);       /* below: a fresh process */
 void xbox_VblankAlign(uint64_t edge_ns);   /* the toolkit's kernel */
@@ -248,8 +249,8 @@ void vc3_quest_frame(GLuint fbo, int pw, int ph, int eyes, int lw, int lh, const
         }
         if (first >= 0 && n >= first && n < first + count) {
             static unsigned char *px;
-            char path[256];
-            const char *dir = "/sdcard/VirtuaCop3/dump";
+            char path[256], dir[200];
+            snprintf(dir, sizeof dir, "%s/dump", chihiro_profile()->vr.sdcard_dir);
             FILE *o;
             int y;
             if (!px)
@@ -609,7 +610,8 @@ static int xr_init(void)
     ic.next = &ai;
     ic.enabledExtensionCount = next;
     ic.enabledExtensionNames = ext;
-    strcpy(ic.applicationInfo.applicationName, "Virtua Cop 3 VR");
+    snprintf(ic.applicationInfo.applicationName, sizeof ic.applicationInfo.applicationName,
+             "%s", chihiro_profile()->vr.app_name);
     strcpy(ic.applicationInfo.engineName, "xboxrecomp");
     ic.applicationInfo.applicationVersion = 1;
     ic.applicationInfo.apiVersion = XR_MAKE_VERSION(1, 0, 34);
@@ -977,7 +979,8 @@ static float imm_units(void)
     static float u = -1;
     if (u < 0) {
         const char *e = ch_env("IMM_UNITS");     /* game units per metre */
-        u = e && atof(e) > 0 ? (float)atof(e) : 1.0f;
+        float d = chihiro_profile()->gpu.units_per_m;
+        u = e && atof(e) > 0 ? (float)atof(e) : d > 0.0f ? d : 1.0f;
     }
     return u;
 }
@@ -1227,7 +1230,7 @@ static void menu_paint(void)
     static unsigned char img[XM_W * XM_H * 4];
     XmItem it[M_COUNT];
     menu_items(it);
-    xm_paint(img, "Virtua Cop 3 - settings", it, M_COUNT, s_menu.hover,
+    xm_paint(img, chihiro_profile()->vr.panel_title, it, M_COUNT, s_menu.hover,
              "Point, pull the trigger. Menu button: close");
     qo_panel_upload(img, XM_W, XM_H);
     s_menu.dirty = 0;
@@ -2150,7 +2153,7 @@ int vc3_quest_run(int (*guest_main)(void))
     SDL_GL_SetAttribute(SDL_GL_GREEN_SIZE, 8);
     SDL_GL_SetAttribute(SDL_GL_BLUE_SIZE, 8);
     SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 0);
-    s_win = SDL_CreateWindow("Virtua Cop 3", 0, 0, 1280, 720,
+    s_win = SDL_CreateWindow(chihiro_profile()->title, 0, 0, 1280, 720,
                              SDL_WINDOW_OPENGL | SDL_WINDOW_FULLSCREEN);
     {
         SDL_GLContext c = s_win ? SDL_GL_CreateContext(s_win) : NULL;

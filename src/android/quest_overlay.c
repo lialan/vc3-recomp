@@ -32,6 +32,7 @@
 #include <GLES3/gl3.h>
 
 #include "quest_overlay.h"
+#include "chihiro/chihiro_profile.h"
 
 /* ── The gun, in boxes ────────────────────────────────────────────────── */
 
@@ -155,7 +156,11 @@ static void build_gun(int sight)
 
 float qo_sight_height(int sight)
 {
-    return sight >= 0 && sight < QO_SIGHT_COUNT ? SIGHT_Y[sight] : SIGHT_Y[0];
+    const float *p;
+    if (sight < 0 || sight >= QO_SIGHT_COUNT)
+        sight = 0;
+    p = chihiro_profile()->vr.sight_height;     /* the game's gun, else this one */
+    return p[sight] > 0.0f ? p[sight] : SIGHT_Y[sight];
 }
 
 void qo_muzzle(float out[3])
@@ -432,7 +437,7 @@ static void glass_reticle(const float *vp, const float *model, int sight, const 
     float q[6][5], e[3], t[3], cx = 1e3f, cy = 1e3f, r[3] = { 0, 0, 0 };
     int k;
     for (k = 0; k < 6; k++) {
-        float lp[3] = { c[k][0] * gz[1], SIGHT_Y[sight] + c[k][1] * gz[2], gz[0] };
+        float lp[3] = { c[k][0] * gz[1], qo_sight_height(sight) + c[k][1] * gz[2], gz[0] };
         apply(model, lp, q[k]);
         q[k][3] = c[k][0] * gz[1];
         q[k][4] = c[k][1] * gz[2];

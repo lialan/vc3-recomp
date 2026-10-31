@@ -25,6 +25,7 @@
 #include <android/log.h>
 #include <SDL.h>
 #include "chihiro/ch_env.h"
+#include "chihiro/chihiro_profile.h"
 
 int vc3_main(int argc, char **argv);   /* main.c's main, renamed for Android */
 
@@ -36,7 +37,7 @@ static void *log_pump(void *arg)
     char line[2048];
 
     while (in && fgets(line, sizeof line, in)) {
-        __android_log_write(ANDROID_LOG_INFO, "vc3", line);
+        __android_log_write(ANDROID_LOG_INFO, chihiro_profile()->id, line);   /* the tag: "vc3" */
         if (s_log) {
             fputs(line, s_log);
             fflush(s_log);
@@ -81,7 +82,7 @@ static void load_env(const char *path)
 static int has_game(const char *dir)
 {
     char p[1024];
-    snprintf(p, sizeof p, "%s/vc3.xbe", dir);
+    snprintf(p, sizeof p, "%s/%s", dir, chihiro_profile()->xbe);
     return access(p, R_OK) == 0;
 }
 
@@ -91,20 +92,23 @@ int SDL_main(int argc, char **argv)
     const char *own = SDL_AndroidGetExternalStoragePath();
     const char *priv = SDL_AndroidGetInternalStoragePath();
     char *args[3];
+    const ChihiroProfile *gp;
 
     (void)argc;
     (void)argv;
+    chihiro_profile_apply(chihiro_game());
+    gp = chihiro_profile();
     log_to_logcat();
     if (own && has_game(own))
         snprintf(game, sizeof game, "%s", own);
-    else if (has_game("/sdcard/VirtuaCop3"))
-        snprintf(game, sizeof game, "/sdcard/VirtuaCop3");
+    else if (has_game(gp->vr.sdcard_dir))
+        snprintf(game, sizeof game, "%s", gp->vr.sdcard_dir);
     if (!game[0]) {
-        fprintf(stderr, "[android] no vc3.xbe in %s or /sdcard/VirtuaCop3\n",
-                own ? own : "(no app folder)");
+        fprintf(stderr, "[android] no %s in %s or %s\n", gp->xbe,
+                own ? own : "(no app folder)", gp->vr.sdcard_dir);
         return 1;
     }
-    snprintf(path, sizeof path, "%s/vc3.log", game);
+    snprintf(path, sizeof path, "%s/%s.log", game, gp->id);
     s_log = fopen(path, "w");
     snprintf(path, sizeof path, "%s/env.txt", game);
     load_env(path);

@@ -15,6 +15,7 @@
 #include "xbox_memory_layout.h"
 #include "chihiro.h"
 #include "chihiro/ch_env.h"
+#include "chihiro/chihiro_profile.h"
 
 static char s_save_dir[1024];
 
@@ -25,20 +26,19 @@ const char *chihiro_save_dir(void)
 
 /* The launch data the Chihiro system software hands the game.
  *
- * Launch type 0 with the first launch-data dword 1 means "started by the
- * TestLaunch stub (vc3_t.xbe)": 0x7FE70 sets [[0x179ACC]+0x18], which skips
- * the game's own I/O check task ('IOER', 0x814F0) and boots straight into
- * the test menu (scene 7, 0x80CF0). A normal boot has no launch data, so the
- * page is only installed when VC3_TEST_LAUNCH=1.
- * XGetLaunchInfo (0xB61AB) reads the page from the kernel's LaunchDataPage,
- * checks the title id against the certificate's (0 here) and copies 3 KB from
- * +0x400. */
+ * A boot from the game's TestLaunch stub carries launch data that takes it
+ * straight into its test menu (VC3: launch type 0, the first launch-data
+ * dword 1). A normal boot has none, so the page is only installed when
+ * VC3_TEST_LAUNCH=1, filled by the profile's launch_data hook.
+ * XGetLaunchInfo reads the page from the kernel's LaunchDataPage, checks
+ * the title id against the certificate's and copies 3 KB from +0x400. */
 static void chihiro_set_launch_data(void)
 {
     const char *test = ch_env("TEST_LAUNCH");
+    const ChihiroProfile *gp = chihiro_profile();
     uint32_t page;
 
-    if (!test || strcmp(test, "1") != 0)
+    if (!test || strcmp(test, "1") != 0 || !gp->hooks.launch_data)
         return;
     page = xbox_HeapAlloc(0x1000, 4096);
     if (!page) {
@@ -46,9 +46,7 @@ static void chihiro_set_launch_data(void)
         return;
     }
     memset((void *)XBOX_PTR(page), 0, 0x1000);
-    MEM32(page + 0x000) = 0;          /* LaunchDataType: title */
-    MEM32(page + 0x004) = 0;          /* title id, as in vc3.xbe's certificate */
-    MEM32(page + 0x400) = 1;          /* launched by TestLaunch */
+    gp->hooks.launch_data((uint8_t *)XBOX_PTR(page));
     MEM32(XBOX_KERNEL_DATA_BASE + KDATA_LAUNCH_DATA_PAGE) = page;
     fprintf(stderr, "[CHIHIRO] launch data page at 0x%08X\n", page);
 }
@@ -58,4 +56,6 @@ void chihiro_init(const char *save_dir)
     snprintf(s_save_dir, sizeof(s_save_dir), "%s", save_dir);
     fprintf(stderr, "[CHIHIRO] HLE init, save dir %s\n", s_save_dir);
     chihiro_set_launch_data();
+    if (chihiro_profile()->hooks.on_boot)
+        chihiro_profile()->hooks.on_boot();
 }
