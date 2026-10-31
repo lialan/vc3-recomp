@@ -1517,11 +1517,18 @@ typedef struct {
      * and drew with depth before clearing it, frames in a row that began
      * with a clear and never came back for the depth, discarded since. */
     int z_state, z_left, z_ret, z_good, z_inv, z_sten, z_logged;   /* z_sten: stencil ever tested */
+    /* A clear not done yet (clear_defer): its buffers, colour mask and values. */
+    GLbitfield pc_bits;
+    GLboolean pc_mask[4];
+    GLfloat pc_col[4], pc_depth;
+    GLint pc_sten;
 } Surf;
 static void lazy_catch_up(Surf *rt);
 static Surf s_surfs[MAX_SURFS];
 static int s_nsurfs;
 static int lazy_skip(Surf *f, const Nv2aBatch *b);
+static void clear_flush(Surf *f, GLbitfield want);
+static void clear_leave(Surf *p);
 
 /* ── Depth discard ──────────────────────────────────────────
  *
@@ -1592,6 +1599,8 @@ static void z_switch(Surf *f)
 {
     Surf *p = s_z_prev;
     s_z_prev = f;
+    if (p && p != f)
+        clear_leave(p);
     if (!s_zd || p == f || !p)
         return;
     if (p->z_state)
@@ -2367,6 +2376,7 @@ static GLuint surf_resolve(const Surf *f)
     static GLsizei rw, rh;
     GLint x0;
 
+    clear_flush((Surf *)f, GL_COLOR_BUFFER_BIT);
     if (f->pw == f->w && f->ph == f->h)
         return f->fbo;
     if (!fbo || rw != f->w || rh != f->h) {
@@ -2487,6 +2497,7 @@ static void show_read(Readback *r, const Surf *f, int fps)
         r->show_cap = bytes;
     }
     glBindBuffer(GL_PIXEL_PACK_BUFFER, r->show_pbo);
+    clear_flush((Surf *)f, GL_COLOR_BUFFER_BIT);
     glBindFramebuffer(GL_READ_FRAMEBUFFER, f->fbo);
     glReadPixels(0, 0, sw, f->ph, GL_BGRA, GL_UNSIGNED_INT_8_8_8_8_REV, NULL);
     r->sw = sw;
@@ -2996,6 +3007,7 @@ static int tex_bind(const Nv2aTexture *t, float *sw, float *sh)
     if (rt && rt->fbo && !rt->cpu_owned) {
         s_st.rt++;
         lazy_catch_up(rt);
+        clear_flush(rt, GL_COLOR_BUFFER_BIT);
         if (genv("RT_USE_LOG")) {   /* which render targets are sampled (debug) */
             static uint32_t vas[16], cnt[16], fr;
             int k;
@@ -3226,6 +3238,7 @@ static int tex_bind_for(const Surf *f, const Nv2aTexture *t, float *sw, float *s
         glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, s_self_w, s_self_h, 0, GL_BGRA,
                      GL_UNSIGNED_INT_8_8_8_8_REV, NULL);
     }
+    clear_flush((Surf *)f, GL_COLOR_BUFFER_BIT);
     glBindFramebuffer(GL_READ_FRAMEBUFFER, f->fbo);
     gt_surface(GT_SELF);
     s_gt_nself++;
@@ -3319,6 +3332,97 @@ uniforms:
 
 /* ── Back end entry points ─────────────────────────────────── */
 
+/* ── Deferred clears ────────────────────────────────────────
+ *
+ * A tiler starts a pass by loading the surface into tile memory, unless the
+ * pass begins with a clear, and ends it by storing everything back, unless
+ * told a buffer is dead. VC3 clears its back buffer, then draws the scene
+ * into another surface, then comes back to composite: done as it comes, the
+ * clear is a pass of its own that stores the whole cleared surface, and the
+ * composite's pass loads it all back -- at native size twice the colour and
+ * depth of a 2064x2208 pair of eyes for nothing. So a clear is only noted
+ * (clear_defer) and done where the surface is next used: first thing in its
+ * next drawing pass (gl_draw), or before its colour is read (sampled, copied,
+ * shown, read back: clear_flush with the colour bit). A clear noted on top
+ * of one still pending replaces what it covers. When the back end leaves a
+ * surface with a clear pending for its depth and stencil (or its whole
+ * colour), those are dead until then and the pass discards them instead of
+ * storing (clear_leave; GLES). */
+/* Do f's pending clear of the buffers in want (all: before drawing into
+ * f), with f bound for it; the bindings are left as they were. */
+static void clear_flush(Surf *f, GLbitfield want)
+{
+    GLbitfield bits = f->pc_bits & want;
+    GLint rd = 0, dr = 0;
+    if (!bits || !f->fbo)
+        return;
+    glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &rd);
+    glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &dr);
+    if ((GLuint)dr != f->fbo)
+        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, f->fbo);
+    glDisable(GL_SCISSOR_TEST);
+    if (bits & GL_COLOR_BUFFER_BIT) {
+        glColorMask(f->pc_mask[0], f->pc_mask[1], f->pc_mask[2], f->pc_mask[3]);
+        glClearColor(f->pc_col[0], f->pc_col[1], f->pc_col[2], f->pc_col[3]);
+    }
+    if (bits & GL_DEPTH_BUFFER_BIT) {
+        glDepthMask(GL_TRUE);
+        glClearDepth((double)f->pc_depth);
+    }
+    if (bits & GL_STENCIL_BUFFER_BIT) {
+        glStencilMask(0xFF);
+        glClearStencil(f->pc_sten);
+    }
+    glClear(bits);
+    f->pc_bits &= ~bits;
+    s_rs_valid = 0;                     /* the masks changed */
+    if ((GLuint)dr != f->fbo)
+        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, (GLuint)dr);
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, (GLuint)rd);
+    GLCK("clear_flush", NULL, f->va);
+}
+
+static void clear_defer(Surf *f, GLbitfield bits, const GLboolean m[4], const GLfloat c[4],
+                        GLfloat depth, GLint sten)
+{
+    if (bits & GL_COLOR_BUFFER_BIT) {
+        /* a partial colour mask over a pending colour clear: that one first */
+        if ((f->pc_bits & GL_COLOR_BUFFER_BIT) && !(m[0] && m[1] && m[2] && m[3]))
+            clear_flush(f, GL_COLOR_BUFFER_BIT);
+        memcpy(f->pc_mask, m, sizeof f->pc_mask);
+        memcpy(f->pc_col, c, sizeof f->pc_col);
+    }
+    if (bits & GL_DEPTH_BUFFER_BIT)
+        f->pc_depth = depth;
+    if (bits & GL_STENCIL_BUFFER_BIT)
+        f->pc_sten = sten;
+    f->pc_bits |= bits;
+}
+
+/* The back end leaves p (another surface is bound next): what a pending
+ * clear will overwrite is not stored. */
+static void clear_leave(Surf *p)
+{
+#if defined(VC3_GLES)
+    GLenum att[2];
+    GLsizei n = 0;
+    if (!p->fbo || !p->pc_bits)
+        return;
+    if ((p->pc_bits & GL_COLOR_BUFFER_BIT) && p->pc_mask[0] && p->pc_mask[1] && p->pc_mask[2]
+        && p->pc_mask[3])
+        att[n++] = GL_COLOR_ATTACHMENT0;
+    if ((p->pc_bits & (GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT))
+        == (GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT))
+        att[n++] = GL_DEPTH_STENCIL_ATTACHMENT;
+    if (n) {
+        glBindFramebuffer(GL_FRAMEBUFFER, p->fbo);
+        glInvalidateFramebuffer(GL_FRAMEBUFFER, n, att);
+    }
+#else
+    (void)p;
+#endif
+}
+
 static void gl_clear(const Nv2aSurface *s, const Nv2aRenderState *rs,
                      uint32_t flags, uint32_t argb, uint32_t zstencil)
 {
@@ -3333,31 +3437,25 @@ static void gl_clear(const Nv2aSurface *s, const Nv2aRenderState *rs,
         return;
     if (lazy_skip(f, NULL))
         return;
-    glDisable(GL_SCISSOR_TEST);
-    s_rs_valid = 0;                    /* masks change below */
-    if (flags & 0xF0) {
-        glColorMask((flags & 0x10) != 0, (flags & 0x20) != 0,
-                    (flags & 0x40) != 0, (flags & 0x80) != 0);
-        glClearColor(((argb >> 16) & 0xFF) / 255.0f, ((argb >> 8) & 0xFF) / 255.0f,
-                     (argb & 0xFF) / 255.0f, (argb >> 24) / 255.0f);
-        bits |= GL_COLOR_BUFFER_BIT;
+    {
+        const GLboolean m[4] = { (flags & 0x10) != 0, (flags & 0x20) != 0,
+                                 (flags & 0x40) != 0, (flags & 0x80) != 0 };
+        const GLfloat c[4] = { ((argb >> 16) & 0xFF) / 255.0f, ((argb >> 8) & 0xFF) / 255.0f,
+                               (argb & 0xFF) / 255.0f, (argb >> 24) / 255.0f };
+        if (flags & 0xF0)
+            bits |= GL_COLOR_BUFFER_BIT;
+        if (flags & 0x1)
+            bits |= GL_DEPTH_BUFFER_BIT;
+        if (flags & 0x2)
+            bits |= GL_STENCIL_BUFFER_BIT;
+        if (s_ftr == 1)
+            fprintf(stderr, "[GLTR] clear surf %08X flags %X colour %08X zstencil %08X "
+                    "zeta %08X\n", f->va, flags, argb, zstencil, rs->zeta_va);
+        if (bits)
+            clear_defer(f, bits, m, c, (GLfloat)((double)(zstencil >> 8) / 16777215.0),
+                        (GLint)(zstencil & 0xFF));
     }
-    if (flags & 0x1) {
-        glDepthMask(GL_TRUE);
-        glClearDepth((double)(zstencil >> 8) / 16777215.0);
-        bits |= GL_DEPTH_BUFFER_BIT;
-    }
-    if (flags & 0x2) {
-        glStencilMask(0xFF);
-        glClearStencil((GLint)(zstencil & 0xFF));
-        bits |= GL_STENCIL_BUFFER_BIT;
-    }
-    if (s_ftr == 1)
-        fprintf(stderr, "[GLTR] clear surf %08X flags %X colour %08X zstencil %08X "
-                "zeta %08X\n", f->va, flags, argb, zstencil, rs->zeta_va);
-    if (bits)
-        glClear(bits);
-    GLCK("clear: glClear", NULL, f->va);
+    GLCK("clear: deferred", NULL, f->va);
     z_clear(f, bits);
     GLCK("clear: z_clear", NULL, f->va);
     f->dirty = 1;
@@ -3958,7 +4056,10 @@ static void lazy_catch_up(Surf *rt)
         fprintf(stderr, "[GL] lazy: %08X sampled again, brought up to date from %08X\n",
                 rt->va, src ? src->va : 0);
     if (src && src->fbo && src != rt) {
-        GLboolean mask[4], sc = glIsEnabled(GL_SCISSOR_TEST);
+        GLboolean mask[4], sc;
+        clear_flush(src, GL_COLOR_BUFFER_BIT);
+        rt->pc_bits &= ~(GLbitfield)GL_COLOR_BUFFER_BIT;
+        sc = glIsEnabled(GL_SCISSOR_TEST);
         glGetBooleanv(GL_COLOR_WRITEMASK, mask);
         glDisable(GL_SCISSOR_TEST);
         glColorMask(1, 1, 1, 1);
@@ -4437,6 +4538,10 @@ static void gl_draw(const Nv2aSurface *s, const Nv2aBatch *b)
         set_cap(2, 0);
         set_cap(3, 0);
     }
+    if (b->zpass_out && f->pc_bits) {
+        clear_flush(f, ~(GLbitfield)0);
+        apply_state(b->state);
+    }
     if (b->zpass_out) {
         GLfloat sb0[8] = { 0 };
         cu1i(U->st2, 0);
@@ -4531,6 +4636,9 @@ static void gl_draw(const Nv2aSurface *s, const Nv2aBatch *b)
             hud_bind(f, b->state);
             s_rs_valid = 0;                 /* the blend's alpha was changed */
             GLCK("draw: hud_bind", b, f->va);
+        } else if (f->pc_bits) {            /* the pass begins with its clear */
+            clear_flush(f, ~(GLbitfield)0);
+            apply_state(b->state);
         }
         /* Stereo in one pass: one instanced draw, instance = eye, each in its
          * half of a double-wide viewport, the other half clipped -- one draw
@@ -5166,6 +5274,7 @@ static void interp_scene_snap(const Surf *f, const Nv2aBatch *b)
         s_ip.scene_w = f->pw;
         s_ip.scene_h = f->ph;
     }
+    clear_flush((Surf *)f, GL_COLOR_BUFFER_BIT);
     glBindFramebuffer(GL_READ_FRAMEBUFFER, f->fbo);
     glBindFramebuffer(GL_DRAW_FRAMEBUFFER, s_ip.scene_fbo);
     glBlitFramebuffer(0, 0, f->pw, f->ph, 0, 0, f->pw, f->ph,
@@ -5187,6 +5296,7 @@ static int interp_make(const Surf *f, GLuint *pbos, int n)
 
     if (n < 1 || !interp_setup())
         return 0;
+    clear_flush((Surf *)f, GL_COLOR_BUFFER_BIT);
     if (w != s_ip.w || h != s_ip.h || gw != s_ip.gw || gh != s_ip.gh)
         interp_alloc(w, h, gw, gh);
 
@@ -5388,6 +5498,7 @@ static void quest_present(void)
 
     if (!f || !f->fbo)
         return;
+    clear_flush(f, GL_COLOR_BUFFER_BIT);
     /* The host blits: the scissor and colour mask apply to blits too. */
     glDisable(GL_SCISSOR_TEST);
     glColorMask(1, 1, 1, 1);
@@ -5590,6 +5701,7 @@ static void gl_flip(void)
             u_size = glGetUniformLocation(prog, "u_size");
         }
         if (pf && pf->st && pf->fbo) {
+            clear_flush(pf, GL_COLOR_BUFFER_BIT);
             glDisable(GL_SCISSOR_TEST);
             glColorMask(1, 1, 1, 1);
             s_rs_valid = 0;
