@@ -70,6 +70,10 @@ SCEN=(
   "immersive-2x-nozoom|stereo=1;vr_screen=immersive;vr_detail=2|VC3_IMM_ZOOM=0"
   "immersive-2x-oldoverlay|stereo=1;vr_screen=immersive;vr_detail=2|VC3_OVERLAY_FULLRATE=1 VC3_OVERLAY_SCALE=0.75"
   "immersive-2x-spin-nolazy|stereo=1;vr_screen=immersive;vr_detail=2|RECOMP_ACK_IDLE_US=0 VC3_LAZY_RT=0"
+  "immersive-2x-oldpaths|stereo=1;vr_screen=immersive;vr_detail=2|RECOMP_ICALL_FAST=0 VC3_XR_REBLIT=1 VC3_GL_TEXQUICK=0"
+  "immersive-2x-nomips|stereo=1;vr_screen=immersive;vr_detail=2|VC3_GL_MIPS=0 VC3_GL_ANISO=1"
+  "immersive-2x-zdiscard|stereo=1;vr_screen=immersive;vr_detail=2|VC3_GL_ZDISCARD=1"
+  "immersive-2x-msaa4|stereo=1;vr_screen=immersive;vr_detail=2|VC3_GL_MSAA=4"
 )
 KEYS=30:coin,31:start,40:fire,44:fire,46:fire,48:fire,50:fire,55:fire,60:fire,65:fire,70:fire,75:fire
 LOGS=()
@@ -80,7 +84,7 @@ for s in "${SCEN[@]}"; do
     { echo "scale=1"; echo "aspect=16:9"; echo "$settings" | tr ';' '\n'; } > "$tmp/settings"
     {
         echo VC3_SOUND=0; echo VC3_FPS_LOG=1; echo VC3_PACE_LOG=1; echo VC3_GPU_TIME=1
-        echo RECOMP_PROF=1; echo VC3_CONFIG_DIR=/sdcard/VirtuaCop3/testcfg
+        echo RECOMP_PROF=1; echo VC3_FENCE_LOG=1; echo VC3_CONFIG_DIR=/sdcard/VirtuaCop3/testcfg
         echo VC3_AUTOKEYS=$KEYS; echo VC3_AUTOAIM=0.5,0.5
         # the stand-in gun: the overlay drawn as in real play (no one holds
         # the controllers in a scripted run)

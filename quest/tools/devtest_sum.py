@@ -26,6 +26,7 @@ def summary(path):
            nums(r'\[pace\] headset \d+ frames: game frames shown 1x (\d+), 2x (\d+), 3x (\d+), 4\+x (\d+)', lines)]
     gpu = [(float(a), int(b)) for a, b in nums(r'\[GPUTIME\] ([\d.]+) ms/frame over \d+ frames \(fixed-function (\d+) draws', lines)]
     walk = [float(g[0]) for g in nums(r'\[PROF\] walk (\d+) ms', lines)]
+    fence = [float(g[0]) for g in nums(r'\[fence\] \d+ waits/s, \d+ slept, ([\d.]+) ms waiting', lines)]
     intro_gpu = [g for g, d in gpu if d >= 600]
     combat = slice(-20, None)
 
@@ -36,11 +37,13 @@ def summary(path):
     shown = [sum(x) for x in zip(*r)] if r else [0, 0, 0, 0]
     tot = sum(shown) or 1
     return ('%-24s fps intro-low10 %.1f combat %.1f min %.1f | pace combat p50 %.1f p95 %.1f ms | '
-            'shown 1x/2x/3x/4x %d/%d/%d/%d%% | GPU intro %.1f combat %.1f ms | walk %.0f ms/s' % (
+            'shown 1x/2x/3x/4x %d/%d/%d/%d%% | GPU intro %.1f combat %.1f ms | walk %.0f ms/s | '
+            'fence wait %.2f ms/s' % (
                 path.split('/')[-1], avg(intro_fps), avg(fps[combat]), min(fps[combat]) if fps else 0,
                 avg([a for a, b in pace[combat]]), avg([b for a, b in pace[combat]]),
                 100 * shown[0] / tot, 100 * shown[1] / tot, 100 * shown[2] / tot, 100 * shown[3] / tot,
-                avg(intro_gpu), avg([g for g, d in gpu[combat]]), avg(walk[combat])))
+                avg(intro_gpu), avg([g for g, d in gpu[combat]]), avg(walk[combat]),
+                avg(fence)))
 
 
 for p in sys.argv[1:]:
