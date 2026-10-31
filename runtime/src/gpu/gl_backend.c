@@ -6085,7 +6085,7 @@ static void quad_into(GLuint fbo, GLsizei w, GLsizei h)
  *
  * So a run of such batches (blended that way, sampling another render
  * target, no depth or stencil writes, 3D, into a large stereo surface S,
- * after a frame that had at least FX_MIN of them) is drawn into
+ * after a frame that had enough of them) is drawn into
  * an effect target L of 1/scale the size each way instead: its depth is S's
  * scaled down (the meshes are depth-tested against the scene); its colour
  * starts as (0, 0, 0, 1) and each batch blends colour as it would over S
@@ -6096,20 +6096,22 @@ static void quad_into(GLuint fbo, GLsizei w, GLsizei h)
  * give, but with the contribution at the effect's resolution and the scene
  * itself kept native wherever the effect leaves it.
  *
- * VC3_GL_EFFECT_SCALE: 4 (default: a quarter each way, a sixteenth of the
- * pixels -- on a Quest 3 E.S. at native held combat 29 fps at 4 against 25
- * at 3, and the stack costs ~200 ms a frame at 2x, so every factor counts),
- * 2, 3, or 1 (off: every layer at full size). Only surfaces of FX_PX
- * pixels an eye and up (native immersive), never at 2x. */
-#define FX_MIN 8                   /* qualifying batches in the frame before */
-#define FX_PX 2000000L             /* an eye's pixels for the effect target */
+ * The scale, the run's minimum length and the surfaces' minimum size are
+ * the game's (ChihiroProfile gpu.effect_*: VC3 asks a quarter each way
+ * after 8 layers on 2 Mpx an eye; the defaults are a half, 8, 2 Mpx), the
+ * scale VC3_GL_EFFECT_SCALE's to override (1: off, every layer at full
+ * size). The detection is the batches' own -- blend, depth and stencil
+ * writes, what they sample -- not any game's addresses. */
+static int s_fx_min = 8;           /* qualifying batches in the frame before (profile) */
+static long s_fx_px = 2000000L;    /* an eye's pixels for the effect target (profile) */
+static int s_fx_scale_def = 2;     /* the profile's effect scale */
 
 static int fx_scale(void)
 {
     static int sc = -1;
     if (sc < 0) {
         const char *e = genv("GL_EFFECT_SCALE");
-        sc = e ? atoi(e) : 4;
+        sc = e ? atoi(e) : s_fx_scale_def;
         if (sc < 1 || sc > 8)
             sc = 1;
     }
@@ -6300,7 +6302,8 @@ static void fx_pre(const Nv2aSurface *s, const Nv2aBatch *b)
     if (!q)
         return;
     s_fx.n_this++;
-    if (!s_fx.on && s_fx.n_prev >= FX_MIN && fx_scale() > 1 && (long)f->pw * f->ph >= FX_PX)
+    if (!s_fx.on && s_fx.n_prev >= (uint32_t)s_fx_min && fx_scale() > 1
+        && (long)f->pw * f->ph >= s_fx_px)
         fx_begin(f);
     if (s_fx.on) {
         s_fx.draw = 1;
@@ -7120,6 +7123,12 @@ void vc3_gl_backend_register(void)
         if (gp->gpu.picture_min_w > 0)
             s_pic_min_w = gp->gpu.picture_min_w;
         s_lazy_rt = gp->gpu.lazy_rt >= 0;
+        if (gp->gpu.effect_scale > 0)
+            s_fx_scale_def = gp->gpu.effect_scale;
+        if (gp->gpu.effect_min_layers > 0)
+            s_fx_min = gp->gpu.effect_min_layers;
+        if (gp->gpu.effect_min_px > 0)
+            s_fx_px = gp->gpu.effect_min_px;
         if (gp->gpu.stereo_depth > 0.0f)
             s_st_depth = gp->gpu.stereo_depth;
         if (gp->gpu.stereo_sep > 0.0f)

@@ -92,6 +92,12 @@ typedef struct ChihiroProfile {
         float units_per_m;          /* game units per metre, immersive (0: 1) */
         int buffers;                /* the shown surfaces remembered (the game's swap chain; 0: 4) */
         float zoom_tolerance;       /* focal lengths this close are one zoom (0: 0.5) */
+        /* The effect target (gl_backend.c): a run of blended layers sampling
+         * a scene copy drawn at 1/effect_scale each way (0: 2; 1: off),
+         * after a frame with effect_min_layers of them (0: 8), into stereo
+         * surfaces of effect_min_px pixels an eye or more (0: 2000000). */
+        int effect_scale, effect_min_layers;
+        long effect_min_px;
     } gpu;
 
     /* The headset (src/android) */

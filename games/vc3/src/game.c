@@ -94,6 +94,11 @@ static const ChihiroProfile k_vc3 = {
         .units_per_m = 1.0f,
         .buffers = 4,                   /* triple buffered, and one spare */
         .zoom_tolerance = 0.5f,
+        /* E.S. mode: 63 distortion layers; on a Quest 3 at native only a
+         * quarter each way held 60 (half: ~53) */
+        .effect_scale = 4,
+        .effect_min_layers = 8,
+        .effect_min_px = 2000000,
     },
     .vr = {
         .app_name = "Virtua Cop 3 VR",
