@@ -76,6 +76,15 @@ SCEN=(
   "immersive-2x-msaa4|stereo=1;vr_screen=immersive;vr_detail=2|VC3_GL_MSAA=4"
   "immersive-2x-vpcpu|stereo=1;vr_screen=immersive;vr_detail=2|RECOMP_GPU_XF=ff"
   "immersive-2x-vpcheck|stereo=1;vr_screen=immersive;vr_detail=2|RECOMP_GPU_XF_CHECK=300"
+  # texture decode (src/gpu/gl_texdec.c): GPU (compute, the default) against
+  # CPU, by time; the fragment pass; and the compare modes, which read every
+  # upload back and count texels unlike the CPU decode ([TEXCMP] lines)
+  "immersive-2x-texgpu|stereo=1;vr_screen=immersive;vr_detail=2|VC3_TEX_STATS=1"
+  "immersive-2x-texcpu|stereo=1;vr_screen=immersive;vr_detail=2|VC3_TEX_GPU=0 VC3_TEX_STATS=1"
+  "immersive-2x-texfrag|stereo=1;vr_screen=immersive;vr_detail=2|VC3_TEX_GPU=frag VC3_TEX_STATS=1"
+  "immersive-2x-texcompare|stereo=1;vr_screen=immersive;vr_detail=2|VC3_TEX_COMPARE=1"
+  "immersive-2x-texcompare-frag|stereo=1;vr_screen=immersive;vr_detail=2|VC3_TEX_GPU=frag VC3_TEX_COMPARE=1"
+  "immersive-2x-texcompare-s3tc|stereo=1;vr_screen=immersive;vr_detail=2|VC3_TEX_S3TC=1 VC3_TEX_COMPARE=1"
 )
 KEYS=30:coin,31:start,40:fire,44:fire,46:fire,48:fire,50:fire,55:fire,60:fire,65:fire,70:fire,75:fire
 LOGS=()
@@ -106,7 +115,10 @@ for s in "${SCEN[@]}"; do
     log="$OUT/$STAMP-$name.log"
     $A logcat -d | grep -E " vc3 |xr|OpenXR" > "$log"
     $A shell am force-stop $PKG
-    grep -E "\[xr\] (extensions|performance|thread hint|display|recommended|game and back end)|\[GL\] foveation|\[CRASH\]" "$log" | sed 's/.*vc3 *: /   /'
+    grep -E "\[xr\] (extensions|performance|thread hint|display|recommended|game and back end)|\[GL\] foveation|\[CRASH\]|\[TEXDEC\]" "$log" | sed 's/.*vc3 *: /   /'
+    # the texture scenarios' totals: the last (cumulative) report of each
+    grep -E "\[TEXSTAT\]   total|\[TEXCMP\]   total" "$log" | tail -2 | sed 's/.*vc3 *: /   /'
+    grep -E "\[TEXCMP\] MISMATCH" "$log" | head -5 | sed 's/.*vc3 *: /   /'
     LOGS+=("$log")
 done
 echo
