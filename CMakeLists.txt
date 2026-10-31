@@ -60,6 +60,10 @@ if(ANDROID)
     set_source_files_properties(src/main.c PROPERTIES COMPILE_DEFINITIONS main=vc3_main)
     target_compile_definitions(vc3 PRIVATE VC3_GLES=1)
     target_include_directories(vc3 PRIVATE ${OPENXR_DIR})
+    # Calls between the generated functions bind inside libmain.so, not
+    # through the PLT: 5600 jump slots, one indirect branch per guest call.
+    # Only SDL_main and the JNI entry points are called from outside.
+    target_link_options(vc3 PRIVATE "-Wl,-Bsymbolic-functions")
     target_link_libraries(vc3 PRIVATE xboxrecomp SDL2::SDL2 ${OPENXR_LIB}
         EGL GLESv3 android log m)
 else()
