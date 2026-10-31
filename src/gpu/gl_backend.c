@@ -1539,6 +1539,54 @@ static void surf_foveate(const Surf *f)
 #endif
 }
 
+/* Multisampling (VC3_GL_MSAA=2/4, GLES, off by default): the 3D surfaces
+ * rendered with EXT_multisampled_render_to_texture -- the samples live in
+ * the tile memory and are resolved into the ordinary texture when the pass
+ * ends, so everything that reads a surface (sampling it, the self-copy, the
+ * blits to the headset) sees resolved pixels with no resolve of its own,
+ * and the bandwidth is a single-sampled surface's. Depth is multisampled
+ * alike. 0 if unavailable or off; the sample count otherwise. */
+#if defined(VC3_GLES)
+typedef void (*MsTexFn)(GLenum, GLenum, GLenum, GLuint, GLint, GLsizei);
+typedef void (*MsRbFn)(GLenum, GLsizei, GLenum, GLsizei, GLsizei);
+static MsTexFn s_ms_tex;
+static MsRbFn s_ms_rb;
+#endif
+static int msaa_samples(void)
+{
+    static int n = -1;
+#if defined(VC3_GLES)
+    if (n < 0) {
+        const char *e = genv("VC3_GL_MSAA");
+        GLint i, k = 0, mx = 0, have = 0;
+        n = e ? atoi(e) : 0;
+        if (n > 1) {
+            glGetIntegerv(GL_NUM_EXTENSIONS, &k);
+            for (i = 0; i < k; i++) {
+                const char *x = (const char *)glGetStringi(GL_EXTENSIONS, (GLuint)i);
+                if (x && !strcmp(x, "GL_EXT_multisampled_render_to_texture"))
+                    have = 1;
+            }
+            if (have) {
+                s_ms_tex = (MsTexFn)eglGetProcAddress("glFramebufferTexture2DMultisampleEXT");
+                s_ms_rb = (MsRbFn)eglGetProcAddress("glRenderbufferStorageMultisampleEXT");
+                glGetIntegerv(0x8D57 /* MAX_SAMPLES_EXT */, &mx);
+            }
+            if (!s_ms_tex || !s_ms_rb || mx < 2)
+                n = 0;
+            else if (n > mx)
+                n = mx;
+            fprintf(stderr, "[GL] MSAA: %s (%d samples)\n", n > 1 ? "on" : "not available", n);
+        }
+        if (n < 2)
+            n = 0;
+    }
+#else
+    n = 0;
+#endif
+    return n;
+}
+
 static void surf_alloc(Surf *f, GLsizei w, GLsizei h)
 {
     GLsizei pw, ph;
@@ -1569,11 +1617,20 @@ static void surf_alloc(Surf *f, GLsizei w, GLsizei h)
         surf_foveate(f);
     glGenRenderbuffers(1, &f->depth);
     glBindRenderbuffer(GL_RENDERBUFFER, f->depth);
-    glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH24_STENCIL8, pw * (f->st ? 2 : 1), ph);
     glGenFramebuffers(1, &f->fbo);
     glBindFramebuffer(GL_FRAMEBUFFER, f->fbo);
-    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
-                           GL_TEXTURE_2D, f->color, 0);
+#if defined(VC3_GLES)
+    if (f->st && msaa_samples()) {      /* the 3D surfaces: stereo ones */
+        s_ms_rb(GL_RENDERBUFFER, msaa_samples(), GL_DEPTH24_STENCIL8, pw * 2, ph);
+        s_ms_tex(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, f->color, 0,
+                 msaa_samples());
+    } else
+#endif
+    {
+        glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH24_STENCIL8, pw * (f->st ? 2 : 1), ph);
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
+                               GL_TEXTURE_2D, f->color, 0);
+    }
     glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT,
                               GL_RENDERBUFFER, f->depth);
     if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
