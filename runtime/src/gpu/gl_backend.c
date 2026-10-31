@@ -3988,11 +3988,18 @@ static int batch_flat(const Nv2aBatch *b)
                   : b->count && b->vertices[0].rhw == 1.0f;
 }
 
+/* The first vertex's diffuse, as the CPU path's vertices[0].diffuse: known
+ * for every program batch, whatever its first w (the executor transforms
+ * that vertex for each one). It decides the combiner routing of "black
+ * diffuse over a render target" (rt_pass); asked only of screen-space
+ * batches, it left VC3's E.S. distortion meshes -- 3D when their first
+ * vertex happens to be in front of the eye -- drawn as texture * black
+ * diffuse, forty alpha-blended layers that turned the scene black. */
 static int batch_d0(const Nv2aBatch *b, uint32_t *d0)
 {
     if (b->raw) {
         *d0 = b->raw->d0;
-        return raw_2d(b->raw);
+        return b->raw->kind == NV2A_RAW_PROGRAM;
     }
     *d0 = b->count ? b->vertices[0].diffuse : 0;
     return b->count != 0;
