@@ -1994,7 +1994,16 @@ static Surf *surf_find(uint32_t va)
 #define GL_TIME_ELAPSED 0x88BF            /* EXT_disjoint_timer_query on ES */
 #endif
 #define GT_RING 512
-#define GT_PRESENT 1u                     /* not a surface: the frame's copy to the headset */
+/* not surfaces: the copies, timed apart from the surface they serve */
+#define GT_PRESENT 1u                     /* the frame's copy to the headset */
+#define GT_SELF 2u                        /* snapshots for batches sampling their target */
+#define GT_LAZY 3u                        /* lazy copies brought up to date */
+static uint32_t s_gt_nself, s_gt_nlazy;  /* how many (GPU time log) */
+static const char *gt_label(uint32_t va)
+{
+    return va == GT_PRESENT ? "present" : va == GT_SELF ? "self-copies"
+         : va == GT_LAZY ? "lazy-copies" : NULL;
+}
 static struct { uint32_t draws, tris, declined; } s_rst;   /* fixed-function draws */
 static uint32_t s_zp_frame;              /* visibility tests (GPU time log) */
 static uint32_t s_sw_frame;              /* surface switches (GPU time log) */
@@ -2002,6 +2011,7 @@ static uint32_t s_va_hit, s_va_miss;     /* attribute pointers kept / set (log) 
 static int s_gt_on = -1;
 static GLuint s_gt_q[GT_RING];
 static uint32_t s_gt_va[GT_RING];
+static uint8_t s_gt_tr[GT_RING];          /* issued in a traced frame (VC3_GL_FTRACE) */
 static unsigned s_gt_head, s_gt_tail;     /* issued [tail, head) */
 static int s_gt_open;
 static uint32_t s_gt_cur_va;
@@ -2030,6 +2040,8 @@ static void gt_poll(void)
         if (!avail)
             break;
         glGetQueryObjectuiv(s_gt_q[k], GL_QUERY_RESULT, &ns);
+        if (s_gt_tr[k])             /* the traced frame's passes, in order */
+            fprintf(stderr, "[GTSEG] %08X %.3f ms\n", s_gt_va[k], ns / 1e6);
         s_gt_total += ns / 1e6;
         for (j = 0; j < GT_SURFS; j++)
             if (s_gt_sum[j].va == s_gt_va[k] || !s_gt_sum[j].va) {
@@ -2056,6 +2068,9 @@ static void gt_surface(uint32_t va)
     if (s_gt_head - s_gt_tail >= GT_RING - 1)
         return;                             /* all in flight: skip */
     s_gt_va[s_gt_head % GT_RING] = va;
+    s_gt_tr[s_gt_head % GT_RING] = s_ftr == 1;
+    if (s_ftr == 1)
+        fprintf(stderr, "[GLTR] -- GPU timer: %08X\n", va);
     glBeginQuery(GL_TIME_ELAPSED, s_gt_q[s_gt_head % GT_RING]);
     s_gt_head++;
     s_gt_open = 1;
@@ -2083,12 +2098,16 @@ static void gt_flip(void)
     {
         char line[512];
         int n = snprintf(line, sizeof line, "[GPUTIME] %.1f ms/frame over %u frames"
-                         " (fixed-function %u draws, %u triangles, %u visibility tests, %u surface switches a frame):",
+                         " (fixed-function %u draws, %u triangles, %u visibility tests, %u surface switches,"
+                         " %u self-copies, %u lazy copies a frame):",
                          s_gt_frames ? s_gt_total / s_gt_frames : 0.0, s_gt_frames,
                          s_gt_frames ? s_rst.draws / s_gt_frames : 0,
                          s_gt_frames ? s_rst.tris / s_gt_frames : 0,
                          s_gt_frames ? s_zp_frame / s_gt_frames : 0,
-                         s_gt_frames ? s_sw_frame / s_gt_frames : 0);
+                         s_gt_frames ? s_sw_frame / s_gt_frames : 0,
+                         s_gt_frames ? s_gt_nself / s_gt_frames : 0,
+                         s_gt_frames ? s_gt_nlazy / s_gt_frames : 0);
+        s_gt_nself = s_gt_nlazy = 0;
         s_rst.draws = s_rst.tris = 0;
         s_zp_frame = s_sw_frame = 0;
         fprintf(stderr, "[GPUTIME]   attribute pointers kept %u, set %u\n", s_va_hit, s_va_miss);
@@ -2096,9 +2115,9 @@ static void gt_flip(void)
         for (j = 0; j < GT_SURFS && s_gt_sum[j].va && n < (int)sizeof line - 40; j++)
             if (s_gt_sum[j].ms / s_gt_frames >= 0.3) {
                 const Surf *q = surf_find(s_gt_sum[j].va);
-                if (s_gt_sum[j].va == GT_PRESENT)
-                    n += snprintf(line + n, sizeof line - (size_t)n, " present %.1f",
-                                  s_gt_sum[j].ms / s_gt_frames);
+                if (gt_label(s_gt_sum[j].va))
+                    n += snprintf(line + n, sizeof line - (size_t)n, " %s %.1f",
+                                  gt_label(s_gt_sum[j].va), s_gt_sum[j].ms / s_gt_frames);
                 else
                     n += snprintf(line + n, sizeof line - (size_t)n, " %08X(%dx%d%s) %.1f",
                                   s_gt_sum[j].va, q ? q->w : 0, q ? q->h : 0,
@@ -2113,6 +2132,7 @@ static void gt_flip(void)
 }
 
 static GLuint s_bound_fbo;              /* surf_bind's, for lazy_catch_up */
+static uint32_t s_bound_va;
 
 /* The framebuffer for a guest surface, created or grown to fit, and bound.
  * A change of scale or aspect remakes it at the first draw after the flip
@@ -2143,6 +2163,7 @@ static Surf *surf_bind(const Nv2aSurface *s)
     gt_surface(f->va);
     z_switch(f);
     s_bound_fbo = f->fbo;
+    s_bound_va = f->va;
     glBindFramebuffer(GL_FRAMEBUFFER, f->fbo);
     glViewport(0, 0, f->pw, f->ph);
     return f;
@@ -3206,7 +3227,10 @@ static int tex_bind_for(const Surf *f, const Nv2aTexture *t, float *sw, float *s
                      GL_UNSIGNED_INT_8_8_8_8_REV, NULL);
     }
     glBindFramebuffer(GL_READ_FRAMEBUFFER, f->fbo);
+    gt_surface(GT_SELF);
+    s_gt_nself++;
     glCopyTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 0, 0, s_self_w, s_self_h);
+    gt_surface(f->va);
     if (f->st && s_unit < 4)
         s_sbs[s_unit] = 1.0f;          /* both eyes: each reads its half */
     tex_sampling(s_self_tex, t, 0);
@@ -3940,8 +3964,11 @@ static void lazy_catch_up(Surf *rt)
         glColorMask(1, 1, 1, 1);
         glBindFramebuffer(GL_READ_FRAMEBUFFER, src->fbo);
         glBindFramebuffer(GL_DRAW_FRAMEBUFFER, rt->fbo);
+        gt_surface(GT_LAZY);
+        s_gt_nlazy++;
         glBlitFramebuffer(0, 0, src->pw * (src->st ? 2 : 1), src->ph,
                           0, 0, rt->pw * (rt->st ? 2 : 1), rt->ph, GL_COLOR_BUFFER_BIT, GL_LINEAR);
+        gt_surface(s_bound_va);
         glBindFramebuffer(GL_FRAMEBUFFER, s_bound_fbo);
         glColorMask(mask[0], mask[1], mask[2], mask[3]);
         if (sc)
