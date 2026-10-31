@@ -91,11 +91,16 @@ SCEN=(
   # distortion layers over the scene, combat's heaviest fill
   "immersive-2x-es|stereo=1;vr_screen=immersive;vr_res=2x|VC3_AUTOKEYS=$KEYS,$PEDAL"
   "immersive-native-es|stereo=1;vr_screen=immersive;vr_res=native|VC3_AUTOKEYS=$KEYS,$PEDAL"
-  "immersive-native-es-nofov|stereo=1;vr_screen=immersive;vr_res=native|VC3_AUTOKEYS=$KEYS,$PEDAL CHIHIRO_FOVEATION=0"
+  "immersive-native-es-diag|stereo=1;vr_screen=immersive;vr_res=native|VC3_AUTOKEYS=$KEYS,$PEDAL CHIHIRO_GL_EFFECT_LOG=1"
+  "immersive-native-es-nofov|stereo=1;vr_screen=immersive;vr_res=native|VC3_AUTOKEYS=$KEYS,$PEDAL CHIHIRO_FOVEATION=0 CHIHIRO_GL_TIMING=1"
   # the E.S. stack's effect target (gl_backend.c): off (every layer at full
   # size), at a half and a third each way (the default is a quarter)
+  "immersive-native-es-seg|stereo=1;vr_screen=immersive;vr_res=native|VC3_AUTOKEYS=$KEYS,$PEDAL CHIHIRO_GPU_TIME_SEG=1"
+  "immersive-native-es-bis-nodepth|stereo=1;vr_screen=immersive;vr_res=native|VC3_AUTOKEYS=$KEYS,$PEDAL CHIHIRO_FX_NODEPTH=1 CHIHIRO_GL_TIMING=1"
+  "immersive-native-es-bis-nosmall|stereo=1;vr_screen=immersive;vr_res=native|VC3_AUTOKEYS=$KEYS,$PEDAL CHIHIRO_FX_NOSMALL=1 CHIHIRO_GL_TIMING=1"
+  "immersive-native-es-fx8|stereo=1;vr_screen=immersive;vr_res=native|VC3_AUTOKEYS=$KEYS,$PEDAL CHIHIRO_GL_EFFECT_SCALE=8 CHIHIRO_GL_TIMING=1"
   "immersive-native-es-fx2|stereo=1;vr_screen=immersive;vr_res=native|VC3_AUTOKEYS=$KEYS,$PEDAL CHIHIRO_GL_EFFECT_SCALE=2"
-  "immersive-native-es-fx1|stereo=1;vr_screen=immersive;vr_res=native|VC3_AUTOKEYS=$KEYS,$PEDAL CHIHIRO_GL_EFFECT_SCALE=1"
+  "immersive-native-es-fx1|stereo=1;vr_screen=immersive;vr_res=native|VC3_AUTOKEYS=$KEYS,$PEDAL CHIHIRO_GL_EFFECT_SCALE=1 CHIHIRO_GL_TIMING=1"
   "immersive-native-es-fx3|stereo=1;vr_screen=immersive;vr_res=native|VC3_AUTOKEYS=$KEYS,$PEDAL CHIHIRO_GL_EFFECT_SCALE=3"
   "immersive-2x-foveation|stereo=1;vr_screen=immersive;vr_res=2x|CHIHIRO_FOVEATION=1"
   "immersive-2x-nofov|stereo=1;vr_screen=immersive;vr_res=2x|CHIHIRO_FOVEATION=0"
