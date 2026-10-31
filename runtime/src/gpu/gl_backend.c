@@ -394,7 +394,7 @@ typedef struct {
     /* The fixed-function vertex shader (Nv2aFixedState). */
     GLint comp, mv, proj, tm, c59, skin, usecomp, lighting, lkind, light, samb,
           matalpha, colmat, flipn, hasnrm, hascol, texgen, tgon, tmon, ascale,
-          packed, aa, vpz, nearz, fogen, fogmode, fogp, uvs0, bgra;
+          packed, aa, vpz, nearz, fogen, fogmode, fogp, uvs0, bgra, merge;
     /* The immersive view (vr_view.h): this eye's matrix, the game's
      * projection, on / 1 / pz. */
     GLint immvp, gp, gw;
@@ -695,6 +695,20 @@ static const char *VS_FF =
     "uniform vec2 u_xs;\n"
     "uniform vec2 u_eye;\n"
     "uniform mat4 u_comp, u_mv[4], u_proj, u_tm[4];\n"   /* uploaded transposed */
+    /* A merged run (RECOMP_GL_MERGE): each draw's composite and model-views
+     * in a slot of FfMerge, the vertex's slot found by its index among the
+     * slots' first vertices (mg_first; past the run: 2^31-1). No attribute
+     * for it: one enabled and disabled around each run changed the vertex
+     * layout, and the Mac's driver rebuilt its pipeline state twice a run.
+     * Row-major, as the uniforms' transposed upload reads the same floats.
+     * Both paths go through g_comp / g_mv, so a run draws what its draws
+     * would alone. */
+    "uniform int u_merge;\n"
+    "layout(std140, row_major) uniform FfMerge { mat4 mg_comp[32]; mat4 mg_mv[128]; mat4 mg_proj[32];\n"
+    "                                         vec4 mg_gp[32]; vec4 mg_gw[32]; ivec4 mg_first[8]; };\n"
+    "mat4 g_comp, g_mv[4], g_proj;\n"
+    "vec4 g_gp;\n"
+    "vec2 g_gw;\n"
     "uniform mat4 u_immvp;\n"
     "uniform vec4 u_gp;\n"
     "uniform vec2 u_gw;\n"
@@ -751,8 +765,8 @@ static const char *VS_FF =
     "}\n"
     /* lit_color: model-view 0 only, unskinned, position w taken as 1. */
     "vec4 lit_color(vec4 pos, vec4 nrm, vec4 vc) {\n"
-    "  vec3 e = (u_mv[0] * vec4(pos.xyz, 1.0)).xyz;\n"
-    "  vec3 n = mat3(u_mv[0]) * nrm.xyz;\n"
+    "  vec3 e = (g_mv[0] * vec4(pos.xyz, 1.0)).xyz;\n"
+    "  vec3 n = mat3(g_mv[0]) * nrm.xyz;\n"
     "  float len = length(n);\n"
     "  if (len > 1e-8) n /= len;\n"
     "  if (u_flipn != 0 && dot(n, e) > 0.0) n = -n;\n"
@@ -797,6 +811,22 @@ static const char *VS_FF =
     "  return tc;\n"
     "}\n"
     "void main() {\n"
+    "  if (u_merge != 0) {\n"
+    "    int k = 0;\n"
+    "    for (int st = 16; st > 0; st >>= 1)\n"
+    "      if (gl_VertexID >= mg_first[(k + st) >> 2][(k + st) & 3]) k += st;\n"
+    "    g_comp = mg_comp[k];\n"
+    "    g_proj = mg_proj[k];\n"
+    "    g_gp = mg_gp[k];\n"
+    "    g_gw = mg_gw[k].xy;\n"
+    "    for (int i = 0; i < 4; i++) g_mv[i] = mg_mv[k * 4 + i];\n"
+    "  } else {\n"
+    "    g_comp = u_comp;\n"
+    "    g_proj = u_proj;\n"
+    "    g_gp = u_gp;\n"
+    "    g_gw = u_gw;\n"
+    "    for (int i = 0; i < 4; i++) g_mv[i] = u_mv[i];\n"
+    "  }\n"
     "  vec4 pos = fetch(0, a_pos), wt = fetch(1, a_wt), nrm = fetch(2, a_nrm);\n"
     "  vec4 col = fetch(3, a_col);\n"
     "  vec4 t[4];\n"
@@ -817,10 +847,10 @@ static const char *VS_FF =
     "  vec4 eye = vec4(0.0);\n"
     "  vec3 en = vec3(0.0);\n"
     "  for (int k = 0; k < nm; k++) {\n"
-    "    eye += ww[k] * (u_mv[k] * pos);\n"
-    "    en += ww[k] * (mat3(u_mv[k]) * nrm.xyz);\n"
+    "    eye += ww[k] * (g_mv[k] * pos);\n"
+    "    en += ww[k] * (mat3(g_mv[k]) * nrm.xyz);\n"
     "  }\n"
-    "  vec4 clip = u_usecomp != 0 ? u_comp * pos : u_proj * eye;\n"
+    "  vec4 clip = u_usecomp != 0 ? g_comp * pos : g_proj * eye;\n"
     "  float w = clip.w;\n"
     "  vec3 s = vec3((clip.xy / w + u_c59.xy) * u_aa, clip.z / w + u_c59.z);\n"
     "  vec4 d0 = u_lighting != 0 ? lit_color(pos, nrm, col)\n"
@@ -855,10 +885,10 @@ static const char *VS_FF =
     "  bool bad = abs(w) <= 1e-6 || any(isnan(o_screen)) || any(isinf(o_screen));\n"
     /* immersive: the eye position back from s and w, through this eye; the
      * headset's frustum clips (the game's planes no longer apply) */
-    "  bool imm = u_gw.x != 0.0;\n"
-    "  float iez = w * u_gw.y;\n"
-    "  vec4 ipos = ivp * vec4((s.x - u_gp.z) / u_gp.x * iez, (s.y - u_gp.w) / u_gp.y * iez,\n"
-    "                             -w * abs(u_gw.y), 1.0);\n"
+    "  bool imm = g_gw.x != 0.0;\n"
+    "  float iez = w * g_gw.y;\n"
+    "  vec4 ipos = ivp * vec4((s.x - g_gp.z) / g_gp.x * iez, (s.y - g_gp.w) / g_gp.y * iez,\n"
+    "                             -w * abs(g_gw.y), 1.0);\n"
     "  ipos.y = -ipos.y;\n"                  /* top row first, as the surfaces */
     "  gl_Position = bad ? vec4(0.0, 0.0, 0.0, 1.0) : (imm ? ipos : vec4(ndc * w, zn * w, w));\n"
     "#if !defined(GL_ES) || defined(GL_EXT_clip_cull_distance)\n"
@@ -1263,6 +1293,8 @@ static const char *const k_check_varyings[] = {
     "o_screen", "v_col", "v_spec", "v_fog", "v_tc0", "v_tc1", "v_tc2", "v_tc3"
 };
 
+#define MG_BINDING 2                       /* the FfMerge block's binding */
+
 /* Link vs with the shared fragment shader and look its uniforms up. */
 static int prog_link(Prog *p, GLuint vs, GLuint fs, int feedback)
 {
@@ -1309,8 +1341,13 @@ static int prog_link(Prog *p, GLuint vs, GLuint fs, int feedback)
     LOC(ascale, "u_ascale"); LOC(packed, "u_packed"); LOC(aa, "u_aa");
     LOC(vpz, "u_vpz"); LOC(nearz, "u_nearz"); LOC(fogen, "u_fogen");
     LOC(fogmode, "u_fogmode"); LOC(fogp, "u_fogp"); LOC(uvs0, "u_uvs0");
-    LOC(bgra, "u_bgra");
+    LOC(bgra, "u_bgra"); LOC(merge, "u_merge");
 #undef LOC
+    {   /* a merged run's matrices (RECOMP_GL_MERGE) */
+        GLuint bi = glGetUniformBlockIndex(p->prog, "FfMerge");
+        if (bi != GL_INVALID_INDEX)
+            glUniformBlockBinding(p->prog, bi, MG_BINDING);
+    }
     glUseProgram(p->prog);
     glUniform1i(glGetUniformLocation(p->prog, "u_tex"), 0);
     glUniform1i(glGetUniformLocation(p->prog, "u_t1"), 1);
@@ -3867,6 +3904,9 @@ static void clear_leave(Surf *p)
 #endif
 }
 
+static void mg_flush(void);      /* RECOMP_GL_MERGE: a pending run, drawn */
+static void mg_report(void);
+
 static void gl_clear(const Nv2aSurface *s, const Nv2aRenderState *rs,
                      uint32_t flags, uint32_t argb, uint32_t zstencil)
 {
@@ -3876,6 +3916,7 @@ static void gl_clear(const Nv2aSurface *s, const Nv2aRenderState *rs,
     (void)rs;
     if (!gl_ready())
         return;
+    mg_flush();
     if (s_fx.on)
         fx_resolve();
     GLCK("before clear (elsewhere)", NULL, s->color_va);
@@ -4705,12 +4746,846 @@ static int batch_needs_rc(const Surf *f, const Nv2aBatch *b, int raw)
     return 0;
 }
 
+/* The draw calls of a batch once everything is bound: one instanced draw
+ * for both eyes (one-pass stereo), each eye on its own, or one. raw: indexed
+ * (mode, count, itype at ioff, base vertex bv); otherwise b's vertices. */
+static void emit_eyes(Surf *f, const Nv2aBatch *b, int raw, int hud, int imm3d, GLenum mode,
+                      GLsizei count, GLenum itype, GLsizeiptr ioff, GLint bv)
+{
+    /* Stereo in one pass: one instanced draw, instance = eye, each in its
+     * half of a double-wide viewport, the other half clipped -- one draw
+     * call and one set of uniforms for both eyes. VC3_STEREO_1PASS=0
+     * draws each eye on its own (as where clip distances are missing). */
+    static int one_pass = -1;
+    if (one_pass < 0)
+        one_pass = !(genv("STEREO_1PASS") && genv("STEREO_1PASS")[0] == '0');
+    if (f->st && !hud && one_pass && s_has_clip) {
+        GLfloat sb[8], e2[4];
+        GLenum cd = raw ? GL_CLIP_DISTANCE0 + 2 : GL_CLIP_DISTANCE0;
+        int k;
+        for (k = 0; k < 4; k++) {
+            sb[2 * k] = s_sbs[k];
+            sb[2 * k + 1] = 0.0f;
+        }
+        cu4fv(U->sbs, 2, sb);
+        e2[0] = s_imm ? 0.0f : 0.5f * s_st_sep;
+        e2[1] = s_st_depth;
+        e2[2] = s_imm ? 0.0f : -0.5f * s_st_sep;
+        e2[3] = s_st_depth;
+        cu2fv(U->eye2, 2, e2);
+        if (imm3d)
+            cuMatrix4fv(U->immvp2, 2, GL_FALSE, &s_view.vp[0][0]);
+        cu1i(U->st2, 1);
+        glViewport(0, 0, 2 * f->pw, f->ph);
+        (void)cd;
+        if (raw)
+            glDrawElementsInstancedBaseVertex(mode, count, itype, (void *)ioff, 2, bv);
+        else
+            glDrawArraysInstanced(GL_TRIANGLES, 0, (GLsizei)b->count, 2);
+        GLCK(raw ? "draw: one-pass stereo (raw)" : "draw: one-pass stereo (cpu)", b, f->va);
+        glViewport(0, 0, f->pw, f->ph);
+    }
+    /* Stereo: the same draw for each eye, in its half. */
+    int eye, eyes = f->st && !hud ? 2 : 1;
+    if (f->st && !hud && one_pass && s_has_clip)
+        eyes = 0;                       /* drawn above */
+    else
+        cu1i(U->st2, 0);
+    for (eye = 0; eye < eyes; eye++) {
+        GLfloat sb[8];
+        int k;
+        for (k = 0; k < 4; k++) {
+            sb[2 * k] = s_sbs[k];
+            sb[2 * k + 1] = 0.5f * (GLfloat)eye;
+        }
+        cu4fv(U->sbs, 2, sb);
+        if (hud) {
+            cu2f(U->eye, 0.0f, s_st_depth);
+        } else if (f->st) {
+            glViewport(eye * f->pw, 0, f->pw, f->ph);
+            if (imm3d)
+                cuMatrix4fv(U->immvp, 1, GL_FALSE, s_view.vp[eye]);
+            cu2f(U->eye, s_imm ? 0.0f : eye ? -0.5f * s_st_sep : 0.5f * s_st_sep,
+                        s_st_depth);
+        } else {
+            cu2f(U->eye, 0.0f, s_st_depth);
+        }
+        if (raw)
+            glDrawElementsBaseVertex(mode, count, itype, (void *)ioff, bv);
+        else
+            glDrawArrays(GL_TRIANGLES, 0, (GLsizei)b->count);
+        GLCK(hud ? (raw ? "draw: HUD picture (raw)" : "draw: HUD picture (cpu)")
+             : raw ? "draw: draw (raw)" : "draw: draw (cpu)", b, f->va);
+    }
+}
+
+/* ── Merged runs of fixed-function draws (RECOMP_GL_MERGE) ─────────────────
+ * A 3D scene has runs of consecutive fixed-function batches that differ
+ * only in their transforms: the same target, program, render state,
+ * textures, lights and vertex layout, another composite, model-views and
+ * projection. Each was a draw call with its matrix uploads, which cost
+ * about 13 us apiece on the Quest's GL thread. Here such a run is one draw
+ * call:
+ *
+ *   - the first batch is set up as ever (gl_draw_inner) but not drawn:
+ *     mg_start records it, and how it would have been drawn alone;
+ *   - each next batch that matches it but for those matrices (and, when
+ *     immersive, the game projection taken from them) joins in mg_append,
+ *     from gl_draw_raw. Its vertices are staged, its indices become a
+ *     triangle list, and its matrices go into the run's next slot;
+ *   - anything else (another batch, a clear, a flip) first draws the run
+ *     (mg_flush). The staged vertices go into the stream behind the first
+ *     draw's, and the vertex pointers stay where they are. The joined list
+ *     is drawn from the first draw's base vertex, with the FfMerge block
+ *     holding each slot's matrices and first vertex. The shader finds a
+ *     vertex's slot from gl_VertexID. A run of one is drawn as it was.
+ *
+ * What a pixel sees does not change:
+ *   - the same vertices go through the same shader code with the same
+ *     matrices (read from the block rather than from uniforms; the same
+ *     floats);
+ *   - the same triangles are drawn in the same order. A strip or fan
+ *     becomes the list of its triangles, each in GL's own vertex order;
+ *   - the same state applies.
+ * Batches whose state could make the order or the setup matter are never
+ * joined: visibility tests, the immersive HUD, the E.S. effect target, the
+ * frame interpolator's snapshots, RECOMP_GPU_XF_CHECK.
+ *
+ * RECOMP_GL_MERGE=1 merges. =2 compares: each run's vertices go through the
+ * shader both ways into transform feedback and must match bit for bit (the
+ * vertices its indices use; [GLMERGE] ... differ). The run is then drawn
+ * unmerged. RECOMP_GL_MERGE_WHY=1 adds which words of the state kept a
+ * batch out of a run. */
+
+#define MG_SLOTS 32
+#define MG_SPAN 65535                      /* vertices a run may span: 16-bit indices */
+#define MG_BLOCK (MG_SLOTS * (6 * 64 + 32 + 4)) /* FfMerge: comp, mv[4], proj, gp, gw, first */
+
+static Ring s_mring = { 0, GL_UNIFORM_BUFFER, 4 << 20, 0, NULL, 0, { 0 } };   /* FfMerge */
+
+static int s_mg_mode = -1;                 /* 0 off, 1 merge, 2 compare */
+
+/* VC3_GL_CALL_DELAY_US=<us>: a busy wait per draw set up and issued here --
+ * per batch drawn on its own, per merged run (not per batch joining one) --
+ * to stand in for a slower GL thread's per-draw cost (the Quest's ~13 us in
+ * the mission intro). RECOMP_EXEC_GL_DELAY_US, the toolkit's, is per batch
+ * handed over, which a merge cannot save. */
+static void gl_call_delay(void)
+{
+    static long us = -1;
+    uint64_t end;
+    if (us < 0)
+        us = genv("GL_CALL_DELAY_US") ? atol(genv("GL_CALL_DELAY_US")) : 0;
+    if (us <= 0)
+        return;
+    end = tm_now() + (uint64_t)us * 1000ull;
+    while (tm_now() < end)
+        ;
+}
+
+typedef struct {
+    int n;                                 /* draws in the run; 0: none */
+    Surf *f;
+    Prog *prog;
+    Nv2aSurface s;
+    Nv2aRenderState rs;
+    Nv2aTexture tex, stage[4];
+    Nv2aCombiner rc;
+    uint8_t has_tex, has_stage[4], has_rc;
+    /* 0: the plain program, which reads of the combiners only whether they
+     * make a lightmap batch (stage 1 times the texture) and its stage modes;
+     * 1: the combiner program, which reads all of them */
+    uint8_t full_rc, lmap;
+    uint32_t fog_color;
+    Nv2aFixedState ff;                     /* the first's; composite and mv aside */
+    float aa[2], vpz, fogp[2], uvs0[2];
+    uint32_t nearz, fogen, fogmode;
+    VrGameProj bgp;
+    int bgp_ok;
+    uint32_t sig[8], stride;
+    float cval[8][4];
+    int imm3d, is3d, textured;
+    /* the first draw, as gl_draw_inner would have drawn it */
+    GLenum mode0;
+    GLsizei count0;
+    GLsizeiptr ioff0;
+    GLint bv0;
+    GLint bv[MG_SLOTS];                    /* each draw's first vertex, from the stream base */
+    uint32_t nv[MG_SLOTS];
+    float mat[MG_SLOTS][6][16];   /* composite, mv 0-3, projection */
+    float gpw[MG_SLOTS][8];       /* immersive: the zoomed projection; 1, 1 / pz */
+    uint32_t *idx;                         /* the run's triangle list, from bv[0] */
+    size_t nidx, cap;
+    /* RECOMP_GL_MERGE=2: each draw's own indices */
+    uint16_t *oidx;
+    size_t noidx, ocap, ooff[MG_SLOTS];
+    uint32_t ocount[MG_SLOTS], oprim[MG_SLOTS];
+    uint8_t dbg[MG_SLOTS][32];             /* =2: each draw's first vertex bytes */
+    uint8_t *vst;                          /* draws 1..n-1's vertices, staged */
+    size_t vstn, vstcap;
+    size_t iofs1;                          /* where draw 1's indices start */
+} MergeRun;
+static MergeRun s_mg;
+
+static struct {
+    uint32_t offered, joined, runs, calls_saved, singles;
+    uint32_t why[8];                       /* why a batch did not join */
+    uint32_t cmp_runs, cmp_verts, cmp_diff;
+} s_mgs;
+enum { MW_SURF, MW_STATE, MW_TEX, MW_FF, MW_LAYOUT, MW_PROJ, MW_ROOM, MW_OTHER };
+
+static int mg_mode(void)
+{
+    if (s_mg_mode < 0) {
+        const char *e = getenv("RECOMP_GL_MERGE");
+        s_mg_mode = e ? atoi(e) : 0;
+        if (s_mg_mode < 0 || s_mg_mode > 2)
+            s_mg_mode = 0;
+        if (s_mg_mode)
+            fprintf(stderr, "[GL] merging runs of fixed-function draws that differ only in"
+                    " transforms (RECOMP_GL_MERGE=%d%s)\n", s_mg_mode,
+                    s_mg_mode == 2 ? ": compared, drawn unmerged" : "");
+    }
+    return s_mg_mode;
+}
+
+/* A batch's vertex layout, as raw_attribs groups it: 1 if one interleaved
+ * stream (base, bytes, stride), with each role's signature as s_va keeps it
+ * and the constant value of each role without a stream. */
+static int mg_layout(const Nv2aRawGeometry *g, uint32_t sig[8], uint32_t *stride,
+                     const uint8_t **base, uint32_t *bytes, float cval[8][4])
+{
+    static const float none[4] = { 0.0f, 0.0f, 0.0f, 1.0f };
+    const uint8_t *gb = NULL;
+    uint32_t gs = 0, gn = 0;
+    int slot[8], r, have = 0;
+
+    raw_roles(g, slot);
+    for (r = 0; r < 8; r++) {               /* raw_attribs' grouping, one group */
+        const Nv2aAttrib *a = slot[r] >= 0 ? &g->attr[slot[r]] : NULL;
+        const uint8_t *p;
+        if (!a || !a->data)
+            continue;
+        p = (const uint8_t *)a->data;
+        if (!have) {
+            gb = p;
+            gs = a->stride;
+            gn = a->bytes;
+            have = 1;
+        } else if (gs == a->stride && p >= gb && p < gb + a->stride) {
+            uint32_t end = (uint32_t)(p - gb) + a->bytes;
+            if (end > gn)
+                gn = end;
+        } else if (gs == a->stride && p < gb && gb < p + a->stride) {
+            uint32_t shift = (uint32_t)(gb - p);
+            gb = p;
+            gn = gn + shift > a->bytes ? gn + shift : a->bytes;
+        } else {
+            return 0;                       /* a second stream */
+        }
+    }
+    if (!have || !gs)
+        return 0;
+    for (r = 0; r < 8; r++) {
+        const Nv2aAttrib *a = slot[r] >= 0 ? &g->attr[slot[r]] : NULL;
+        if (!a || !a->data) {
+            sig[r] = 0;
+            memcpy(cval[r], a ? a->value : none, 16);
+        } else {
+            sig[r] = 0x80000000u | (a->type & 15u) | ((a->size & 15u) << 4)
+                   | ((uint32_t)((const uint8_t *)a->data - gb) << 8);
+            memset(cval[r], 0, 16);
+        }
+    }
+    *stride = gs;
+    *base = gb;
+    *bytes = gn;
+    return 1;
+}
+
+/* A strip or fan as the list of its triangles, each in GL's vertex order
+ * (strip triangle i: i, i+1, i+2, the first two swapped when i is odd), the
+ * indices plus add. Returns the count written. */
+static size_t mg_tris(uint32_t *out, const uint16_t *in, uint32_t n, uint32_t prim, uint32_t add)
+{
+    size_t o = 0;
+    uint32_t i;
+    if (prim == 6) {
+        for (i = 0; i + 2 < n; i++) {
+            out[o++] = (uint32_t)in[i + (i & 1)] + add;
+            out[o++] = (uint32_t)in[i + 1 - (i & 1)] + add;
+            out[o++] = (uint32_t)in[i + 2] + add;
+        }
+    } else if (prim == 7) {
+        for (i = 1; i + 1 < n; i++) {
+            out[o++] = (uint32_t)in[0] + add;
+            out[o++] = (uint32_t)in[i] + add;
+            out[o++] = (uint32_t)in[i + 1] + add;
+        }
+    } else {
+        for (i = 0; i + 2 < n; i += 3) {
+            out[o++] = (uint32_t)in[i] + add;
+            out[o++] = (uint32_t)in[i + 1] + add;
+            out[o++] = (uint32_t)in[i + 2] + add;
+        }
+    }
+    return o;
+}
+
+static int mg_room(void **buf, size_t *cap, size_t need, size_t elem)
+{
+    if (need <= *cap)
+        return 1;
+    {
+        size_t c = *cap ? *cap : 4096;
+        void *p;
+        while (c < need)
+            c *= 2;
+        if (!(p = realloc(*buf, c * elem)))
+            return 0;
+        *buf = p;
+        *cap = c;
+    }
+    return 1;
+}
+
+static void mg_slot_gp(int k, int imm3d, const VrGameProj *g)
+{
+    float *v = s_mg.gpw[k];
+    memset(v, 0, 8 * sizeof *v);
+    if (imm3d) {
+        VrGameProj zg = zoom_proj(g);
+        v[0] = zg.kx;
+        v[1] = zg.ky;
+        v[2] = zg.cx;
+        v[3] = zg.cy;
+        v[4] = 1.0f;
+        v[5] = g->inv_pz;
+    }
+}
+
+static void mg_slot(int k, const Nv2aFixedState *ff)
+{
+    memcpy(s_mg.mat[k][0], ff->composite, 64);
+    memcpy(s_mg.mat[k][1], ff->mv, 4 * 64);
+    memcpy(s_mg.mat[k][5], ff->proj, 64);
+}
+
+static void mg_save_indices(int k, const Nv2aRawGeometry *g)
+{
+    if (s_mg_mode != 2)
+        return;
+    if (!mg_room((void **)&s_mg.oidx, &s_mg.ocap, s_mg.noidx + g->index_count, 2))
+        return;
+    s_mg.ooff[k] = s_mg.noidx;
+    memcpy(s_mg.oidx + s_mg.noidx, g->indices, (size_t)g->index_count * 2);
+    s_mg.noidx += g->index_count;
+    s_mg.ocount[k] = g->index_count;
+    s_mg.oprim[k] = g->prim;
+}
+
+/* From gl_draw_inner, everything bound for a fixed-function batch and its
+ * vertices and indices in the rings: 1 if it begins a run (not drawn yet). */
+static int mg_start(Surf *f, const Nv2aBatch *b, const Nv2aRawGeometry *g, int imm3d,
+                    int is3d, int textured, GLsizeiptr ioff)
+{
+    MergeRun *m = &s_mg;
+    const uint8_t *gb;
+    uint32_t gn, k;
+
+    if (mg_mode() <= 0 || m->n || !g->ff || g->check_out || b->zpass_out || !s_va.valid
+        || U->merge < 0 || s_fx.on || s_fx.draw || vc3_fps_get() > 60)
+        return 0;
+    if (!mg_layout(g, m->sig, &m->stride, &gb, &gn, m->cval) || m->stride != s_va.stride
+        || memcmp(m->sig, s_va.sig, sizeof m->sig))
+        return 0;
+    if (!mg_room((void **)&m->idx, &m->cap, (size_t)g->index_count * 3, 4))
+        return 0;
+    m->f = f;
+    m->prog = U;
+    m->s.color_va = f->va;
+    m->rs = *b->state;
+    m->has_tex = b->texture != NULL;
+    if (b->texture)
+        m->tex = *b->texture;
+    for (k = 0; k < 4; k++) {
+        m->has_stage[k] = b->stage[k] != NULL;
+        if (b->stage[k])
+            m->stage[k] = *b->stage[k];
+    }
+    m->has_rc = b->rc != NULL;
+    if (b->rc)
+        m->rc = *b->rc;
+    m->full_rc = U == &s_praw_rc || U == &s_praw_rc_na || s_use_rc || genv("GL_CUBE_RC")
+              || genv("GL_RC_SURF");
+    m->lmap = b->rc && lightmap_batch(b);
+    m->fog_color = b->fog_color;
+    m->ff = *g->ff;
+    m->aa[0] = g->aa_sx;
+    m->aa[1] = g->aa_sy;
+    m->vpz = g->vp_off_z;
+    m->nearz = g->near_z;
+    m->fogen = g->fog_enable;
+    m->fogmode = g->fog_mode;
+    memcpy(m->fogp, g->fog_param, sizeof m->fogp);
+    memcpy(m->uvs0, g->uv_scale0, sizeof m->uvs0);
+    m->bgp = s_bgp;
+    m->bgp_ok = s_bgp_ok;
+    m->imm3d = imm3d;
+    m->is3d = is3d;
+    m->textured = textured;
+    m->mode0 = raw_mode(g->prim);
+    m->count0 = (GLsizei)g->index_count;
+    m->ioff0 = ioff;
+    m->bv0 = s_basevertex;
+    m->bv[0] = s_basevertex;
+    memcpy(m->dbg[0], gb, gn < 32 ? gn : 32);
+    m->nv[0] = g->max_index - g->min_index + 1;
+    mg_slot(0, g->ff);
+    mg_slot_gp(0, imm3d, &s_bgp);
+    m->nidx = mg_tris(m->idx, g->indices, g->index_count, g->prim, 0);
+    m->iofs1 = m->nidx;
+    m->vstn = 0;
+    m->noidx = 0;
+    mg_save_indices(0, g);
+    m->n = 1;
+    return 1;
+}
+
+static int mg_same_tex(int has, const Nv2aTexture *t, uint8_t mhas, const Nv2aTexture *mt)
+{
+    return has == mhas && (!has || !memcmp(t, mt, sizeof *t));
+}
+
+static int s_mg_why = -1;
+static uint32_t s_mgw[4][512];          /* rs, rc, ff, tex: per 4-byte word */
+static void mg_why_words(int t, const void *a, const void *b, size_t n)
+{
+    size_t w;
+    for (w = 0; w * 4 < n && w < 255; w++)
+        if (memcmp((const char *)a + w * 4, (const char *)b + w * 4, 4))
+            s_mgw[t][w]++;
+    if (n / 4 > 255)                      /* past the table: one bucket */
+        for (w = 255; w * 4 < n; w++)
+            if (memcmp((const char *)a + w * 4, (const char *)b + w * 4, 4)) {
+                s_mgw[t][256 + (w * 4 * 255 / n)]++;
+                break;
+            }
+}
+
+/* From gl_draw_raw: 1 if b joined the run (its draw is the run's). */
+static int mg_append(const Nv2aSurface *s, const Nv2aBatch *b)
+{
+    MergeRun *m = &s_mg;
+    const Nv2aRawGeometry *g = b->raw;
+    uint32_t sig[8], stride, gn, nv, k, r;
+    const uint8_t *gb;
+    float cval[8][4];
+    GLint bv;
+    int why = MW_OTHER, gpok;
+    VrGameProj gp;
+
+    if (!g || g->kind != NV2A_RAW_FIXED || !g->ff || g->check_out || b->zpass_out
+        || g->index_count < 3)
+        goto no;
+    s_mgs.offered++;
+    why = MW_SURF;
+    if (s->color_va != m->f->va || surf_find(s->color_va) != m->f)
+        goto no;
+    why = MW_STATE;
+    if (memcmp(b->state, &m->rs, sizeof m->rs) || b->fog_color != m->fog_color
+        || (b->rc != NULL) != m->has_rc)
+        goto no;
+    if (b->rc && (m->full_rc ? memcmp(b->rc, &m->rc, sizeof m->rc) != 0
+                  : lightmap_batch(b) != m->lmap
+                    || (m->lmap && b->rc->stage_program != m->rc.stage_program)))
+        goto no;
+    why = MW_TEX;
+    if (!mg_same_tex(b->texture != NULL, b->texture, m->has_tex, &m->tex))
+        goto no;
+    for (k = 0; k < 4; k++)                 /* the stages the program samples */
+        if ((m->full_rc || (k == 1 && m->lmap))
+            && !mg_same_tex(b->stage[k] != NULL, b->stage[k], m->has_stage[k], &m->stage[k]))
+            goto no;
+    why = MW_FF;
+    /* everything after composite, model-views and projection (the slot's) */
+    if (memcmp((const char *)g->ff + offsetof(Nv2aFixedState, texmat),
+               (const char *)&m->ff + offsetof(Nv2aFixedState, texmat),
+               sizeof m->ff - offsetof(Nv2aFixedState, texmat)) || g->aa_sx != m->aa[0] || g->aa_sy != m->aa[1]
+        || g->vp_off_z != m->vpz || g->near_z != m->nearz || g->fog_enable != m->fogen
+        || g->fog_mode != m->fogmode || memcmp(g->fog_param, m->fogp, sizeof m->fogp)
+        || memcmp(g->uv_scale0, m->uvs0, sizeof m->uvs0))
+        goto no;
+    why = MW_LAYOUT;
+    if (!mg_layout(g, sig, &stride, &gb, &gn, cval) || stride != m->stride
+        || memcmp(sig, m->sig, sizeof sig) || memcmp(cval, m->cval, sizeof cval))
+        goto no;
+    for (r = 0; r < 16; r++)
+        if (g->attr[r].data && g->attr[r].bytes > (uint32_t)(s_vring.size / 8))
+            goto no;
+    why = MW_PROJ;
+    /* The game's projection raw_uniforms would take from it: whether there
+     * is one decides 3D or not; its values go in the slot (immersive: u_gp,
+     * u_gw) and stay with the surface (f->gp), as the last batch's. */
+    gpok = vr_game_proj_from(g->ff->composite, g->ff->mv[0], (int)g->ff->use_composite,
+                             g->ff->proj, g->aa_sx, g->aa_sy, g->ff->c59, &gp);
+    if (gpok != m->bgp_ok)
+        goto no;
+    why = MW_ROOM;
+    if (m->n >= MG_SLOTS
+        || (GLsizeiptr)(m->nidx + (size_t)g->index_count * 3) * 4 > s_iring.size / 2
+        || !mg_room((void **)&m->idx, &m->cap, m->nidx + (size_t)g->index_count * 3, 4))
+        goto no;
+    nv = g->max_index - g->min_index + 1;
+    {   /* the vertices, staged at a whole number of strides: the run's go
+         * into the ring behind the first's in one copy at the flush, which
+         * must find the room there (nothing else writes the ring meanwhile) */
+        GLsizeiptr al = 16, next = (s_vring.at + al - 1) / al * al;
+        size_t vo = (m->vstn + stride - 1) / stride * stride;
+        if (!s_va.valid || next + (GLsizeiptr)(vo + gn) + 2 * (GLsizeiptr)stride > s_vring.size
+            || vo / stride + nv + m->nv[0] + 2 > MG_SPAN
+            || !mg_room((void **)&m->vst, &m->vstcap, vo + gn, 1))
+            goto no;                        /* the ring would go round: draw first */
+        memcpy(m->vst + vo, gb, gn);
+        memcpy(m->dbg[m->n], gb, gn < 32 ? gn : 32);
+        m->vstn = vo + gn;
+        bv = (GLint)(vo / stride);          /* in the staging, until the flush */
+    }
+    if (lazy_skip(m->f, b))                 /* as gl_draw_inner would */
+        return 1;
+    k = (uint32_t)m->n;
+    m->bv[k] = bv;
+    m->nv[k] = nv;
+    mg_slot((int)k, g->ff);
+    mg_slot_gp((int)k, m->imm3d, &gp);
+    m->nidx += mg_tris(m->idx + m->nidx, g->indices, g->index_count, g->prim, (uint32_t)bv);
+    mg_save_indices((int)k, g);
+    m->n++;
+    s_mgs.joined++;
+    s_bgp_ok = gpok;                        /* as raw_uniforms and gl_draw_inner leave them */
+    if (gpok) {
+        s_bgp = gp;
+        m->f->gp = gp;
+        m->f->gp_ok = 1;
+    }
+    /* gl_draw_inner's counts, as if drawn */
+    s_st.draws++;
+    s_st.tris += g->prim == 5 ? g->index_count / 3 : g->index_count - 2;
+    if (m->textured)
+        s_st.textured++;
+    else if (!b->texture)
+        s_st.untex++;
+    s_rst.draws++;
+    s_rst.tris += g->prim == 5 ? g->index_count / 3 : g->index_count - 2;
+    if (m->is3d && m->f->st) {
+        s_3d_this++;
+        m->f->n3d++;
+    }
+    return 1;
+no:
+    s_mgs.why[why]++;
+    if (s_mg_why > 0) {  /* RECOMP_GL_MERGE_WHY: which words differ (debug) */
+        if (why == MW_STATE) {
+            mg_why_words(0, b->state, &m->rs, sizeof m->rs);
+            if (b->rc && m->has_rc)
+                mg_why_words(1, b->rc, &m->rc, sizeof m->rc);
+            else if ((b->rc != NULL) != m->has_rc)
+                s_mgw[1][255]++;
+            if (b->fog_color != m->fog_color)
+                s_mgw[0][255]++;
+        } else if (why == MW_FF) {
+            mg_why_words(2, g->ff, &m->ff, sizeof m->ff);
+        } else if (why == MW_TEX) {
+            if (b->texture && m->has_tex)
+                mg_why_words(3, b->texture, &m->tex, sizeof m->tex);
+            else
+                s_mgw[3][255]++;
+        }
+    }
+    return 0;
+}
+
+/* RECOMP_GL_MERGE=2: draw k's immersive projection, as gl_draw_inner sets it. */
+static void mg_gp_uniforms(int k)
+{
+    const float *v = s_mg.gpw[k];
+    if (s_mg.imm3d) {
+        cu4f(U->gp, v[0], v[1], v[2], v[3]);
+        cu2f(U->gw, v[4], v[5]);
+    }
+}
+
+/* RECOMP_GL_MERGE=2: the shader's outputs for vertices first..first+n
+ * (pointers as bound) into out, NV2A_RAW_CHECK_FLOATS each. */
+static int mg_capture(GLint first, GLsizei n, float *out)
+{
+    static GLuint tfb;
+    GLsizeiptr bytes = (GLsizeiptr)n * NV2A_RAW_CHECK_FLOATS * sizeof(float);
+    void *p;
+    int ok = 0;
+
+    if (!tfb)
+        glGenBuffers(1, &tfb);
+    glBindBuffer(GL_TRANSFORM_FEEDBACK_BUFFER, tfb);
+    glBufferData(GL_TRANSFORM_FEEDBACK_BUFFER, bytes, NULL, GL_STREAM_READ);
+    glBindBufferBase(GL_TRANSFORM_FEEDBACK_BUFFER, 0, tfb);
+    glEnable(GL_RASTERIZER_DISCARD);
+    glBeginTransformFeedback(GL_POINTS);
+    glDrawArrays(GL_POINTS, first, n);
+    glEndTransformFeedback();
+    glDisable(GL_RASTERIZER_DISCARD);
+    p = glMapBufferRange(GL_TRANSFORM_FEEDBACK_BUFFER, 0, bytes, GL_MAP_READ_BIT);
+    if (p) {
+        memcpy(out, p, (size_t)bytes);
+        glUnmapBuffer(GL_TRANSFORM_FEEDBACK_BUFFER);
+        ok = 1;
+    }
+    glBindBufferBase(GL_TRANSFORM_FEEDBACK_BUFFER, 0, 0);
+    {
+        static int logged;
+        GLenum e = glGetError();
+        if ((e || !ok) && logged++ < 4)
+            fprintf(stderr, "[GLMERGE] capture of %d vertices from %d: %s, GL error 0x%04X\n",
+                    (int)n, (int)first, ok ? "read" : "not read", e);
+    }
+    return ok;
+}
+
+static void mg_compare_and_draw(GLsizei span, int n)
+{
+    MergeRun *m = &s_mg;
+    static float *a, *bb;
+    static uint8_t *used;
+    static size_t acap, bcap, ucap;
+    int k;
+    uint32_t diff = 0;
+
+    if (!mg_room((void **)&a, &acap, (size_t)span * NV2A_RAW_CHECK_FLOATS, 4))
+        return;
+    cu1i(U->merge, 1);
+    if (mg_capture(m->bv[0], span, a)) {
+        cu1i(U->merge, 0);
+        for (k = 0; k < n; k++) {
+            uint32_t v, d = 0, v0 = 0;
+            if (!mg_room((void **)&bb, &bcap, (size_t)m->nv[k] * NV2A_RAW_CHECK_FLOATS, 4))
+                break;
+            cuMatrix4fv(U->comp, 1, GL_TRUE, m->mat[k][0]);
+            cuMatrix4fv(U->mv, 4, GL_TRUE, m->mat[k][1]);
+            cuMatrix4fv(U->proj, 1, GL_TRUE, m->mat[k][5]);
+            mg_gp_uniforms(k);
+            if (!mg_capture(m->bv[k], (GLsizei)m->nv[k], bb))
+                continue;
+            /* the vertices its indices use (the others, in min..max but
+             * never drawn, may hold anything) */
+            if (!mg_room((void **)&used, &ucap, m->nv[k], 1))
+                break;
+            memset(used, 0, m->nv[k]);
+            for (v = 0; v < m->ocount[k]; v++)
+                if (m->oidx[m->ooff[k] + v] < m->nv[k])
+                    used[m->oidx[m->ooff[k] + v]] = 1;
+            for (v = 0; v < m->nv[k]; v++)
+                if (used[v]
+                    && memcmp(a + (size_t)(m->bv[k] - m->bv[0] + (GLint)v) * NV2A_RAW_CHECK_FLOATS,
+                              bb + (size_t)v * NV2A_RAW_CHECK_FLOATS,
+                              NV2A_RAW_CHECK_FLOATS * sizeof(float))) {
+                    if (!d)
+                        v0 = v;
+                    d++;
+                }
+            static int logged;
+            if (d && logged++ < 6) {
+                const float *x = a + (size_t)(m->bv[k] - m->bv[0] + (GLint)v0) * NV2A_RAW_CHECK_FLOATS;
+                const float *y = bb + (size_t)v0 * NV2A_RAW_CHECK_FLOATS;
+                int c;
+                fprintf(stderr, "[GLMERGE] run of %d into %08X: draw %d, %u of %u vertices differ;"
+                        " vertex %u merged | alone:", n, m->f->va, k, d, m->nv[k], v0);
+                for (c = 0; c < NV2A_RAW_CHECK_FLOATS; c++)
+                    if (memcmp(&x[c], &y[c], 4))
+                        fprintf(stderr, " [%d] %.9g|%.9g", c, x[c], y[c]);
+                fprintf(stderr, "\n");
+#if !defined(VC3_GLES)
+                {   /* is the stream what was copied? */
+                    uint8_t got[32];
+                    GLsizeiptr at = s_va.base + (GLsizeiptr)m->bv[k] * m->stride;
+                    glBindBuffer(GL_ARRAY_BUFFER, s_vring.buf);
+                    glGetBufferSubData(GL_ARRAY_BUFFER, at, 32, got);
+                    fprintf(stderr, "[GLMERGE]   stream at %ld (base %ld, bv %d-%d, stride %u, ring at %ld):"
+                            " %s; sig0 %08X\n", (long)at, (long)s_va.base, m->bv[k], m->bv[0],
+                            m->stride, (long)s_vring.at,
+                            memcmp(got, m->dbg[k], 32) ? "DIFFERS from the copy" : "as copied",
+                            m->sig[0]);
+                }
+#endif
+            }
+            diff += d;
+            s_mgs.cmp_verts += m->nv[k];
+        }
+    }
+    cu1i(U->merge, 0);
+    s_mgs.cmp_runs++;
+    s_mgs.cmp_diff += diff;
+    /* drawn unmerged: each draw with its own matrices and indices */
+    for (k = 0; k < n; k++) {
+        GLsizeiptr io = ring_put(&s_iring, m->oidx + m->ooff[k], (GLsizeiptr)m->ocount[k] * 2);
+        if (io < 0)
+            continue;
+        cuMatrix4fv(U->comp, 1, GL_TRUE, m->mat[k][0]);
+        cuMatrix4fv(U->mv, 4, GL_TRUE, m->mat[k][1]);
+        cuMatrix4fv(U->proj, 1, GL_TRUE, m->mat[k][5]);
+        mg_gp_uniforms(k);
+        emit_eyes(m->f, NULL, 1, 0, m->imm3d, raw_mode(m->oprim[k]), (GLsizei)m->ocount[k],
+                  GL_UNSIGNED_SHORT, io, m->bv[k]);
+    }
+    U->ff_valid = 0;                        /* the uniforms hold the last draw's */
+}
+
+/* Draw the run, if there is one. Called before anything else touches GL. */
+static void mg_flush(void)
+{
+    MergeRun *m = &s_mg;
+    int n = m->n, k;
+    GLsizeiptr moff, ioff;
+    GLsizei span;
+    uint8_t *mp;
+
+    if (!n)
+        return;
+    m->n = 0;
+    if (U != m->prog) {                     /* cannot happen: nothing drew since */
+        U = m->prog;
+        glUseProgram(U->prog);
+        s_cur_prog = U->prog;
+    }
+    if (n == 1) {
+        s_mgs.singles++;
+        emit_eyes(m->f, NULL, 1, 0, m->imm3d, m->mode0, m->count0, GL_UNSIGNED_SHORT,
+                  m->ioff0, m->bv0);
+        if (m->f->st)
+            glViewport(0, 0, m->f->pw, m->f->ph);
+        return;
+    }
+    {   /* the staged vertices behind the first draw's, a whole number of
+         * strides from the stream's base */
+        GLsizeiptr off0, at, d;
+        GLint b1;
+        size_t i;
+        uint8_t *vp = (uint8_t *)ring_map(&s_vring, (GLsizeiptr)m->vstn + m->stride, &off0);
+        if (!vp)
+            return;
+        at = off0;
+        if (at < s_va.base) {               /* cannot happen: checked at each join */
+            ring_unmap(&s_vring);
+            fprintf(stderr, "[GLMERGE] run of %d dropped: the vertex ring went round\n", n);
+            return;
+        }
+        d = (at - s_va.base) % (GLsizeiptr)m->stride;
+        if (d)
+            at += (GLsizeiptr)m->stride - d;
+        memcpy(vp + (at - off0), m->vst, m->vstn);
+        ring_unmap(&s_vring);
+        b1 = (GLint)((at - s_va.base) / (GLsizeiptr)m->stride);
+        for (k = 1; k < n; k++)
+            m->bv[k] += b1;
+        for (i = m->iofs1; i < m->nidx; i++)
+            m->idx[i] += (uint32_t)(b1 - m->bv[0]);
+    }
+    span = (GLsizei)(m->bv[n - 1] - m->bv[0]) + (GLsizei)m->nv[n - 1];
+    mp = (uint8_t *)ring_map(&s_mring, MG_BLOCK, &moff);
+    if (!mp)
+        return;
+    for (k = 0; k < n; k++) {
+        memcpy(mp + k * 64, m->mat[k][0], 64);
+        memcpy(mp + MG_SLOTS * 64 + k * 4 * 64, m->mat[k][1], 4 * 64);
+        memcpy(mp + MG_SLOTS * 5 * 64 + k * 64, m->mat[k][5], 64);
+        memcpy(mp + MG_SLOTS * 6 * 64 + k * 16, m->gpw[k], 16);
+        memcpy(mp + MG_SLOTS * 6 * 64 + MG_SLOTS * 16 + k * 16, m->gpw[k] + 4, 16);
+    }
+    {   /* each slot's first vertex from the stream's base: gl_VertexID, the
+         * index plus the base vertex, the run's first */
+        int32_t *first = (int32_t *)(mp + MG_SLOTS * (6 * 64 + 32));
+        for (k = 0; k < MG_SLOTS; k++)
+            first[k] = k < n ? (int32_t)m->bv[k] : 0x7FFFFFFF;
+    }
+    ring_unmap(&s_mring);
+    glBindBufferRange(GL_UNIFORM_BUFFER, MG_BINDING, s_mring.buf, moff, MG_BLOCK);
+    /* The pointers stay where they are (s_va.base): the run is drawn from
+     * its first vertex as a base vertex. Moving them for a run made the
+     * Mac's driver build a pipeline state for nearly every run. */
+    gl_call_delay();                        /* the run's one draw */
+    if (s_mg_mode == 2) {
+        mg_compare_and_draw(span, n);
+    } else {
+        static uint16_t *i16;
+        static size_t i16cap;
+        size_t i;
+        if (!mg_room((void **)&i16, &i16cap, m->nidx, 2))
+            return;
+        for (i = 0; i < m->nidx; i++)
+            i16[i] = (uint16_t)m->idx[i];
+        if ((ioff = ring_put(&s_iring, i16, (GLsizeiptr)(m->nidx * 2))) >= 0) {
+            cu1i(U->merge, 1);
+            emit_eyes(m->f, NULL, 1, 0, m->imm3d, GL_TRIANGLES, (GLsizei)m->nidx,
+                      GL_UNSIGNED_SHORT, ioff, m->bv[0]);
+            cu1i(U->merge, 0);
+        }
+    }
+    if (m->f->st)
+        glViewport(0, 0, m->f->pw, m->f->ph);
+    s_mgs.runs++;
+    s_mgs.calls_saved += (uint32_t)(n - 1);
+    /* The uniforms hold the first draw's state, raw_uniforms' memory too;
+     * the projection (s_bgp) is the last's: have the next batch's
+     * recomputed rather than compared with the first's. */
+    U->ff_valid = 0;
+}
+
+/* Once a second, from the flip. */
+static void mg_report(void)
+{
+    static uint64_t last;
+    uint64_t now;
+    if (s_mg_mode <= 0)
+        return;
+    now = tm_now();
+    if (!last)
+        last = now;
+    if (now - last < 1000000000ull)
+        return;
+    last = now;
+    if (s_mg_why < 0)
+        s_mg_why = getenv("RECOMP_GL_MERGE_WHY") != NULL;
+    fprintf(stderr, "[GLMERGE] 1 s: %u fixed-function batches offered to a run, %u joined"
+            " (%u runs; %u runs of one), %u draw calls saved; not joined: surface %u, state %u,"
+            " textures %u, transform state %u, layout %u, projection %u, room %u, other %u",
+            s_mgs.offered, s_mgs.joined, s_mgs.runs, s_mgs.singles, s_mgs.calls_saved,
+            s_mgs.why[MW_SURF], s_mgs.why[MW_STATE], s_mgs.why[MW_TEX], s_mgs.why[MW_FF],
+            s_mgs.why[MW_LAYOUT], s_mgs.why[MW_PROJ], s_mgs.why[MW_ROOM], s_mgs.why[MW_OTHER]);
+    if (s_mg_mode == 2)
+        fprintf(stderr, "; compared %u runs, %u vertices, %u differ", s_mgs.cmp_runs,
+                s_mgs.cmp_verts, s_mgs.cmp_diff);
+    fprintf(stderr, "\n");
+    if (s_mg_why > 0) {
+        static const char *nm[4] = { "state", "combiners", "ff", "texture" };
+        int t, w;
+        for (t = 0; t < 4; t++) {
+            fprintf(stderr, "[GLMERGE]   %s words differing:", nm[t]);
+            for (w = 0; w < 512; w++)
+                if (s_mgw[t][w] * 50 > s_mgs.offered && s_mgw[t][w])
+                    fprintf(stderr, " %d:%u", w, s_mgw[t][w]);
+            fprintf(stderr, "\n");
+        }
+        memset(s_mgw, 0, sizeof s_mgw);
+    }
+    memset(&s_mgs, 0, sizeof s_mgs);
+}
+
 static void gl_draw_inner(const Nv2aSurface *s, const Nv2aBatch *b);
 
 static void gl_draw(const Nv2aSurface *s, const Nv2aBatch *b)
 {
     if (!gl_ready())
         return;
+    mg_flush();
     fx_pre(s, b);
     gl_draw_inner(s, b);
     fx_post();
@@ -4728,6 +5603,7 @@ static void gl_draw_inner(const Nv2aSurface *s, const Nv2aBatch *b)
 
     if ((!raw && !b->count) || !gl_ready())
         return;
+    gl_call_delay();
     GLCK("before draw (elsewhere)", b, s->color_va);
     if (!(f = surf_bind(s)))
         return;
@@ -5113,74 +5989,12 @@ static void gl_draw_inner(const Nv2aSurface *s, const Nv2aBatch *b)
             clear_flush(f, ~(GLbitfield)0);
             apply_state(b->state);
         }
-        /* Stereo in one pass: one instanced draw, instance = eye, each in its
-         * half of a double-wide viewport, the other half clipped -- one draw
-         * call and one set of uniforms for both eyes. VC3_STEREO_1PASS=0
-         * draws each eye on its own (as where clip distances are missing). */
-        static int one_pass = -1;
-        if (one_pass < 0)
-            one_pass = !(genv("STEREO_1PASS") && genv("STEREO_1PASS")[0] == '0');
-        if (f->st && !hud && one_pass && s_has_clip) {
-            GLfloat sb[8], e2[4];
-            GLenum cd = raw ? GL_CLIP_DISTANCE0 + 2 : GL_CLIP_DISTANCE0;
-            int k;
-            for (k = 0; k < 4; k++) {
-                sb[2 * k] = s_sbs[k];
-                sb[2 * k + 1] = 0.0f;
-            }
-            cu4fv(U->sbs, 2, sb);
-            e2[0] = s_imm ? 0.0f : 0.5f * s_st_sep;
-            e2[1] = s_st_depth;
-            e2[2] = s_imm ? 0.0f : -0.5f * s_st_sep;
-            e2[3] = s_st_depth;
-            cu2fv(U->eye2, 2, e2);
-            if (imm3d)
-                cuMatrix4fv(U->immvp2, 2, GL_FALSE, &s_view.vp[0][0]);
-            cu1i(U->st2, 1);
-            glViewport(0, 0, 2 * f->pw, f->ph);
-            (void)cd;
-            if (raw)
-                glDrawElementsInstancedBaseVertex(raw_mode(raw->prim),
-                                                  (GLsizei)raw->index_count, GL_UNSIGNED_SHORT,
-                                                  (void *)ioff, 2, s_basevertex);
-            else
-                glDrawArraysInstanced(GL_TRIANGLES, 0, (GLsizei)b->count, 2);
-            GLCK(raw ? "draw: one-pass stereo (raw)" : "draw: one-pass stereo (cpu)", b, f->va);
-            glViewport(0, 0, f->pw, f->ph);
-        }
-        /* Stereo: the same draw for each eye, in its half. */
-        int eye, eyes = f->st && !hud ? 2 : 1;
-        if (f->st && !hud && one_pass && s_has_clip)
-            eyes = 0;                       /* drawn above */
-        else
-            cu1i(U->st2, 0);
-        for (eye = 0; eye < eyes; eye++) {
-            GLfloat sb[8];
-            int k;
-            for (k = 0; k < 4; k++) {
-                sb[2 * k] = s_sbs[k];
-                sb[2 * k + 1] = 0.5f * (GLfloat)eye;
-            }
-            cu4fv(U->sbs, 2, sb);
-            if (hud) {
-                cu2f(U->eye, 0.0f, s_st_depth);
-            } else if (f->st) {
-                glViewport(eye * f->pw, 0, f->pw, f->ph);
-                if (imm3d)
-                    cuMatrix4fv(U->immvp, 1, GL_FALSE, s_view.vp[eye]);
-                cu2f(U->eye, s_imm ? 0.0f : eye ? -0.5f * s_st_sep : 0.5f * s_st_sep,
-                            s_st_depth);
-            } else {
-                cu2f(U->eye, 0.0f, s_st_depth);
-            }
-            if (raw)
-                glDrawElementsBaseVertex(raw_mode(raw->prim), (GLsizei)raw->index_count,
-                                         GL_UNSIGNED_SHORT, (void *)ioff, s_basevertex);
-            else
-                glDrawArrays(GL_TRIANGLES, 0, (GLsizei)b->count);
-            GLCK(hud ? (raw ? "draw: HUD picture (raw)" : "draw: HUD picture (cpu)")
-                 : raw ? "draw: draw (raw)" : "draw: draw (cpu)", b, f->va);
-        }
+        /* A fixed-function batch may instead begin a run that later ones
+         * with only other transforms join (RECOMP_GL_MERGE): drawn then. */
+        if (!(raw && rawff && !hud && mg_start(f, b, raw, imm3d, is3d, textured, ioff)))
+            emit_eyes(f, b, raw != NULL, hud, imm3d, raw ? raw_mode(raw->prim) : 0,
+                      raw ? (GLsizei)raw->index_count : 0, GL_UNSIGNED_SHORT, ioff,
+                      s_basevertex);
         if (hud)
             glBindFramebuffer(GL_FRAMEBUFFER, f->fbo);
         if (f->st)
@@ -5255,6 +6069,11 @@ static int gl_draw_raw(const Nv2aSurface *s, const Nv2aBatch *b)
 
     if (!g || g->index_count < 3 || !gl_ready())
         return 0;
+    if (s_mg.n) {                           /* a run: this joins it, or it is drawn */
+        if (mg_append(s, b))
+            return 1;
+        mg_flush();
+    }
     if (g->kind == NV2A_RAW_PROGRAM) {
         /* A screen-space batch (the CPU's first vertex at w = 1: HUD,
          * sprites, the full-screen copies) and one whose first vertex is
@@ -6359,6 +7178,8 @@ static void scale_pick(int on)
 
 static void gl_flip(void)
 {
+    mg_flush();
+    mg_report();
     if (s_fx.on)                    /* the effect target's run ends with the frame */
         fx_resolve();
     if (genv("GL_EFFECT_LOG") && s_fx.n_this)   /* VC3_GL_EFFECT_LOG=1 */
