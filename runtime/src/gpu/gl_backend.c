@@ -1788,17 +1788,23 @@ typedef struct {
     int seg;                     /* the segment being written */
     GLsync fence[RING_SEGS];
 } Ring;
-static Ring s_vring = { 0, GL_ARRAY_BUFFER, 16 << 20, 0, NULL, 0, { 0 } };
-static Ring s_iring = { 0, GL_ELEMENT_ARRAY_BUFFER, 4 << 20, 0, NULL, 0, { 0 } };
+/* Sized so a segment comes round again long after the GPU is done with it:
+ * at 16 and 4 MB, E.S. mode (more GPU work queued) had the GL thread
+ * waiting on the rings' fences a quarter of each second on the Quest. */
+static Ring s_vring = { 0, GL_ARRAY_BUFFER, 64 << 20, 0, NULL, 0, { 0 } };
+static Ring s_iring = { 0, GL_ELEMENT_ARRAY_BUFFER, 32 << 20, 0, NULL, 0, { 0 } };
 /* The vertex programs' constants (the VshConst block, 192 vec4): a copy
  * streamed in whenever they change and bound as a range at VC_BINDING for
  * every program at once -- where each program had its 192 uniforms sent per
  * draw that changed them, and again on every switch of program. Ranges
  * start at the driver's uniform-buffer alignment. */
 #define VC_BYTES (192 * 16)
-static Ring s_cring = { 0, GL_UNIFORM_BUFFER, 16 << 20, 0, NULL, 0, { 0 } };
+static Ring s_cring = { 0, GL_UNIFORM_BUFFER, 32 << 20, 0, NULL, 0, { 0 } };
 static GLint s_ubo_align = 256;
 static uint32_t s_vc_gen_bound;         /* the constants' change count bound */
+
+static uint32_t s_ring_waits;           /* the GL thread waited for a segment (GPU log) */
+static uint64_t s_ring_wait_ns;
 
 #if defined(VC3_GLES)
 typedef void (*BufferStorageFn)(GLenum, GLsizeiptr, const void *, GLbitfield);
@@ -1850,7 +1856,15 @@ static void ring_enter(Ring *r, GLsizeiptr from, GLsizeiptr to)
         r->fence[r->seg] = glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
         r->seg = sg;
         if (r->fence[sg]) {
-            glClientWaitSync(r->fence[sg], GL_SYNC_FLUSH_COMMANDS_BIT, 1000000000ull);
+            struct timespec a_, b_;
+            clock_gettime(CLOCK_MONOTONIC, &a_);
+            if (glClientWaitSync(r->fence[sg], 0, 0) == GL_TIMEOUT_EXPIRED) {
+                s_ring_waits++;
+                glClientWaitSync(r->fence[sg], GL_SYNC_FLUSH_COMMANDS_BIT, 1000000000ull);
+                clock_gettime(CLOCK_MONOTONIC, &b_);
+                s_ring_wait_ns += (uint64_t)((b_.tv_sec - a_.tv_sec) * 1000000000ll
+                                             + (b_.tv_nsec - a_.tv_nsec));
+            }
             glDeleteSync(r->fence[sg]);
             r->fence[sg] = 0;
         }
@@ -2855,8 +2869,10 @@ static void gt_flip(void)
         s_zp_frame = s_sw_frame = 0;
         fprintf(stderr, "[GPUTIME]   attribute pointers kept %u, set %u; state calls made %u,"
                 " not repeated %u; uniforms sent %u, not repeated %u; program constants"
-                " sent %u\n", s_va_hit, s_va_miss, s_sh.made, s_sh.skipped, s_uc_sent,
-                s_uc_kept, s_vc_sent);
+                " sent %u; ring waits %u (%.1f ms)\n", s_va_hit, s_va_miss, s_sh.made, s_sh.skipped,
+                s_uc_sent, s_uc_kept, s_vc_sent, s_ring_waits, s_ring_wait_ns / 1e6);
+        s_ring_waits = 0;
+        s_ring_wait_ns = 0;
         s_sh.made = s_sh.skipped = 0;
         s_uc_sent = s_uc_kept = s_vc_sent = 0;
         s_va_hit = s_va_miss = 0;
