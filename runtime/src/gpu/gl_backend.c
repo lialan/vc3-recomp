@@ -1846,6 +1846,10 @@ static uint32_t s_vc_gen_bound;         /* the constants' change count bound */
 
 static uint32_t s_ring_waits;           /* the GL thread waited for a segment (GPU log) */
 static uint64_t s_ring_wait_ns;
+/* Indexed vertex/index/constant so device captures identify which stream
+ * is exhausting its capacity. Reset alongside the per-second GLTIME log. */
+static uint32_t s_ring_wait_by_target[3];
+static uint64_t s_ring_ns_by_target[3];
 
 #if defined(VC3_GLES)
 typedef void (*BufferStorageFn)(GLenum, GLsizeiptr, const void *, GLbitfield);
@@ -1905,7 +1909,9 @@ static void ring_enter(Ring *r, GLsizeiptr from, GLsizeiptr to)
                         (unsigned)r->target, sg);
                 glFinish();
             } else if (poll == GL_TIMEOUT_EXPIRED) {
+                int stream = r == &s_vring ? 0 : r == &s_iring ? 1 : 2;
                 s_ring_waits++;
+                s_ring_wait_by_target[stream]++;
                 GLenum result = glClientWaitSync(r->fence[sg], GL_SYNC_FLUSH_COMMANDS_BIT,
                                                    1000000000ull);
                 /* A timeout is not completion. Never overwrite storage the
@@ -1919,8 +1925,10 @@ static void ring_enter(Ring *r, GLsizeiptr from, GLsizeiptr to)
                     glFinish();
                 }
                 clock_gettime(CLOCK_MONOTONIC, &b_);
-                s_ring_wait_ns += (uint64_t)((b_.tv_sec - a_.tv_sec) * 1000000000ll
+                uint64_t waited = (uint64_t)((b_.tv_sec - a_.tv_sec) * 1000000000ll
                                              + (b_.tv_nsec - a_.tv_nsec));
+                s_ring_wait_ns += waited;
+                s_ring_ns_by_target[stream] += waited;
             }
             glDeleteSync(r->fence[sg]);
             r->fence[sg] = 0;
@@ -7713,6 +7721,12 @@ static void gl_flip(void)
             fprintf(stderr, "[GLTIME] state %.0f ms | tex0 %.0f | rc+lmap %.0f | upload+attribs %.0f"
                     " | draw %.0f ms\n", s_tm_ns[0] / 1e6, s_tm_ns[1] / 1e6, s_tm_ns[2] / 1e6,
                     s_tm_ns[3] / 1e6, s_tm_ns[4] / 1e6);
+            fprintf(stderr, "[GLRING] waits vertex %u/%.1fms index %u/%.1fms constants %u/%.1fms\n",
+                    s_ring_wait_by_target[0], s_ring_ns_by_target[0] / 1e6,
+                    s_ring_wait_by_target[1], s_ring_ns_by_target[1] / 1e6,
+                    s_ring_wait_by_target[2], s_ring_ns_by_target[2] / 1e6);
+            memset(s_ring_wait_by_target, 0, sizeof s_ring_wait_by_target);
+            memset(s_ring_ns_by_target, 0, sizeof s_ring_ns_by_target);
             memset(s_tm_ns, 0, sizeof s_tm_ns);
             t0 = n;
         }
