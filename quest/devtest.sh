@@ -78,6 +78,7 @@ SCEN=(
   "immersive-2x-vpcheck|stereo=1;vr_screen=immersive;vr_detail=2|RECOMP_GPU_XF_CHECK=300"
   "immersive-2x-vp2dcpu|stereo=1;vr_screen=immersive;vr_detail=2|VC3_GL_VP_2D=0"
   "immersive-2x-vp2dcheck|stereo=1;vr_screen=immersive;vr_detail=2|RECOMP_GPU_XF_CHECK=300 RECOMP_GPU_XF_CHECK_EVERY=20"
+  "immersive-2x-noregrun|stereo=1;vr_screen=immersive;vr_detail=2|RECOMP_PB_REGRUN=0"
 )
 KEYS=30:coin,31:start,40:fire,44:fire,46:fire,48:fire,50:fire,55:fire,60:fire,65:fire,70:fire,75:fire
 LOGS=()
