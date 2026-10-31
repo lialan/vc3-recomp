@@ -6830,8 +6830,14 @@ static void gl_flip(void)
     if (s_fx.on)                    /* the effect target's run ends with the frame */
         fx_resolve();
     if (genv("GL_EFFECT_LOG")) {                 /* VC3_GL_EFFECT_LOG=1 */
-        static uint32_t fr0, n;
+        static uint32_t fr0, n, runs0;
         n += s_fx.n_this;
+        /* =2: every frame with qualifying batches -- how many, in how many
+         * runs (one when the stack is whole) */
+        if (genv("GL_EFFECT_LOG")[0] == '2' && (s_fx.n_this || s_fx.n_prev))
+            fprintf(stderr, "[FXF] frame %u: %u qualifying, %u runs\n", s_frame, s_fx.n_this,
+                    s_fx.runs - runs0);
+        runs0 = s_fx.runs;
         if (s_frame - fr0 >= 60) {
             if (n)
                 fprintf(stderr, "[FX] %u frames: %u qualifying batches, %u runs so far; CPU ms:"
