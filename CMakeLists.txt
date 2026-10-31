@@ -18,6 +18,12 @@ set(XBOXRECOMP_DIR "${CMAKE_CURRENT_SOURCE_DIR}/external/xboxrecomp" CACHE PATH
 add_subdirectory(${XBOXRECOMP_DIR} ${CMAKE_BINARY_DIR}/xboxrecomp)
 
 # Lifted code from tools.recomp (gitignored; regenerate with scripts/lift.sh).
+# The generated code includes its own copy of the runtime header; keep it the
+# toolkit's (the register layout must match the runtime's), as lift.sh would.
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/src/recomp/gen")
+    configure_file("${XBOXRECOMP_DIR}/templates/runtime/recomp_types.h"
+                   "${CMAKE_CURRENT_SOURCE_DIR}/src/recomp/gen/recomp_types.h" COPYONLY)
+endif()
 file(GLOB RECOMP_GEN_SOURCES CONFIGURE_DEPENDS "src/recomp/gen/*.c")
 if(NOT RECOMP_GEN_SOURCES)
     message(FATAL_ERROR "src/recomp/gen is empty: run scripts/lift.sh first")
