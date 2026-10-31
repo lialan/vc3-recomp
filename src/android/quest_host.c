@@ -454,6 +454,7 @@ static float s_rates[8];
 static int s_nrates;
 
 static XrSwapchain s_chain;
+static uint32_t s_chain_gen;          /* bumped at every (re)creation */
 static uint32_t s_chain_n, s_chain_w, s_chain_h;
 static XrSwapchainImageOpenGLESKHR s_chain_img[8];
 static GLuint s_chain_fbo[8], s_read_fbo;
@@ -698,6 +699,7 @@ static int chain_fit(uint32_t w, uint32_t h)
     ci.arraySize = 1;
     ci.mipCount = 1;
     XRCHECK(xrCreateSwapchain(s_sess, &ci, &s_chain));
+    s_chain_gen++;
     XRCHECK(xrEnumerateSwapchainImages(s_chain, 0, &s_chain_n, NULL));
     if (s_chain_n > 8)
         s_chain_n = 8;
@@ -1742,6 +1744,7 @@ static int draw_overlay(XrCompositionLayerProjectionView pv[2])
 
 /* The HUD panel's swapchain, the size of the HUD picture. */
 static XrSwapchain s_hud_chain;
+static uint32_t s_hud_gen;            /* bumped at every (re)creation */
 static uint32_t s_hud_n, s_hud_cw, s_hud_ch;
 static XrSwapchainImageOpenGLESKHR s_hud_img[8];
 static GLuint s_hud_fbo[8];
@@ -1766,6 +1769,7 @@ static int hud_chain_fit(uint32_t w, uint32_t h)
     ci.arraySize = 1;
     ci.mipCount = 1;
     XRCHECK(xrCreateSwapchain(s_sess, &ci, &s_hud_chain));
+    s_hud_gen++;
     XRCHECK(xrEnumerateSwapchainImages(s_hud_chain, 0, &s_hud_n, NULL));
     if (s_hud_n > 8)
         s_hud_n = 8;
@@ -1787,8 +1791,9 @@ static int hud_chain_fit(uint32_t w, uint32_t h)
 }
 
 /* The frame's HUD picture into the panel's swapchain, upright; the quad. */
-static int hud_layer(const Frame *f, XrCompositionLayerQuad *q)
+static int hud_layer(const Frame *f, XrCompositionLayerQuad *q, int copy)
 {
+    static uint32_t drawn;
     XrSwapchainImageAcquireInfo ai = { XR_TYPE_SWAPCHAIN_IMAGE_ACQUIRE_INFO };
     XrSwapchainImageWaitInfo wti = { XR_TYPE_SWAPCHAIN_IMAGE_WAIT_INFO };
     XrSwapchainImageReleaseInfo ri = { XR_TYPE_SWAPCHAIN_IMAGE_RELEASE_INFO };
@@ -1797,20 +1802,24 @@ static int hud_layer(const Frame *f, XrCompositionLayerQuad *q)
     if (!f->has_hud || !hud_panel(f, pc, &pw, &ph)
         || !hud_chain_fit((uint32_t)f->hud_w, (uint32_t)f->hud_h))
         return 0;
-    wti.timeout = XR_INFINITE_DURATION;
-    if (XR_FAILED(xrAcquireSwapchainImage(s_hud_chain, &ai, &idx))
-        || XR_FAILED(xrWaitSwapchainImage(s_hud_chain, &wti)))
-        return 0;
-    glBindFramebuffer(GL_READ_FRAMEBUFFER, s_read_fbo);
-    glFramebufferTexture2D(GL_READ_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, f->hud, 0);
-    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, s_hud_fbo[idx]);
-    glDisable(GL_SCISSOR_TEST);
-    if (s_srgb_control)
-        glDisable(GL_FRAMEBUFFER_SRGB_EXT);
-    glBlitFramebuffer(0, 0, f->hud_w, f->hud_h, 0, f->hud_h, f->hud_w, 0, GL_COLOR_BUFFER_BIT,
-                      GL_NEAREST);
-    glBindFramebuffer(GL_FRAMEBUFFER, 0);
-    xrReleaseSwapchainImage(s_hud_chain, &ri);
+    /* the picture already in the panel's swapchain stays (see xr_frame) */
+    if (copy || drawn != s_hud_gen) {
+        wti.timeout = XR_INFINITE_DURATION;
+        if (XR_FAILED(xrAcquireSwapchainImage(s_hud_chain, &ai, &idx))
+            || XR_FAILED(xrWaitSwapchainImage(s_hud_chain, &wti)))
+            return 0;
+        glBindFramebuffer(GL_READ_FRAMEBUFFER, s_read_fbo);
+        glFramebufferTexture2D(GL_READ_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, f->hud, 0);
+        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, s_hud_fbo[idx]);
+        glDisable(GL_SCISSOR_TEST);
+        if (s_srgb_control)
+            glDisable(GL_FRAMEBUFFER_SRGB_EXT);
+        glBlitFramebuffer(0, 0, f->hud_w, f->hud_h, 0, f->hud_h, f->hud_w, 0, GL_COLOR_BUFFER_BIT,
+                          GL_NEAREST);
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+        xrReleaseSwapchainImage(s_hud_chain, &ri);
+        drawn = s_hud_gen;
+    }
     yaw_rot(s_anchor_yaw, pc, c);
     memset(q, 0, sizeof *q);
     q->type = XR_TYPE_COMPOSITION_LAYER_QUAD;
@@ -1945,15 +1954,33 @@ static void xr_frame(void)
         XrSwapchainImageReleaseInfo ri = { XR_TYPE_SWAPCHAIN_IMAGE_RELEASE_INFO };
         uint32_t idx = 0;
 
+        /* A frame already in the swapchain is not copied again: the
+         * layers use the image released last. Only a new game frame, a new
+         * swapchain, or the aim dot (drawn into the picture when there is no
+         * overlay, and moving every frame) needs the acquire and the blit.
+         * VC3_XR_REBLIT=1: copy every display frame, as before. */
+        static uint32_t drawn_chain;
+        static const Frame *drawn_f;
+        static int reblit = -1;
+        int dot = s_overlay_ok <= 0 && !f->vr.imm;
+        int copy;
+        if (reblit < 0)
+            reblit = getenv("VC3_XR_REBLIT") && *getenv("VC3_XR_REBLIT") == '1';
+        copy = reblit || is_new || dot || drawn_chain != s_chain_gen || drawn_f != f;
+
         wti.timeout = XR_INFINITE_DURATION;
-        if (XR_SUCCEEDED(xrAcquireSwapchainImage(s_chain, &ai, &idx))
-            && XR_SUCCEEDED(xrWaitSwapchainImage(s_chain, &wti))) {
+        if (!copy
+            || (XR_SUCCEEDED(xrAcquireSwapchainImage(s_chain, &ai, &idx))
+                && XR_SUCCEEDED(xrWaitSwapchainImage(s_chain, &wti)))) {
             uint32_t e;
             float c[3], yq = s_anchor_yaw * 0.5f;
 
-            draw_frame(s_chain_fbo[idx], f, (GLsizei)s_chain_w, (GLsizei)s_chain_h,
-                       s_overlay_ok <= 0 && !f->vr.imm);
-            xrReleaseSwapchainImage(s_chain, &ri);
+            if (copy) {
+                draw_frame(s_chain_fbo[idx], f, (GLsizei)s_chain_w, (GLsizei)s_chain_h, dot);
+                xrReleaseSwapchainImage(s_chain, &ri);
+                drawn_chain = s_chain_gen;
+                drawn_f = f;
+            }
             if (f->vr.imm && f->eyes == 2) {
                 /* Immersive: the world in each eye, the HUD on its panel. */
                 world_views(f, wv);
@@ -1961,11 +1988,13 @@ static void xr_frame(void)
                 world.viewCount = 2;
                 world.views = wv;
                 layers[nl++] = (const XrCompositionLayerBaseHeader *)&world;
-                if (hud_layer(f, &hudq))
+                if (hud_layer(f, &hudq, copy))
                     layers[nl++] = (const XrCompositionLayerBaseHeader *)&hudq;
-                frame_read_done(f);
+                if (copy)
+                    frame_read_done(f);
             } else {
-            frame_read_done(f);
+            if (copy)
+                frame_read_done(f);
             {
                 float fwd[3] = { 0, 0, -s_dist };
                 yaw_rot(s_anchor_yaw, fwd, c);
