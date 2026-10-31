@@ -27,7 +27,7 @@
 #include "chihiro/ch_env.h"
 #include "chihiro/chihiro_profile.h"
 
-int vc3_main(int argc, char **argv);   /* main.c's main, renamed for Android */
+int chihiro_main(int argc, char **argv);   /* main.c's main, renamed for Android */
 
 static FILE *s_log;
 
@@ -125,7 +125,7 @@ int SDL_main(int argc, char **argv)
     args[0] = "vc3";
     args[1] = game;
     args[2] = NULL;
-    return vc3_main(2, args);
+    return chihiro_main(2, args);
 }
 
 #endif /* __ANDROID__ */

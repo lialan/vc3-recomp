@@ -13,13 +13,24 @@ brew install sdl2 libepoxy
 VC3_GAME_DIR=/path/to/vc3 scripts/analyze.sh
 ```
 
-Build and run (the lifted C in `src/recomp/gen` is generated, not committed):
+Build and run (the lifted C in `games/vc3/generated` is generated, not committed):
 
 ```bash
-scripts/lift.sh
+scripts/lift.sh vc3             # refuses an XBE other than games/vc3/game.conf's
 cmake -S . -B build -G Ninja && cmake --build build
 build/vc3 /path/to/vc3          # or VC3_GAME_DIR=...; muted unless VC3_SOUND=1
 ```
+
+Layout: the Chihiro runtime every Chihiro game shares is `runtime/src`
+(`chihiro/` the baseboard, JVS and storage HLE, `ch_env.h` and
+`chihiro_profile.h`; `gpu/` the GL back end; `host/` the desktop host;
+`xr/` the Quest), built as the `chihiro_rt` library. Each game is a folder
+`games/<id>`: `src/game.c` (its `ChihiroProfile`), `src/recomp_manual.c`
+(the guest functions it replaces), `game.conf` (what the scripts need) and
+`generated/` (its lifted code). Every `VC3_*` switch below also answers to
+`CHIHIRO_*` (`ch_env.h`). The scripts (`scripts/analyze.sh`, `lift.sh`,
+`vr-math-test.sh`, `quest/build.sh`, `install.sh`, `devtest.sh --game`) take
+the game's id, `vc3` by default.
 
 Mac app: `scripts/build-macos.sh` makes `build/VC3.app` with its Homebrew
 libraries (SDL2/SDL3, libepoxy, libcrypto) bundled and ad-hoc signed. It

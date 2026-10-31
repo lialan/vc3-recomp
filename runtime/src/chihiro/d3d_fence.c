@@ -18,7 +18,6 @@
 #include <stdlib.h>
 
 #include "recomp_types.h"
-#include "recomp_funcs.h"
 #include "host_time.h"
 #include "chihiro/ch_env.h"
 #include "chihiro/chihiro_profile.h"
