@@ -15,6 +15,7 @@
 
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 
 #include "recomp_types.h"
 #include "recomp_funcs.h"
@@ -27,6 +28,25 @@ void nv2a_pb_set_semaphore_target(uint32_t guest_va);
 #define DEV_SEMAPHORE    0x30          /* -> GPU's progress */
 #define WAIT_BOUND_NS    250000000ull
 
+/* VC3_FENCE_LOG=1: once a second, how many waits there were, how many had
+ * to sleep, and the time spent in them. */
+static void fence_stats(int slept, uint64_t ns)
+{
+    static int on = -1;
+    static uint64_t t0, calls, sleeps, wait_ns;
+    uint64_t now;
+    if (on < 0) { const char *e = getenv("VC3_FENCE_LOG"); on = e && *e == '1'; }
+    if (!on) return;
+    calls++; sleeps += slept; wait_ns += ns;
+    now = xbox_HostNowNs();
+    if (!t0) t0 = now;
+    if (now - t0 >= 1000000000ull) {
+        fprintf(stderr, "[fence] %llu waits/s, %llu slept, %.2f ms waiting\n",
+                (unsigned long long)calls, (unsigned long long)sleeps, wait_ns / 1e6);
+        t0 = now; calls = sleeps = wait_ns = 0;
+    }
+}
+
 void vc3_d3d_block_on_time(void)
 {
     static uint32_t s_sem_va;
@@ -34,7 +54,8 @@ void vc3_d3d_block_on_time(void)
     uint32_t time = MEM32(g_esp + 4);
     uint32_t dev = MEM32(D3D_DEVICE_PTR);
     uint32_t sem, head;
-    uint64_t deadline;
+    uint64_t deadline, start;
+    int slept = 0;
 
     if (!dev)
         goto out;
@@ -56,7 +77,8 @@ void vc3_d3d_block_on_time(void)
 
     /* Done once the fence is no newer than the GPU's progress, in ring order
      * relative to the newest time (the original's unsigned comparison). */
-    deadline = xbox_HostNowNs() + WAIT_BOUND_NS;
+    start = xbox_HostNowNs();
+    deadline = start + WAIT_BOUND_NS;
     for (;;) {
         head = MEM32(dev + DEV_WRITE_TIME);
         if (head - time >= head - MEM32(sem))
@@ -68,7 +90,9 @@ void vc3_d3d_block_on_time(void)
             break;
         }
         xbox_HostSleepNs(50000);
+        slept = 1;
     }
+    fence_stats(slept, xbox_HostNowNs() - start);
 out:
     g_eax = 0;
     g_esp += 12;                     /* return address + 2 args */
