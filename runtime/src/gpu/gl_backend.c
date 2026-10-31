@@ -191,6 +191,8 @@ static void sh_glDeleteFramebuffers(GLsizei n, const GLuint *fbs)
     glDeleteFramebuffers(n, fbs);
 }
 
+static uint32_t s_viewport_sent;
+
 static void sh_glViewport(GLint x, GLint y, GLsizei w, GLsizei h)
 {
     if (s_sh.vp[0] == x && s_sh.vp[1] == y && s_sh.vp[2] == w && s_sh.vp[3] == h)
@@ -200,6 +202,7 @@ static void sh_glViewport(GLint x, GLint y, GLsizei w, GLsizei h)
     s_sh.vp[2] = w;
     s_sh.vp[3] = h;
     s_sh.made++;
+    s_viewport_sent++;
     glViewport(x, y, w, h);
 }
 
@@ -2986,8 +2989,9 @@ static void gt_flip(void)
         s_zp_frame = s_sw_frame = 0;
         fprintf(stderr, "[GPUTIME]   attribute pointers kept %u, set %u; state calls made %u,"
                 " not repeated %u; uniforms sent %u, not repeated %u; program constants"
-                " sent %u; ring waits %u (%.1f ms)\n", s_va_hit, s_va_miss, s_sh.made, s_sh.skipped,
-                s_uc_sent, s_uc_kept, s_vc_sent, s_ring_waits, s_ring_wait_ns / 1e6);
+                " sent %u; ring waits %u (%.1f ms); viewport changes %u\n", s_va_hit, s_va_miss, s_sh.made, s_sh.skipped,
+                s_uc_sent, s_uc_kept, s_vc_sent, s_ring_waits, s_ring_wait_ns / 1e6, s_viewport_sent);
+        s_viewport_sent = 0;
         s_ring_waits = 0;
         s_ring_wait_ns = 0;
         s_sh.made = s_sh.skipped = 0;
@@ -3018,6 +3022,19 @@ static uint32_t s_bound_va;
 /* The framebuffer for a guest surface, created or grown to fit, and bound.
  * A change of scale or aspect remakes it at the first draw after the flip
  * that took the change; VC3 redraws every surface each frame. */
+/* Keep the viewport selected by the last draw until the next draw needs
+ * another one. Binding/clearing a surface does not consume the viewport.
+ * Opt in while the native intro/control scenes are compared on device. */
+static int viewport_lazy(void)
+{
+    static int on = -1;
+    if (on < 0) {
+        const char *e = genv("GL_VIEWPORT_LAZY");
+        on = e && e[0] == '1';
+    }
+    return on;
+}
+
 static Surf *surf_bind(const Nv2aSurface *s)
 {
     Surf *f = surf_find(s->color_va);
@@ -3064,7 +3081,8 @@ static Surf *surf_bind(const Nv2aSurface *s)
     s_bound_fbo = f->fbo;
     s_bound_va = f->va;
     glBindFramebuffer(GL_FRAMEBUFFER, f->fbo);
-    glViewport(0, 0, f->pw, f->ph);
+    if (!viewport_lazy())
+        glViewport(0, 0, f->pw, f->ph);
     return f;
 }
 
@@ -5200,7 +5218,8 @@ static void emit_eyes(Surf *f, const Nv2aBatch *b, int raw, int hud, int imm3d, 
         else
             glDrawArraysInstanced(GL_TRIANGLES, 0, (GLsizei)b->count, 2);
         GLCK(raw ? "draw: one-pass stereo (raw)" : "draw: one-pass stereo (cpu)", b, f->va);
-        glViewport(0, 0, f->pw, f->ph);
+        if (!viewport_lazy())
+            glViewport(0, 0, f->pw, f->ph);
     }
     /* Stereo: the same draw for each eye, in its half. */
     int eye, eyes = f->st && !hud ? 2 : 1;
@@ -5225,6 +5244,7 @@ static void emit_eyes(Surf *f, const Nv2aBatch *b, int raw, int hud, int imm3d, 
             cu2f(U->eye, s_imm ? 0.0f : eye ? -0.5f * s_st_sep : 0.5f * s_st_sep,
                         s_st_depth);
         } else {
+            glViewport(0, 0, f->pw, f->ph);
             cu2f(U->eye, 0.0f, s_st_depth);
         }
         if (raw)
@@ -5877,7 +5897,7 @@ static void mg_flush(void)
         s_mgs.singles++;
         emit_eyes(m->f, NULL, 1, 0, m->imm3d, m->mode0, m->count0, GL_UNSIGNED_SHORT,
                   m->ioff0, m->bv0);
-        if (m->f->st)
+        if (m->f->st && !viewport_lazy())
             glViewport(0, 0, m->f->pw, m->f->ph);
         return;
     }
@@ -5946,7 +5966,7 @@ static void mg_flush(void)
             cu1i(U->merge, 0);
         }
     }
-    if (m->f->st)
+    if (m->f->st && !viewport_lazy())
         glViewport(0, 0, m->f->pw, m->f->ph);
     s_mgs.runs++;
     s_mgs.calls_saved += (uint32_t)(n - 1);
@@ -6351,6 +6371,7 @@ static void gl_draw_inner(const Nv2aSurface *s, const Nv2aBatch *b)
         GLuint passed = 0;
         if (!q)
             glGenQueries(1, &q);
+        glViewport(0, 0, f->pw, f->ph);
         glBeginQuery(GL_SAMPLES_PASSED, q);
         if (raw)
             glDrawElementsBaseVertex(raw_mode(raw->prim), (GLsizei)raw->index_count,
@@ -6446,7 +6467,7 @@ static void gl_draw_inner(const Nv2aSurface *s, const Nv2aBatch *b)
                       s_basevertex);
         if (hud)
             glBindFramebuffer(GL_FRAMEBUFFER, f->fbo);
-        if (f->st)
+        if (f->st && !viewport_lazy())
             glViewport(0, 0, f->pw, f->ph);
         TM(5);
     }
