@@ -248,7 +248,7 @@ static int s_ftr;
 /* VC3_GL_STATS=1: every 300 flips, what the batches asked for. */
 static struct {
     int on;
-    uint32_t draws, tris, textured, rt, uploads, untex, rt_logged, rc_logged;
+    uint32_t draws, tris, textured, rt, uploads, mipped, untex, rt_logged, rc_logged;
     uint32_t zpass_batches, zpass_pixels;
     uint32_t fail[256];        /* failed decodes by format code */
     uint32_t stage0_empty;     /* no stage-0 texture, a later stage has one */
@@ -2195,6 +2195,7 @@ typedef struct {
     uint32_t checked;          /* frame of the last content check */
     uint32_t used;             /* frame of the last use */
     int streamed;              /* its memory has changed since the first upload */
+    int mipped;                /* its GL mip chain is built from this upload */
     GLuint tex;
 } TexEntry;
 static TexEntry s_tex[TEX_SLOTS];
@@ -2337,24 +2338,103 @@ static void active_tex(int unit)
 
 static GLint gl_wrap(uint32_t mode);
 
-static void tex_sampling(GLuint tex, const Nv2aTexture *t)
+/* Mipmaps. The NV2A's min filter (SET_TEXTURE_FILTER bits 16-23) is
+ * 1 point, 2 linear, 3-6 the four mipmapped filters (box/tent within a
+ * level x nearest/tent between levels), 7 convolution. The decoder uploads
+ * level 0 only, so a texture the guest gave a mip chain (FORMAT's levels)
+ * and samples with a mip filter gets its chain from glGenerateMipmap at
+ * upload; without one, every minified texel aliased -- the shimmer of
+ * distant floors and walls, worst in VR, where the head never keeps still.
+ * Not for a texture streamed through its memory (faces, movie frames:
+ * re-uploaded every frame) or a render target.
+ *
+ * VC3_GL_MIPS: "guest" (default) as above; "all" also any texture with a
+ * linear min filter and more than one level's worth of size; 0 none.
+ * VC3_GL_ANISO: the anisotropy of mipmapped sampling (EXT_texture_filter_
+ * anisotropic, capped to the driver's maximum), default 4; 1 off. */
+static int s_mips = -1;
+static float s_aniso = -1.0f;
+
+static void mips_init(void)
 {
-    static GLuint samplers[2][2][3][3];
+    const char *e = getenv("VC3_GL_MIPS");
+    const char *a = getenv("VC3_GL_ANISO");
+    GLfloat mx = 1.0f;
+    s_mips = !e ? 1 : !strcmp(e, "all") ? 2 : *e != '0';
+    s_aniso = a ? (float)atof(a) : 4.0f;
+    if (s_aniso > 1.0f) {
+        const char *ext = (const char *)glGetString(GL_EXTENSIONS);
+        int have = 0;
+#if !defined(VC3_GLES)
+        have = 1;                       /* core in GL 4.6; on every Mac driver */
+#endif
+        if (!ext) {                     /* a core context lists them one by one */
+            GLint i, n = 0;
+            glGetIntegerv(GL_NUM_EXTENSIONS, &n);
+            for (i = 0; i < n; i++) {
+                const char *x = (const char *)glGetStringi(GL_EXTENSIONS, (GLuint)i);
+                if (x && strstr(x, "texture_filter_anisotropic"))
+                    have = 1;
+            }
+        } else if (strstr(ext, "texture_filter_anisotropic")) {
+            have = 1;
+        }
+        if (have)
+            glGetFloatv(0x84FF /* MAX_TEXTURE_MAX_ANISOTROPY */, &mx);
+        if (s_aniso > mx)
+            s_aniso = mx;
+        if (!have || mx <= 1.0f)
+            s_aniso = 1.0f;
+        while (glGetError() != GL_NO_ERROR)
+            ;
+    }
+    if (s_aniso < 1.0f)
+        s_aniso = 1.0f;
+    fprintf(stderr, "[GL] mipmaps %s, anisotropy %.0fx\n",
+            s_mips == 2 ? "all" : s_mips ? "where the guest has them" : "off", s_aniso);
+}
+
+/* Whether a texture uploaded now should get a mip chain. */
+static int mips_wanted(const Nv2aTexture *t)
+{
+    uint32_t min = (t->filter >> 16) & 0xFF;
+    if (s_mips < 0)
+        mips_init();
+    if (!s_mips || t->cube || t->width < 4 || t->height < 4)
+        return 0;
+    if (min >= 3 && min <= 6 && t->levels > 1)
+        return 1;
+    /* "all": a power-of-two texture (not a linear image: movie frames,
+     * 640 wide) sampled with a linear min filter */
+    return s_mips == 2 && min != 1 && (t->width > 8 || t->height > 8)
+        && !(t->width & (t->width - 1)) && !(t->height & (t->height - 1));
+}
+
+static void tex_sampling(GLuint tex, const Nv2aTexture *t, int mipped)
+{
+    static GLuint samplers[2][7][3][3];   /* [mag point][min filter][u][v] */
     static GLint swz[16384];               /* by texture name; 0: unknown */
     uint32_t mag = (t->filter >> 24) & 0xF, min = (t->filter >> 16) & 0xFF;
     GLint wu = gl_wrap(t->addr_u), wv = gl_wrap(t->addr_v);
     int iu = wu == GL_REPEAT ? 0 : wu == GL_MIRRORED_REPEAT ? 1 : 2;
     int iv = wv == GL_REPEAT ? 0 : wv == GL_MIRRORED_REPEAT ? 1 : 2;
-    GLuint *sm = &samplers[mag == 1][min == 1][iu][iv];
+    /* 0 point, 1 linear, 2-5 the guest's mip filters, 6 trilinear ("all") */
+    int im = min == 1 ? 0 : !mipped ? 1 : (min >= 3 && min <= 6) ? (int)min - 1 : 6;
+    GLuint *sm = &samplers[mag == 1][im][iu][iv];
     GLint a = fmt_has_alpha(t->color) ? GL_ALPHA : GL_ONE;
 
     if (!*sm) {
+        static const GLenum MINF[7] = {
+            GL_NEAREST, GL_LINEAR, GL_NEAREST_MIPMAP_NEAREST, GL_LINEAR_MIPMAP_NEAREST,
+            GL_NEAREST_MIPMAP_LINEAR, GL_LINEAR_MIPMAP_LINEAR, GL_LINEAR_MIPMAP_LINEAR };
         glGenSamplers(1, sm);
         /* SET_TEXTURE_FILTER: 1 is point sampling, anything else filters. */
         glSamplerParameteri(*sm, GL_TEXTURE_MAG_FILTER, mag == 1 ? GL_NEAREST : GL_LINEAR);
-        glSamplerParameteri(*sm, GL_TEXTURE_MIN_FILTER, min == 1 ? GL_NEAREST : GL_LINEAR);
+        glSamplerParameteri(*sm, GL_TEXTURE_MIN_FILTER, (GLint)MINF[im]);
         glSamplerParameteri(*sm, GL_TEXTURE_WRAP_S, wu);
         glSamplerParameteri(*sm, GL_TEXTURE_WRAP_T, wv);
+        if (im >= 2 && s_aniso > 1.0f)
+            glSamplerParameterf(*sm, 0x84FE /* TEXTURE_MAX_ANISOTROPY */, s_aniso);
     }
     if (s_unit_sampler[s_unit] != *sm) {
         glBindSampler((GLuint)s_unit, *sm);
@@ -2536,6 +2616,7 @@ static int tex_bind(const Nv2aTexture *t, float *sw, float *sh)
             e->quick = 0;
             e->checked = 0;
             e->streamed = 0;
+            e->mipped = 0;
         }
         glBindTexture(GL_TEXTURE_2D, e->tex);
         bound = e->tex;
@@ -2606,6 +2687,19 @@ static int tex_bind(const Nv2aTexture *t, float *sw, float *sh)
                              (GLsizei)t->height, 0, GL_BGRA,
                              GL_UNSIGNED_INT_8_8_8_8_REV, s_decode);
                 es_bgra(GL_TEXTURE_2D);
+                e->mipped = !e->streamed && mips_wanted(t);
+                if (genv("VC3_GL_MIPLOG")) {    /* the uploads' filters and levels */
+                    static int nlog;
+                    if (nlog++ < 20000)
+                        fprintf(stderr, "[MIPLOG] %08X %ux%u fmt %02X min %u levels %u pitch %u "
+                                "-> %s\n", t->offset, t->width, t->height, t->color & 0xFF,
+                                (t->filter >> 16) & 0xFF, t->levels, t->pitch,
+                                e->mipped ? "mips" : "none");
+                }
+                if (e->mipped) {
+                    glGenerateMipmap(GL_TEXTURE_2D);
+                    s_st.mipped++;
+                }
                 e->hash = h;
             }
         }
@@ -2613,7 +2707,7 @@ static int tex_bind(const Nv2aTexture *t, float *sw, float *sh)
         *sw = (float)t->width;
         *sh = (float)t->height;
     }
-    tex_sampling(bound, t);
+    tex_sampling(bound, t, e && e->mipped);
     return 1;
 }
 
@@ -2644,7 +2738,7 @@ static int tex_bind_for(const Surf *f, const Nv2aTexture *t, float *sw, float *s
     glCopyTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 0, 0, s_self_w, s_self_h);
     if (f->st && s_unit < 4)
         s_sbs[s_unit] = 1.0f;          /* both eyes: each reads its half */
-    tex_sampling(s_self_tex, t);
+    tex_sampling(s_self_tex, t, 0);
     *sw = (float)f->w;
     *sh = (float)f->h;
     return 1;
@@ -4866,9 +4960,9 @@ static void gl_flip(void)
     }
     if (s_st.on && s_frame % 300 == 0) {
         fprintf(stderr, "[GL] %u flips: %u draws (%u tris), %u textured, %u "
-                "no texture, %u from surfaces, %u uploads; surfaces:",
+                "no texture, %u from surfaces, %u uploads (%u mipmapped); surfaces:",
                 300u, s_st.draws, s_st.tris, s_st.textured, s_st.untex,
-                s_st.rt, s_st.uploads);
+                s_st.rt, s_st.uploads, s_st.mipped);
         for (i = 0; i < s_nsurfs; i++)
             fprintf(stderr, " %08X/%dx%d", s_surfs[i].va, s_surfs[i].w,
                     s_surfs[i].h);
