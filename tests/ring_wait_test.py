@@ -26,6 +26,9 @@ typedef long GLsizeiptr; typedef unsigned GLenum; typedef int GLsync;
 #define GL_WAIT_FAILED 3
 #define GL_ALREADY_SIGNALED 5
 typedef struct {GLsizeiptr size; int seg; GLsync fence[4]; unsigned target;} Ring;
+static Ring s_vring, s_iring;
+static unsigned s_ring_wait_by_target[3];
+static uint64_t s_ring_ns_by_target[3];
 static unsigned s_ring_waits; static uint64_t s_ring_wait_ns;
 static int seq[8], at, finishes, deleted;
 static void glDeleteSync(GLsync s) {(void)s; deleted++;}
