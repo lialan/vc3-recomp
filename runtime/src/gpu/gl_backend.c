@@ -2529,11 +2529,13 @@ void vc3_gl_stereo_separation(float ndc)
 
 /* Fixed foveation (QCOM_texture_foveated) of the stereo surfaces: full
  * detail round each eye's centre of view, coarser towards the edges, one
- * focal point per eye's half. VC3_FOVEATION: unset or "auto", on for the
- * frames drawn immersive at native size (each eye's picture is the whole
- * field of view; the periphery is what the lenses blur anyway) and flat
- * (gain 0: every pixel full detail) for everything else -- the virtual
- * screen shows the whole picture; 1: always; 0: never. The gain and the
+ * focal point per eye's half. VC3_FOVEATION: unset or 0, never (off by
+ * default: in real play VC3's E.S. mode still flickered with it on, see
+ * fov_frame); "auto", on for the frames drawn immersive at native size
+ * (each eye's picture is the whole field of view; the periphery is what the
+ * lenses blur anyway) and flat (gain 0: every pixel full detail) for
+ * everything else -- the virtual screen shows the whole picture; 1:
+ * always. The gain and the
  * full-detail area (VC3_FOV_GAIN, default 4; VC3_FOV_AREA, 0.4) are the
  * extension's: pixel density falls off as 1 / (gain * distance^2 - area)
  * from the focal point, across -1..1. Skipped without the extension or two
@@ -2553,7 +2555,7 @@ static int fov_mode(void)
         const char *e = genv("FOVEATION");
         GLint i, k = 0;
         int have = 0;
-        s_fov_mode = !e || !strcmp(e, "auto") ? 2 : e[0] == '1' ? 1 : 0;
+        s_fov_mode = e && !strcmp(e, "auto") ? 2 : e && e[0] == '1' ? 1 : 0;
         if (s_fov_mode) {
             glGetIntegerv(GL_NUM_EXTENSIONS, &k);
             for (i = 0; i < k; i++) {
