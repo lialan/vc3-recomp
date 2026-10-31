@@ -77,6 +77,7 @@ extern void vc3_quest_frame(GLuint fbo, int pw, int ph, int eyes, int lw, int lh
 #include <time.h>
 
 #include "nv2a_backend.h"
+#include "gl_texdec.h"
 #include "nv2a_vsh_glsl.h"
 #include "nv2a_vsh_interp.h"
 #include "../display_settings.h"
@@ -2778,22 +2779,29 @@ static int tex_bind_cube(const Nv2aTexture *t)
             }
             if (!s_decode)
                 return 0;
+            uint64_t c0 = g_texstat_on ? texstat_now() : 0, cdec = 0;
             for (f = 0; f < 6; f++) {
                 Nv2aTexture tf = *t;
                 tf.offset = t->offset + (uint32_t)(face * (size_t)f);
                 tf.cube = 0;
                 tf.levels = 1;
+                uint64_t d0 = g_texstat_on ? texstat_now() : 0;
                 if (!nv2a_backend_decode_texture(&tf, s_decode)) {
                     s_st.fail[t->color & 0xFF]++;
                     e->hash = 0;
                     return 0;
                 }
+                if (g_texstat_on)
+                    cdec += texstat_now() - d0;
                 glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X + f, 0, GL_RGBA8,
                              (GLsizei)t->width, (GLsizei)t->height, 0, GL_BGRA,
                              GL_UNSIGNED_INT_8_8_8_8_REV, s_decode);
                 es_bgra(GL_TEXTURE_CUBE_MAP);
             }
             s_st.uploads++;
+            if (g_texstat_on)
+                texstat_add(t->color, 0, (uint64_t)need * 6, cdec,
+                            texstat_now() - c0 - cdec);
             e->hash = h;
             glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
             glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
@@ -2907,10 +2915,13 @@ static int tex_bind(const Nv2aTexture *t, float *sw, float *sh)
             s_st.qskip++;
             goto tex_ready;
         }
+        uint64_t h0 = g_texstat_on ? texstat_now() : 0;
         uint64_t q = hash_sampled(mem + t->offset, tex_bytes(t));
         if (q != e->quick || !e->checked
             || (e->streamed ? e->checked != s_frame : s_frame - e->checked >= 4)) {
-            uint64_t h = hash_bytes(mem + t->offset, tex_bytes(t));
+            uint64_t h = hash_bytes(mem + t->offset, tex_bytes(t)), d0 = 0, d1 = 0;
+            if (g_texstat_on)
+                texstat_hash(texstat_now() - h0);
             e->checked = s_frame;
             e->quick = q;
             if (h != e->hash || !e->hash) {
@@ -2922,11 +2933,15 @@ static int tex_bind(const Nv2aTexture *t, float *sw, float *sh)
                     s_decode = (uint32_t *)malloc(need * 4);
                     s_decode_cap = s_decode ? need : 0;
                 }
+                if (g_texstat_on)
+                    d0 = texstat_now();
                 if (!s_decode || !nv2a_backend_decode_texture(t, s_decode)) {
                     s_st.fail[t->color & 0xFF]++;
                     e->hash = 0;
                     return 0;
                 }
+                if (g_texstat_on)
+                    d1 = texstat_now();
                 s_st.uploads++;
                 /* VC3_GL_TEXDUMP=<hex offset>[,<hex offset>...]: write those
                  * textures as the back end decoded them (colour and alpha PPMs
@@ -2981,8 +2996,13 @@ static int tex_bind(const Nv2aTexture *t, float *sw, float *sh)
                     glGenerateMipmap(GL_TEXTURE_2D);
                     s_st.mipped++;
                 }
+                if (g_texstat_on)
+                    texstat_add(t->color, 0, (uint64_t)t->width * t->height, d1 - d0,
+                                texstat_now() - d1);
                 e->hash = h;
             }
+        } else if (g_texstat_on) {
+            texstat_hash(texstat_now() - h0);
         }
 tex_ready:
         e->used = s_frame;
@@ -5312,6 +5332,7 @@ static void gl_flip(void)
             m0 = s_ip.made;
         }
     }
+    texstat_flip(s_frame);
     if (s_st.on && s_frame % 300 == 0) {
         fprintf(stderr, "[GL] %u flips: %u draws (%u tris), %u textured, %u "
                 "no texture, %u from surfaces, %u uploads (%u mipmapped), %u binds "
@@ -5352,6 +5373,7 @@ void vc3_gl_backend_register(void)
         return;
     }
     s_st.on = genv("VC3_GL_STATS") != NULL;
+    texstat_init();
     s_scale = vc3_scale_get();
     s_wide = vc3_wide_get();
     s_stereo = vc3_stereo_get();
