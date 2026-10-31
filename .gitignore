@@ -72,3 +72,6 @@ quest/vc3/build/
 quest/vc3/src/main/libs/
 quest/vc3/src/main/java/org/libsdl/
 quest/devtest-out/
+
+# PGO profiles (quest/pgo-profile.sh)
+quest/*.profdata

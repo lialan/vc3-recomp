@@ -29,15 +29,19 @@ done
 # and the Quest 3 / 3S (XR2 Gen 2: Cortex-A78 class) share, scheduled for the
 # A78. VC3_QUEST_CFLAGS replaces it.
 CPU_FLAGS=${VC3_QUEST_CFLAGS:--march=armv8.2-a+fp16+dotprod -mtune=cortex-a78}
-# Profile-guided optimisation, for later (not yet tried on the headset):
-#   VC3_QUEST_PGO=gen       an instrumented build; it writes .profraw files
-#                           under /sdcard/VirtuaCop3/pgo while it plays
-#   VC3_QUEST_PGO=<file>    a build optimised with that merged .profdata
-#                           (llvm-profdata merge -o vc3.profdata *.profraw)
+# Profile-guided optimisation (optional):
+#   VC3_QUEST_PGO=use:<file>  a build optimised with that .profdata (the NDK's
+#                             clang's format; quest/pgo-profile.sh makes one
+#                             from a Mac run of the same sources)
+#   VC3_QUEST_PGO=gen         an instrumented build; it writes .profraw files
+#                             under /sdcard/VirtuaCop3/pgo while it plays
+#                             (merge with the NDK's llvm-profdata)
 case "${VC3_QUEST_PGO:-}" in
     "")  ;;
     gen) CPU_FLAGS="$CPU_FLAGS -fprofile-generate=/sdcard/VirtuaCop3/pgo" ;;
-    *)   CPU_FLAGS="$CPU_FLAGS -fprofile-use=$VC3_QUEST_PGO -Wno-profile-instr-unprofiled" ;;
+    *)   PGO_FILE=${VC3_QUEST_PGO#use:}
+         [ -f "$PGO_FILE" ] || { echo "VC3_QUEST_PGO: no profile at $PGO_FILE"; exit 1; }
+         CPU_FLAGS="$CPU_FLAGS -fprofile-instr-use=$PGO_FILE -Wno-profile-instr-unprofiled -Wno-profile-instr-out-of-date" ;;
 esac
 
 B=$ROOT/build-quest
