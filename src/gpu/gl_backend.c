@@ -22,8 +22,8 @@
  * ponytail: the interface passes texture stage 0 and the diffuse colour, not
  * the register combiners, so a batch is drawn as texture * diffuse. Culling is
  * off (VC3_GL_CULL=1 enables it) until its winding is checked against the
- * game. Palettised textures are not decoded by nv2a_backend_decode_texture
- * and draw untextured.
+ * game. Textures decode on the GPU (gl_texdec.c; VC3_TEX_GPU=0: on the CPU,
+ * through nv2a_backend_decode_texture).
  */
 #if defined(VC3_GLES)
 /* Meta Quest (VC3_GLES): the same back end on OpenGL ES 3.2, in an EGL
@@ -2467,6 +2467,7 @@ typedef struct {
     int streamed;              /* its memory has changed since the first upload */
     int mipped;                /* its GL mip chain is built from this upload */
     GLuint tex;
+    TexdecAlloc alloc;         /* the storage the GPU decode gave it (gl_texdec.c) */
 } TexEntry;
 static TexEntry s_tex[TEX_SLOTS];
 static uint32_t *s_decode;
@@ -2597,6 +2598,7 @@ static int fmt_has_alpha(uint32_t fmt)
  * swizzle is a texture parameter and is set only when it changes. */
 static int s_unit;
 static GLuint s_unit_sampler[8];
+static GLint s_swz[16384];     /* tex_sampling's alpha swizzle, by name; 0 unknown */
 
 static void active_tex(int unit)
 {
@@ -2683,7 +2685,6 @@ static int mips_wanted(const Nv2aTexture *t)
 static void tex_sampling(GLuint tex, const Nv2aTexture *t, int mipped)
 {
     static GLuint samplers[2][7][3][3];   /* [mag point][min filter][u][v] */
-    static GLint swz[16384];               /* by texture name; 0: unknown */
     uint32_t mag = (t->filter >> 24) & 0xF, min = (t->filter >> 16) & 0xFF;
     GLint wu = gl_wrap(t->addr_u), wv = gl_wrap(t->addr_v);
     int iu = wu == GL_REPEAT ? 0 : wu == GL_MIRRORED_REPEAT ? 1 : 2;
@@ -2710,10 +2711,10 @@ static void tex_sampling(GLuint tex, const Nv2aTexture *t, int mipped)
         glBindSampler((GLuint)s_unit, *sm);
         s_unit_sampler[s_unit] = *sm;
     }
-    if (tex >= 16384 || swz[tex] != a) {
+    if (tex >= 16384 || s_swz[tex] != a) {
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_SWIZZLE_A, a);
         if (tex < 16384)
-            swz[tex] = a;
+            s_swz[tex] = a;
     }
 }
 
@@ -2813,6 +2814,22 @@ static int tex_bind_cube(const Nv2aTexture *t)
     return 1;
 }
 
+/* A texture whose GPU decode gave it immutable storage (ES compute) cannot
+ * take another shape: a new name instead, the old one's cached state gone. */
+static void tex_renew(TexEntry *e)
+{
+    if (!e->alloc.immut)
+        return;
+    glDeleteTextures(1, &e->tex);
+    if (e->tex < 16384)
+        s_swz[e->tex] = 0;
+    glGenTextures(1, &e->tex);
+    if (e->tex < 16384)
+        s_swz[e->tex] = 0;
+    memset(&e->alloc, 0, sizeof e->alloc);
+    glBindTexture(GL_TEXTURE_2D, e->tex);
+}
+
 /* Bind the texture a batch samples to unit 0; returns 0 to draw untextured.
  * *sw, *sh receive the size its texel coordinates are relative to. */
 static int tex_bind(const Nv2aTexture *t, float *sw, float *sh)
@@ -2884,6 +2901,9 @@ static int tex_bind(const Nv2aTexture *t, float *sw, float *sh)
             e = victim;
             if (!e->tex)
                 glGenTextures(1, &e->tex);
+            else
+                tex_renew(e);
+            memset(&e->alloc, 0, sizeof e->alloc);
             e->offset = t->offset;
             e->w = t->width;
             e->h = t->height;
@@ -2920,6 +2940,8 @@ static int tex_bind(const Nv2aTexture *t, float *sw, float *sh)
         if (q != e->quick || !e->checked
             || (e->streamed ? e->checked != s_frame : s_frame - e->checked >= 4)) {
             uint64_t h = hash_bytes(mem + t->offset, tex_bytes(t)), d0 = 0, d1 = 0;
+            if (t->palette)                 /* P8: a new palette is a new texture */
+                h ^= hash_bytes(mem + t->palette, 1024) * 0x9e3779b97f4a7c15ull;
             if (g_texstat_on)
                 texstat_hash(texstat_now() - h0);
             e->checked = s_frame;
@@ -2928,6 +2950,33 @@ static int tex_bind(const Nv2aTexture *t, float *sw, float *sh)
                 size_t need = (size_t)t->width * t->height;
                 if (e->hash)
                     e->streamed = 1;        /* rewritten: checked every frame now */
+                /* On the GPU (gl_texdec.c) unless VC3_TEX_GPU=0 or a format
+                 * it does not take; the CPU decode below otherwise. */
+                if (texdec_can(t)) {
+                    int mipped = 0, path;
+                    if (g_texstat_on)
+                        d0 = texstat_now();
+                    path = texdec_upload(e->tex, &e->alloc, t, !e->streamed && mips_wanted(t),
+                                         &mipped);
+                    if (path) {
+                        s_st.uploads++;
+                        e->mipped = mipped;
+                        s_st.mipped += mipped != 0;
+                        if (s_ftr == 1)
+                            fprintf(stderr, "[GLTR]   upload %08X %ux%u fmt %02X (%s)\n",
+                                    t->offset, t->width, t->height, t->color & 0xFF,
+                                    path == 2 ? "compressed" : "GPU decode");
+                        if (g_texstat_on)
+                            texstat_add(t->color, path, (uint64_t)need, texstat_now() - d0, 0);
+                        e->hash = h;
+                        goto tex_ready;
+                    }
+                }
+                tex_renew(e);
+                if (e->alloc.levels) {      /* the GPU path set a level range */
+                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, 1000);
+                    memset(&e->alloc, 0, sizeof e->alloc);
+                }
                 if (need > s_decode_cap) {
                     free(s_decode);
                     s_decode = (uint32_t *)malloc(need * 4);
