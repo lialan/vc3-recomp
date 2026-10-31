@@ -4496,6 +4496,17 @@ static const char *VS_QUAD =
     "  gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0);\n"
     "}\n";
 
+/* The immersive HUD picture over one eye of the desktop test (gl_flip):
+ * premultiplied, as the headset's quad layer takes it. */
+static const char *FS_HUD =
+    "#version 410\n"
+    "uniform sampler2D u_img;\n"
+    "uniform vec2 u_org, u_size;\n"
+    "out vec4 o;\n"
+    "void main() {\n"
+    "  o = texture(u_img, (gl_FragCoord.xy - u_org) / u_size);\n"
+    "}\n";
+
 /* At the guest size, from the frame as drawn (filtered down when larger). */
 static const char *FS_LUMA =
     "#version 410\n"
@@ -5226,19 +5237,60 @@ static void gl_flip(void)
         }
     }
 #if !defined(VC3_GLES)
-    /* The desktop's immersive test (vr_view_desktop.c): no headset layer
-     * to show the HUD on, so its picture goes, small and opaque, into the
-     * right eye's lower right corner -- to see what the panel would get. */
+    /* The desktop's immersive test (vr_view_desktop.c) has no headset
+     * layer to show the HUD picture on. It goes over each eye, whole and
+     * blended as the headset's quad layer blends it (premultiplied alpha,
+     * XR_COMPOSITION_LAYER_BLEND_TEXTURE_SOURCE_ALPHA_BIT): the HUD's
+     * elements over the world, the rest transparent. It used to be copied,
+     * opaque, into the right eye's corner -- a black panel there, as the
+     * picture is clear (0,0,0,0) wherever there is no HUD.
+     * VC3_IMM_HUD_INSET=1: that copy instead, to see the picture alone. */
     if (s_imm && s_hud_fbo && s_hud_frame == s_frame && genv("VC3_IMMERSIVE_TEST")) {
         Surf *pf = surf_find(nv2a_backend_presented_va());
+        static GLuint prog;
+        static GLint u_img, u_org, u_size;
+        if (!prog && !(genv("VC3_IMM_HUD_INSET") && genv("VC3_IMM_HUD_INSET")[0] == '1')
+            && (prog = link_quad(FS_HUD))) {
+            u_img = glGetUniformLocation(prog, "u_img");
+            u_org = glGetUniformLocation(prog, "u_org");
+            u_size = glGetUniformLocation(prog, "u_size");
+        }
         if (pf && pf->st && pf->fbo) {
             glDisable(GL_SCISSOR_TEST);
             glColorMask(1, 1, 1, 1);
             s_rs_valid = 0;
-            glBindFramebuffer(GL_READ_FRAMEBUFFER, s_hud_fbo);
-            glBindFramebuffer(GL_DRAW_FRAMEBUFFER, pf->fbo);
-            glBlitFramebuffer(0, 0, s_hud_w, s_hud_h, pf->pw + pf->pw / 2, 0, 2 * pf->pw, pf->ph / 2,
-                              GL_COLOR_BUFFER_BIT, GL_LINEAR);
+            if (prog) {
+                int eye;
+                glBindFramebuffer(GL_FRAMEBUFFER, pf->fbo);
+                static GLuint vao;              /* no attributes: the quad is gl_VertexID */
+                glUseProgram(prog);
+                s_cur_prog = prog;
+                if (!vao)
+                    glGenVertexArrays(1, &vao);
+                glBindVertexArray(vao);
+                s_cur_vao = vao;
+                bind_tex(0, s_hud_tex);
+                glUniform1i(u_img, 0);
+                glUniform2f(u_size, (GLfloat)pf->pw, (GLfloat)pf->ph);
+                glDisable(GL_DEPTH_TEST);
+                glDisable(GL_STENCIL_TEST);
+                glDisable(GL_CULL_FACE);
+                caps_off();
+                glEnable(GL_BLEND);
+                glBlendEquation(GL_FUNC_ADD);
+                glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+                for (eye = 0; eye < 2; eye++) {
+                    glViewport(eye * pf->pw, 0, pf->pw, pf->ph);
+                    glUniform2f(u_org, (GLfloat)(eye * pf->pw), 0.0f);
+                    glDrawArrays(GL_TRIANGLES, 0, 3);
+                }
+                glViewport(0, 0, pf->pw, pf->ph);
+            } else {
+                glBindFramebuffer(GL_READ_FRAMEBUFFER, s_hud_fbo);
+                glBindFramebuffer(GL_DRAW_FRAMEBUFFER, pf->fbo);
+                glBlitFramebuffer(0, 0, s_hud_w, s_hud_h, pf->pw + pf->pw / 2, 0, 2 * pf->pw,
+                                  pf->ph / 2, GL_COLOR_BUFFER_BIT, GL_LINEAR);
+            }
             glBindFramebuffer(GL_FRAMEBUFFER, pf->fbo);
         }
     }
