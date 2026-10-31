@@ -64,52 +64,59 @@ $A shell appops set --uid $PKG MANAGE_EXTERNAL_STORAGE allow
 mkdir -p "$OUT"
 STAMP=$(date +%H%M%S)
 
+KEYS=30:coin,31:start,40:fire,44:fire,46:fire,48:fire,50:fire,55:fire,60:fire,65:fire,70:fire,75:fire
+PEDAL=64:pedal,64.5:pedal,65:pedal,65.5:pedal,66:pedal,66.5:pedal,67:pedal,67.5:pedal,68:pedal,68.5:pedal,69:pedal,69.5:pedal,70:pedal,70.5:pedal,71:pedal,71.5:pedal,72:pedal,72.5:pedal,73:pedal,73.5:pedal,74:pedal,74.5:pedal,75:pedal,75.5:pedal,76:pedal,76.5:pedal,77:pedal,77.5:pedal,78:pedal,78.5:pedal,79:pedal,79.5:pedal,80:pedal,80.5:pedal,81:pedal,81.5:pedal,82:pedal,82.5:pedal,83:pedal,83.5:pedal,84:pedal
 # name | settings lines (;-separated) | extra env (space-separated)
 SCEN=(
   "screen-mono|stereo=0;vr_screen=screen|"
   "screen-stereo|stereo=1;vr_screen=screen|"
-  "immersive-1x|stereo=1;vr_screen=immersive;vr_detail=1|"
-  "immersive-2x|stereo=1;vr_screen=immersive;vr_detail=2|"
-  "immersive-3x|stereo=1;vr_screen=immersive;vr_detail=3|"
-  "immersive-2x-foveation|stereo=1;vr_screen=immersive;vr_detail=2|CHIHIRO_FOVEATION=1"
-  "immersive-3x-foveation|stereo=1;vr_screen=immersive;vr_detail=3|CHIHIRO_FOVEATION=1"
-  "immersive-2x-bigcores|stereo=1;vr_screen=immersive;vr_detail=2|CHIHIRO_BIGCORES=1"
-  "immersive-2x-72hz|stereo=1;vr_screen=immersive;vr_detail=2;vr_refresh=72|"
-  "immersive-2x-nozoom|stereo=1;vr_screen=immersive;vr_detail=2|CHIHIRO_IMM_ZOOM=0"
-  "immersive-2x-oldoverlay|stereo=1;vr_screen=immersive;vr_detail=2|CHIHIRO_OVERLAY_FULLRATE=1 CHIHIRO_OVERLAY_SCALE=0.75"
-  "immersive-2x-spin-nolazy|stereo=1;vr_screen=immersive;vr_detail=2|RECOMP_ACK_IDLE_US=0 CHIHIRO_LAZY_RT=0"
-  "immersive-2x-oldpaths|stereo=1;vr_screen=immersive;vr_detail=2|RECOMP_ICALL_FAST=0 CHIHIRO_XR_REBLIT=1 CHIHIRO_GL_TEXQUICK=0"
-  "immersive-2x-nomips|stereo=1;vr_screen=immersive;vr_detail=2|CHIHIRO_GL_MIPS=0 CHIHIRO_GL_ANISO=1"
-  "immersive-2x-zdiscard|stereo=1;vr_screen=immersive;vr_detail=2|CHIHIRO_GL_ZDISCARD=1"
-  "immersive-2x-msaa4|stereo=1;vr_screen=immersive;vr_detail=2|CHIHIRO_GL_MSAA=4"
-  "immersive-2x-vpcpu|stereo=1;vr_screen=immersive;vr_detail=2|RECOMP_GPU_XF=ff"
-  "immersive-2x-vpcheck|stereo=1;vr_screen=immersive;vr_detail=2|RECOMP_GPU_XF_CHECK=300"
-  "immersive-2x-vp2dcpu|stereo=1;vr_screen=immersive;vr_detail=2|CHIHIRO_GL_VP_2D=0"
-  "immersive-2x-vp2dcheck|stereo=1;vr_screen=immersive;vr_detail=2|RECOMP_GPU_XF_CHECK=300 RECOMP_GPU_XF_CHECK_EVERY=20"
-  "immersive-2x-noregrun|stereo=1;vr_screen=immersive;vr_detail=2|RECOMP_PB_REGRUN=0"
+  "screen-stereo-1x|stereo=1;vr_screen=screen;vr_screen_res=scale|"
+  "immersive-1x|stereo=1;vr_screen=immersive;vr_res=1x|"
+  "immersive-2x|stereo=1;vr_screen=immersive;vr_res=2x|"
+  "immersive-native|stereo=1;vr_screen=immersive;vr_res=native|"
+  "immersive-native-foveation|stereo=1;vr_screen=immersive;vr_res=native|CHIHIRO_FOVEATION=1"
+  # E.S. mode (the pedal held from 64 s): the game's ~40 full-screen
+  # distortion layers over the scene, combat's heaviest fill
+  "immersive-2x-es|stereo=1;vr_screen=immersive;vr_res=2x|VC3_AUTOKEYS=$KEYS,$PEDAL"
+  "immersive-native-es|stereo=1;vr_screen=immersive;vr_res=native|VC3_AUTOKEYS=$KEYS,$PEDAL"
+  "immersive-native-es-foveation|stereo=1;vr_screen=immersive;vr_res=native|VC3_AUTOKEYS=$KEYS,$PEDAL CHIHIRO_FOVEATION=1"
+  "immersive-2x-foveation|stereo=1;vr_screen=immersive;vr_res=2x|CHIHIRO_FOVEATION=1"
+  "immersive-2x-bigcores|stereo=1;vr_screen=immersive;vr_res=2x|CHIHIRO_BIGCORES=1"
+  "immersive-2x-72hz|stereo=1;vr_screen=immersive;vr_res=2x;vr_refresh=72|"
+  "immersive-2x-nozoom|stereo=1;vr_screen=immersive;vr_res=2x|CHIHIRO_IMM_ZOOM=0"
+  "immersive-2x-oldoverlay|stereo=1;vr_screen=immersive;vr_res=2x|CHIHIRO_OVERLAY_FULLRATE=1 CHIHIRO_OVERLAY_SCALE=0.75"
+  "immersive-2x-spin-nolazy|stereo=1;vr_screen=immersive;vr_res=2x|RECOMP_ACK_IDLE_US=0 CHIHIRO_LAZY_RT=0"
+  "immersive-2x-oldpaths|stereo=1;vr_screen=immersive;vr_res=2x|RECOMP_ICALL_FAST=0 CHIHIRO_XR_REBLIT=1 CHIHIRO_GL_TEXQUICK=0"
+  "immersive-2x-nomips|stereo=1;vr_screen=immersive;vr_res=2x|CHIHIRO_GL_MIPS=0 CHIHIRO_GL_ANISO=1"
+  "immersive-2x-zdiscard|stereo=1;vr_screen=immersive;vr_res=2x|CHIHIRO_GL_ZDISCARD=1"
+  "immersive-2x-msaa4|stereo=1;vr_screen=immersive;vr_res=2x|CHIHIRO_GL_MSAA=4"
+  "immersive-2x-vpcpu|stereo=1;vr_screen=immersive;vr_res=2x|RECOMP_GPU_XF=ff"
+  "immersive-2x-vpcheck|stereo=1;vr_screen=immersive;vr_res=2x|RECOMP_GPU_XF_CHECK=300"
+  "immersive-2x-vp2dcpu|stereo=1;vr_screen=immersive;vr_res=2x|CHIHIRO_GL_VP_2D=0"
+  "immersive-2x-vp2dcheck|stereo=1;vr_screen=immersive;vr_res=2x|RECOMP_GPU_XF_CHECK=300 RECOMP_GPU_XF_CHECK_EVERY=20"
+  "immersive-2x-noregrun|stereo=1;vr_screen=immersive;vr_res=2x|RECOMP_PB_REGRUN=0"
   # texture decode (src/gpu/gl_texdec.c): GPU (compute, the default) against
   # CPU, by time; the fragment pass; and the compare modes, which read every
   # upload back and count texels unlike the CPU decode ([TEXCMP] lines)
-  "immersive-2x-texgpu|stereo=1;vr_screen=immersive;vr_detail=2|CHIHIRO_TEX_STATS=1"
-  "immersive-2x-texcpu|stereo=1;vr_screen=immersive;vr_detail=2|CHIHIRO_TEX_GPU=0 CHIHIRO_TEX_STATS=1"
-  "immersive-2x-texfrag|stereo=1;vr_screen=immersive;vr_detail=2|CHIHIRO_TEX_GPU=frag CHIHIRO_TEX_STATS=1"
-  "immersive-2x-texcompare|stereo=1;vr_screen=immersive;vr_detail=2|CHIHIRO_TEX_COMPARE=1"
-  "immersive-2x-texcompare-frag|stereo=1;vr_screen=immersive;vr_detail=2|CHIHIRO_TEX_GPU=frag CHIHIRO_TEX_COMPARE=1"
-  "immersive-2x-texcompare-s3tc|stereo=1;vr_screen=immersive;vr_detail=2|CHIHIRO_TEX_S3TC=1 CHIHIRO_TEX_COMPARE=1"
+  "immersive-2x-texgpu|stereo=1;vr_screen=immersive;vr_res=2x|CHIHIRO_TEX_STATS=1"
+  "immersive-2x-texcpu|stereo=1;vr_screen=immersive;vr_res=2x|CHIHIRO_TEX_GPU=0 CHIHIRO_TEX_STATS=1"
+  "immersive-2x-texfrag|stereo=1;vr_screen=immersive;vr_res=2x|CHIHIRO_TEX_GPU=frag CHIHIRO_TEX_STATS=1"
+  "immersive-2x-texcompare|stereo=1;vr_screen=immersive;vr_res=2x|CHIHIRO_TEX_COMPARE=1"
+  "immersive-2x-texcompare-frag|stereo=1;vr_screen=immersive;vr_res=2x|CHIHIRO_TEX_GPU=frag CHIHIRO_TEX_COMPARE=1"
+  "immersive-2x-texcompare-s3tc|stereo=1;vr_screen=immersive;vr_res=2x|CHIHIRO_TEX_S3TC=1 CHIHIRO_TEX_COMPARE=1"
   # the write-back flush answered by the walker alone, as before (the A/B)
   # the guest's long kernel waits against the vblanks ([WAIT] lines)
-  "immersive-2x-waits|stereo=1;vr_screen=immersive;vr_detail=2|RECOMP_WAIT_TRACE=2 RECOMP_WAIT_TRACE_AFTER=60"
+  "immersive-2x-waits|stereo=1;vr_screen=immersive;vr_res=2x|RECOMP_WAIT_TRACE=2 RECOMP_WAIT_TRACE_AFTER=60"
   # the guest vblank not aligned to the headset's frames (the A/B for it)
-  "immersive-2x-nocadence|stereo=1;vr_screen=immersive;vr_detail=2|VC3_XR_CADENCE=0"
-  "immersive-2x-slew20us|stereo=1;vr_screen=immersive;vr_detail=2|RECOMP_VBLANK_SLEW_NS=20000"
-  "immersive-2x-noflushack|stereo=1;vr_screen=immersive;vr_detail=2|RECOMP_FLUSH_ACK_US=0"
+  "immersive-2x-nocadence|stereo=1;vr_screen=immersive;vr_res=2x|VC3_XR_CADENCE=0"
+  "immersive-2x-slew20us|stereo=1;vr_screen=immersive;vr_res=2x|RECOMP_VBLANK_SLEW_NS=20000"
+  "immersive-2x-noflushack|stereo=1;vr_screen=immersive;vr_res=2x|RECOMP_FLUSH_ACK_US=0"
   # sound on (the others are muted): the audio device's stall and reopen
   # lines ([APU] stopped consuming, [SDL2] reopening) show if it happens
-  "immersive-2x-sound|stereo=1;vr_screen=immersive;vr_detail=2|CHIHIRO_SOUND=1"
-  "immersive-2x-glerr|stereo=1;vr_screen=immersive;vr_detail=2|CHIHIRO_GL_ERRCHECK=10"
+  "immersive-2x-sound|stereo=1;vr_screen=immersive;vr_res=2x|CHIHIRO_SOUND=1"
+  "immersive-2x-glerr|stereo=1;vr_screen=immersive;vr_res=2x|CHIHIRO_GL_ERRCHECK=10"
   "screen-stereo-glerr|stereo=1;vr_screen=screen|CHIHIRO_GL_ERRCHECK=10"
 )
-KEYS=30:coin,31:start,40:fire,44:fire,46:fire,48:fire,50:fire,55:fire,60:fire,65:fire,70:fire,75:fire
 LOGS=()
 for s in "${SCEN[@]}"; do
     IFS='|' read -r name settings extra <<< "$s"

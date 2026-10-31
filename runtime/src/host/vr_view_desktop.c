@@ -56,12 +56,22 @@ int vc3_vr_view_latch(Vc3VrView *v)
         v->fov[i][3] = -t;
         vr_eye_matrix(v->pose_q[i], v->pose_p[i], v->tan_fov[i], 1.0f, 0.05f, 2000.0f, v->vp[i]);
     }
-    {   /* VC3_IMMERSIVE_TEST_SCALE=n: the immersive detail the headset would ask */
-        const char *sc = ch_env("IMMERSIVE_TEST_SCALE");
+    {   /* VC3_IMMERSIVE_TEST_SCALE=n: the immersive detail the headset would
+         * ask; VC3_IMMERSIVE_TEST_SIZE=WxH: native, each eye that size */
+        const char *sc = ch_env("IMMERSIVE_TEST_SCALE"), *sz = ch_env("IMMERSIVE_TEST_SIZE");
         v->scale = sc ? atoi(sc) : 0;
+        if (sz && sscanf(sz, "%dx%d", &v->eye_w, &v->eye_h) == 2 && v->eye_w > 0 && v->eye_h > 0)
+            v->scale = 0;
     }
     v->id++;
     return v->on = 1;
+}
+
+/* VC3_SCREEN_TEST_SIZE=WxH: a virtual screen that size on the display. */
+int vc3_vr_screen_px(int *w, int *h)
+{
+    const char *sz = ch_env("SCREEN_TEST_SIZE");
+    return sz && sscanf(sz, "%dx%d", w, h) == 2 && *w > 0 && *h > 0;
 }
 
 #endif

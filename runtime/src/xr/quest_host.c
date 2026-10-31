@@ -58,6 +58,7 @@
 #include <GLES3/gl32.h>
 #include <GLES2/gl2ext.h>
 #include <jni.h>
+#include <sys/system_properties.h>
 #include <SDL.h>
 
 #define XR_USE_PLATFORM_ANDROID
@@ -371,9 +372,12 @@ static struct {
     int auto_coins;     /* a coin at start-up and with every Start */
     int immersive;      /* the game's 3D around the player; else on the screen */
     int refresh;        /* display Hz asked for: 120 (default), 90, 72 */
-    int imm_scale;      /* immersive detail: the game drawn at 1x-3x (default 2) */
-} s_vr = { QO_SIGHT_IRON, LASER_DOT, 1, 0, 1, 1, 120, 2 };
-static uint32_t s_rec_w;                /* the headset's recommended eye width */
+    int imm_scale;      /* immersive detail: 0 native (default), else 1x or 2x */
+    int screen_native;  /* the virtual screen drawn at its size on the display
+                           (default), else at the Resolution setting's scale */
+} s_vr = { QO_SIGHT_IRON, LASER_DOT, 1, 0, 1, 1, 120, 0, 1 };
+/* The display's own pixels per eye (native_init): what "Native" draws. */
+static uint32_t s_native_w, s_native_h;
 
 static int key_index(const char *v, const char *const *keys, int n, int dflt)
 {
@@ -404,8 +408,12 @@ static void screen_load(void)
         s_vr.immersive = strcmp(v, "screen") != 0;
     if ((v = vc3_setting_get("vr_refresh=")) && atoi(v) >= 60 && atoi(v) <= 144)
         s_vr.refresh = atoi(v);
-    if ((v = vc3_setting_get("vr_detail=")) && atoi(v) >= 1 && atoi(v) <= 3)
-        s_vr.imm_scale = atoi(v);
+    /* vr_res= (vr_detail= before it: 1x-3x, 2x by default, not read, so a
+     * settings file from then comes up at Native) */
+    if ((v = vc3_setting_get("vr_res=")))
+        s_vr.imm_scale = !strcmp(v, "1x") ? 1 : !strcmp(v, "2x") ? 2 : 0;
+    if ((v = vc3_setting_get("vr_screen_res=")))
+        s_vr.screen_native = strcmp(v, "scale") != 0;
 }
 
 static void screen_save(void)
@@ -429,8 +437,9 @@ static void vr_save(void)
         char b[16];
         snprintf(b, sizeof b, "%d", s_vr.refresh);
         vc3_setting_put("vr_refresh=", b);
-        snprintf(b, sizeof b, "%d", s_vr.imm_scale);
-        vc3_setting_put("vr_detail=", b);
+        vc3_setting_put("vr_res=", s_vr.imm_scale == 1 ? "1x" : s_vr.imm_scale == 2 ? "2x"
+                                                         : "native");
+        vc3_setting_put("vr_screen_res=", s_vr.screen_native ? "native" : "scale");
     }
     screen_save();
 }
@@ -549,6 +558,71 @@ static int xr_input_init(void)
     return 1;
 }
 
+/* The display's own pixels per eye, which "Native" draws the game at: the
+ * panel of the headset (OpenXR's recommended size is smaller, sized for its
+ * lens-distortion pass), from the model; any other headset gets the
+ * recommended size. Within the runtime's limits -- an eye's image rect and,
+ * for the game's layer holding both eyes side by side, a swapchain image --
+ * which are logged. VC3_NATIVE_EYE=WxH: that size instead. */
+static void native_init(void)
+{
+    static const struct { const char *model; uint32_t w, h; } panel[] = {
+        { "Quest 3S", 1832, 1920 },
+        { "Quest 3", 2064, 2208 },
+        { "Quest Pro", 1800, 1920 },
+        { "Quest 2", 1832, 1920 },
+    };
+    XrSystemProperties sp = { XR_TYPE_SYSTEM_PROPERTIES };
+    XrViewConfigurationView vcv[2] = { { XR_TYPE_VIEW_CONFIGURATION_VIEW },
+                                       { XR_TYPE_VIEW_CONFIGURATION_VIEW } };
+    char model[PROP_VALUE_MAX] = "";
+    const char *e = ch_env("NATIVE_EYE");
+    uint32_t nv = 0, mw, mh, i;
+    unsigned ew, eh;
+
+    xrGetSystemProperties(s_inst, s_sys, &sp);
+    if (XR_FAILED(xrEnumerateViewConfigurationViews(s_inst, s_sys,
+                                                    XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO,
+                                                    2, &nv, vcv)) || nv < 1) {
+        fprintf(stderr, "[xr] no view configuration: native unknown\n");
+        return;
+    }
+    __system_property_get("ro.product.model", model);
+    s_native_w = vcv[0].recommendedImageRectWidth;
+    s_native_h = vcv[0].recommendedImageRectHeight;
+    for (i = 0; i < sizeof panel / sizeof panel[0]; i++)
+        if (strstr(model, panel[i].model)) {
+            s_native_w = panel[i].w;
+            s_native_h = panel[i].h;
+            break;
+        }
+    if (e && sscanf(e, "%ux%u", &ew, &eh) == 2 && ew >= 320 && eh >= 240) {
+        s_native_w = ew;
+        s_native_h = eh;
+    }
+    mw = vcv[0].maxImageRectWidth;
+    mh = vcv[0].maxImageRectHeight;
+    if (sp.graphicsProperties.maxSwapchainImageWidth / 2 < mw)
+        mw = sp.graphicsProperties.maxSwapchainImageWidth / 2;
+    if (sp.graphicsProperties.maxSwapchainImageHeight < mh)
+        mh = sp.graphicsProperties.maxSwapchainImageHeight;
+    fprintf(stderr, "[xr] %s (model %s): recommended eye %ux%u, max image rect %ux%u, max "
+            "swapchain image %ux%u, max layers %u\n", sp.systemName, model,
+            vcv[0].recommendedImageRectWidth, vcv[0].recommendedImageRectHeight,
+            vcv[0].maxImageRectWidth, vcv[0].maxImageRectHeight,
+            sp.graphicsProperties.maxSwapchainImageWidth,
+            sp.graphicsProperties.maxSwapchainImageHeight, sp.graphicsProperties.maxLayerCount);
+    if (s_native_w > mw || s_native_h > mh) {
+        fprintf(stderr, "[xr] native %ux%u over the limits: %ux%u\n", s_native_w, s_native_h,
+                s_native_w > mw ? mw : s_native_w, s_native_h > mh ? mh : s_native_h);
+        if (s_native_w > mw)
+            s_native_w = mw;
+        if (s_native_h > mh)
+            s_native_h = mh;
+    }
+    fprintf(stderr, "[xr] native eye %ux%u\n", s_native_w, s_native_h);
+}
+
 static int xr_init(void)
 {
     JNIEnv *env = (JNIEnv *)SDL_AndroidGetJNIEnv();
@@ -643,6 +717,7 @@ static int xr_init(void)
     sc.next = &gb;
     sc.systemId = s_sys;
     XRCHECK(xrCreateSession(s_inst, &sc, &s_sess));
+    native_init();
 
     rc.referenceSpaceType = XR_REFERENCE_SPACE_TYPE_LOCAL;
     rc.poseInReferenceSpace.orientation.w = 1;
@@ -973,6 +1048,8 @@ static XrView s_pub_views[2];
 static int s_pub_ok;
 static float s_pub_anchor_p[3], s_pub_anchor_yaw;
 static uint64_t s_pub_id;
+static XrFovf s_pub_fov;                /* the left eye's, for vc3_vr_screen_px */
+static int s_pub_fov_ok;
 
 static float imm_units(void)
 {
@@ -989,6 +1066,9 @@ static void view_publish(void)
 {
     pthread_mutex_lock(&s_view_lock);
     s_pub_ok = s_views_ok && s_vr.immersive && s_running;
+    s_pub_fov_ok = s_views_ok;
+    if (s_views_ok)
+        s_pub_fov = s_views[0].fov;
     if (s_pub_ok) {
         memcpy(s_pub_views, s_views, sizeof s_pub_views);
         memcpy(s_pub_anchor_p, s_anchor_p, sizeof s_pub_anchor_p);
@@ -1037,7 +1117,34 @@ int vc3_vr_view_latch(Vc3VrView *v)
                       v->vp[e]);
     }
     v->scale = s_vr.imm_scale;
+    v->eye_w = (int)s_native_w;
+    v->eye_h = (int)s_native_h;
     return v->on = 1;
+}
+
+/* The virtual screen on the display: its angular size (height s_height at
+ * s_dist, the picture's aspect) in the display's pixels per tangent at the
+ * middle of the newest view. */
+int vc3_vr_screen_px(int *w, int *h)
+{
+    XrView v = { XR_TYPE_VIEW };
+    float tx, ty, aspect = vc3_wide_get() ? 16.0f / 9.0f : 4.0f / 3.0f;
+    int ok;
+    if (!s_vr.screen_native || !s_native_w || !s_native_h)
+        return 0;
+    pthread_mutex_lock(&s_view_lock);
+    ok = s_pub_fov_ok;
+    v.fov = s_pub_fov;
+    pthread_mutex_unlock(&s_view_lock);
+    if (!ok)
+        return 0;
+    tx = tanf(v.fov.angleRight) - tanf(v.fov.angleLeft);
+    ty = tanf(v.fov.angleUp) - tanf(v.fov.angleDown);
+    if (!(tx > 0.1f) || !(ty > 0.1f) || !(s_dist > 0.1f))
+        return 0;
+    *h = (int)((float)s_native_h / ty * s_height / s_dist + 0.5f);
+    *w = (int)((float)s_native_w / tx * s_height * aspect / s_dist + 0.5f);
+    return *w > 0 && *h > 0;
 }
 
 /* An eye of a frame's view, back in LOCAL (with the anchor as it is now). */
@@ -1103,9 +1210,6 @@ static int overlay_init(void)
         return 0;
     XRCHECK(xrEnumerateViewConfigurationViews(s_inst, s_sys, XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO,
                                               2, &nv, vcv));
-    s_rec_w = vcv[0].recommendedImageRectWidth;
-    fprintf(stderr, "[xr] recommended eye %ux%u\n", vcv[0].recommendedImageRectWidth,
-            vcv[0].recommendedImageRectHeight);
     if (exts && strstr(exts, "GL_EXT_multisampled_render_to_texture")) {
         fb_ms = (PFNGLFRAMEBUFFERTEXTURE2DMULTISAMPLEEXTPROC)
             eglGetProcAddress("glFramebufferTexture2DMultisampleEXT");
@@ -1117,16 +1221,15 @@ static int overlay_init(void)
     for (e = 0; e < 2; e++) {
         Eye *y = &s_eye[e];
         XrSwapchainCreateInfo ci = { XR_TYPE_SWAPCHAIN_CREATE_INFO };
-        /* half the headset's own size (VC3_OVERLAY_SCALE=0.75 etc.): the gun
-         * is small and the samples smooth it, and the whole layer is
-         * cleared, resolved and blended by the compositor each time it is
-         * drawn -- GPU time only real play paid (no controllers in a
-         * scripted run, no overlay) */
+        /* the display's own size (VC3_OVERLAY_SCALE=0.5 etc.: that part of
+         * it): the gun and the panel as sharp as the world behind them */
         {
             const char *sc = ch_env("OVERLAY_SCALE");
-            float f = sc && atof(sc) > 0.2 && atof(sc) <= 1.0 ? (float)atof(sc) : 0.5f;
-            y->w = (uint32_t)(vcv[e].recommendedImageRectWidth * f);
-            y->h = (uint32_t)(vcv[e].recommendedImageRectHeight * f);
+            float f = sc && atof(sc) > 0.2 && atof(sc) <= 1.0 ? (float)atof(sc) : 1.0f;
+            uint32_t nw = s_native_w ? s_native_w : vcv[e].recommendedImageRectWidth;
+            uint32_t nh = s_native_h ? s_native_h : vcv[e].recommendedImageRectHeight;
+            y->w = (uint32_t)(nw * f);
+            y->h = (uint32_t)(nh * f);
         }
         ci.usageFlags = XR_SWAPCHAIN_USAGE_COLOR_ATTACHMENT_BIT;
         ci.format = s_chain_fmt;
@@ -1200,11 +1303,13 @@ static void menu_items(XmItem *it)
         it[i].value[0] = 0;
     }
     snprintf(it[M_SCREEN].value, 40, "%s", s_vr.immersive ? "Immersive" : "Virtual screen");
-    /* the game's 640 across in an eye spanning the whole view: how close
-     * to the headset's own recommended sharpness */
-    if (s_rec_w)
-        snprintf(it[M_DETAIL].value, 40, "%dx (%u%% of headset)", s_vr.imm_scale,
-                 (unsigned)(640u * (unsigned)s_vr.imm_scale * 100u / s_rec_w));
+    /* Native: the display's own pixels; 1x / 2x: the game's 640 across an
+     * eye spanning the whole view, as a share of them */
+    if (!s_vr.imm_scale)
+        snprintf(it[M_DETAIL].value, 40, "Native (%ux%u)", s_native_w, s_native_h);
+    else if (s_native_w)
+        snprintf(it[M_DETAIL].value, 40, "%dx (%u%% of native)", s_vr.imm_scale,
+                 (unsigned)(640u * (unsigned)s_vr.imm_scale * 100u / s_native_w));
     else
         snprintf(it[M_DETAIL].value, 40, "%dx", s_vr.imm_scale);
     snprintf(it[M_REFRESH].value, 40, "%d Hz%s", s_vr.refresh,
@@ -1216,8 +1321,11 @@ static void menu_items(XmItem *it)
     snprintf(it[M_STEREO].value, 40, "%s", s_vr.immersive ? "On (immersive)"
              : vc3_stereo_get() ? "On" : "Off");
     snprintf(it[M_ASPECT].value, 40, "%s", vc3_wide_get() ? "16:9" : "4:3");
-    snprintf(it[M_RES].value, 40, "%dx%s", vc3_scale_get(),
-             vc3_scale_get() > 1 && vc3_stereo_get() ? " (slow in 3D)" : "");
+    if (s_vr.screen_native)
+        snprintf(it[M_RES].value, 40, "Native");
+    else
+        snprintf(it[M_RES].value, 40, "%dx%s", vc3_scale_get(),
+                 vc3_scale_get() > 1 && vc3_stereo_get() ? " (slow in 3D)" : "");
     snprintf(it[M_DIST].value, 40, "%.1f m", s_dist);
     snprintf(it[M_SIZE].value, 40, "%.1f m tall", s_height);
     snprintf(it[M_COINS].value, 40, "%s", s_vr.auto_coins ? "Automatic" : "By menu");
@@ -1309,7 +1417,7 @@ static void menu_choose(int item)
     s_menu.reset_armed = 0;             /* anything else chosen in between: no reset */
     switch (item) {
     case M_SCREEN: s_vr.immersive = !s_vr.immersive; break;
-    case M_DETAIL: s_vr.imm_scale = s_vr.imm_scale % 3 + 1; break;
+    case M_DETAIL: s_vr.imm_scale = (s_vr.imm_scale + 1) % 3; break;   /* native, 1x, 2x */
     case M_REFRESH:
         s_vr.refresh = s_vr.refresh >= 120 ? 72 : s_vr.refresh >= 90 ? 120 : 90;
         rate_apply();
@@ -1323,7 +1431,16 @@ static void menu_choose(int item)
         break;
     case M_STEREO: vc3_stereo_set(!vc3_stereo_get()); break;
     case M_ASPECT: vc3_wide_set(!vc3_wide_get()); break;
-    case M_RES: vc3_scale_set(vc3_scale_get() % VC3_SCALE_MAX + 1); break;
+    case M_RES:         /* native, 1x .. VC3_SCALE_MAX */
+        if (s_vr.screen_native) {
+            s_vr.screen_native = 0;
+            vc3_scale_set(1);
+        } else if (vc3_scale_get() >= VC3_SCALE_MAX) {
+            s_vr.screen_native = 1;
+        } else {
+            vc3_scale_set(vc3_scale_get() + 1);
+        }
+        break;
     case M_DIST: cycle(&s_dist, dists, 6); break;
     case M_SIZE: cycle(&s_height, sizes, 5); break;
     case M_COINS: s_vr.auto_coins = !s_vr.auto_coins; break;

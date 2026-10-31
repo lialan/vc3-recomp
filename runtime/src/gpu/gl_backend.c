@@ -1469,18 +1469,24 @@ static void es_to_guest(uint8_t *dst, uint32_t pitch, uint32_t bpp,
 
 /* Internal resolution and aspect (display_settings.c), as this frame draws
  * them: taken at each flip, so a frame never mixes two. A surface drawn at
- * scale s is s times its guest size; a widened one (16:9: a 4:3 surface,
- * 640x480 in VC3) is also a third wider, with the guest's picture in the
- * middle -- see surf_xform. Guest memory always gets the guest size and
- * the middle part (surf_resolve). */
-static int s_scale = 1, s_wide;
+ * scale sx, sy is that many times its guest size across and down -- whole
+ * numbers from the Resolution setting, any from a headset's native size
+ * (scale_pick) --; a widened one (16:9: a 4:3 surface, 640x480 in VC3) is
+ * also a third wider, with the guest's picture in the middle -- see
+ * surf_xform. Guest memory always gets the guest size and the middle part
+ * (surf_resolve). */
+static float s_sx = 1.0f, s_sy = 1.0f;
+static int s_wide;
+static float s_hud_sc = 1.0f;           /* the HUD picture's scale (immersive) */
 
 #define MAX_SURFS 32
 typedef struct {
     uint32_t va, pitch, bpp;
     GLsizei w, h;              /* guest size: what coordinates are in */
     GLsizei pw, ph;            /* drawn size: w, h times sc, widened */
-    int sc, wide;
+    float sx, sy;
+    int wide;
+    GLsizei cw;                /* the guest picture's drawn width (pw unwidened) */
     /* 16:9: the frame a widened view was composited onto this surface, and
      * its 2D overlays (surf_xform). */
     uint32_t hor_frame;
@@ -1931,10 +1937,12 @@ static void surf_alloc(Surf *f, GLsizei w, GLsizei h)
     }
     f->w = w;
     f->h = h;
-    f->sc = s_scale;
+    f->sx = s_sx;
+    f->sy = s_sy;
     f->wide = surf_widens(w, h);
-    pw = w * f->sc;
-    ph = h * f->sc;
+    pw = (GLsizei)((float)w * f->sx + 0.5f);
+    ph = (GLsizei)((float)h * f->sy + 0.5f);
+    f->cw = pw;
     if (f->wide)
         pw = (pw * 4 / 3 + 1) & ~1;
     f->pw = pw;
@@ -1986,6 +1994,7 @@ static Surf *surf_find(uint32_t va)
 #define GL_TIME_ELAPSED 0x88BF            /* EXT_disjoint_timer_query on ES */
 #endif
 #define GT_RING 512
+#define GT_PRESENT 1u                     /* not a surface: the frame's copy to the headset */
 static struct { uint32_t draws, tris, declined; } s_rst;   /* fixed-function draws */
 static uint32_t s_zp_frame;              /* visibility tests (GPU time log) */
 static uint32_t s_sw_frame;              /* surface switches (GPU time log) */
@@ -2087,9 +2096,13 @@ static void gt_flip(void)
         for (j = 0; j < GT_SURFS && s_gt_sum[j].va && n < (int)sizeof line - 40; j++)
             if (s_gt_sum[j].ms / s_gt_frames >= 0.3) {
                 const Surf *q = surf_find(s_gt_sum[j].va);
-                n += snprintf(line + n, sizeof line - (size_t)n, " %08X(%dx%d%s) %.1f",
-                              s_gt_sum[j].va, q ? q->w : 0, q ? q->h : 0,
-                              q && q->st ? " st" : "", s_gt_sum[j].ms / s_gt_frames);
+                if (s_gt_sum[j].va == GT_PRESENT)
+                    n += snprintf(line + n, sizeof line - (size_t)n, " present %.1f",
+                                  s_gt_sum[j].ms / s_gt_frames);
+                else
+                    n += snprintf(line + n, sizeof line - (size_t)n, " %08X(%dx%d%s) %.1f",
+                                  s_gt_sum[j].va, q ? q->w : 0, q ? q->h : 0,
+                                  q && q->st ? " st" : "", s_gt_sum[j].ms / s_gt_frames);
             }
         fprintf(stderr, "%s\n", line);
     }
@@ -2121,7 +2134,7 @@ static Surf *surf_bind(const Nv2aSurface *s)
         memset(f, 0, sizeof *f);
         f->va = s->color_va;
     }
-    if (!f->fbo || w > f->w || h > f->h || f->sc != s_scale
+    if (!f->fbo || w > f->w || h > f->h || f->sx != s_sx || f->sy != s_sy
         || f->wide != surf_widens(w > f->w ? w : f->w, h > f->h ? h : f->h)
         || f->st != surf_stereo(w > f->w ? w : f->w, h > f->h ? h : f->h))
         surf_alloc(f, w > f->w ? w : f->w, h > f->h ? h : f->h);
@@ -2245,7 +2258,7 @@ static void surf_xform(Surf *f, const Nv2aBatch *b, float *scale, float *offset)
 {
     float x0 = 1e30f, x1 = -1e30f, y0 = 1e30f, y1 = -1e30f;
     float u0 = 1e30f, u1 = -1e30f, v0 = 1e30f, v1 = -1e30f;
-    float mid = (float)(f->w * f->sc) / (float)f->pw;
+    float mid = (float)f->cw / (float)f->pw;
     const Surf *src;
     int place;
 
@@ -2333,7 +2346,7 @@ static GLuint surf_resolve(const Surf *f)
     static GLsizei rw, rh;
     GLint x0;
 
-    if (f->sc == 1 && !f->wide)
+    if (f->pw == f->w && f->ph == f->h)
         return f->fbo;
     if (!fbo || rw != f->w || rh != f->h) {
         if (!tex)
@@ -2349,11 +2362,11 @@ static GLuint surf_resolve(const Surf *f)
         rw = f->w;
         rh = f->h;
     }
-    x0 = (f->pw - f->w * f->sc) / 2;
+    x0 = (f->pw - f->cw) / 2;
     glDisable(GL_SCISSOR_TEST);
     glBindFramebuffer(GL_READ_FRAMEBUFFER, f->fbo);
     glBindFramebuffer(GL_DRAW_FRAMEBUFFER, fbo);
-    glBlitFramebuffer(x0, 0, x0 + f->w * f->sc, f->ph, 0, 0, f->w, f->h,
+    glBlitFramebuffer(x0, 0, x0 + f->cw, f->ph, 0, 0, f->w, f->h,
                       GL_COLOR_BUFFER_BIT, GL_LINEAR);
     return fbo;
 }
@@ -2530,7 +2543,7 @@ static void surf_readback_async(Surf *f)
 #if !defined(VC3_GLES)
     /* The Quest shows the drawn frame itself (vc3_quest_frame), with the
      * headset making any in-between frames. */
-    if (fps > 60 || f->sc > 1 || f->wide || f->st)
+    if (fps > 60 || f->pw != f->w || f->ph != f->h || f->st)
         show_read(r, f, fps);
 #else
     (void)fps;
@@ -4045,9 +4058,11 @@ static int batch_fullscreen(const Nv2aBatch *b, const Surf *f)
  * over), for the headset's blended layer. */
 static void hud_bind(const Surf *f, const Nv2aRenderState *rs)
 {
-    /* at the game's own 1x whatever the immersive detail: a flat panel at
-     * 5 m, and a quarter of the pixels to clear and fill at 2x */
-    GLsizei hw = f->pw / (f->sc > 0 ? f->sc : 1), hh = f->ph / (f->sc > 0 ? f->sc : 1);
+    /* the game's own size (widened) times s_hud_sc: 1 at a fixed detail (a
+     * flat panel at 5 m, a quarter of the pixels to fill at 2x), at native
+     * as many as the panel covers on the display (scale_pick) */
+    GLsizei hw = (GLsizei)((float)(f->wide ? (f->w * 4 / 3 + 1) & ~1 : f->w) * s_hud_sc + 0.5f);
+    GLsizei hh = (GLsizei)((float)f->h * s_hud_sc + 0.5f);
     if (!s_hud_fbo || s_hud_w != hw || s_hud_h != hh) {
         GLint was = 0;
         if (!s_hud_fbo) {
@@ -5140,7 +5155,7 @@ static int interp_make(const Surf *f, GLuint *pbos, int n)
 {
     int prev, i, layers;
     GLsizei w = f->pw, h = f->ph;
-    GLsizei gw = (f->pw + f->sc / 2) / f->sc, gh = f->ph / f->sc;
+    GLsizei gw = (GLsizei)((float)f->pw / f->sx + 0.5f), gh = f->h;
     GLuint ta, tb;                   /* what is interpolated: scene or frame */
 
     if (n < 1 || !interp_setup())
@@ -5435,6 +5450,60 @@ static void quest_present(void)
 }
 #endif
 
+/* The next frame's scale (s_sx, s_sy, s_hud_sc), at the flip once the view
+ * is latched (on: the host has an immersive view). The game's screen is the
+ * presented surface's guest size (640x480 in VC3), a third wider at 16:9.
+ *   immersive, a fixed detail (1x-4x): that, the HUD at 1x;
+ *   immersive, native: each eye's picture (a screen-shaped surface, the
+ *     whole field of view) exactly eye_w x eye_h, every other surface at the
+ *     same scale; the HUD as fine as its panel is on the display -- a guest
+ *     pixel of it spans 1/kx of a tangent, a display pixel (tan right - tan
+ *     left) / eye_w -- in quarter steps, at most 4x;
+ *   a headset's virtual screen: the game's picture the size it is on the
+ *     display (vc3_vr_screen_px), in eighth steps, 1x-4x;
+ *   otherwise the Resolution setting. */
+static void scale_pick(int on)
+{
+    Surf *pf = surf_find(nv2a_backend_presented_va());
+    float gw = 640.0f, gh = 480.0f, lw, sx, sy;
+    int w, h;
+    if (pf && pf->w * 3 == pf->h * 4) {
+        gw = (float)pf->w;
+        gh = (float)pf->h;
+    }
+    lw = s_wide ? gw * 4.0f / 3.0f : gw;
+    s_hud_sc = 1.0f;
+    if (on && s_view.scale >= 1 && s_view.scale <= VC3_SCALE_MAX) {
+        s_sx = s_sy = (float)s_view.scale;
+        return;
+    }
+    if (on && s_view.eye_w > 0 && s_view.eye_h > 0) {
+        /* widened, the drawn width is the unwidened one's 4/3 (surf_alloc) */
+        s_sx = (s_wide ? (float)s_view.eye_w * 0.75f : (float)s_view.eye_w) / gw;
+        s_sy = (float)s_view.eye_h / gh;
+        if (s_gp_ok) {
+            VrGameProj zg = zoom_proj(&s_gp);
+            float tx = s_view.tan_fov[0][1] - s_view.tan_fov[0][0];
+            float ty = s_view.tan_fov[0][2] - s_view.tan_fov[0][3];
+            if (tx > 0.0f && ty > 0.0f && fabsf(zg.kx) > 1.0f && fabsf(zg.ky) > 1.0f) {
+                float hx = (float)s_view.eye_w / tx / fabsf(zg.kx);
+                float hy = (float)s_view.eye_h / ty / fabsf(zg.ky);
+                float hs = ceilf((hx > hy ? hx : hy) * 4.0f) / 4.0f;
+                s_hud_sc = hs < 1.0f ? 1.0f : hs > 4.0f ? 4.0f : hs;
+            }
+        }
+        return;
+    }
+    if (!on && vc3_vr_screen_px(&w, &h)) {
+        sx = ceilf((float)w / lw * 8.0f) / 8.0f;
+        sy = ceilf((float)h / gh * 8.0f) / 8.0f;
+        s_sx = sx < 1.0f ? 1.0f : sx > 4.0f ? 4.0f : sx;
+        s_sy = sy < 1.0f ? 1.0f : sy > 4.0f ? 4.0f : sy;
+        return;
+    }
+    s_sx = s_sy = (float)vc3_scale_get();
+}
+
 static void gl_flip(void)
 {
     int i;
@@ -5596,6 +5665,7 @@ static void gl_flip(void)
         s_3d_this = 0;
     }
 #if defined(VC3_GLES)
+    gt_surface(GT_PRESENT);             /* the copy to the headset, timed apart */
     quest_present();
     GLCK("flip: quest_present", NULL, 0);
 #endif
@@ -5608,7 +5678,6 @@ static void gl_flip(void)
                 (uint32_t)(pf->wide ? (pf->w * 4 / 3 + 1) & ~1 : pf->w) * (pf->st ? 2 : 1),
                 (uint32_t)pf->h);
     }
-    s_scale = vc3_scale_get();
     s_wide = vc3_wide_get();
     /* The next frame's view: immersive when the host has a pose for it and
      * this frame had 3D in it (a frame without -- a movie, a menu -- goes
@@ -5625,10 +5694,7 @@ static void gl_flip(void)
         }
 
         on = vc3_vr_view_latch(&s_view);
-        /* immersive spreads each eye over the whole field of view: its own,
-         * finer scale (the host's, from the headset's recommended size) */
-        if (on && s_view.scale >= 1 && s_view.scale <= VC3_SCALE_MAX)
-            s_scale = s_view.scale;
+        scale_pick(on);
         s_stereo = vc3_stereo_get() || on;
         s_imm = on && s_stereo && s_3d_prev > 0 && s_gp_ok;
         if (genv("IMM_LOG")) {
@@ -5723,7 +5789,7 @@ void vc3_gl_backend_register(void)
     }
     s_st.on = genv("GL_STATS") != NULL;
     texstat_init();
-    s_scale = vc3_scale_get();
+    s_sx = s_sy = (float)vc3_scale_get();
     s_wide = vc3_wide_get();
     s_stereo = vc3_stereo_get();
     {
