@@ -148,8 +148,6 @@ typedef struct {
      * projection, on / 1 / pz. */
     GLint immvp, gp, gw;
     GLint st2, eye2, immvp2;     /* one-pass stereo */
-    GLint vc;                    /* vertex programs: u_vc[192] */
-    uint32_t vc_gen;             /* the constants' change count last sent */
     /* the fixed-function state last sent to this program (raw_uniforms) */
     Nv2aFixedState ff_last;
     int ff_valid;
@@ -1046,7 +1044,7 @@ static int prog_link(Prog *p, GLuint vs, GLuint fs, int feedback)
     LOC(ascale, "u_ascale"); LOC(packed, "u_packed"); LOC(aa, "u_aa");
     LOC(vpz, "u_vpz"); LOC(nearz, "u_nearz"); LOC(fogen, "u_fogen");
     LOC(fogmode, "u_fogmode"); LOC(fogp, "u_fogp"); LOC(uvs0, "u_uvs0");
-    LOC(bgra, "u_bgra"); LOC(vc, "u_vc");
+    LOC(bgra, "u_bgra");
 #undef LOC
     glUseProgram(p->prog);
     glUniform1i(glGetUniformLocation(p->prog, "u_tex"), 0);
@@ -1083,6 +1081,16 @@ typedef struct {
 static VpProg s_vp[VP_SLOTS];
 static VpProg *s_vp_cur;                  /* the program gl_draw draws with */
 static uint32_t s_vp_built, s_vp_failed;
+
+#define VC_BINDING 1                       /* the VshConst block's binding */
+
+/* A vertex program's constants block at VC_BINDING. */
+static void vc_block(const Prog *p)
+{
+    GLuint i = glGetUniformBlockIndex(p->prog, "VshConst");
+    if (i != GL_INVALID_INDEX)
+        glUniformBlockBinding(p->prog, i, VC_BINDING);
+}
 
 static VpProg *vp_get(const Nv2aRawGeometry *g)
 {
@@ -1160,12 +1168,19 @@ static VpProg *vp_get(const Nv2aRawGeometry *g)
             glDeleteShader(vs);
         return NULL;
     }
+    vc_block(&e->p);
     if (!s_fs_rc_obj || !prog_link(&e->p_rc, vs, s_fs_rc_obj, 1))
         e->p_rc = e->p;
+    else
+        vc_block(&e->p_rc);
     if (!s_fs_na_obj || !prog_link(&e->p_na, vs, s_fs_na_obj, 1))
         memset(&e->p_na, 0, sizeof e->p_na);
+    else
+        vc_block(&e->p_na);
     if (!s_fs_rc_na_obj || e->p_rc.prog == e->p.prog || !prog_link(&e->p_rc_na, vs, s_fs_rc_na_obj, 1))
         memset(&e->p_rc_na, 0, sizeof e->p_rc_na);
+    else
+        vc_block(&e->p_rc_na);
     glDeleteShader(vs);                        /* the programs keep it */
     e->state = 1;
     s_vp_built++;
@@ -1201,6 +1216,15 @@ typedef struct {
 } Ring;
 static Ring s_vring = { 0, GL_ARRAY_BUFFER, 16 << 20, 0, NULL, 0, { 0 } };
 static Ring s_iring = { 0, GL_ELEMENT_ARRAY_BUFFER, 4 << 20, 0, NULL, 0, { 0 } };
+/* The vertex programs' constants (the VshConst block, 192 vec4): a copy
+ * streamed in whenever they change and bound as a range at VC_BINDING for
+ * every program at once -- where each program had its 192 uniforms sent per
+ * draw that changed them, and again on every switch of program. Ranges
+ * start at the driver's uniform-buffer alignment. */
+#define VC_BYTES (192 * 16)
+static Ring s_cring = { 0, GL_UNIFORM_BUFFER, 16 << 20, 0, NULL, 0, { 0 } };
+static GLint s_ubo_align = 256;
+static uint32_t s_vc_gen_bound;         /* the constants' change count bound */
 
 #if defined(VC3_GLES)
 typedef void (*BufferStorageFn)(GLenum, GLsizeiptr, const void *, GLbitfield);
@@ -1264,7 +1288,8 @@ static void ring_enter(Ring *r, GLsizeiptr from, GLsizeiptr to)
  * NULL if bytes cannot fit even an empty buffer. */
 static void *ring_map(Ring *r, GLsizeiptr bytes, GLsizeiptr *offset)
 {
-    GLsizeiptr at = (r->at + 15) & ~(GLsizeiptr)15;
+    GLsizeiptr al = r->target == GL_UNIFORM_BUFFER && s_ubo_align > 16 ? s_ubo_align : 16;
+    GLsizeiptr at = (r->at + al - 1) / al * al;
 
     if (bytes > r->size)
         return NULL;
@@ -1448,6 +1473,7 @@ static int gl_ready(void)
 
         /* The CPU path's layout; pointers are set per draw, as each batch
          * lands at a different place in the stream. */
+        glGetIntegerv(GL_UNIFORM_BUFFER_OFFSET_ALIGNMENT, &s_ubo_align);
         glGenVertexArrays(1, &s_vao);
         glBindVertexArray(s_vao);
         glEnableVertexAttribArray(0);
@@ -4094,9 +4120,12 @@ static int raw_submit(const Nv2aRawGeometry *g, GLsizeiptr *ioff)
         if (!raw_attribs(g, slot, 16, &s_va_vp))
             return 0;
         raw_uniforms_common(g);
-        if (U->vc >= 0 && U->vc_gen != g->const_gen) {   /* the constants, when changed */
-            glUniform4fv(U->vc, 192, &g->constants[0][0]);
-            U->vc_gen = g->const_gen;
+        if (s_vc_gen_bound != g->const_gen || !s_cring.buf) {   /* the constants, when changed */
+            GLsizeiptr off = ring_put(&s_cring, g->constants, VC_BYTES);
+            if (off < 0)
+                return 0;
+            glBindBufferRange(GL_UNIFORM_BUFFER, VC_BINDING, s_cring.buf, off, VC_BYTES);
+            s_vc_gen_bound = g->const_gen;
         }
     } else {
         raw_roles(g, slot);
