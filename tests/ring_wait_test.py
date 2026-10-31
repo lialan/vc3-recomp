@@ -25,14 +25,14 @@ typedef long GLsizeiptr; typedef unsigned GLenum; typedef int GLsync;
 #define GL_SYNC_FLUSH_COMMANDS_BIT 4
 #define GL_WAIT_FAILED 3
 #define GL_ALREADY_SIGNALED 5
-typedef struct {GLsizeiptr size; int seg; GLsync fence[4]; unsigned target;} Ring;
+typedef struct {GLsizeiptr size; int seg; GLsync fence[4]; unsigned target; unsigned pending;} Ring;
 static Ring s_vring, s_iring;
 static unsigned s_ring_wait_by_target[3];
 static uint64_t s_ring_ns_by_target[3];
 static unsigned s_ring_waits; static uint64_t s_ring_wait_ns;
-static int seq[8], at, finishes, deleted;
+static int seq[8], at, finishes, deleted, epoch;
 static void glDeleteSync(GLsync s) {(void)s; deleted++;}
-static GLsync glFenceSync(int a,int b) {(void)a;(void)b;return 9;}
+static GLsync glFenceSync(int a,int b) {(void)a;(void)b;return 9+epoch;}
 static GLenum glClientWaitSync(GLsync a,unsigned b,uint64_t c) {(void)a;(void)b;(void)c;return seq[at++];}
 static void glFinish(void) {finishes++;}
 '''
@@ -40,7 +40,7 @@ static void glFinish(void) {finishes++;}
 checks = r'''
 
 static void run(int poll,int wait,int again,int calls,int finish) {
- Ring r={400,0,{0,7,0,0},1}; at=finishes=deleted=0;
+ Ring r={400,0,{0,7,0,0},1,0}; at=finishes=deleted=0;
  seq[0]=poll; seq[1]=wait; seq[2]=again;
  ring_enter(&r,100,110);
  assert(at==calls); assert(finishes==finish); assert(r.fence[1]==0);
@@ -51,7 +51,20 @@ int main(void) {
  run(GL_TIMEOUT_EXPIRED,GL_TIMEOUT_EXPIRED,GL_ALREADY_SIGNALED,3,0);
  run(GL_TIMEOUT_EXPIRED,GL_WAIT_FAILED,0,2,1);
  run(GL_WAIT_FAILED,0,0,1,1);
- puts("ring waits: five scenarios passed");
+ /* A draw spanning segments zero and one must fence zero only AFTER
+  * the draw, at the next allocation. */
+ Ring r={400,0,{0,0,0,0},1,0};
+ epoch=0; ring_enter(&r,90,110);
+ assert(r.fence[0]==0 && r.pending==1);
+ epoch=1; ring_enter(&r,110,120);
+ assert(r.fence[0]==10 && r.pending==0);
+ /* Crossing three segments retires both intermediates after the draw. */
+ Ring q={400,0,{0,0,0,0},1,0};
+ epoch=2; ring_enter(&q,90,210);
+ assert(q.fence[0]==0 && q.fence[1]==0 && q.pending==3);
+ epoch=3; ring_enter(&q,210,220);
+ assert(q.fence[0]==12 && q.fence[1]==12 && q.pending==0);
+ puts("ring waits: five wait and two spanning-allocation scenarios passed");
 }
 '''
 

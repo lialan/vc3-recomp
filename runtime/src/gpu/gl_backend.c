@@ -1828,19 +1828,20 @@ typedef struct {
     uint8_t *mem;                /* persistent mapping, or NULL */
     int seg;                     /* the segment being written */
     GLsync fence[RING_SEGS];
+    unsigned pending;            /* crossed segments used by the upcoming draw */
 } Ring;
 /* Sized so a segment comes round again long after the GPU is done with it:
  * at 16 and 4 MB, E.S. mode (more GPU work queued) had the GL thread
  * waiting on the rings' fences a quarter of each second on the Quest. */
-static Ring s_vring = { 0, GL_ARRAY_BUFFER, 64 << 20, 0, NULL, 0, { 0 } };
-static Ring s_iring = { 0, GL_ELEMENT_ARRAY_BUFFER, 32 << 20, 0, NULL, 0, { 0 } };
+static Ring s_vring = { 0, GL_ARRAY_BUFFER, 64 << 20, 0, NULL, 0, { 0 }, 0 };
+static Ring s_iring = { 0, GL_ELEMENT_ARRAY_BUFFER, 32 << 20, 0, NULL, 0, { 0 }, 0 };
 /* The vertex programs' constants (the VshConst block, 192 vec4): a copy
  * streamed in whenever they change and bound as a range at VC_BINDING for
  * every program at once -- where each program had its 192 uniforms sent per
  * draw that changed them, and again on every switch of program. Ranges
  * start at the driver's uniform-buffer alignment. */
 #define VC_BYTES (192 * 16)
-static Ring s_cring = { 0, GL_UNIFORM_BUFFER, 32 << 20, 0, NULL, 0, { 0 } };
+static Ring s_cring = { 0, GL_UNIFORM_BUFFER, 32 << 20, 0, NULL, 0, { 0 }, 0 };
 static GLint s_ubo_align = 256;
 static uint32_t s_vc_gen_bound;         /* the constants' change count bound */
 
@@ -1893,12 +1894,29 @@ static void ring_enter(Ring *r, GLsizeiptr from, GLsizeiptr to)
     GLsizeiptr seg = r->size / RING_SEGS;
     int sg, s0 = (int)(from / seg), s1 = (int)((to - 1) / seg);
 
+    /* A previous allocation may span several segments. Its consuming draw
+     * was submitted after ring_map returned, so only now can those segments
+     * receive fences covering that draw. */
+    for (sg = 0; sg < RING_SEGS; sg++) {
+        if (!(r->pending & (1u << sg)))
+            continue;
+        if (r->fence[sg])
+            glDeleteSync(r->fence[sg]);
+        r->fence[sg] = glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
+    }
+    r->pending = 0;
     for (sg = s0; sg <= s1; sg++) {
         if (sg == r->seg)
             continue;
-        if (r->fence[r->seg])
-            glDeleteSync(r->fence[r->seg]);
-        r->fence[r->seg] = glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
+        if (sg == s0) {
+            if (r->fence[r->seg])
+                glDeleteSync(r->fence[r->seg]);
+            r->fence[r->seg] = glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
+        } else {
+            /* This segment contains part of THIS allocation; its last use
+             * is the draw that has not been submitted yet. */
+            r->pending |= 1u << r->seg;
+        }
         r->seg = sg;
         if (r->fence[sg]) {
             struct timespec a_, b_;
