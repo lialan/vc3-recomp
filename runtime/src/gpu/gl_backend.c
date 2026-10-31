@@ -2168,6 +2168,11 @@ typedef struct {
      * the render target the skipped copies read. */
     uint32_t last_sampled, first_drawn;
     int not_copy, skipping;
+    /* The effect target's source (fx_low): drawn at the effect scale while
+     * only effect-target runs sample it. The frames it was last sampled by
+     * one and by anything else; frames in a row it qualified. */
+    int fxlow, sc_stale;
+    uint32_t fx_samp, other_samp, fxlow_run;
     uint32_t copy_src;
     /* Depth discard (z_*): this frame's first depth/stencil access (0 none,
      * 1 a clear, 2 a draw), left for another surface this frame, came back
@@ -2192,6 +2197,7 @@ static struct {
     GLuint save_fbo;
     GLsizei save_pw, save_ph, save_cw;
     uint32_t n_this, n_prev, runs;   /* qualifying batches this frame, the last */
+    uint64_t t_begin, t_small, t_resolve, t_draws;   /* ns this second (VC3_GL_EFFECT_LOG) */
     /* the render target the run samples, reduced as L is, once a run */
     GLuint small_fbo, small_tex;
     GLsizei small_w, small_h;
@@ -2680,6 +2686,17 @@ static int msaa_samples(void)
     return n;
 }
 
+static int fx_scale(void);
+
+/* The scale a surface is drawn at: the frame's, divided by the effect
+ * scale for an effect target's source (fx_low). */
+static void surf_want(const Surf *f, float *sx, float *sy)
+{
+    int sc = f->fxlow ? fx_scale() : 1;
+    *sx = s_sx / (float)sc;
+    *sy = s_sy / (float)sc;
+}
+
 static void surf_alloc(Surf *f, GLsizei w, GLsizei h)
 {
     GLsizei pw, ph;
@@ -2691,8 +2708,8 @@ static void surf_alloc(Surf *f, GLsizei w, GLsizei h)
     }
     f->w = w;
     f->h = h;
-    f->sx = s_sx;
-    f->sy = s_sy;
+    f->sc_stale = 0;
+    surf_want(f, &f->sx, &f->sy);
     f->wide = surf_widens(w, h);
     pw = (GLsizei)((float)w * f->sx + 0.5f);
     ph = (GLsizei)((float)h * f->sy + 0.5f);
@@ -2918,7 +2935,13 @@ static Surf *surf_bind(const Nv2aSurface *s)
         memset(f, 0, sizeof *f);
         f->va = s->color_va;
     }
-    if (!f->fbo || w > f->w || h > f->h || f->sx != s_sx || f->sy != s_sy
+    {
+        float wsx, wsy;
+        surf_want(f, &wsx, &wsy);
+        if (f->sx != wsx || f->sy != wsy)
+            f->sc_stale = 1;            /* the frame's scale, or fx_low, changed */
+    }
+    if (!f->fbo || w > f->w || h > f->h || f->sc_stale
         || f->wide != surf_widens(w > f->w ? w : f->w, h > f->h ? h : f->h)
         || f->st != surf_stereo(w > f->w ? w : f->w, h > f->h ? h : f->h))
         surf_alloc(f, w > f->w ? w : f->w, h > f->h ? h : f->h);
@@ -3793,6 +3816,10 @@ static int tex_bind(const Nv2aTexture *t, float *sw, float *sh)
             }
         }
         /* drawing into the effect target: the render target reduced alike */
+        if (s_fx.draw && rt != s_fx.s)
+            rt->fx_samp = s_frame;
+        else
+            rt->other_samp = s_frame;
         bound = s_fx.draw && rt != s_fx.s ? fx_small(rt) : rt->color;
         glBindTexture(GL_TEXTURE_2D, bound);
         if (rt->st && s_unit < 4)
@@ -5039,7 +5066,13 @@ static void gl_draw(const Nv2aSurface *s, const Nv2aBatch *b)
     if (!gl_ready())
         return;
     fx_pre(s, b);
-    gl_draw_inner(s, b);
+    if (s_fx.draw) {
+        uint64_t t0 = tm_now();
+        gl_draw_inner(s, b);
+        s_fx.t_draws += tm_now() - t0;
+    } else {
+        gl_draw_inner(s, b);
+    }
     fx_post();
 }
 
@@ -6107,6 +6140,7 @@ static int fx_qualifies(const Surf *f, const Nv2aBatch *b)
 
 static void fx_begin(Surf *f)
 {
+    uint64_t t0 = tm_now();
     int sc = fx_scale();
     GLsizei w = (f->pw + sc - 1) / sc, h = (f->ph + sc - 1) / sc;
     static int logged;
@@ -6154,6 +6188,7 @@ static void fx_begin(Surf *f)
     s_fx.on = 1;
     s_fx.s = f;
     s_fx.runs++;
+    s_fx.t_begin += tm_now() - t0;
     GLCK("effect target: begin", NULL, f->va);
 }
 
@@ -6166,8 +6201,12 @@ static GLuint fx_small(const Surf *rt)
     int sc = fx_scale();
     GLsizei w = (rt->pw * (rt->st ? 2 : 1) + sc - 1) / sc, h = (rt->ph + sc - 1) / sc;
     GLint rd = 0, dr = 0, tex = 0;
+    uint64_t t0;
+    if (rt->fxlow)                      /* drawn at the effect scale already */
+        return rt->color;
     if (s_fx.small_run == s_fx.runs && s_fx.small_va == rt->va && s_fx.small_tex)
         return s_fx.small_tex;
+    t0 = tm_now();
     glGetIntegerv(GL_TEXTURE_BINDING_2D, &tex);
     if (!s_fx.small_tex || s_fx.small_w != w || s_fx.small_h != h) {
         if (!s_fx.small_tex) {
@@ -6196,6 +6235,7 @@ static GLuint fx_small(const Surf *rt)
     glBindTexture(GL_TEXTURE_2D, (GLuint)tex);
     s_fx.small_run = s_fx.runs;
     s_fx.small_va = rt->va;
+    s_fx.t_small += tm_now() - t0;
     return s_fx.small_tex;
 }
 
@@ -6205,6 +6245,7 @@ static void fx_resolve(void)
     static GLuint prog, vao;
     static GLint u_img, u_org, u_size;
     Surf *f = s_fx.s;
+    uint64_t t0 = tm_now();
 
     s_fx.on = 0;
     if (!f || !f->fbo)
@@ -6242,6 +6283,7 @@ static void fx_resolve(void)
     glViewport(0, 0, f->pw, f->ph);
     s_rs_valid = 0;
     f->dirty = 1;
+    s_fx.t_resolve += tm_now() - t0;
     GLCK("effect target: resolve", NULL, f->va);
 }
 
@@ -6712,15 +6754,60 @@ static void scale_pick(int on)
     s_sx = s_sy = (float)vc3_scale_get();
 }
 
+/* The effect target's source at the effect scale (fx_low). VC3 copies its
+ * scene into 80C28000 three times an E.S. frame, full-screen, and in E.S.
+ * nothing samples 80C28000 but the effect-target run -- which wants it
+ * reduced (fx_small). So a stereo render target that, two frames in a row,
+ * only effect-target runs sampled is drawn at the effect scale itself: what
+ * goes into it (the copies) at a sixteenth of the pixels at 1/4, and no
+ * reduction. The first frame anything else samples it, it goes back to
+ * full size (that sampler reads the reduced picture, the right picture,
+ * once). VC3_GL_FX_LOW=0: never. */
+static void fx_low_frame(void)
+{
+    static int on = -1;
+    int i;
+    if (on < 0)
+        on = !(genv("GL_FX_LOW") && genv("GL_FX_LOW")[0] == '0');
+    for (i = 0; i < s_nsurfs; i++) {
+        Surf *f = &s_surfs[i];
+        int only_fx = on && f->st && fx_scale() > 1 && f->fx_samp == s_frame
+                      && f->other_samp != s_frame;
+        f->fxlow_run = only_fx ? f->fxlow_run + 1 : 0;
+        if (!f->fxlow && f->fxlow_run >= 2) {
+            f->fxlow = 1;
+            if (genv("GL_EFFECT_LOG"))
+                fprintf(stderr, "[FX] %08X drawn at 1/%d: only the effect target samples it\n",
+                        f->va, fx_scale());
+        } else if (f->fxlow && f->other_samp == s_frame) {
+            f->fxlow = 0;
+            if (genv("GL_EFFECT_LOG"))
+                fprintf(stderr, "[FX] %08X back to full size\n", f->va);
+        }
+    }
+}
+
 static void gl_flip(void)
 {
     if (s_fx.on)                    /* the effect target's run ends with the frame */
         fx_resolve();
-    if (genv("GL_EFFECT_LOG") && s_fx.n_this)   /* VC3_GL_EFFECT_LOG=1 */
-        fprintf(stderr, "[FX] frame %u: %u qualifying batches, %u runs so far\n", s_frame,
-                s_fx.n_this, s_fx.runs);
+    if (genv("GL_EFFECT_LOG")) {                 /* VC3_GL_EFFECT_LOG=1 */
+        static uint32_t fr0, n;
+        n += s_fx.n_this;
+        if (s_frame - fr0 >= 60) {
+            if (n)
+                fprintf(stderr, "[FX] %u frames: %u qualifying batches, %u runs so far; CPU ms:"
+                        " begin %.1f, reduce %.1f, draws %.1f, resolve %.1f\n", s_frame - fr0, n,
+                        s_fx.runs, s_fx.t_begin / 1e6, s_fx.t_small / 1e6, s_fx.t_draws / 1e6,
+                        s_fx.t_resolve / 1e6);
+            fr0 = s_frame;
+            n = 0;
+            s_fx.t_begin = s_fx.t_small = s_fx.t_draws = s_fx.t_resolve = 0;
+        }
+    }
     s_fx.n_prev = s_fx.n_this;
     s_fx.n_this = 0;
+    fx_low_frame();
     int i;
 
     if (gl_ready()) {
