@@ -424,7 +424,7 @@ static int has_ext(const char *name)
 
 typedef struct {
     GLint dfbo, prog, vao, vp[4], cwb, unpack;
-    GLboolean blend, scissor, cull, cd0, cd1, dither, cm[4];
+    GLboolean blend, scissor, cull, cd0, cd1, cd2, dither, cm[4];
 } Saved;
 static void save_raster(Saved *s);
 static void restore_raster(const Saved *s);
@@ -658,12 +658,14 @@ static void save_raster(Saved *s)
     s->scissor = glIsEnabled(GL_SCISSOR_TEST);
     s->cull = glIsEnabled(GL_CULL_FACE);
     s->dither = glIsEnabled(GL_DITHER);
-    s->cd0 = s->cd1 = 0;
+    s->cd0 = s->cd1 = s->cd2 = 0;
     if (s_clipext) {           /* our vertex shader writes no clip distance */
         s->cd0 = glIsEnabled(0x3000 /* CLIP_DISTANCE0 */);
         s->cd1 = glIsEnabled(0x3001);
+        s->cd2 = glIsEnabled(0x3002);
         if (s->cd0) glDisable(0x3000);
         if (s->cd1) glDisable(0x3001);
+        if (s->cd2) glDisable(0x3002);
     }
     if (s->blend) glDisable(GL_BLEND);
     if (s->scissor) glDisable(GL_SCISSOR_TEST);
@@ -685,6 +687,7 @@ static void restore_raster(const Saved *s)
     if (s->dither) glEnable(GL_DITHER);
     if (s->cd0) glEnable(0x3000);
     if (s->cd1) glEnable(0x3001);
+    if (s->cd2) glEnable(0x3002);
 }
 
 static void lvl_dims(const Nv2aTexture *t, uint32_t l, uint32_t *w, uint32_t *h)
