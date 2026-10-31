@@ -99,7 +99,7 @@ static const ChihiroProfile k_vc3 = {
         .app_name = "Virtua Cop 3 VR",
         .panel_title = "Virtua Cop 3 - settings",
         .sdcard_dir = "/sdcard/VirtuaCop3",
-        .sight_height = { 0.0285f, 0.0385f, 0.0500f },
+        .sight_height = { 0.0285f, 0.0335f, 0.0400f },  /* quest_overlay.c's SIGHT_Y */
     },
     .hooks = {
         .launch_data = vc3_launch_data,
