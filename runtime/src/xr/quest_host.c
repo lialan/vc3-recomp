@@ -16,11 +16,12 @@
  *                          first (vc3_quest_gl_context).
  *
  * Frames: at each flip the back end blits the presented surface, as drawn
- * (any internal resolution, 16:9 or 4:3), into one of three shared
- * textures and fences it (vc3_quest_frame); the headset loop takes the
- * newest, waits on its fence on the GPU, and copies it into the quad
- * layer's swapchain. Nothing is read back to the CPU, and neither thread
- * ever waits for the other.
+ * (any internal resolution, 16:9 or 4:3), straight into an image of the
+ * game's swapchain and releases it (vc3_quest_frame, "direct"); the headset
+ * loop takes the newest frame and submits its layers, which show the image
+ * released last. Without the headset's overlay (and VC3_XR_DIRECT=0) the
+ * frame goes into one of three shared textures instead, fenced, and the
+ * loop copies it into the swapchain. Nothing is read back to the CPU.
  *
  * The gun is a handgun in the player's hand (quest_overlay.c, drawn in a
  * transparent layer over the screen), with iron sights, a red dot or a
@@ -143,6 +144,9 @@ typedef struct {
     GLuint hud;              /* the HUD picture (vr.hud_w x vr.hud_h) */
     GLsizei hud_w, hud_h;
     int has_hud;
+    int direct;              /* the picture is in the game's swapchain (dchain,
+                                w x h), not in tex */
+    XrSwapchain dchain;
 } Frame;
 
 static Frame s_frame[3];
@@ -195,10 +199,15 @@ static void pace_game_frame(void)
     }
 }
 
+static int direct_acquire(int w, int h, GLuint *fbo, XrSwapchain *chain);   /* below */
+static void direct_release(void);
+static pthread_mutex_t s_submit = PTHREAD_MUTEX_INITIALIZER;
+
 void vc3_quest_frame(GLuint fbo, int pw, int ph, int eyes, int lw, int lh, const void *vr_frame)
 {
     const Vc3VrFrame *vf = (const Vc3VrFrame *)vr_frame;
     static GLuint dst_fbo;
+    GLuint dfbo = 0;
     Frame *f = &s_frame[s_back];        /* this thread alone touches s_back */
     int t;
 
@@ -220,7 +229,17 @@ void vc3_quest_frame(GLuint fbo, int pw, int ph, int eyes, int lw, int lh, const
             glDeleteSync(rd);
         }
     }
-    if (!f->tex || f->w != pw || f->h != ph) {
+    f->direct = 0;
+    if (direct_acquire(pw, ph, &dfbo, &f->dchain)) {
+        /* straight into the swapchain image, upright (the surfaces hold the
+         * picture top row first, GL's bottom) */
+        glBindFramebuffer(GL_READ_FRAMEBUFFER, fbo);
+        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, dfbo);
+        glBlitFramebuffer(0, 0, pw, ph, 0, ph, pw, 0, GL_COLOR_BUFFER_BIT, GL_NEAREST);
+        f->direct = 1;
+        f->w = pw;
+        f->h = ph;
+    } else if (!f->tex || f->w != pw || f->h != ph) {
         if (f->tex)
             glDeleteTextures(1, &f->tex);
         glGenTextures(1, &f->tex);
@@ -237,9 +256,10 @@ void vc3_quest_frame(GLuint fbo, int pw, int ph, int eyes, int lw, int lh, const
     }
     glBindFramebuffer(GL_READ_FRAMEBUFFER, fbo);
     glBindFramebuffer(GL_DRAW_FRAMEBUFFER, dst_fbo);
-    glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, f->tex, 0);
-    glBlitFramebuffer(0, 0, pw, ph, 0, 0, pw, ph, GL_COLOR_BUFFER_BIT, GL_NEAREST);
-    {   /* VC3_QUEST_DUMP=first,count: those game frames (both eyes) as PPM
+    if (!f->direct) {
+        glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, f->tex, 0);
+        glBlitFramebuffer(0, 0, pw, ph, 0, 0, pw, ph, GL_COLOR_BUFFER_BIT, GL_NEAREST);
+        /* VC3_QUEST_DUMP=first,count: those game frames (both eyes) as PPM
          * files beside the game, to see frame-to-frame changes (stalls) */
         static long first = -2, count, n;
         if (first == -2) {
@@ -305,6 +325,14 @@ void vc3_quest_frame(GLuint fbo, int pw, int ph, int eyes, int lw, int lh, const
     glFlush();                          /* the fence must reach the GPU */
 
     pace_game_frame();
+    /* A direct frame's image is released with the frame published, while
+     * the loop is not between taking a frame and submitting its layers (it
+     * holds s_submit then): the layers always show the image of the frame
+     * whose pose they carry. */
+    if (f->direct) {
+        pthread_mutex_lock(&s_submit);
+        direct_release();
+    }
     pthread_mutex_lock(&s_lock);
     t = s_ready;
     s_ready = s_back;
@@ -312,6 +340,8 @@ void vc3_quest_frame(GLuint fbo, int pw, int ph, int eyes, int lw, int lh, const
     s_ready_seq++;
     s_frames_in++;
     pthread_mutex_unlock(&s_lock);
+    if (f->direct)
+        pthread_mutex_unlock(&s_submit);
 }
 
 /* After the host's copy out of f is queued: a fence the back end's GPU
@@ -344,7 +374,7 @@ static Frame *take_frame(int *is_new, int allow)
     }
     pthread_mutex_unlock(&s_lock);
     f = &s_frame[s_front];
-    if (!f->tex)
+    if (!f->tex && !f->direct)
         return NULL;
     /* (the read_done fence of the frame given up stays: the back end waits
      * on it before writing that frame again) */
@@ -798,6 +828,132 @@ static int chain_fit(uint32_t w, uint32_t h)
     return 1;
 }
 
+/* ── Direct frames: the back end's blit lands in the swapchain ───────────
+ * The game's swapchain for direct frames belongs to the back end's thread:
+ * it creates it (a new one when the frame's size changes), acquires an image
+ * at each flip, blits the presented surface into it and releases it as the
+ * frame is published (vc3_quest_frame) -- one full-size copy a frame instead
+ * of two (into a shared texture, then from it into the swapchain on this
+ * loop). Framebuffers are per context, so the back end has its own for the
+ * images. A swapchain replaced stays alive until the loop has submitted a
+ * frame from the new one (direct_retire_done), then the loop destroys it.
+ * Used when the session runs with the overlay (no aim dot to draw into the
+ * picture every display frame); VC3_XR_DIRECT=0 or VC3_QUEST_DUMP: never. */
+static struct {
+    XrSwapchain h;
+    uint32_t w, ht, n;
+    XrSwapchainImageOpenGLESKHR img[8];
+    GLuint fbo[8];
+} s_dc;
+static XrSwapchain s_dc_retired;        /* under s_lock */
+static int s_overlay_ok = -1;           /* -1 not yet tried (overlay_init) */
+
+static int direct_on(void)
+{
+    static int on = -1;
+    if (on < 0)
+        on = !(ch_env("XR_DIRECT") && *ch_env("XR_DIRECT") == '0') && !ch_env("QUEST_DUMP");
+    return on && s_running && s_sess != XR_NULL_HANDLE && s_overlay_ok > 0 && s_chain_fmt;
+}
+
+static int direct_fit(uint32_t w, uint32_t h)
+{
+    XrSwapchainCreateInfo ci = { XR_TYPE_SWAPCHAIN_CREATE_INFO };
+    XrSwapchain nc = XR_NULL_HANDLE;
+    uint32_t i, n = 0;
+    int busy;
+
+    if (s_dc.h && s_dc.w == w && s_dc.ht == h)
+        return 1;
+    pthread_mutex_lock(&s_lock);
+    busy = s_dc_retired != XR_NULL_HANDLE;
+    pthread_mutex_unlock(&s_lock);
+    if (busy)                           /* the one before last still shown */
+        return 0;
+    ci.usageFlags = XR_SWAPCHAIN_USAGE_COLOR_ATTACHMENT_BIT | XR_SWAPCHAIN_USAGE_TRANSFER_DST_BIT;
+    ci.format = s_chain_fmt;
+    ci.sampleCount = 1;
+    ci.width = w;
+    ci.height = h;
+    ci.faceCount = 1;
+    ci.arraySize = 1;
+    ci.mipCount = 1;
+    if (XR_FAILED(xrCreateSwapchain(s_sess, &ci, &nc)))
+        return 0;
+    if (XR_FAILED(xrEnumerateSwapchainImages(nc, 0, &n, NULL)) || n == 0) {
+        xrDestroySwapchain(nc);
+        return 0;
+    }
+    if (n > 8)
+        n = 8;
+    if (s_dc.h) {
+        glDeleteFramebuffers((GLsizei)s_dc.n, s_dc.fbo);
+        pthread_mutex_lock(&s_lock);
+        s_dc_retired = s_dc.h;
+        pthread_mutex_unlock(&s_lock);
+    }
+    s_dc.h = nc;
+    s_dc.n = n;
+    for (i = 0; i < n; i++)
+        s_dc.img[i].type = XR_TYPE_SWAPCHAIN_IMAGE_OPENGL_ES_KHR;
+    xrEnumerateSwapchainImages(nc, n, &s_dc.n, (XrSwapchainImageBaseHeader *)s_dc.img);
+    glGenFramebuffers((GLsizei)s_dc.n, s_dc.fbo);
+    for (i = 0; i < s_dc.n; i++) {
+        glBindFramebuffer(GL_FRAMEBUFFER, s_dc.fbo[i]);
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D,
+                               s_dc.img[i].image, 0);
+    }
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    if (s_srgb_control)                 /* the colours are sRGB already (see xr_init) */
+        glDisable(GL_FRAMEBUFFER_SRGB_EXT);
+    s_dc.w = w;
+    s_dc.ht = h;
+    fprintf(stderr, "[xr] screen %ux%u (direct)\n", w, h);
+    return 1;
+}
+
+/* The back end's thread: an image of the direct swapchain for a w x h
+ * frame, waited for, as a framebuffer; 0: copy the frame the old way. */
+static int direct_acquire(int w, int h, GLuint *fbo, XrSwapchain *chain)
+{
+    XrSwapchainImageAcquireInfo ai = { XR_TYPE_SWAPCHAIN_IMAGE_ACQUIRE_INFO };
+    XrSwapchainImageWaitInfo wi = { XR_TYPE_SWAPCHAIN_IMAGE_WAIT_INFO };
+    uint32_t idx = 0;
+
+    if (!direct_on() || !direct_fit((uint32_t)w, (uint32_t)h))
+        return 0;
+    if (XR_FAILED(xrAcquireSwapchainImage(s_dc.h, &ai, &idx)) || idx >= s_dc.n)
+        return 0;
+    wi.timeout = XR_INFINITE_DURATION;
+    if (XR_FAILED(xrWaitSwapchainImage(s_dc.h, &wi))) {
+        fprintf(stderr, "[xr] direct: waiting for the image failed\n");
+        return 0;
+    }
+    *fbo = s_dc.fbo[idx];
+    *chain = s_dc.h;
+    return 1;
+}
+
+static void direct_release(void)
+{
+    XrSwapchainImageReleaseInfo ri = { XR_TYPE_SWAPCHAIN_IMAGE_RELEASE_INFO };
+    xrReleaseSwapchainImage(s_dc.h, &ri);
+}
+
+/* The loop, after submitting a direct frame from chain: the swapchain it
+ * replaced is not shown any more. */
+static void direct_retire_done(XrSwapchain chain)
+{
+    XrSwapchain old;
+    pthread_mutex_lock(&s_lock);
+    old = s_dc_retired != chain ? s_dc_retired : XR_NULL_HANDLE;
+    if (old)
+        s_dc_retired = XR_NULL_HANDLE;
+    pthread_mutex_unlock(&s_lock);
+    if (old)
+        xrDestroySwapchain(old);
+}
+
 /* The display rate (the panel's Refresh, vr_refresh=): 120 by default --
  * the game's 60 frames shown exactly twice each, with the cadence lock in
  * xr_frame -- or 90 / 72 when asked; only rates the headset offers. */
@@ -1194,7 +1350,6 @@ typedef struct {
     GLuint fbo[8], depth;
 } Eye;
 static Eye s_eye[2];
-static int s_overlay_ok = -1;           /* -1 not yet tried */
 
 static int overlay_init(void)
 {
@@ -1963,7 +2118,8 @@ static int hud_layer(const Frame *f, XrCompositionLayerQuad *q, int copy)
 /* An immersive frame's two eyes as a projection layer: each half of the
  * frame as that eye's view, with the pose and field of view it was drawn
  * with (the compositor turns it to where the head is now). */
-static void world_views(const Frame *f, XrCompositionLayerProjectionView wv[2])
+static void world_views(const Frame *f, XrCompositionLayerProjectionView wv[2],
+                        XrSwapchain chain, uint32_t cw, uint32_t ch)
 {
     int e;
     for (e = 0; e < 2; e++) {
@@ -1974,10 +2130,71 @@ static void world_views(const Frame *f, XrCompositionLayerProjectionView wv[2])
         wv[e].fov.angleRight = f->vr.view.fov[e][1];
         wv[e].fov.angleUp = f->vr.view.fov[e][2];
         wv[e].fov.angleDown = f->vr.view.fov[e][3];
-        wv[e].subImage.swapchain = s_chain;
-        wv[e].subImage.imageRect.offset.x = (int32_t)((uint32_t)e * s_chain_w / 2);
-        wv[e].subImage.imageRect.extent.width = (int32_t)(s_chain_w / 2);
-        wv[e].subImage.imageRect.extent.height = (int32_t)s_chain_h;
+        wv[e].subImage.swapchain = chain;
+        wv[e].subImage.imageRect.offset.x = (int32_t)((uint32_t)e * cw / 2);
+        wv[e].subImage.imageRect.extent.width = (int32_t)(cw / 2);
+        wv[e].subImage.imageRect.extent.height = (int32_t)ch;
+    }
+}
+
+/* VC3_GPU_TIME=1: the GPU time of this loop's own drawing per display frame
+ * -- the copy into the swapchain (when not direct), the HUD panel's, the
+ * gun overlay -- logged once a second as [XRGPU] (the back end's passes are
+ * its [GPUTIME]; the compositor's are not the app's to time). */
+#ifndef GL_TIME_ELAPSED_EXT
+#define GL_TIME_ELAPSED_EXT 0x88BF
+#endif
+#define XRGT_RING 16
+static int s_xrgt_on = -1;
+static GLuint s_xrgt_q[XRGT_RING];
+static unsigned s_xrgt_head, s_xrgt_tail;
+static double s_xrgt_ms;
+static uint32_t s_xrgt_n;
+
+static void xrgt_begin(void)
+{
+    if (s_xrgt_on < 0) {
+        s_xrgt_on = ch_env("GPU_TIME") && *ch_env("GPU_TIME") == '1';
+        if (s_xrgt_on)
+            glGenQueries(XRGT_RING, s_xrgt_q);
+    }
+    if (s_xrgt_on && s_xrgt_head - s_xrgt_tail < XRGT_RING - 1)
+        glBeginQuery(GL_TIME_ELAPSED_EXT, s_xrgt_q[s_xrgt_head % XRGT_RING]);
+    else if (s_xrgt_on)
+        s_xrgt_on = 2;                  /* this frame not timed */
+}
+
+static void xrgt_end(void)
+{
+    static uint64_t t0;
+    uint64_t now;
+    if (s_xrgt_on <= 0)
+        return;
+    if (s_xrgt_on == 1) {
+        glEndQuery(GL_TIME_ELAPSED_EXT);
+        s_xrgt_head++;
+    }
+    s_xrgt_on = 1;
+    while (s_xrgt_tail != s_xrgt_head) {
+        GLuint avail = 0, ns = 0;
+        GLuint q = s_xrgt_q[s_xrgt_tail % XRGT_RING];
+        glGetQueryObjectuiv(q, GL_QUERY_RESULT_AVAILABLE, &avail);
+        if (!avail)
+            break;
+        glGetQueryObjectuiv(q, GL_QUERY_RESULT, &ns);
+        s_xrgt_ms += ns / 1e6;
+        s_xrgt_n++;
+        s_xrgt_tail++;
+    }
+    now = pace_now_us();
+    if (!t0)
+        t0 = now;
+    if (now - t0 >= 1000000 && s_xrgt_n) {
+        fprintf(stderr, "[XRGPU] %.2f ms per display frame over %u (swapchain copy, HUD, overlay)\n",
+                s_xrgt_ms / s_xrgt_n, s_xrgt_n);
+        s_xrgt_ms = 0;
+        s_xrgt_n = 0;
+        t0 = now;
     }
 }
 
@@ -2020,6 +2237,8 @@ static void xr_frame(void)
         if (locked && allow)
             xbox_VblankAlign(xbox_HostNowNs());
     }
+    pthread_mutex_lock(&s_submit);     /* to xrEndFrame: see vc3_quest_frame */
+    xrgt_begin();
     f = take_frame(&is_new, allow);
     if (s_pace > 0) {   /* how many headset frames each game frame showed for */
         static int shown, hist[5], xr_n;
@@ -2069,7 +2288,7 @@ static void xr_frame(void)
 
     ei.displayTime = fs.predictedDisplayTime;
     ei.environmentBlendMode = XR_ENVIRONMENT_BLEND_MODE_OPAQUE;
-    if (fs.shouldRender && f && chain_fit((uint32_t)f->w, (uint32_t)f->h)) {
+    if (fs.shouldRender && f && (f->direct || chain_fit((uint32_t)f->w, (uint32_t)f->h))) {
         XrSwapchainImageAcquireInfo ai = { XR_TYPE_SWAPCHAIN_IMAGE_ACQUIRE_INFO };
         XrSwapchainImageWaitInfo wti = { XR_TYPE_SWAPCHAIN_IMAGE_WAIT_INFO };
         XrSwapchainImageReleaseInfo ri = { XR_TYPE_SWAPCHAIN_IMAGE_RELEASE_INFO };
@@ -2087,16 +2306,22 @@ static void xr_frame(void)
         int copy;
         if (reblit < 0)
             reblit = ch_env("XR_REBLIT") && *ch_env("XR_REBLIT") == '1';
+        /* a direct frame is in its swapchain already: only its HUD is copied */
+        XrSwapchain chain = f->direct ? f->dchain : s_chain;
+        uint32_t cw = f->direct ? (uint32_t)f->w : s_chain_w;
+        uint32_t ch = f->direct ? (uint32_t)f->h : s_chain_h;
         copy = reblit || is_new || dot || drawn_chain != s_chain_gen || drawn_f != f;
 
         wti.timeout = XR_INFINITE_DURATION;
-        if (!copy
+        if (!copy || f->direct
             || (XR_SUCCEEDED(xrAcquireSwapchainImage(s_chain, &ai, &idx))
                 && XR_SUCCEEDED(xrWaitSwapchainImage(s_chain, &wti)))) {
             uint32_t e;
             float c[3], yq = s_anchor_yaw * 0.5f;
 
-            if (copy) {
+            if (f->direct) {
+                drawn_f = f;
+            } else if (copy) {
                 draw_frame(s_chain_fbo[idx], f, (GLsizei)s_chain_w, (GLsizei)s_chain_h, dot);
                 xrReleaseSwapchainImage(s_chain, &ri);
                 drawn_chain = s_chain_gen;
@@ -2104,7 +2329,7 @@ static void xr_frame(void)
             }
             if (f->vr.imm && f->eyes == 2) {
                 /* Immersive: the world in each eye, the HUD on its panel. */
-                world_views(f, wv);
+                world_views(f, wv, chain, cw, ch);
                 world.space = s_local;
                 world.viewCount = 2;
                 world.views = wv;
@@ -2129,10 +2354,10 @@ static void xr_frame(void)
                 q->space = s_local;            /* opaque: no blend flags */
                 q->eyeVisibility = f->eyes == 1 ? XR_EYE_VISIBILITY_BOTH
                                  : e == 0 ? XR_EYE_VISIBILITY_LEFT : XR_EYE_VISIBILITY_RIGHT;
-                q->subImage.swapchain = s_chain;
-                q->subImage.imageRect.offset.x = (int32_t)(e * s_chain_w / (uint32_t)f->eyes);
-                q->subImage.imageRect.extent.width = (int32_t)(s_chain_w / (uint32_t)f->eyes);
-                q->subImage.imageRect.extent.height = (int32_t)s_chain_h;
+                q->subImage.swapchain = chain;
+                q->subImage.imageRect.offset.x = (int32_t)(e * cw / (uint32_t)f->eyes);
+                q->subImage.imageRect.extent.width = (int32_t)(cw / (uint32_t)f->eyes);
+                q->subImage.imageRect.extent.height = (int32_t)ch;
                 q->pose.orientation.y = sinf(yq);
                 q->pose.orientation.w = cosf(yq);
                 q->pose.position.x = c[0];
@@ -2181,7 +2406,11 @@ static void xr_frame(void)
     }
     ei.layerCount = nl;
     ei.layers = layers;
+    xrgt_end();
     xrEndFrame(s_sess, &ei);
+    pthread_mutex_unlock(&s_submit);
+    if (f && f->direct)
+        direct_retire_done(f->dchain);
 }
 
 /* ── Without a headset: the SDL window ────────────────────────────────── */
