@@ -95,6 +95,13 @@ set(VC3_GEN_OPT "-O2" CACHE STRING "Optimisation level for the lifted C")
 set_source_files_properties(${RECOMP_GEN_SOURCES} PROPERTIES
     COMPILE_OPTIONS "${VC3_GEN_OPT};-Wno-everything")
 
+# The ring of recent indirect-call targets (and the call count) that the crash
+# reports print: three volatile stores per indirect call, so off unless asked.
+option(VC3_ICALL_TRACE "Record recent indirect calls for crash reports" OFF)
+if(VC3_ICALL_TRACE)
+    target_compile_definitions(vc3 PRIVATE RECOMP_ICALL_TRACE=1)
+endif()
+
 # Let the crash handler name the lifted function at a host PC (dladdr).
 if(APPLE)
     target_link_options(vc3 PRIVATE -Wl,-export_dynamic)
