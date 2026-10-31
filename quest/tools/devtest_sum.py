@@ -31,6 +31,7 @@ def summary(path):
     gobj = [float(g[0]) for g in nums(r'\[THREADS\].*guest main cpu \d+ obj (\d+)', lines)]
     ecpu = [float(g[0]) for g in nums(r'\[THREADS\].*nv2a exec cpu (\d+)', lines)]
     kick = [float(g[0]) for g in nums(r'\[THREADS\].*waited <= ([\d.]+) ms', lines)]
+    late = [tuple(float(x) for x in g) for g in nums(r'\[FRAMES\] (\d+) flips, (\d+) late \| on time: arrived ([\d.-]+) ms after the vblank, executed in ([\d.-]+) \| late: arrived ([\d.-]+), executed in ([\d.-]+)', lines)]
     intro_gpu = [g for g, d in gpu if d >= 600]
     combat = slice(-20, None)
 
@@ -43,13 +44,16 @@ def summary(path):
     return ('%-24s fps intro-low10 %.1f combat %.1f min %.1f | pace combat p50 %.1f p95 %.1f ms | '
             'shown 1x/2x/3x/4x %d/%d/%d/%d%% | GPU intro %.1f combat %.1f ms | walk %.0f ms/s | '
             'fence wait %.2f ms/s | game thread cpu %.0f blocked %.0f, executor cpu %.0f,'
-            ' kick-off wait <= %.0f ms/s' % (
+            ' kick-off wait <= %.0f ms/s | late flips %.0f/s: arrived %.1f ms after the vblank,'
+            ' executed in %.1f (on time: %.1f, %.1f)' % (
                 path.split('/')[-1], avg(intro_fps), avg(fps[combat]), min(fps[combat]) if fps else 0,
                 avg([a for a, b in pace[combat]]), avg([b for a, b in pace[combat]]),
                 100 * shown[0] / tot, 100 * shown[1] / tot, 100 * shown[2] / tot, 100 * shown[3] / tot,
                 avg(intro_gpu), avg([g for g, d in gpu[combat]]), avg(walk[combat]),
                 avg(fence), avg(gcpu[combat]), avg(gobj[combat]), avg(ecpu[combat]),
-                avg(kick[combat])))
+                avg(kick[combat]), avg([x[1] for x in late[combat]]),
+                avg([x[4] for x in late[combat] if x[1]]), avg([x[5] for x in late[combat] if x[1]]),
+                avg([x[2] for x in late[combat]]), avg([x[3] for x in late[combat]])))
 
 
 for p in sys.argv[1:]:

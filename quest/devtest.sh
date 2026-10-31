@@ -42,7 +42,8 @@ done
 cleanup() {
     $A shell am force-stop $PKG >/dev/null 2>&1
     $A shell rm -rf $HEADSET_DIR/env.txt $HEADSET_DIR/testcfg $HEADSET_DIR/dump >/dev/null 2>&1
-    echo "headset left for play: env.txt, testcfg and dump removed, game stopped"
+    $A shell am broadcast -a com.oculus.vrpowermanager.automation_disable >/dev/null 2>&1
+    echo "headset left for play: env.txt, testcfg and dump removed, game stopped, proximity override off"
 }
 
 $A get-state >/dev/null 2>&1 || { echo "headset $SERIAL not attached"; exit 1; }
@@ -55,6 +56,8 @@ fi
 trap cleanup EXIT
 trap 'exit 130' INT TERM HUP
 
+# As if worn: unworn, the headset may stop the display or the audio.
+$A shell am broadcast -a com.oculus.vrpowermanager.prox_close >/dev/null 2>&1
 echo "installing $APK"
 $A install -r "$APK" | tail -1
 $A shell appops set --uid $PKG MANAGE_EXTERNAL_STORAGE allow
@@ -94,6 +97,11 @@ SCEN=(
   "immersive-2x-texcompare-frag|stereo=1;vr_screen=immersive;vr_detail=2|CHIHIRO_TEX_GPU=frag CHIHIRO_TEX_COMPARE=1"
   "immersive-2x-texcompare-s3tc|stereo=1;vr_screen=immersive;vr_detail=2|CHIHIRO_TEX_S3TC=1 CHIHIRO_TEX_COMPARE=1"
   # the write-back flush answered by the walker alone, as before (the A/B)
+  # the guest's long kernel waits against the vblanks ([WAIT] lines)
+  "immersive-2x-waits|stereo=1;vr_screen=immersive;vr_detail=2|RECOMP_WAIT_TRACE=2 RECOMP_WAIT_TRACE_AFTER=60"
+  # the guest vblank not aligned to the headset's frames (the A/B for it)
+  "immersive-2x-nocadence|stereo=1;vr_screen=immersive;vr_detail=2|VC3_XR_CADENCE=0"
+  "immersive-2x-slew20us|stereo=1;vr_screen=immersive;vr_detail=2|RECOMP_VBLANK_SLEW_NS=20000"
   "immersive-2x-noflushack|stereo=1;vr_screen=immersive;vr_detail=2|RECOMP_FLUSH_ACK_US=0"
   # sound on (the others are muted): the audio device's stall and reopen
   # lines ([APU] stopped consuming, [SDL2] reopening) show if it happens
@@ -110,7 +118,7 @@ for s in "${SCEN[@]}"; do
     { echo "scale=1"; echo "aspect=16:9"; echo "$settings" | tr ';' '\n'; } > "$tmp/settings"
     {
         echo ${P}_SOUND=0; echo ${P}_FPS_LOG=1; echo ${P}_PACE_LOG=1; echo ${P}_GPU_TIME=1
-        echo RECOMP_PROF=1; echo ${P}_FENCE_LOG=1; echo RECOMP_THREAD_LOG=1; echo ${P}_CONFIG_DIR=$HEADSET_DIR/testcfg
+        echo RECOMP_PROF=1; echo ${P}_FENCE_LOG=1; echo RECOMP_THREAD_LOG=1; echo RECOMP_FRAME_TRACE=1; echo ${P}_CONFIG_DIR=$HEADSET_DIR/testcfg
         echo ${P}_AUTOKEYS=$KEYS; echo ${P}_AUTOAIM=0.5,0.5
         # the stand-in gun: the overlay drawn as in real play (no one holds
         # the controllers in a scripted run)
