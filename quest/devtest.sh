@@ -90,6 +90,8 @@ SCEN=(
   "immersive-2x-texcompare-s3tc|stereo=1;vr_screen=immersive;vr_detail=2|VC3_TEX_S3TC=1 VC3_TEX_COMPARE=1"
   # the write-back flush answered by the walker alone, as before (the A/B)
   "immersive-2x-noflushack|stereo=1;vr_screen=immersive;vr_detail=2|RECOMP_FLUSH_ACK_US=0"
+  "immersive-2x-glerr|stereo=1;vr_screen=immersive;vr_detail=2|VC3_GL_ERRCHECK=10"
+  "screen-stereo-glerr|stereo=1;vr_screen=screen|VC3_GL_ERRCHECK=10"
 )
 KEYS=30:coin,31:start,40:fire,44:fire,46:fire,48:fire,50:fire,55:fire,60:fire,65:fire,70:fire,75:fire
 LOGS=()

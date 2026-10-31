@@ -150,6 +150,9 @@ typedef struct {
     /* the fixed-function state last sent to this program (raw_uniforms) */
     Nv2aFixedState ff_last;
     int ff_valid;
+    /* u_ascale as last sent (16 slots: past the uniform cache's size) */
+    GLfloat ascale_last[16][4];
+    int ascale_valid;
     /* every uniform's last value sent from the draw path (cu*): a value
      * sent again is not sent -- each one is driver work at the draw */
     struct UCache *uc;
@@ -176,6 +179,7 @@ struct UCache {
 
 static void uc_reset(Prog *p)
 {
+    p->ascale_valid = 0;
     if (p->uc)
         memset(p->uc, 0xFF, sizeof *p->uc);    /* loc -1 everywhere: empty */
 }
@@ -246,6 +250,74 @@ static uint32_t s_frame = 1;
 /* What the draw path last bound; anything else that binds a program or a
  * vertex array (the frame interpolator) zeroes these. */
 static GLuint s_cur_prog, s_cur_vao;
+
+/* VC3_GL_ERRCHECK=<n>: glGetError at every checkpoint (GLCK) of the draw,
+ * clear and flip paths; the first n errors of each site logged with the
+ * batch (cpu / raw ff / raw vp), its surface, the bound VAO and program,
+ * and once a second the count per site. Apple's GL 4.1 core has neither
+ * KHR_debug nor ARB_debug_output, so this is the way to find a call GL
+ * refused there; on GLES the KHR_debug callback is installed as well
+ * (gl_ready). An error is charged to the first checkpoint after it. */
+static int s_ek = -1;
+#define EK_SITES 64
+static struct { const char *site; uint32_t n, sec, logged; GLenum last; } s_eks[EK_SITES];
+static int s_ekn;
+
+static void glck(const char *site, const Nv2aBatch *b, uint32_t va)
+{
+    GLenum e;
+    if (s_ek < 0) {
+        s_ek = genv("VC3_GL_ERRCHECK") ? atoi(genv("VC3_GL_ERRCHECK")) : 0;
+        if (s_ek < 0)
+            s_ek = 0;
+        if (s_ek)
+            fprintf(stderr, "[GLERR] checking glGetError at every checkpoint (VC3_GL_ERRCHECK=%d)\n", s_ek);
+    }
+    if (!s_ek)
+        return;
+    while ((e = glGetError()) != GL_NO_ERROR) {
+        int k;
+        for (k = 0; k < s_ekn && s_eks[k].site != site; k++)
+            ;
+        if (k == s_ekn) {
+            if (s_ekn == EK_SITES)
+                k = EK_SITES - 1;
+            else
+                s_eks[s_ekn++].site = site;
+        }
+        s_eks[k].n++;
+        s_eks[k].sec++;
+        s_eks[k].last = e;
+        if (s_eks[k].logged < (uint32_t)s_ek) {
+            GLint vao = 0, prog = 0;
+            s_eks[k].logged++;
+            glGetIntegerv(GL_VERTEX_ARRAY_BINDING, &vao);
+            glGetIntegerv(GL_CURRENT_PROGRAM, &prog);
+            fprintf(stderr, "[GLERR] %s: 0x%04X | %s batch, surface %08X, vao %d, program %d,"
+                    " frame %u\n", site, e,
+                    !b ? "no" : !b->raw ? "cpu" : b->raw->kind == NV2A_RAW_PROGRAM ? "raw vp"
+                    : "raw ff", va, vao, prog, s_frame);
+        }
+    }
+}
+#define GLCK(site, b, va) do { if (s_ek) glck((site), (b), (va)); } while (0)
+
+static void glck_second(void)
+{
+    static uint32_t fr;
+    int k, any = 0;
+    if (s_ek <= 0 || ++fr % 60)
+        return;
+    for (k = 0; k < s_ekn; k++)
+        if (s_eks[k].sec) {
+            if (!any++)
+                fprintf(stderr, "[GLERR] second %u:", fr / 60);
+            fprintf(stderr, " %s %u (0x%04X);", s_eks[k].site, s_eks[k].sec, s_eks[k].last);
+            s_eks[k].sec = 0;
+        }
+    if (any)
+        fputc(10, stderr);
+}
 
 /* VC3_GL_FTRACE=<flag file>: once the file exists, log every clear and batch
  * of the next frame (0 idle, 1 tracing, 2 done). */
@@ -1217,6 +1289,22 @@ static GLsizeiptr ring_put(Ring *r, const void *data, GLsizeiptr bytes)
 
 /* Lazily, on the thread the executor calls from; every entry point makes the
  * context current in case that is ever a different thread. */
+#if defined(VC3_GLES)
+/* KHR_debug (VC3_GL_ERRCHECK): errors and the driver's warnings, the first
+ * 200 of them. */
+static void gl_debug_cb(GLenum source, GLenum type, GLuint id, GLenum severity,
+                        GLsizei len, const char *msg, const void *user)
+{
+    static int n;
+    (void)source; (void)len; (void)user;
+    if (type == 0x8251 /* OTHER */ && severity == 0x826B /* NOTIFICATION */)
+        return;
+    if (n++ < 200)
+        fprintf(stderr, "[GLERR] KHR_debug type 0x%04X id %u severity 0x%04X frame %u: %s\n",
+                type, id, severity, s_frame, msg);
+}
+#endif
+
 static int gl_ready(void)
 {
     if (s_failed)
@@ -1257,6 +1345,21 @@ static int gl_ready(void)
             fprintf(stderr, "[GL] clip distances %s, depth clamp %s\n",
                     s_has_clip ? "yes" : "no (GL's near clip instead)",
                     s_has_dclamp ? "yes" : "no");
+        }
+        /* VC3_GL_ERRCHECK: the driver's own account of what it refused,
+         * besides the checkpoints (GLCK) */
+        if (genv("VC3_GL_ERRCHECK") && atoi(genv("VC3_GL_ERRCHECK")) > 0) {
+            typedef void (*DebugCb)(GLenum, GLenum, GLuint, GLenum, GLsizei, const char *,
+                                    const void *);
+            typedef void (*DebugFn)(DebugCb, const void *);
+            DebugFn fn = (DebugFn)eglGetProcAddress("glDebugMessageCallbackKHR");
+            if (fn) {
+                glEnable(0x92E0);              /* GL_DEBUG_OUTPUT_KHR */
+                fn(gl_debug_cb, NULL);
+                fprintf(stderr, "[GLERR] KHR_debug callback installed\n");
+            } else {
+                fprintf(stderr, "[GLERR] no KHR_debug; checkpoints only\n");
+            }
         }
 #else
         CGLPixelFormatAttribute attrs[] = {
@@ -3179,7 +3282,10 @@ static void gl_clear(const Nv2aSurface *s, const Nv2aRenderState *rs,
     GLbitfield bits = 0;
 
     (void)rs;
-    if (!gl_ready() || !(f = surf_bind(s)))
+    if (!gl_ready())
+        return;
+    GLCK("before clear (elsewhere)", NULL, s->color_va);
+    if (!(f = surf_bind(s)))
         return;
     if (lazy_skip(f, NULL))
         return;
@@ -3207,7 +3313,9 @@ static void gl_clear(const Nv2aSurface *s, const Nv2aRenderState *rs,
                 "zeta %08X\n", f->va, flags, argb, zstencil, rs->zeta_va);
     if (bits)
         glClear(bits);
+    GLCK("clear: glClear", NULL, f->va);
     z_clear(f, bits);
+    GLCK("clear: z_clear", NULL, f->va);
     f->dirty = 1;
     f->memq_valid = 0;
     f->cpu_owned = 0;
@@ -3482,6 +3590,42 @@ static int raw_attribs(const Nv2aRawGeometry *g, const int *slot, int nslot, VaC
         grp[k].off = total;
         total += ((GLsizeiptr)grp[k].bytes + 15) & ~(GLsizeiptr)15;
     }
+    /* The attribute uniforms (their layout's): set for this program on
+     * either path below. They are the program's own -- when the layout
+     * was kept but the program changed (the plain and combiner variants,
+     * another vertex program), the kept path used to leave the new one's
+     * at its defaults: u_ascale 0, every attribute 0, nothing drawn, no GL
+     * error. VC3's Mission Select and attract screens went black so. */
+    for (r = 0; r < nslot; r++) {
+        const Nv2aAttrib *a = slot[r] >= 0 ? &g->attr[slot[r]] : NULL;
+        int c;
+        for (c = 0; c < 4; c++)
+            scale[r][c] = 1.0f;
+        if (gi[r] < 0)
+            continue;
+        switch (a->type) {
+#if defined(VC3_GLES)
+        case 0: bgra |= 1 << r; break;
+#endif
+        case 1:
+            for (c = 0; c < (int)a->size; c++)
+                scale[r][c] = 1.0f / 32767.0f;
+            break;
+        case 6: packed |= 1 << r; break;
+        default: break;
+        }
+    }
+    if (nslot > 8) {                        /* past the uniform cache's size */
+        if (!U->ascale_valid || memcmp(U->ascale_last, scale, (size_t)nslot * 16)) {
+            glUniform4fv(U->ascale, nslot, &scale[0][0]);
+            memcpy(U->ascale_last, scale, (size_t)nslot * 16);
+            U->ascale_valid = 1;
+        }
+    } else {
+        cu4fv(U->ascale, nslot, &scale[0][0]);
+    }
+    cu1i(U->packed, packed);
+    cu1i(U->bgra, bgra);
     s_basevertex = 0;
     if (ngrp == 1 && grp[0].stride) {
         /* one stream: the same layout as the pointers? */
@@ -3542,10 +3686,7 @@ static int raw_attribs(const Nv2aRawGeometry *g, const int *slot, int nslot, VaC
     for (r = 0; r < nslot; r++) {
         const Nv2aAttrib *a = slot[r] >= 0 ? &g->attr[slot[r]] : NULL;
         GLuint loc = (GLuint)r;
-        int c;
 
-        for (c = 0; c < 4; c++)
-            scale[r][c] = 1.0f;
         if (gi[r] < 0) {
             static const float none[4] = { 0.0f, 0.0f, 0.0f, 1.0f };
             glDisableVertexAttribArray(loc);
@@ -3561,32 +3702,21 @@ static int raw_attribs(const Nv2aRawGeometry *g, const int *slot, int nslot, VaC
 #if defined(VC3_GLES)
             case 0:
                 glVertexAttribPointer(loc, 4, GL_UNSIGNED_BYTE, GL_TRUE, stride, at);
-                bgra |= 1 << r;
                 break;
 #else
             case 0:  glVertexAttribPointer(loc, GL_BGRA, GL_UNSIGNED_BYTE, GL_TRUE, stride, at); break;
 #endif
             case 4:  glVertexAttribPointer(loc, n, GL_UNSIGNED_BYTE, GL_TRUE, stride, at); break;
             case 1:
-                for (c = 0; c < n; c++)
-                    scale[r][c] = 1.0f / 32767.0f;
-                /* fall through */
             case 5:  glVertexAttribPointer(loc, n, GL_SHORT, GL_FALSE, stride, at); break;
             case 6:
                 glVertexAttribPointer(loc, 2, GL_UNSIGNED_SHORT, GL_FALSE, stride, at);
-                packed |= 1 << r;
                 break;
             default: glVertexAttribPointer(loc, n, GL_FLOAT, GL_FALSE, stride, at); break;
             }
             glEnableVertexAttribArray(loc);
         }
     }
-    if (nslot > 8)                          /* past the uniform cache's size */
-        glUniform4fv(U->ascale, nslot, &scale[0][0]);
-    else
-        cu4fv(U->ascale, nslot, &scale[0][0]);
-    cu1i(U->packed, packed);
-    cu1i(U->bgra, bgra);
     if (ngrp == 1 && grp[0].stride && total) {
         s_va.base = grp[0].off;             /* the pointers' stream */
         s_va.valid = 1;
@@ -3796,6 +3926,7 @@ static void lazy_catch_up(Surf *rt)
         glColorMask(mask[0], mask[1], mask[2], mask[3]);
         if (sc)
             glEnable(GL_SCISSOR_TEST);
+        GLCK("lazy_catch_up blit", NULL, rt->va);
     }
 }
 
@@ -3977,8 +4108,12 @@ static void gl_draw(const Nv2aSurface *s, const Nv2aBatch *b)
                         : b->count / 3;
     GLsizeiptr ioff = 0;
 
-    if ((!raw && !b->count) || !gl_ready() || !(f = surf_bind(s)))
+    if ((!raw && !b->count) || !gl_ready())
         return;
+    GLCK("before draw (elsewhere)", b, s->color_va);
+    if (!(f = surf_bind(s)))
+        return;
+    GLCK("draw: surf_bind", b, f->va);
     if (lazy_skip(f, b))
         return;
     if (raw && raw->kind == NV2A_RAW_PROGRAM)
@@ -3999,9 +4134,12 @@ static void gl_draw(const Nv2aSurface *s, const Nv2aBatch *b)
             s_cur_vao = vao;
         }
     }
+    GLCK("draw: program / VAO", b, f->va);
     TM(0);
     apply_state(b->state);
+    GLCK("draw: apply_state", b, f->va);
     z_use(f, b->state);
+    GLCK("draw: z_use", b, f->va);
     TM(1);
     cu2f(U->surf, (float)f->w, (float)f->h);
     {
@@ -4011,9 +4149,11 @@ static void gl_draw(const Nv2aSurface *s, const Nv2aBatch *b)
         if (s_ftr == 1 && f->wide)
             fprintf(stderr, "[GLTR]   16:9 x scale %.3f offset %+.3f\n", xs, xo);
     }
+    GLCK("draw: surface uniforms", b, f->va);
     active_tex(0);
     if (b->texture)
         textured = tex_bind_for(f, b->texture, &tw, &th);
+    GLCK("draw: stage-0 texture", b, f->va);
     TM(2);
     if (s_st.on) {
         if (!b->texture && (b->stage[1] || b->stage[2] || b->stage[3]))
@@ -4112,6 +4252,7 @@ static void gl_draw(const Nv2aSurface *s, const Nv2aBatch *b)
         glBindTexture(GL_TEXTURE_2D, s_white);
     cu1i(U->textured, textured);
     cu2f(U->texsize, tw, th);
+    GLCK("draw: texture uniforms", b, f->va);
     if (!raw && b->rc && b->ext && s_use_rc && s_st.on && s_st.rc_logged < 4) {
         const Nv2aVertexEx *e = &b->ext[0];
         s_st.rc_logged++;
@@ -4167,6 +4308,7 @@ static void gl_draw(const Nv2aSurface *s, const Nv2aBatch *b)
             rt_pass = 1;
         if (has_ext && (s_use_rc || has_cube || rt_pass)) {
             bind_combiners(f, b);
+            GLCK("draw: bind_combiners", b, f->va);
             need_ext = 1;
         } else {
             int lmap = has_ext && lightmap_batch(b);
@@ -4193,12 +4335,15 @@ static void gl_draw(const Nv2aSurface *s, const Nv2aBatch *b)
                 active_tex(0);
             }
         }
+        GLCK("draw: lightmap / combiners off", b, f->va);
         if (raw) {
             TM(3);
             if (!raw_submit(raw, &ioff)) {
                 s_rst.declined++;
                 return;
             }
+            GLCK(raw->kind == NV2A_RAW_PROGRAM ? "draw: raw vp attributes + uniforms"
+                 : "draw: raw ff attributes + uniforms", b, f->va);
         } else {
             GLuint k;
             GLsizeiptr off;
@@ -4217,6 +4362,7 @@ static void gl_draw(const Nv2aSurface *s, const Nv2aBatch *b)
                                   (void *)(off + offsetof(Nv2aVertex, diffuse)));
             glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof(Nv2aVertex),
                                   (void *)(off + offsetof(Nv2aVertex, u)));
+            GLCK("draw: cpu vertices + attributes", b, f->va);
         }
     }
     if (raw) {
@@ -4253,6 +4399,7 @@ static void gl_draw(const Nv2aSurface *s, const Nv2aBatch *b)
         else
             glDrawArrays(GL_TRIANGLES, 0, (GLsizei)b->count);
         glEndQuery(GL_SAMPLES_PASSED);
+        GLCK("draw: zpass draw", b, f->va);
         glGetQueryObjectuiv(q, GL_QUERY_RESULT, &passed);
         *b->zpass_out += passed;
         s_st.zpass_batches++;
@@ -4323,9 +4470,11 @@ static void gl_draw(const Nv2aSurface *s, const Nv2aBatch *b)
         } else {
             cu2f(U->gw, 0.0f, 0.0f);
         }
+        GLCK("draw: eye / immersive uniforms", b, f->va);
         if (hud) {
             hud_bind(f, b->state);
             s_rs_valid = 0;                 /* the blend's alpha was changed */
+            GLCK("draw: hud_bind", b, f->va);
         }
         /* Stereo in one pass: one instanced draw, instance = eye, each in its
          * half of a double-wide viewport, the other half clipped -- one draw
@@ -4359,6 +4508,7 @@ static void gl_draw(const Nv2aSurface *s, const Nv2aBatch *b)
                                                   (void *)ioff, 2, s_basevertex);
             else
                 glDrawArraysInstanced(GL_TRIANGLES, 0, (GLsizei)b->count, 2);
+            GLCK(raw ? "draw: one-pass stereo (raw)" : "draw: one-pass stereo (cpu)", b, f->va);
             glViewport(0, 0, f->pw, f->ph);
         }
         /* Stereo: the same draw for each eye, in its half. */
@@ -4391,6 +4541,8 @@ static void gl_draw(const Nv2aSurface *s, const Nv2aBatch *b)
                                          GL_UNSIGNED_SHORT, (void *)ioff, s_basevertex);
             else
                 glDrawArrays(GL_TRIANGLES, 0, (GLsizei)b->count);
+            GLCK(hud ? (raw ? "draw: HUD picture (raw)" : "draw: HUD picture (cpu)")
+                 : raw ? "draw: draw (raw)" : "draw: draw (cpu)", b, f->va);
         }
         if (hud)
             glBindFramebuffer(GL_FRAMEBUFFER, f->fbo);
@@ -4451,8 +4603,10 @@ static void gl_draw(const Nv2aSurface *s, const Nv2aBatch *b)
     f->dirty = 1;
     f->memq_valid = 0;
     f->cpu_owned = 0;
+    GLCK("draw: end", b, f->va);
     if (vc3_fps_get() > 60)
         interp_scene_snap(f, b);
+    GLCK("draw: interp_scene_snap", b, f->va);
 }
 
 /* Nv2aBackend.draw_raw: fixed-function batches, when the shader linked and
@@ -5294,6 +5448,7 @@ static void gl_flip(void)
 
     if (!gl_ready())
         return;
+    GLCK("flip: before (elsewhere)", NULL, nv2a_backend_presented_va());
     if (s_ftr == 1) {
         s_ftr = 2;
         fprintf(stderr, "[GLTR] end of frame\n");
@@ -5336,6 +5491,10 @@ static void gl_flip(void)
                 s_cur_prog = prog;
                 if (!vao)
                     glGenVertexArrays(1, &vao);
+                /* (not the CPU path's s_vao: its arrays 0-2 are enabled from
+                 * the start and get a buffer only at that path's first draw,
+                 * and with every 2D batch on the GPU that may not have come:
+                 * GL_INVALID_OPERATION, nothing drawn) */
                 glBindVertexArray(vao);
                 s_cur_vao = vao;
                 bind_tex(0, s_hud_tex);
@@ -5361,6 +5520,7 @@ static void gl_flip(void)
                                   pf->ph / 2, GL_COLOR_BUFFER_BIT, GL_LINEAR);
             }
             glBindFramebuffer(GL_FRAMEBUFFER, pf->fbo);
+            GLCK("flip: desktop HUD overlay", NULL, pf->va);
         }
     }
 #endif
@@ -5393,12 +5553,16 @@ static void gl_flip(void)
                 }
 #endif
                 surf_readback_async(&s_surfs[i]);
+                GLCK("flip: readback of the shown surface", NULL, s_surfs[i].va);
             }
-            else if (all || !shown)
+            else if (all || !shown) {
                 surf_readback(&s_surfs[i]);
+                GLCK("flip: readback (other surface)", NULL, s_surfs[i].va);
+            }
         }
     }
     gt_flip();
+    GLCK("flip: GPU timing queries", NULL, 0);
     /* The frame's projection (the HUD panel, the aim): the one of the
      * stereo surface the most 3D went into -- the scene. */
     {
@@ -5419,6 +5583,7 @@ static void gl_flip(void)
     }
 #if defined(VC3_GLES)
     quest_present();
+    GLCK("flip: quest_present", NULL, 0);
 #endif
     /* The picture the window shows: the presented surface's guest size,
      * widened as it is drawn. Then the next frame's scale and aspect. */
@@ -5462,6 +5627,8 @@ static void gl_flip(void)
                         s_gp_good, s_gp_bad);
         }
     }
+    GLCK("flip: end", NULL, 0);
+    glck_second();
     s_frame++;
     if (genv("VC3_FPS_LOG")) {            /* wall-clock flips per second */
         /* With the vblanks delivered over the same second: flips below the
