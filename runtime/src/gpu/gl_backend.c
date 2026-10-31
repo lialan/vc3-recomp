@@ -945,6 +945,7 @@ static const char *VS_VP_HEAD =
     "uniform vec4 u_gp;\n"
     "uniform vec2 u_gw;\n"
     "uniform int u_st2;\n"
+    "uniform int u_vp_imm_clip;\n"
     "uniform vec2 u_eye2[2];\n"
     "uniform mat4 u_immvp2[2];\n"
     "flat out int v_eye;\n"
@@ -1013,7 +1014,7 @@ static const char *VS_VP_MAIN =
     "  ndc.x = ndc.x * u_xs.x + u_xs.y;\n"
     "  float zn = (s.z - u_depth.x) / (u_depth.y - u_depth.x) * 2.0 - 1.0;\n"
     "  bool bad = abs(w) <= 1e-6 || any(isnan(o_screen)) || any(isinf(o_screen));\n"
-    "  bool imm = u_gw.x != 0.0 && !flat2d && w > 0.0;\n"
+    "  bool imm = u_gw.x != 0.0 && (u_vp_imm_clip != 0 || (!flat2d && w > 0.0));\n"
     "  float iez = w * u_gw.y;\n"
     "  vec4 ipos = ivp * vec4((s.x - u_gp.z) / u_gp.x * iez, (s.y - u_gp.w) / u_gp.y * iez,\n"
     "                             -w * abs(u_gw.y), 1.0);\n"
@@ -1022,8 +1023,8 @@ static const char *VS_VP_MAIN =
     /* the CPU clips every program batch at w = 1e-3 and the near plane,
      * immersive or not */
     "#if !defined(GL_ES) || defined(GL_EXT_clip_cull_distance)\n"
-    "  gl_ClipDistance[0] = bad ? -1e30 : w - 1e-3;\n"
-    "  gl_ClipDistance[1] = bad ? -1e30 : (u_nearz != 0 ? (s.z - u_vpz) * w : 1.0);\n"
+    "  gl_ClipDistance[0] = bad ? -1e30 : (imm && u_vp_imm_clip != 0 ? 1.0 : w - 1e-3);\n"
+    "  gl_ClipDistance[1] = bad ? -1e30 : (imm && u_vp_imm_clip != 0 ? 1.0 : (u_nearz != 0 ? (s.z - u_vpz) * w : 1.0));\n"
     "#endif\n"
     "  v_eye = seye;\n"
     "  if (u_st2 != 0)\n"
@@ -1408,6 +1409,10 @@ static int prog_link(Prog *p, GLuint vs, GLuint fs, int feedback)
     glUniform1i(glGetUniformLocation(p->prog, "u_nofog"),
                 genv("GL_NOFOG") != NULL);
     glUniform1i(p->rcdbg, genv("GL_RCDBG") ? atoi(genv("GL_RCDBG")) : 0);
+    /* Diagnostic opt-in: one clip space per immersive program draw, and
+     * clipping by the headset frustum as in the fixed-function shader. */
+    glUniform1i(glGetUniformLocation(p->prog, "u_vp_imm_clip"),
+                genv("GL_VP_IMM_CLIP") && genv("GL_VP_IMM_CLIP")[0] == '1');
     return 1;
 }
 
