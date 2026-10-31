@@ -517,7 +517,26 @@ static void cu4fv(GLint l, GLsizei n, const GLfloat *p)
 static void cu4uiv(GLint l, GLsizei n, const GLuint *p)
 { if (!uc_same(l, p, (size_t)n * 16)) glUniform4uiv(l, n, p); }
 static void cuMatrix4fv(GLint l, GLsizei n, GLboolean t, const GLfloat *p)
-{ if (!uc_same(l, p, (size_t)n * 64)) glUniformMatrix4fv(l, n, t, p); }
+{
+    if (uc_same(l, p, (size_t)n * 64))
+        return;
+#if defined(VC3_GLES)
+    /* ES requires transpose == GL_FALSE. Guest fixed-function matrices are
+     * row-major; desktop GL transposes them during upload, ES needs a copy. */
+    if (t && n > 0) {
+        GLfloat transposed[(size_t)n * 16];
+        GLsizei k;
+        int row, col;
+        for (k = 0; k < n; k++)
+            for (row = 0; row < 4; row++)
+                for (col = 0; col < 4; col++)
+                    transposed[k * 16 + col * 4 + row] = p[k * 16 + row * 4 + col];
+        glUniformMatrix4fv(l, n, GL_FALSE, transposed);
+        return;
+    }
+#endif
+    glUniformMatrix4fv(l, n, t, p);
+}
 static uint32_t s_frame = 1;
 /* What the draw path last bound; anything else that binds a program or a
  * vertex array (the frame interpolator) zeroes these. */
