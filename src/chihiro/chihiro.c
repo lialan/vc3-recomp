@@ -14,6 +14,7 @@
 #include "recomp_types.h"
 #include "xbox_memory_layout.h"
 #include "chihiro.h"
+#include "chihiro/ch_env.h"
 
 static char s_save_dir[1024];
 
@@ -34,7 +35,7 @@ const char *chihiro_save_dir(void)
  * +0x400. */
 static void chihiro_set_launch_data(void)
 {
-    const char *test = getenv("VC3_TEST_LAUNCH");
+    const char *test = ch_env("TEST_LAUNCH");
     uint32_t page;
 
     if (!test || strcmp(test, "1") != 0)

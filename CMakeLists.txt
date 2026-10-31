@@ -36,6 +36,7 @@ set(VC3_SOURCES
     src/chihiro/storage.c
     src/chihiro/jvs.c
     src/chihiro/baseboard.c
+    src/chihiro/ch_env.c
     src/d3d_fence.c
     src/vc3_idle.c
     src/host_input.c
@@ -82,6 +83,8 @@ if(APPLE)
     target_compile_definitions(vc3 PRIVATE VC3_MACOS_MENU=1)
     target_link_libraries(vc3 PRIVATE "-framework Cocoa")
 endif()
+# The game's environment prefix: ch_env("FPS") reads CHIHIRO_FPS, else VC3_FPS.
+set_source_files_properties(src/chihiro/ch_env.c PROPERTIES COMPILE_DEFINITIONS CH_ENV_PREFIX="VC3")
 target_include_directories(vc3 PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src
     ${CMAKE_CURRENT_SOURCE_DIR}/src/recomp/gen

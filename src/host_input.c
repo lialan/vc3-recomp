@@ -36,6 +36,7 @@
 #include "chihiro/chihiro.h"
 #include "display_settings.h"
 #include "host_input.h"
+#include "chihiro/ch_env.h"
 
 #define AUTO_MAX     32
 #define AUTO_HOLD_MS 500   /* > one poll at the current frame rate */
@@ -55,7 +56,7 @@ static uint64_t now_ms(void)
 
 static void auto_parse(void)
 {
-    const char *s = getenv("VC3_AUTOKEYS");
+    const char *s = ch_env("AUTOKEYS");
     s_nauto = 0;
     while (s && *s && s_nauto < AUTO_MAX) {
         double t;
@@ -78,7 +79,7 @@ static uint32_t auto_hold_ms(const char *key)
 {
     static int fire_ms = -1;
     if (fire_ms < 0) {
-        const char *e = getenv("VC3_AUTOFIRE_MS");
+        const char *e = ch_env("AUTOFIRE_MS");
         fire_ms = e ? atoi(e) : 0;
     }
     return !strcmp(key, "fire") && fire_ms > 0 ? (uint32_t)fire_ms : AUTO_HOLD_MS;
@@ -513,7 +514,7 @@ void host_input_poll(chihiro_input_t *in)
         auto_parse();
         s_t0 = now_ms();
         SDL_AddEventWatch(input_watch, NULL);
-        if (getenv("VC3_INPUT_SELFTEST")) {
+        if (ch_env("INPUT_SELFTEST")) {
             static uint64_t start;
             start = s_t0;
             SDL_DetachThread(SDL_CreateThread(selftest_thread, "vc3-selftest", &start));
@@ -544,8 +545,8 @@ void host_input_poll(chihiro_input_t *in)
     /* A scripted shot with no window under the mouse aims at VC3_AUTOAIM
      * ("x,y" in 0..1, default the centre), so unattended runs can shoot; an
      * explicit VC3_AUTOAIM also holds the aim between shots. */
-    if (ux < 0.0 && (auto_held("fire", t) || getenv("VC3_AUTOAIM"))) {
-        const char *aim = getenv("VC3_AUTOAIM");
+    if (ux < 0.0 && (auto_held("fire", t) || ch_env("AUTOAIM"))) {
+        const char *aim = ch_env("AUTOAIM");
         ux = 0.5;
         uy = 0.5;
         if (aim)
@@ -594,7 +595,7 @@ void host_input_poll(chihiro_input_t *in)
     /* VC3_JVS_OR=<hex>: switch bits held on player 1, to see in the test
      * menu's input test which switch a bit is. */
     {
-        const char *e = getenv("VC3_JVS_OR");
+        const char *e = ch_env("JVS_OR");
         if (e)
             in->player[0] |= (uint16_t)strtoul(e, NULL, 16);
     }

@@ -34,6 +34,7 @@
 #include "kernel.h"
 #include "xbox_memory_layout.h"
 #include "display_settings.h"
+#include "chihiro/ch_env.h"
 
 #define VC3_ENTRY_POINT 0x000B6407 /* XBE entry, debug-key decoded */
 #define VC3_XBE_NAME    "vc3.xbe"
@@ -186,12 +187,12 @@ void vc3_relaunch(void)
     fflush(stderr);
     /* A scripted run's presses belong to the boot that read them; the next
      * boot gets VC3_AUTOKEYS_RELAUNCH, if any. */
-    if (getenv("VC3_AUTOKEYS_RELAUNCH"))
-        setenv("VC3_AUTOKEYS", getenv("VC3_AUTOKEYS_RELAUNCH"), 1);
+    if (ch_env("AUTOKEYS_RELAUNCH"))
+        ch_setenv("AUTOKEYS", ch_env("AUTOKEYS_RELAUNCH"), 1);
     else
-        unsetenv("VC3_AUTOKEYS");
-    unsetenv("VC3_AUTOKEYS_RELAUNCH");
-    unsetenv("VC3_TEST_LAUNCH");      /* leaving test mode boots the game */
+        ch_unsetenv("AUTOKEYS");
+    ch_unsetenv("AUTOKEYS_RELAUNCH");
+    ch_unsetenv("TEST_LAUNCH");      /* leaving test mode boots the game */
 #if defined(__ANDROID__)
     /* An app cannot exec itself: the activity starts a fresh process. */
     (void)exe; (void)size;
@@ -268,8 +269,8 @@ static int guest_main(void)
 int main(int argc, char **argv)
 {
     char *game_dir = s_game_dir, *save_dir = s_save_dir, xbe_path[PATH_MAX];
-    const char *dir = argc > 1 ? argv[1] : getenv("VC3_GAME_DIR");
-    const char *save = getenv("VC3_SAVE_DIR");
+    const char *dir = argc > 1 ? argv[1] : ch_env("GAME_DIR");
+    const char *save = ch_env("SAVE_DIR");
     int rc;
 
     s_argv = argv;
@@ -292,7 +293,7 @@ int main(int argc, char **argv)
 
     /* Silent by default: SDL's dummy driver consumes the mix without playing
      * it. VC3_SOUND=1 plays it; RECOMP_AUDIO_WAV captures it either way. */
-    if (!getenv("VC3_SOUND") || strcmp(getenv("VC3_SOUND"), "1") != 0)
+    if (!ch_env("SOUND") || strcmp(ch_env("SOUND"), "1") != 0)
         setenv("SDL_AUDIODRIVER", "dummy", 1);
     /* The emulated MCPX APU: without it the game has no sound at all. With
      * it, VC3 starts the APU itself and mixes music and effects (measured:
@@ -328,7 +329,7 @@ int main(int argc, char **argv)
     setenv("RECOMP_FB_WINDOW", "1", 0);
 #endif
     {
-        const char *res = getenv("VC3_RES");
+        const char *res = ch_env("RES");
         if (res && !strcmp(res, "1024")) {
             setenv("RECOMP_FB_SIZE", "1024x768", 0);
             setenv("RECOMP_WINDOW_SCALE", "1", 0);

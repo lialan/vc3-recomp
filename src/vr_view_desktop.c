@@ -16,12 +16,13 @@
 
 #include "vr_math.h"
 #include "vr_view.h"
+#include "chihiro/ch_env.h"
 
 int vc3_vr_view_latch(Vc3VrView *v)
 {
     static int parsed;
     static float yaw, pitch, fov = 100.0f;
-    const char *e = getenv("VC3_IMMERSIVE_TEST");
+    const char *e = ch_env("IMMERSIVE_TEST");
     float q[4], qy[4], qp[4], t, right[3];
     const float ex[3] = { 1, 0, 0 };
     int i, k;
@@ -56,7 +57,7 @@ int vc3_vr_view_latch(Vc3VrView *v)
         vr_eye_matrix(v->pose_q[i], v->pose_p[i], v->tan_fov[i], 1.0f, 0.05f, 2000.0f, v->vp[i]);
     }
     {   /* VC3_IMMERSIVE_TEST_SCALE=n: the immersive detail the headset would ask */
-        const char *sc = getenv("VC3_IMMERSIVE_TEST_SCALE");
+        const char *sc = ch_env("IMMERSIVE_TEST_SCALE");
         v->scale = sc ? atoi(sc) : 0;
     }
     v->id++;

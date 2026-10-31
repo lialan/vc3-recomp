@@ -22,6 +22,7 @@
 
 #include "recomp_types.h"
 #include "chihiro.h"
+#include "chihiro/ch_env.h"
 
 #define STDCALL_ARG(n)  MEM32(g_esp + 4 + 4 * (n))
 
@@ -57,7 +58,7 @@ static int s_trace = -1;
 static int jvs_trace(void)
 {
     if (s_trace < 0) {
-        const char *v = getenv("VC3_JVS_TRACE");
+        const char *v = ch_env("JVS_TRACE");
         s_trace = v && *v && *v != '0';
     }
     return s_trace;

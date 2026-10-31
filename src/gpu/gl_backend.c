@@ -86,6 +86,7 @@ extern void vc3_quest_frame(GLuint fbo, int pw, int ph, int eyes, int lw, int lh
 
 static void es_bgra(GLenum target);
 #include "../d3d/d3d8_swizzle.h"   /* relative to src/kernel, as the executor */
+#include "chihiro/ch_env.h"
 
 /* getenv, looked up once per name: several debug switches are tested per
  * draw, and getenv walks the whole environment each time. They do not change
@@ -105,10 +106,10 @@ static const char *genv(const char *name)
             return cache[i].value;
     if (n < (int)(sizeof cache / sizeof cache[0])) {
         cache[n].name = name;
-        cache[n].value = getenv(name);
+        cache[n].value = ch_env(name);
         return cache[n++].value;
     }
-    return getenv(name);
+    return ch_env(name);
 }
 
 extern ptrdiff_t xbox_GetMemoryOffset(void);
@@ -193,7 +194,7 @@ static int uc_same(GLint loc, const void *d, size_t n)
     if (loc < 0)
         return 1;
     if (off < 0)
-        off = genv("VC3_UCACHE") && genv("VC3_UCACHE")[0] == '0';
+        off = genv("UCACHE") && genv("UCACHE")[0] == '0';
     if (n > UC_BYTES || off)
         return 0;
     if (!U->uc) {
@@ -267,7 +268,7 @@ static void glck(const char *site, const Nv2aBatch *b, uint32_t va)
 {
     GLenum e;
     if (s_ek < 0) {
-        s_ek = genv("VC3_GL_ERRCHECK") ? atoi(genv("VC3_GL_ERRCHECK")) : 0;
+        s_ek = genv("GL_ERRCHECK") ? atoi(genv("GL_ERRCHECK")) : 0;
         if (s_ek < 0)
             s_ek = 0;
         if (s_ek)
@@ -1018,7 +1019,7 @@ static int prog_link(Prog *p, GLuint vs, GLuint fs, int feedback)
     LOC(xs, "u_xs"); LOC(eye, "u_eye"); LOC(sbs, "u_sbs");
     LOC(immvp, "u_immvp"); LOC(gp, "u_gp"); LOC(gw, "u_gw");
     LOC(st2, "u_st2"); LOC(eye2, "u_eye2"); LOC(immvp2, "u_immvp2");
-    if (genv("VC3_IMM_LOG"))
+    if (genv("IMM_LOG"))
         fprintf(stderr, "[IMM] program %u: immvp %d gp %d gw %d\n", p->prog, p->immvp, p->gp, p->gw);
     LOC(textured, "u_textured"); LOC(atest, "u_atest"); LOC(afunc, "u_afunc");
     LOC(aref, "u_aref"); LOC(rc, "u_rc"); LOC(cicw, "u_cicw"); LOC(aicw, "u_aicw");
@@ -1048,10 +1049,10 @@ static int prog_link(Prog *p, GLuint vs, GLuint fs, int feedback)
     glUniform1i(glGetUniformLocation(p->prog, "u_c2"), 6);
     glUniform1i(glGetUniformLocation(p->prog, "u_c3"), 7);
     glUniform1i(glGetUniformLocation(p->prog, "u_adbg"),
-                genv("VC3_GL_ADBG") ? atoi(genv("VC3_GL_ADBG")) : 0);
+                genv("GL_ADBG") ? atoi(genv("GL_ADBG")) : 0);
     glUniform1i(glGetUniformLocation(p->prog, "u_nofog"),
-                genv("VC3_GL_NOFOG") != NULL);
-    glUniform1i(p->rcdbg, genv("VC3_GL_RCDBG") ? atoi(genv("VC3_GL_RCDBG")) : 0);
+                genv("GL_NOFOG") != NULL);
+    glUniform1i(p->rcdbg, genv("GL_RCDBG") ? atoi(genv("GL_RCDBG")) : 0);
     return 1;
 }
 
@@ -1129,7 +1130,7 @@ static VpProg *vp_get(const Nv2aRawGeometry *g)
         s_vp_failed++;
         return NULL;
     }
-    if (genv("VC3_GL_VP_DUMP"))                /* the GLSL, to compare with the microcode */
+    if (genv("GL_VP_DUMP"))                /* the GLSL, to compare with the microcode */
         fprintf(stderr, "[GL] vertex program %016llx GLSL:\n%s\n",
                 (unsigned long long)g->program_hash, body);
     vs = compile(GL_VERTEX_SHADER, src);
@@ -1348,7 +1349,7 @@ static int gl_ready(void)
         }
         /* VC3_GL_ERRCHECK: the driver's own account of what it refused,
          * besides the checkpoints (GLCK) */
-        if (genv("VC3_GL_ERRCHECK") && atoi(genv("VC3_GL_ERRCHECK")) > 0) {
+        if (genv("GL_ERRCHECK") && atoi(genv("GL_ERRCHECK")) > 0) {
             typedef void (*DebugCb)(GLenum, GLenum, GLuint, GLenum, GLsizei, const char *,
                                     const void *);
             typedef void (*DebugFn)(DebugCb, const void *);
@@ -1547,7 +1548,7 @@ static Surf *s_z_prev;                 /* the surface surf_bind bound last */
 static int zd_mode(void)
 {
     if (s_zd < 0) {
-        const char *e = getenv("VC3_GL_ZDISCARD");
+        const char *e = ch_env("GL_ZDISCARD");
 #if defined(VC3_GLES)
         s_zd = !e ? 0 : !strcmp(e, "dry") ? 2 : *e != '0';
 #else
@@ -1788,7 +1789,7 @@ static VrGameProj zoom_proj(const VrGameProj *g)
     static int on = -1;
     VrGameProj o = *g;
     if (on < 0)
-        on = !(genv("VC3_IMM_ZOOM") && genv("VC3_IMM_ZOOM")[0] == '0');
+        on = !(genv("IMM_ZOOM") && genv("IMM_ZOOM")[0] == '0');
     if (on && s_kbase > 0.0f && fabsf(g->kx) > 1.0f) {
         float z = s_kbase / fabsf(g->kx);
         o.kx = g->kx * z;
@@ -1826,7 +1827,7 @@ static void surf_foveate(const Surf *f)
     static int tried, on;
     GLint n = 0;
     if (!tried) {
-        const char *e = genv("VC3_FOVEATION");
+        const char *e = genv("FOVEATION");
         tried = 1;
         on = e && e[0] == '1';
         if (on) {
@@ -1877,7 +1878,7 @@ static int msaa_samples(void)
     static int n = -1;
 #if defined(VC3_GLES)
     if (n < 0) {
-        const char *e = genv("VC3_GL_MSAA");
+        const char *e = genv("GL_MSAA");
         GLint i, k = 0, mx = 0, have = 0;
         n = e ? atoi(e) : 0;
         if (n > 1) {
@@ -2022,7 +2023,7 @@ static void gt_poll(void)
 static void gt_surface(uint32_t va)
 {
     if (s_gt_on < 0) {
-        s_gt_on = genv("VC3_GPU_TIME") && genv("VC3_GPU_TIME")[0] == '1';
+        s_gt_on = genv("GPU_TIME") && genv("GPU_TIME")[0] == '1';
         if (s_gt_on)
             glGenQueries(GT_RING, s_gt_q);
     }
@@ -2729,8 +2730,8 @@ static float s_aniso = -1.0f;
 
 static void mips_init(void)
 {
-    const char *e = getenv("VC3_GL_MIPS");
-    const char *a = getenv("VC3_GL_ANISO");
+    const char *e = ch_env("GL_MIPS");
+    const char *a = ch_env("GL_ANISO");
     GLfloat mx = 1.0f;
     s_mips = !e ? 1 : !strcmp(e, "all") ? 2 : *e != '0';
     s_aniso = a ? (float)atof(a) : 4.0f;
@@ -2955,7 +2956,7 @@ static int tex_bind(const Nv2aTexture *t, float *sw, float *sh)
     if (rt && rt->fbo && !rt->cpu_owned) {
         s_st.rt++;
         lazy_catch_up(rt);
-        if (genv("VC3_RT_USE_LOG")) {   /* which render targets are sampled (debug) */
+        if (genv("RT_USE_LOG")) {   /* which render targets are sampled (debug) */
             static uint32_t vas[16], cnt[16], fr;
             int k;
             if (fr != s_frame && s_frame % 120 == 0) {
@@ -3030,7 +3031,7 @@ static int tex_bind(const Nv2aTexture *t, float *sw, float *sh)
          * per-bind check. VC3_GL_TEXQUICK=0: every bind, as before. */
         static int quick_skip = -1;
         if (quick_skip < 0)
-            quick_skip = !(genv("VC3_GL_TEXQUICK") && *genv("VC3_GL_TEXQUICK") == '0');
+            quick_skip = !(genv("GL_TEXQUICK") && *genv("GL_TEXQUICK") == '0');
         if (quick_skip && e->hash && !e->streamed && e->checked == s_frame) {
             s_st.qskip++;
             goto tex_ready;
@@ -3101,7 +3102,7 @@ static int tex_bind(const Nv2aTexture *t, float *sw, float *sh)
                 if (s_ftr == 1)
                     fprintf(stderr, "[GLTR]   upload %08X %ux%u fmt %02X\n", t->offset,
                             t->width, t->height, t->color & 0xFF);
-                if (genv("VC3_GL_TEXDUMP") && strstr(genv("VC3_GL_TEXDUMP"), want)) {
+                if (genv("GL_TEXDUMP") && strstr(genv("GL_TEXDUMP"), want)) {
                     char name[64];
                     FILE *o;
                     size_t n = (size_t)t->width * t->height, p;
@@ -3133,7 +3134,7 @@ static int tex_bind(const Nv2aTexture *t, float *sw, float *sh)
                              GL_UNSIGNED_INT_8_8_8_8_REV, s_decode);
                 es_bgra(GL_TEXTURE_2D);
                 e->mipped = !e->streamed && mips_wanted(t);
-                if (genv("VC3_GL_MIPLOG")) {    /* the uploads' filters and levels */
+                if (genv("GL_MIPLOG")) {    /* the uploads' filters and levels */
                     static int nlog;
                     if (nlog++ < 20000)
                         fprintf(stderr, "[MIPLOG] %08X %ux%u fmt %02X min %u levels %u pitch %u "
@@ -3207,7 +3208,7 @@ static void apply_state(const Nv2aRenderState *rs)
     uint32_t m = rs->color_mask;
 
     if (cull_mode < 0) {
-        const char *e = genv("VC3_GL_CULL");
+        const char *e = genv("GL_CULL");
         cull_mode = e ? atoi(e) : 0;
     }
     static const Prog *rs_prog;
@@ -3260,7 +3261,7 @@ static void apply_state(const Nv2aRenderState *rs)
         glDisable(GL_CULL_FACE);
     }
 uniforms:
-    cu1i(U->atest, rs->alpha_test_enable && !genv("VC3_GL_NOATEST") ? 1 : 0);
+    cu1i(U->atest, rs->alpha_test_enable && !genv("GL_NOATEST") ? 1 : 0);
     cu1i(U->afunc, (GLint)rs->alpha_func);
     cu1f(U->aref, (float)(rs->alpha_ref & 0xFF));
     {
@@ -3458,7 +3459,7 @@ static void bind_combiners(const Surf *f, const Nv2aBatch *b)
         int i, known = 0;
         for (i = 0; i < nseen; i++)
             if (seen[i] == h) known = 1;
-        if (!known && nseen < 64 && genv("VC3_GL_RCDBG")) {
+        if (!known && nseen < 64 && genv("GL_RCDBG")) {
             seen[nseen++] = h;
             fprintf(stderr, "[GL]   rc setup %02X%02X%02X: prog %05X fin %08X %08X "
                     "s0 %08X/%08X s1 %08X/%08X spec %08X tex %08X/%08X\n",
@@ -3469,7 +3470,7 @@ static void bind_combiners(const Surf *f, const Nv2aBatch *b)
                     b->stage[1] ? b->stage[1]->offset : 0);
         }
         cu3f(U->dbgcol, r, g, bl);
-        if (genv("VC3_GL_RCDBG") && atoi(genv("VC3_GL_RCDBG")) >= 6)
+        if (genv("GL_RCDBG") && atoi(genv("GL_RCDBG")) >= 6)
             glDisable(GL_BLEND);     /* exact colours, so a pixel names its setup */
             s_rs_valid = 0;
     }
@@ -3633,7 +3634,7 @@ static int raw_attribs(const Nv2aRawGeometry *g, const int *slot, int nslot, VaC
         int same;
         static int keep = -1;
         if (keep < 0)
-            keep = !(genv("VC3_GL_VAO_KEEP") && genv("VC3_GL_VAO_KEEP")[0] == '0');
+            keep = !(genv("GL_VAO_KEEP") && genv("GL_VAO_KEEP")[0] == '0');
         memset(sig, 0, sizeof sig);
         for (r = 0; r < nslot; r++) {
             const Nv2aAttrib *a = slot[r] >= 0 ? &g->attr[slot[r]] : NULL;
@@ -3897,7 +3898,7 @@ static int lazy_on(void)
 {
     static int on = -1;
     if (on < 0)
-        on = !(genv("VC3_LAZY_RT") && genv("VC3_LAZY_RT")[0] == '0');
+        on = !(genv("LAZY_RT") && genv("LAZY_RT")[0] == '0');
     return on;
 }
 
@@ -3910,7 +3911,7 @@ static void lazy_catch_up(Surf *rt)
         return;
     rt->skipping = 0;
     src = rt->copy_src ? surf_find(rt->copy_src) : NULL;
-    if (genv("VC3_IMM_LOG"))
+    if (genv("IMM_LOG"))
         fprintf(stderr, "[GL] lazy: %08X sampled again, brought up to date from %08X\n",
                 rt->va, src ? src->va : 0);
     if (src && src->fbo && src != rt) {
@@ -4010,7 +4011,7 @@ static int lazy_skip(Surf *f, const Nv2aBatch *b)
         f->copy_src = b->texture->offset;
     if (!f->skipping) {
         f->skipping = 1;
-        if (genv("VC3_IMM_LOG"))
+        if (genv("IMM_LOG"))
             fprintf(stderr, "[GL] lazy: copies into %08X skipped (unsampled %u frames)\n",
                     f->va, s_frame - f->last_sampled);
     }
@@ -4082,7 +4083,7 @@ static int batch_needs_rc(const Surf *f, const Nv2aBatch *b, int raw)
         return 0;
     if (s_use_rc)
         return 1;
-    if (genv("VC3_GL_CUBE_RC"))
+    if (genv("GL_CUBE_RC"))
         for (st = 0; st < 4; st++)
             if (b->stage[st] && b->stage[st]->cube
                 && ((b->rc->stage_program >> (st * 5)) & 0x1F) == 3)
@@ -4092,8 +4093,8 @@ static int batch_needs_rc(const Surf *f, const Nv2aBatch *b, int raw)
         if (rt && rt->fbo && !rt->cpu_owned)
             return 1;
     }
-    if (genv("VC3_GL_RC_SURF")
-        && f->va == (uint32_t)strtoul(genv("VC3_GL_RC_SURF"), NULL, 16))
+    if (genv("GL_RC_SURF")
+        && f->va == (uint32_t)strtoul(genv("GL_RC_SURF"), NULL, 16))
         return 1;
     return 0;
 }
@@ -4271,7 +4272,7 @@ static void gl_draw(const Nv2aSurface *s, const Nv2aBatch *b)
                         b->ext[k].tex[0][2], b->ext[k].tex[0][3]);
         }
     }
-    if (!raw && genv("VC3_GL_RCCHECK"))
+    if (!raw && genv("GL_RCCHECK"))
         rc_check(b);
     /* Combiner inputs come from Nv2aVertexEx on the CPU path, from the
      * shader's own varyings on the raw one. */
@@ -4283,7 +4284,7 @@ static void gl_draw(const Nv2aSurface *s, const Nv2aBatch *b)
          * is not yet right: routed by default, VC3's monitor-room walls went
          * flat grey. */
         int has_cube = 0, need_ext = 0, rt_pass = 0;
-        if (has_ext && genv("VC3_GL_CUBE_RC")) {
+        if (has_ext && genv("GL_CUBE_RC")) {
             int st;
             for (st = 0; st < 4; st++)
                 if (b->stage[st] && b->stage[st]->cube
@@ -4303,8 +4304,8 @@ static void gl_draw(const Nv2aSurface *s, const Nv2aBatch *b)
         }
         /* VC3_GL_RC_SURF=<hex va>: every batch drawn into that surface
          * through the combiners (comparing one scene both ways). */
-        if (has_ext && genv("VC3_GL_RC_SURF")
-            && f->va == (uint32_t)strtoul(genv("VC3_GL_RC_SURF"), NULL, 16))
+        if (has_ext && genv("GL_RC_SURF")
+            && f->va == (uint32_t)strtoul(genv("GL_RC_SURF"), NULL, 16))
             rt_pass = 1;
         if (has_ext && (s_use_rc || has_cube || rt_pass)) {
             bind_combiners(f, b);
@@ -4424,7 +4425,7 @@ static void gl_draw(const Nv2aSurface *s, const Nv2aBatch *b)
             s_3d_this++;
             f->n3d++;
         }
-        if (is3d && genv("VC3_IMM_LOG")) {   /* where the 3D goes (debug) */
+        if (is3d && genv("IMM_LOG")) {   /* where the 3D goes (debug) */
             static uint32_t vas[8], cnt[8], fr;
             int k;
             if (fr != s_frame) {
@@ -4452,7 +4453,7 @@ static void gl_draw(const Nv2aSurface *s, const Nv2aBatch *b)
             else if ((!raw || raw_2d(raw)) && surf_shown(f) && !batch_fullscreen(b, f))
                 hud = 1;
         }
-        if (s_imm && !is3d && genv("VC3_IMM_LOG") && s_frame % 120 == 0) {
+        if (s_imm && !is3d && genv("IMM_LOG") && s_frame % 120 == 0) {
             static uint32_t lf, nl;
             if (lf != s_frame) { lf = s_frame; nl = 0; }
             if (nl++ < 40)
@@ -4482,7 +4483,7 @@ static void gl_draw(const Nv2aSurface *s, const Nv2aBatch *b)
          * draws each eye on its own (as where clip distances are missing). */
         static int one_pass = -1;
         if (one_pass < 0)
-            one_pass = !(genv("VC3_STEREO_1PASS") && genv("VC3_STEREO_1PASS")[0] == '0');
+            one_pass = !(genv("STEREO_1PASS") && genv("STEREO_1PASS")[0] == '0');
         if (f->st && !hud && one_pass && s_has_clip) {
             GLfloat sb[8], e2[4];
             GLenum cd = raw ? GL_CLIP_DISTANCE0 + 2 : GL_CLIP_DISTANCE0;
@@ -4550,7 +4551,7 @@ static void gl_draw(const Nv2aSurface *s, const Nv2aBatch *b)
             glViewport(0, 0, f->pw, f->ph);
         TM(5);
     }
-    if (!raw && genv("VC3_GL_RCCHECK") && b->rc && b->ext && s_use_rc
+    if (!raw && genv("GL_RCCHECK") && b->rc && b->ext && s_use_rc
         && b->state->alpha_test_enable && (b->state->alpha_ref & 0xFF) == 0x80
         && b->rc->alpha_icw[1] == 0x191C0000u) {
         /* The GPU's own values for this batch, read back at the centre of
@@ -4592,7 +4593,7 @@ static void gl_draw(const Nv2aSurface *s, const Nv2aBatch *b)
             glUniform1i(loc, 12);
             glDrawArrays(GL_TRIANGLES, 0, 3);
             glReadPixels((GLint)cx, (GLint)cy, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, px12);
-            glUniform1i(loc, genv("VC3_GL_RCDBG") ? atoi(genv("VC3_GL_RCDBG")) : 0);
+            glUniform1i(loc, genv("GL_RCDBG") ? atoi(genv("GL_RCDBG")) : 0);
             uc_reset(U);
             fprintf(stderr, "[RCGPU] at %.0f,%.0f: v_col.a %u on0 %u on1 %u | comb.a %u t0.a %u t1.a %u"
                     " | diffuse[0] %08X\n", cx, cy, px13[0], px13[1], px13[2],
@@ -4633,11 +4634,11 @@ static int gl_draw_raw(const Nv2aSurface *s, const Nv2aBatch *b)
         const Surf *sf = surf_find(s->color_va);
         const int is3d = raw_vp_3d(g);
         if (vp2d < 0) {
-            vp2d = !genv("VC3_GL_VP_2D") ? 2 : genv("VC3_GL_VP_2D")[0] == '1' ? 1
-                 : genv("VC3_GL_VP_2D")[0] == '0' ? 0 : 2;
+            vp2d = !genv("GL_VP_2D") ? 2 : genv("GL_VP_2D")[0] == '1' ? 1
+                 : genv("GL_VP_2D")[0] == '0' ? 0 : 2;
             fprintf(stderr, "[GL] screen-space program batches: %s (VC3_GL_VP_2D=%s)\n",
                     vp2d == 0 ? "on the CPU" : vp2d == 1 ? "on the GPU, every one"
-                    : "on the GPU", genv("VC3_GL_VP_2D") ? genv("VC3_GL_VP_2D") : "");
+                    : "on the GPU", genv("GL_VP_2D") ? genv("GL_VP_2D") : "");
         }
         if (vp2d == 0 && !(g->w0 > 0.0f && g->w0 != 1.0f))
             return 0;                       /* as before: on the CPU */
@@ -4965,8 +4966,8 @@ static int interp_setup(void)
     s_ip.cut = 0.10f;
     s_ip.lo = 0.06f;
     s_ip.hi = 0.20f;
-    if (genv("VC3_FPS_TUNE"))
-        sscanf(genv("VC3_FPS_TUNE"), "%f,%f,%f", &s_ip.cut, &s_ip.lo, &s_ip.hi);
+    if (genv("FPS_TUNE"))
+        sscanf(genv("FPS_TUNE"), "%f,%f,%f", &s_ip.cut, &s_ip.lo, &s_ip.hi);
     s_ip.state = 1;
     return 1;
 }
@@ -5227,7 +5228,7 @@ static int interp_make(const Surf *f, GLuint *pbos, int n)
     }
     glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
     active_tex(0);
-    if (genv("VC3_FPS_DEBUG")) {
+    if (genv("FPS_DEBUG")) {
         /* The scene-cut measure, read back now (a stall; debug only). */
         {
             float mean[4] = { 0 };
@@ -5255,7 +5256,7 @@ static int interp_make(const Surf *f, GLuint *pbos, int n)
 static void interp_dump(const void *const *px, int n, uint32_t pitch,
                         uint32_t bpp, GLsizei w, GLsizei h, int cut)
 {
-    const char *prefix = genv("VC3_FPS_DUMP"), *flag = genv("VC3_FPS_DUMP_FLIPS");
+    const char *prefix = genv("FPS_DUMP"), *flag = genv("FPS_DUMP_FLIPS");
     char path[600];
     uint8_t hdr[54];
     uint32_t row = (uint32_t)w * 3, pad = (4 - (row & 3)) & 3;
@@ -5431,7 +5432,7 @@ static void gl_flip(void)
     }
 
     if (s_tm_on < 0)
-        s_tm_on = genv("VC3_GL_TIMING") != NULL;
+        s_tm_on = genv("GL_TIMING") != NULL;
     if (s_tm_on > 0) {
         static uint64_t t0;
         uint64_t n = tm_now();
@@ -5452,8 +5453,8 @@ static void gl_flip(void)
     if (s_ftr == 1) {
         s_ftr = 2;
         fprintf(stderr, "[GLTR] end of frame\n");
-    } else if (s_ftr == 0 && genv("VC3_GL_FTRACE")) {
-        FILE *fl = fopen(genv("VC3_GL_FTRACE"), "rb");
+    } else if (s_ftr == 0 && genv("GL_FTRACE")) {
+        FILE *fl = fopen(genv("GL_FTRACE"), "rb");
         if (fl) {
             fclose(fl);
             s_ftr = 1;
@@ -5469,11 +5470,11 @@ static void gl_flip(void)
      * opaque, into the right eye's corner -- a black panel there, as the
      * picture is clear (0,0,0,0) wherever there is no HUD.
      * VC3_IMM_HUD_INSET=1: that copy instead, to see the picture alone. */
-    if (s_imm && s_hud_fbo && s_hud_frame == s_frame && genv("VC3_IMMERSIVE_TEST")) {
+    if (s_imm && s_hud_fbo && s_hud_frame == s_frame && genv("IMMERSIVE_TEST")) {
         Surf *pf = surf_find(nv2a_backend_presented_va());
         static GLuint prog;
         static GLint u_img, u_org, u_size;
-        if (!prog && !(genv("VC3_IMM_HUD_INSET") && genv("VC3_IMM_HUD_INSET")[0] == '1')
+        if (!prog && !(genv("IMM_HUD_INSET") && genv("IMM_HUD_INSET")[0] == '1')
             && (prog = link_quad(FS_HUD))) {
             u_img = glGetUniformLocation(prog, "u_img");
             u_org = glGetUniformLocation(prog, "u_org");
@@ -5533,7 +5534,7 @@ static void gl_flip(void)
         static int all = -1;
         uint32_t shown = nv2a_backend_presented_va();
         if (all < 0)
-            all = genv("VC3_GL_READBACK_ALL") != NULL;
+            all = genv("GL_READBACK_ALL") != NULL;
         for (i = 0; i < s_nsurfs; i++) {
             if (!s_surfs[i].dirty)
                 continue;
@@ -5546,7 +5547,7 @@ static void gl_flip(void)
                  * held 3D at 2x to 30 fps or less. */
                 static int rb = -1;
                 if (rb < 0)
-                    rb = genv("VC3_GL_READBACK") && genv("VC3_GL_READBACK")[0] == '1';
+                    rb = genv("GL_READBACK") && genv("GL_READBACK")[0] == '1';
                 if (!rb) {
                     s_surfs[i].dirty = 0;
                     continue;
@@ -5615,7 +5616,7 @@ static void gl_flip(void)
             s_scale = s_view.scale;
         s_stereo = vc3_stereo_get() || on;
         s_imm = on && s_stereo && s_3d_prev > 0 && s_gp_ok;
-        if (genv("VC3_IMM_LOG")) {
+        if (genv("IMM_LOG")) {
             static uint32_t n;
             if (++n % 60 == 0)
                 fprintf(stderr, "[IMM] %s: 3D batches %u, projection %s (kx %.1f ky %.1f cx %.1f"
@@ -5630,7 +5631,7 @@ static void gl_flip(void)
     GLCK("flip: end", NULL, 0);
     glck_second();
     s_frame++;
-    if (genv("VC3_FPS_LOG")) {            /* wall-clock flips per second */
+    if (genv("FPS_LOG")) {            /* wall-clock flips per second */
         /* With the vblanks delivered over the same second: flips below the
          * vblank rate are frames that missed one. */
         extern uint32_t xbox_VblankCount(void);
@@ -5699,22 +5700,22 @@ static const Nv2aBackend s_gl_backend = { gl_clear, gl_draw, gl_flip, gl_draw_ra
 /* Register unless VC3_GL=0 (the executor's software rasteriser then draws). */
 void vc3_gl_backend_register(void)
 {
-    const char *e = genv("VC3_GL");
+    const char *e = genv("GL");
 
     if (e && e[0] == '0') {
         fprintf(stderr, "[GL] off (VC3_GL=0): software rasteriser\n");
         return;
     }
-    s_st.on = genv("VC3_GL_STATS") != NULL;
+    s_st.on = genv("GL_STATS") != NULL;
     texstat_init();
     s_scale = vc3_scale_get();
     s_wide = vc3_wide_get();
     s_stereo = vc3_stereo_get();
-    if (genv("VC3_STEREO_SEP"))
-        s_st_sep = (float)atof(genv("VC3_STEREO_SEP"));
-    if (genv("VC3_STEREO_DEPTH"))
-        s_st_depth = (float)atof(genv("VC3_STEREO_DEPTH"));
-    e = genv("VC3_GL_COMBINERS");
+    if (genv("STEREO_SEP"))
+        s_st_sep = (float)atof(genv("STEREO_SEP"));
+    if (genv("STEREO_DEPTH"))
+        s_st_depth = (float)atof(genv("STEREO_DEPTH"));
+    e = genv("GL_COMBINERS");
     s_use_rc = e && e[0] == '1';
     nv2a_backend_register(&s_gl_backend);
     fprintf(stderr, "[GL] OpenGL back end registered\n");

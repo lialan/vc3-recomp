@@ -13,6 +13,7 @@
 #include <string.h>
 
 #include "recomp_types.h"
+#include "chihiro/ch_env.h"
 
 #define STDCALL_ARG(n)  MEM32(g_esp + 4 + 4 * (n))
 
@@ -49,8 +50,8 @@ void chihiro_devunit_probe(void)
 void chihiro_dip_switches(void)
 {
     static int logged;
-    const char *raw = getenv("VC3_DIP");
-    const char *res = getenv("VC3_RES");
+    const char *raw = ch_env("DIP");
+    const char *res = ch_env("RES");
     uint32_t dip = 0x2;                        /* index 10: 640x480p */
 
     if (raw)

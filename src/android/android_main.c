@@ -24,6 +24,7 @@
 
 #include <android/log.h>
 #include <SDL.h>
+#include "chihiro/ch_env.h"
 
 int vc3_main(int argc, char **argv);   /* main.c's main, renamed for Android */
 
@@ -109,13 +110,13 @@ int SDL_main(int argc, char **argv)
     load_env(path);
     if (priv) {
         snprintf(path, sizeof path, "%s/save", priv);
-        setenv("VC3_SAVE_DIR", path, 0);
-        setenv("VC3_CONFIG_DIR", priv, 0);
+        ch_setenv("SAVE_DIR", path, 0);
+        ch_setenv("CONFIG_DIR", priv, 0);
     }
     /* The app plays its sound (main.c mutes unless VC3_SOUND=1). */
-    setenv("VC3_SOUND", "1", 0);
+    ch_setenv("SOUND", "1", 0);
     chdir(game);
-    fprintf(stderr, "[android] game %s, saves %s\n", game, getenv("VC3_SAVE_DIR"));
+    fprintf(stderr, "[android] game %s, saves %s\n", game, ch_env("SAVE_DIR"));
 
     args[0] = "vc3";
     args[1] = game;

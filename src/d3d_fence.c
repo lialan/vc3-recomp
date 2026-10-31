@@ -20,6 +20,7 @@
 #include "recomp_types.h"
 #include "recomp_funcs.h"
 #include "host_time.h"
+#include "chihiro/ch_env.h"
 
 void nv2a_pb_set_semaphore_target(uint32_t guest_va);
 
@@ -35,7 +36,7 @@ static void fence_stats(int slept, uint64_t ns)
     static int on = -1;
     static uint64_t t0, calls, sleeps, wait_ns;
     uint64_t now;
-    if (on < 0) { const char *e = getenv("VC3_FENCE_LOG"); on = e && *e == '1'; }
+    if (on < 0) { const char *e = ch_env("FENCE_LOG"); on = e && *e == '1'; }
     if (!on) return;
     calls++; sleeps += slept; wait_ns += ns;
     now = xbox_HostNowNs();

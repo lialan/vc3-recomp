@@ -71,6 +71,7 @@
 #include "quest_overlay.h"
 #include "vr_math.h"
 #include "vr_view.h"
+#include "chihiro/ch_env.h"
 
 void vc3_quest_restart(void);       /* below: a fresh process */
 void xbox_VblankAlign(uint64_t edge_ns);   /* the toolkit's kernel */
@@ -172,7 +173,7 @@ static void pace_game_frame(void)
     static int n;
     uint64_t now = pace_now_us();
     if (s_pace < 0)
-        s_pace = getenv("VC3_PACE_LOG") && *getenv("VC3_PACE_LOG") == '1';
+        s_pace = ch_env("PACE_LOG") && *ch_env("PACE_LOG") == '1';
     if (!s_pace)
         return;
     if (last && n < 512)
@@ -240,7 +241,7 @@ void vc3_quest_frame(GLuint fbo, int pw, int ph, int eyes, int lw, int lh, const
          * files beside the game, to see frame-to-frame changes (stalls) */
         static long first = -2, count, n;
         if (first == -2) {
-            const char *v = getenv("VC3_QUEST_DUMP");
+            const char *v = ch_env("QUEST_DUMP");
             first = -1;
             if (v && sscanf(v, "%ld,%ld", &first, &count) != 2)
                 first = -1;
@@ -741,7 +742,7 @@ static void rate_apply(void)
  * and GPU held high (VC3_XR_PERF: sustained (default), boost, or off). */
 static void perf_begin(void)
 {
-    const char *e = getenv("VC3_XR_PERF");
+    const char *e = ch_env("XR_PERF");
     if (s_enum_rates) {
         uint32_t n = 0;
         if (XR_SUCCEEDED(s_enum_rates(s_sess, 0, &n, NULL)) && n) {
@@ -817,7 +818,7 @@ static void perf_frame(void)
         }
     }
     if (!pinned && s_tid_exec && s_tid_guest) {
-        const char *e = getenv("VC3_BIGCORES");
+        const char *e = ch_env("BIGCORES");
         pinned = 1;
         if (e && *e == '1') {
             unsigned long m = big_cores();
@@ -975,7 +976,7 @@ static float imm_units(void)
 {
     static float u = -1;
     if (u < 0) {
-        const char *e = getenv("VC3_IMM_UNITS");     /* game units per metre */
+        const char *e = ch_env("IMM_UNITS");     /* game units per metre */
         u = e && atof(e) > 0 ? (float)atof(e) : 1.0f;
     }
     return u;
@@ -1119,7 +1120,7 @@ static int overlay_init(void)
          * drawn -- GPU time only real play paid (no controllers in a
          * scripted run, no overlay) */
         {
-            const char *sc = getenv("VC3_OVERLAY_SCALE");
+            const char *sc = ch_env("OVERLAY_SCALE");
             float f = sc && atof(sc) > 0.2 && atof(sc) <= 1.0 ? (float)atof(sc) : 0.5f;
             y->w = (uint32_t)(vcv[e].recommendedImageRectWidth * f);
             y->h = (uint32_t)(vcv[e].recommendedImageRectHeight * f);
@@ -1391,7 +1392,7 @@ static void gun_frame(XrTime t, const Frame *f)
     {   /* VC3_XR_FAKE_MENU=1: the panel opens by itself, for a test */
         static int fake_menu = -1;
         if (fake_menu < 0)
-            fake_menu = getenv("VC3_XR_FAKE_MENU") && *getenv("VC3_XR_FAKE_MENU") == '1';
+            fake_menu = ch_env("XR_FAKE_MENU") && *ch_env("XR_FAKE_MENU") == '1';
         if (fake_menu == 1 && s_views_ok && frames > 600) {
             fake_menu = 2;
             menu_toggle("test");
@@ -1419,7 +1420,7 @@ static void gun_frame(XrTime t, const Frame *f)
          * the eyes, raised to aim through its sight, sweeping slowly */
         static int fake = -1;
         if (fake < 0)
-            fake = getenv("VC3_XR_FAKE_GUN") && *getenv("VC3_XR_FAKE_GUN") == '1';
+            fake = ch_env("XR_FAKE_GUN") && *ch_env("XR_FAKE_GUN") == '1';
         if (!got && fake) {
             double sec = (double)t / 1e9;
             float yaw = (float)(0.06 * sin(sec * 0.5)), pitch = 0.0f;
@@ -1892,7 +1893,7 @@ static void xr_frame(void)
         int k = (int)(ratio + 0.5);
         int locked;
         if (cad_on < 0)
-            cad_on = !(getenv("VC3_XR_CADENCE") && *getenv("VC3_XR_CADENCE") == '0');
+            cad_on = !(ch_env("XR_CADENCE") && *ch_env("XR_CADENCE") == '0');
         locked = cad_on && k >= 2 && fabs(ratio - k) < 0.05;
         xr_n++;
         allow = !locked || xr_n % (uint32_t)k == 0;
@@ -1965,7 +1966,7 @@ static void xr_frame(void)
         int dot = s_overlay_ok <= 0 && !f->vr.imm;
         int copy;
         if (reblit < 0)
-            reblit = getenv("VC3_XR_REBLIT") && *getenv("VC3_XR_REBLIT") == '1';
+            reblit = ch_env("XR_REBLIT") && *ch_env("XR_REBLIT") == '1';
         copy = reblit || is_new || dot || drawn_chain != s_chain_gen || drawn_f != f;
 
         wti.timeout = XR_INFINITE_DURATION;
@@ -2037,7 +2038,7 @@ static void xr_frame(void)
                    && (s_qo.gun_valid || s_menu.open);
         int fast = fs.predictedDisplayPeriod > 0 && fs.predictedDisplayPeriod < 12000000;
         if (full < 0)
-            full = getenv("VC3_OVERLAY_FULLRATE") && *getenv("VC3_OVERLAY_FULLRATE") == '1';
+            full = ch_env("OVERLAY_FULLRATE") && *ch_env("OVERLAY_FULLRATE") == '1';
         n++;
         if (!want) {
             have_last = 0;
@@ -2179,7 +2180,7 @@ int vc3_quest_run(int (*guest_main)(void))
     glGenFramebuffers(1, &s_read_fbo);  /* the game's frames are read through it */
 
     screen_load();
-    if (getenv("VC3_NO_XR") && *getenv("VC3_NO_XR") == '1')
+    if (ch_env("NO_XR") && *ch_env("NO_XR") == '1')
         fprintf(stderr, "[quest] VC3_NO_XR=1: the window, not the headset\n");
     else
         xr = xr_init();

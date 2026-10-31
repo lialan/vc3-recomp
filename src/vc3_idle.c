@@ -30,6 +30,7 @@
 #include "recomp_types.h"
 #include "recomp_funcs.h"
 #include "host_time.h"
+#include "chihiro/ch_env.h"
 
 #define IDLE_STOP     0x4BA854u   /* set by the shutdown side */
 #define IDLE_COUNT    0x4BA83Cu   /* the idle counter */
@@ -39,7 +40,7 @@ void vc3_idle_thread(void)
 {
     static int spin = -1;
     if (spin < 0) {
-        const char *e = getenv("VC3_IDLE_SPIN");
+        const char *e = ch_env("IDLE_SPIN");
         spin = e && *e == '1';
     }
     while (!MEM32(IDLE_STOP)) {
