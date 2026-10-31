@@ -79,6 +79,10 @@ SCEN=(
   "immersive-native-nofov|stereo=1;vr_screen=immersive;vr_res=native|CHIHIRO_FOVEATION=0"
   "immersive-native-nodirect|stereo=1;vr_screen=immersive;vr_res=native|CHIHIRO_XR_DIRECT=0"
   "immersive-native-fovgain8|stereo=1;vr_screen=immersive;vr_res=native|CHIHIRO_FOV_GAIN=8"
+  # the push-buffer decode and the GL submission on one thread (the default
+  # is two, RECOMP_PB_DECODE_THREAD=1)
+  "immersive-native-decode0|stereo=1;vr_screen=immersive;vr_res=native|RECOMP_PB_DECODE_THREAD=0"
+  "immersive-2x-decode0|stereo=1;vr_screen=immersive;vr_res=2x|RECOMP_PB_DECODE_THREAD=0"
   # E.S. mode (the pedal held from 64 s): the game's ~40 full-screen
   # distortion layers over the scene, combat's heaviest fill
   "immersive-2x-es|stereo=1;vr_screen=immersive;vr_res=2x|VC3_AUTOKEYS=$KEYS,$PEDAL"

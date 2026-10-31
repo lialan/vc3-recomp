@@ -321,13 +321,10 @@ int main(int argc, char **argv)
      * vertices. RECOMP_GPU_XF=ff keeps programs on the CPU, =0 everything. */
     setenv("RECOMP_GPU_XF", "all", 0);
     /* The pushbuffer decode and the GL submission on two threads (the
-     * mission intro's executor CPU halves on the Mac). Not yet on the Quest,
-     * untried there: quest_host tells the headset the GL thread is the
-     * executor's (perf_frame), and the decode thread would go unreported.
-     * RECOMP_PB_DECODE_THREAD=1 to try it, =0 for one thread. */
-#if !defined(__ANDROID__)
+     * mission intro's executor CPU halves on the Mac); on the Quest both
+     * are reported to the headset as renderer workers (quest_host.c,
+     * perf_frame). RECOMP_PB_DECODE_THREAD=0 for one thread. */
     setenv("RECOMP_PB_DECODE_THREAD", "1", 0);
-#endif
     /* D3D's present path waits on a KEVENT it built in the device itself
      * (0x119254), set by its vblank ISR/DPC: it needs title-built events and
      * a 60 Hz vblank that honours the interrupt enables. */

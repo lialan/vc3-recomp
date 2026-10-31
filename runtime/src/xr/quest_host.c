@@ -75,6 +75,7 @@
 #include "vr_view.h"
 #include "chihiro/ch_env.h"
 #include "chihiro/chihiro_profile.h"
+#include "thread_acct.h"                  /* g_xbox_thread_named */
 
 void vc3_quest_restart(void);       /* below: a fresh process */
 void xbox_VblankAlign(uint64_t edge_ns);   /* the toolkit's kernel */
@@ -92,8 +93,17 @@ static EGLContext s_ctx = EGL_NO_CONTEXT;
 static EGLConfig  s_cfg;
 static int s_es_minor = 2;          /* 3.2 on the Quest; 3.0 in the emulator */
 /* The threads the headset is told about (perf_frame): the loop's, the GL
- * back end's, the game's; 0 until each has started. */
-static volatile pid_t s_tid_host, s_tid_exec, s_tid_guest;
+ * back end's, the push-buffer decode's (the toolkit's "nv2a exec": the GL
+ * thread itself unless RECOMP_PB_DECODE_THREAD splits them), the game's;
+ * 0 until each has started. */
+static volatile pid_t s_tid_host, s_tid_exec, s_tid_decode, s_tid_guest;
+
+/* The toolkit names its threads as they start (thread_acct.h). */
+static void thread_named(const char *name)
+{
+    if (!strcmp(name, "nv2a exec"))
+        s_tid_decode = (pid_t)syscall(SYS_gettid);
+}
 static volatile int s_quit;
 
 /* Called once on the executor thread by gl_backend.c's gl_ready: a context
@@ -1028,7 +1038,7 @@ static unsigned long big_cores(void)
  * with VC3_BIGCORES=1 put the game and the back end on the fastest cores. */
 static void perf_frame(void)
 {
-    static int told_host, told_exec, told_guest, pinned;
+    static int told_host, told_exec, told_decode, told_guest, pinned;
     if (s_set_thread) {
         /* each when its thread exists; logged as the runtime answers */
         if (!told_host && s_tid_host) {
@@ -1042,6 +1052,15 @@ static void perf_frame(void)
                                       (uint32_t)s_tid_exec);
             told_exec = 1;
             fprintf(stderr, "[xr] thread hint: GL back end as renderer worker: %d\n", (int)r);
+        }
+        /* the decode thread, when it is not the GL thread: a renderer
+         * worker too (it feeds the GL thread every draw of the frame) */
+        if (!told_decode && s_tid_decode && s_tid_exec && s_tid_decode != s_tid_exec) {
+            XrResult r = s_set_thread(s_sess, XR_ANDROID_THREAD_TYPE_RENDERER_WORKER_KHR,
+                                      (uint32_t)s_tid_decode);
+            told_decode = 1;
+            fprintf(stderr, "[xr] thread hint: push-buffer decode as renderer worker: %d\n",
+                    (int)r);
         }
         if (!told_guest && s_tid_guest) {
             XrResult r = s_set_thread(s_sess, XR_ANDROID_THREAD_TYPE_APPLICATION_MAIN_KHR,
@@ -1063,6 +1082,8 @@ static void perf_frame(void)
                     CPU_SET(c, &set);
             a = m ? sched_setaffinity(s_tid_guest, sizeof set, &set) : -1;
             b = m ? sched_setaffinity(s_tid_exec, sizeof set, &set) : -1;
+            if (m && s_tid_decode && s_tid_decode != s_tid_exec)
+                sched_setaffinity(s_tid_decode, sizeof set, &set);
             fprintf(stderr, "[xr] game and back end on cores %#lx: %d %d (0 done)\n", m, a, b);
         }
     }
@@ -2487,6 +2508,7 @@ int vc3_quest_run(int (*guest_main)(void))
     /* SDL owns the activity's surface; its GLES 3.2 context is the one the
      * headset is given, and the back end's shares with it. */
     s_tid_host = (pid_t)syscall(SYS_gettid);
+    g_xbox_thread_named = thread_named;   /* before the toolkit's threads start */
     SDL_SetHint(SDL_HINT_NO_SIGNAL_HANDLERS, "1");
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS | SDL_INIT_GAMECONTROLLER) != 0) {
         fprintf(stderr, "[quest] SDL: %s\n", SDL_GetError());
