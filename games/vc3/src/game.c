@@ -94,12 +94,17 @@ static const ChihiroProfile k_vc3 = {
         .units_per_m = 1.0f,
         .buffers = 4,                   /* triple buffered, and one spare */
         .zoom_tolerance = 0.5f,
+        /* E.S. mode: 63 distortion layers; on a Quest 3 at native only a
+         * quarter each way held 60 (half: ~53) */
+        .effect_scale = 4,
+        .effect_min_layers = 8,
+        .effect_min_px = 2000000,
     },
     .vr = {
         .app_name = "Virtua Cop 3 VR",
         .panel_title = "Virtua Cop 3 - settings",
         .sdcard_dir = "/sdcard/VirtuaCop3",
-        .sight_height = { 0.0285f, 0.0385f, 0.0500f },
+        .sight_height = { 0.0285f, 0.0335f, 0.0400f },  /* quest_overlay.c's SIGHT_Y */
     },
     .hooks = {
         .launch_data = vc3_launch_data,

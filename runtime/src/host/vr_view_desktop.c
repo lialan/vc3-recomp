@@ -2,9 +2,10 @@
  * vr_view_desktop.c - the immersive view without a headset, for testing the
  * back end's immersive path on a desktop (vr_view.h).
  *
- * VC3_IMMERSIVE_TEST=yaw[,pitch[,fov]] (degrees): a head turned that far
- * (left and up positive), eyes 64 mm apart, each with a symmetric field of
- * view (default 100 degrees); the window's side-by-side stereo then shows
+ * VC3_IMMERSIVE_TEST=yaw[,pitch[,fov[,sway]]] (degrees): a head turned that
+ * far (left and up positive), eyes 64 mm apart, each with a symmetric field
+ * of view (default 100 degrees), swaying up to sway degrees either way over
+ * time (0: still); the window's side-by-side stereo then shows
  * what each eye of a headset would get. Unset: immersive is off.
  */
 #if !defined(__ANDROID__)
@@ -13,6 +14,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 #include "vr_math.h"
 #include "vr_view.h"
@@ -21,9 +23,9 @@
 int vc3_vr_view_latch(Vc3VrView *v)
 {
     static int parsed;
-    static float yaw, pitch, fov = 100.0f;
+    static float yaw0, pitch0, fov = 100.0f, sway;
     const char *e = ch_env("IMMERSIVE_TEST");
-    float q[4], qy[4], qp[4], t, right[3];
+    float q[4], qy[4], qp[4], t, right[3], yaw, pitch;
     const float ex[3] = { 1, 0, 0 };
     int i, k;
 
@@ -31,9 +33,19 @@ int vc3_vr_view_latch(Vc3VrView *v)
         return v->on = 0;
     if (!parsed) {
         parsed = 1;
-        sscanf(e, "%f,%f,%f", &yaw, &pitch, &fov);
-        fprintf(stderr, "[IMM] desktop test head: yaw %.0f, pitch %.0f, field of view %.0f\n",
-                yaw, pitch, fov);
+        sscanf(e, "%f,%f,%f,%f", &yaw0, &pitch0, &fov, &sway);
+        fprintf(stderr, "[IMM] desktop test head: yaw %.0f, pitch %.0f, field of view %.0f,"
+                " sway %.0f\n", yaw0, pitch0, fov, sway);
+    }
+    yaw = yaw0;
+    pitch = pitch0;
+    if (sway != 0.0f) {     /* the head moving, as a player's does: degrees either way */
+        struct timespec ts;
+        double s;
+        clock_gettime(CLOCK_MONOTONIC, &ts);
+        s = (double)ts.tv_sec + ts.tv_nsec * 1e-9;
+        yaw += sway * (float)sin(s * 0.9);
+        pitch += 0.6f * sway * (float)sin(s * 1.3 + 0.5);
     }
     memset(v, 0, sizeof *v);
     t = fov * 0.5f * 3.14159265f / 180.0f;

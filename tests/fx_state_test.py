@@ -37,6 +37,7 @@ typedef struct {int pw,ph,st,fxlow;unsigned color,va,fbo;} Surf;
 static struct {unsigned small_run,runs,small_va,small_tex,small_fbo;int small_w,small_h;uint64_t t_small;} s_fx;
 static int rd=31,dr=32,tex=33;
 static int fx_scale(void){return 4;}
+static uint64_t tm_now(void){return 1;}
 static void glGetIntegerv(int name,int *out){*out=name==1?tex:name==2?rd:dr;}
 static void glGenTextures(int n,unsigned *t){(void)n;*t=41;}
 static void glGenFramebuffers(int n,unsigned *t){(void)n;*t=42;}

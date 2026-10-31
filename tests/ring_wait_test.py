@@ -2,7 +2,7 @@
 """Compile the GLES ring wait against deterministic GL sync responses.
 
 No GL context or device is needed. Exercise the actual production function,
-including repeated timeouts and wait failures.
+including repeated timeouts and both wait-failure paths.
 """
 from pathlib import Path
 import os
@@ -26,6 +26,7 @@ typedef long GLsizeiptr; typedef unsigned GLenum; typedef int GLsync;
 #define GL_WAIT_FAILED 3
 #define GL_ALREADY_SIGNALED 5
 typedef struct {GLsizeiptr size; int seg; GLsync fence[4]; unsigned target;} Ring;
+static unsigned s_ring_waits; static uint64_t s_ring_wait_ns;
 static int seq[8], at, finishes, deleted;
 static void glDeleteSync(GLsync s) {(void)s; deleted++;}
 static GLsync glFenceSync(int a,int b) {(void)a;(void)b;return 9;}
