@@ -129,6 +129,7 @@ static CGLContextObj s_ctx;
 static int s_failed;
 static GLuint s_vao, s_vao_raw, s_vao_vp, s_white;
 static GLuint s_fs_obj, s_fs_rc_obj;     /* linked into each program shader */
+static GLuint s_fs_na_obj, s_fs_rc_na_obj;   /* the same without the alpha test */
 
 /* A linked program and its uniform locations, looked up once at link time:
  * glGetUniformLocation per draw was a string search per call. The fragment
@@ -165,6 +166,11 @@ typedef struct {
  * combiners' registers on every pixel: half the GPU time of the mission
  * intro's thousand draws on the Quest. */
 static Prog s_pcpu, s_praw, s_pcpu_rc, s_praw_rc, *U = &s_pcpu;
+/* And each again without the alpha test (NOAT; prog 0 if it failed), for
+ * the batches that have it off -- nearly all: a shader that can discard
+ * leaves the depth test until after it has run, so every hidden fragment of
+ * every batch was shaded, and a tiler cannot reject them early either. */
+static Prog s_pcpu_na, s_praw_na, s_pcpu_rc_na, s_praw_rc_na;
 
 /* ── Uniforms sent only when they change ──────────────────────────────────
    The draw path sets some thirty uniforms a batch, most of them the same as
@@ -885,6 +891,7 @@ static const char *FS =
     "    c *= texture(u_tex, sbs(0, v_uv));\n"
     "    if (u_lmap != 0) c.rgb *= texture(u_t1, stage_uv(1, v_tc1)).rgb;\n"
     "  }\n"
+    "#ifndef NOAT\n"
     "  if (u_atest != 0) {\n"
     /* In 8 bits, as the hardware and the software rasteriser compare: a
      * modulated 0x80 lands at 0.5, below 128/255 as a float. */
@@ -899,6 +906,7 @@ static const char *FS =
     "    else if (f == 6) pass = a >= u_aref;\n"
     "    if (!pass) discard;\n"
     "  }\n"
+    "#endif\n"
     "  o_col = c;\n"
     "}\n";
 
@@ -1070,6 +1078,7 @@ typedef struct {
     uint32_t used;
     uint32_t inputs;                      /* the v[] it reads, a bit each */
     Prog p, p_rc;
+    Prog p_na, p_rc_na;                   /* without the alpha test (prog 0: none) */
 } VpProg;
 static VpProg s_vp[VP_SLOTS];
 static VpProg *s_vp_cur;                  /* the program gl_draw draws with */
@@ -1099,6 +1108,14 @@ static VpProg *vp_get(const Nv2aRawGeometry *g)
         free(e->p.uc);
         if (e->p_rc.uc != e->p.uc)
             free(e->p_rc.uc);
+        if (e->p_na.prog) {
+            glDeleteProgram(e->p_na.prog);
+            free(e->p_na.uc);
+        }
+        if (e->p_rc_na.prog) {
+            glDeleteProgram(e->p_rc_na.prog);
+            free(e->p_rc_na.uc);
+        }
     }
     memset(e, 0, sizeof *e);
     e->hash = g->program_hash;
@@ -1145,6 +1162,10 @@ static VpProg *vp_get(const Nv2aRawGeometry *g)
     }
     if (!s_fs_rc_obj || !prog_link(&e->p_rc, vs, s_fs_rc_obj, 1))
         e->p_rc = e->p;
+    if (!s_fs_na_obj || !prog_link(&e->p_na, vs, s_fs_na_obj, 1))
+        memset(&e->p_na, 0, sizeof e->p_na);
+    if (!s_fs_rc_na_obj || e->p_rc.prog == e->p.prog || !prog_link(&e->p_rc_na, vs, s_fs_rc_na_obj, 1))
+        memset(&e->p_rc_na, 0, sizeof e->p_rc_na);
     glDeleteShader(vs);                        /* the programs keep it */
     e->state = 1;
     s_vp_built++;
@@ -1405,6 +1426,23 @@ static int gl_ready(void)
                 s_pcpu_rc = s_pcpu;
             if (s_praw.prog && !prog_link(&s_praw_rc, compile(GL_VERTEX_SHADER, VS_FF), fs_rc, 1))
                 s_praw_rc = s_praw;
+        }
+        /* and both without the alpha test */
+        s_compile_defs = "#define NOAT\n";
+        if ((s_fs_na_obj = compile(GL_FRAGMENT_SHADER, FS))) {
+            if (!prog_link(&s_pcpu_na, compile(GL_VERTEX_SHADER, VS), s_fs_na_obj, 0))
+                memset(&s_pcpu_na, 0, sizeof s_pcpu_na);
+            if (!s_praw.prog || !prog_link(&s_praw_na, compile(GL_VERTEX_SHADER, VS_FF), s_fs_na_obj, 1))
+                memset(&s_praw_na, 0, sizeof s_praw_na);
+        }
+        s_compile_defs = "#define RC\n#define NOAT\n";
+        if ((s_fs_rc_na_obj = compile(GL_FRAGMENT_SHADER, FS))) {
+            if (s_pcpu_rc.prog == s_pcpu.prog
+                || !prog_link(&s_pcpu_rc_na, compile(GL_VERTEX_SHADER, VS), s_fs_rc_na_obj, 0))
+                memset(&s_pcpu_rc_na, 0, sizeof s_pcpu_rc_na);
+            if (!s_praw.prog || s_praw_rc.prog == s_praw.prog
+                || !prog_link(&s_praw_rc_na, compile(GL_VERTEX_SHADER, VS_FF), s_fs_rc_na_obj, 1))
+                memset(&s_praw_rc_na, 0, sizeof s_praw_rc_na);
         }
         s_compile_defs = "";
 
@@ -4341,11 +4379,23 @@ static void gl_draw(const Nv2aSurface *s, const Nv2aBatch *b)
     GLCK("draw: surf_bind", b, f->va);
     if (lazy_skip(f, b))
         return;
-    if (raw && raw->kind == NV2A_RAW_PROGRAM)
-        U = batch_needs_rc(f, b, 1) ? &s_vp_cur->p_rc : &s_vp_cur->p;
-    else
-        U = raw ? (batch_needs_rc(f, b, raw != NULL) ? &s_praw_rc : &s_praw)
-                : (batch_needs_rc(f, b, raw != NULL) ? &s_pcpu_rc : &s_pcpu);
+    {
+        /* the program: the combiners or not, the alpha test or not */
+        const int rc = batch_needs_rc(f, b, raw != NULL);
+        const int at = b->state->alpha_test_enable && !genv("GL_NOATEST");
+        Prog *a, *na;
+        if (raw && raw->kind == NV2A_RAW_PROGRAM) {
+            a = rc ? &s_vp_cur->p_rc : &s_vp_cur->p;
+            na = rc ? &s_vp_cur->p_rc_na : &s_vp_cur->p_na;
+        } else if (raw) {
+            a = rc ? &s_praw_rc : &s_praw;
+            na = rc ? &s_praw_rc_na : &s_praw_na;
+        } else {
+            a = rc ? &s_pcpu_rc : &s_pcpu;
+            na = rc ? &s_pcpu_rc_na : &s_pcpu_na;
+        }
+        U = !at && na->prog && !genv("GL_ATEST_ALL") ? na : a;
+    }
     memset(s_sbs, 0, sizeof s_sbs);
     {
         /* Consecutive batches mostly share program and layout. */
