@@ -1858,9 +1858,25 @@ static void ring_enter(Ring *r, GLsizeiptr from, GLsizeiptr to)
         if (r->fence[sg]) {
             struct timespec a_, b_;
             clock_gettime(CLOCK_MONOTONIC, &a_);
-            if (glClientWaitSync(r->fence[sg], 0, 0) == GL_TIMEOUT_EXPIRED) {
+            GLenum poll = glClientWaitSync(r->fence[sg], 0, 0);
+            if (poll == GL_WAIT_FAILED) {
+                fprintf(stderr, "[GL] ring poll failed (target 0x%X segment %d); finishing\n",
+                        (unsigned)r->target, sg);
+                glFinish();
+            } else if (poll == GL_TIMEOUT_EXPIRED) {
                 s_ring_waits++;
-                glClientWaitSync(r->fence[sg], GL_SYNC_FLUSH_COMMANDS_BIT, 1000000000ull);
+                GLenum result = glClientWaitSync(r->fence[sg], GL_SYNC_FLUSH_COMMANDS_BIT,
+                                                   1000000000ull);
+                /* A timeout is not completion. Never overwrite storage the
+                 * GPU may still read, even under a long driver stall. */
+                while (result == GL_TIMEOUT_EXPIRED)
+                    result = glClientWaitSync(r->fence[sg], GL_SYNC_FLUSH_COMMANDS_BIT,
+                                              1000000000ull);
+                if (result == GL_WAIT_FAILED) {
+                    fprintf(stderr, "[GL] ring wait failed (target 0x%X segment %d); finishing\n",
+                            (unsigned)r->target, sg);
+                    glFinish();
+                }
                 clock_gettime(CLOCK_MONOTONIC, &b_);
                 s_ring_wait_ns += (uint64_t)((b_.tv_sec - a_.tv_sec) * 1000000000ll
                                              + (b_.tv_nsec - a_.tv_nsec));
