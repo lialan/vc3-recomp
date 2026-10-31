@@ -95,6 +95,9 @@ SCEN=(
   "immersive-2x-texcompare-s3tc|stereo=1;vr_screen=immersive;vr_detail=2|CHIHIRO_TEX_S3TC=1 CHIHIRO_TEX_COMPARE=1"
   # the write-back flush answered by the walker alone, as before (the A/B)
   "immersive-2x-noflushack|stereo=1;vr_screen=immersive;vr_detail=2|RECOMP_FLUSH_ACK_US=0"
+  # sound on (the others are muted): the audio device's stall and reopen
+  # lines ([APU] stopped consuming, [SDL2] reopening) show if it happens
+  "immersive-2x-sound|stereo=1;vr_screen=immersive;vr_detail=2|CHIHIRO_SOUND=1"
   "immersive-2x-glerr|stereo=1;vr_screen=immersive;vr_detail=2|CHIHIRO_GL_ERRCHECK=10"
   "screen-stereo-glerr|stereo=1;vr_screen=screen|CHIHIRO_GL_ERRCHECK=10"
 )
