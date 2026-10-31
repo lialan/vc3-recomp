@@ -79,6 +79,9 @@ SCEN=(
   "immersive-native-nofov|stereo=1;vr_screen=immersive;vr_res=native|CHIHIRO_FOVEATION=0"
   "immersive-native-nodirect|stereo=1;vr_screen=immersive;vr_res=native|CHIHIRO_XR_DIRECT=0"
   "immersive-native-fovgain8|stereo=1;vr_screen=immersive;vr_res=native|CHIHIRO_FOV_GAIN=8"
+  # attract with no coin and no input (run it with --secs 125): the title
+  # logo must give way to the demo -- the attract stall on the device
+  "attract-native|stereo=1;vr_screen=immersive;vr_res=native;vr_coins=manual|VC3_AUTOKEYS=none CHIHIRO_IMM_LOG=1"
   # the push-buffer decode and the GL submission on one thread (the default
   # is two, RECOMP_PB_DECODE_THREAD=1)
   "immersive-native-decode0|stereo=1;vr_screen=immersive;vr_res=native|RECOMP_PB_DECODE_THREAD=0"
