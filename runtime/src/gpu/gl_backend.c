@@ -5710,8 +5710,10 @@ static void quad_into(GLuint fbo, GLsizei w, GLsizei h)
  * give, but with the contribution at the effect's resolution and the scene
  * itself kept native wherever the effect leaves it.
  *
- * VC3_GL_EFFECT_SCALE: 2 (default: half each way, a quarter of the pixels),
- * 3, 4, or 1 (off: every layer at full size). Only surfaces of FX_PX
+ * VC3_GL_EFFECT_SCALE: 4 (default: a quarter each way, a sixteenth of the
+ * pixels -- on a Quest 3 E.S. at native held combat 29 fps at 4 against 25
+ * at 3, and the stack costs ~200 ms a frame at 2x, so every factor counts),
+ * 2, 3, or 1 (off: every layer at full size). Only surfaces of FX_PX
  * pixels an eye and up (native immersive), never at 2x. */
 #define FX_MIN 8                   /* qualifying batches in the frame before */
 #define FX_PX 2000000L             /* an eye's pixels for the effect target */
@@ -5721,7 +5723,7 @@ static int fx_scale(void)
     static int sc = -1;
     if (sc < 0) {
         const char *e = genv("GL_EFFECT_SCALE");
-        sc = e ? atoi(e) : 2;
+        sc = e ? atoi(e) : 4;
         if (sc < 1 || sc > 8)
             sc = 1;
     }

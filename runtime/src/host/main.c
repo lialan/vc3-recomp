@@ -321,10 +321,13 @@ int main(int argc, char **argv)
      * vertices. RECOMP_GPU_XF=ff keeps programs on the CPU, =0 everything. */
     setenv("RECOMP_GPU_XF", "all", 0);
     /* The pushbuffer decode and the GL submission on two threads (the
-     * mission intro's executor CPU halves on the Mac); on the Quest both
-     * are reported to the headset as renderer workers (quest_host.c,
-     * perf_frame). RECOMP_PB_DECODE_THREAD=0 for one thread. */
+     * mission intro's executor CPU halves on the Mac). Not on the Quest by
+     * default: there it measured no better (intro low10 at 2x 46.9 with,
+     * 47.4 without; native 32.8 / 35.1) -- the GL thread is not its limit.
+     * RECOMP_PB_DECODE_THREAD=1 to try it there, =0 for one thread here. */
+#if !defined(__ANDROID__)
     setenv("RECOMP_PB_DECODE_THREAD", "1", 0);
+#endif
     /* D3D's present path waits on a KEVENT it built in the device itself
      * (0x119254), set by its vblank ISR/DPC: it needs title-built events and
      * a 60 Hz vblank that honours the interrupt enables. */

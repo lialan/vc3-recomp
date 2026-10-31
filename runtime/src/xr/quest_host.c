@@ -16,12 +16,12 @@
  *                          first (vc3_quest_gl_context).
  *
  * Frames: at each flip the back end blits the presented surface, as drawn
- * (any internal resolution, 16:9 or 4:3), straight into an image of the
- * game's swapchain and releases it (vc3_quest_frame, "direct"); the headset
- * loop takes the newest frame and submits its layers, which show the image
- * released last. Without the headset's overlay (and VC3_XR_DIRECT=0) the
- * frame goes into one of three shared textures instead, fenced, and the
- * loop copies it into the swapchain. Nothing is read back to the CPU.
+ * (any internal resolution, 16:9 or 4:3), into one of three shared
+ * textures and fences it (vc3_quest_frame); the headset loop takes the
+ * newest, waits on its fence on the GPU, and copies it into the layer's
+ * swapchain. (VC3_XR_DIRECT=1: the back end blits straight into the
+ * swapchain instead -- off by default, see direct_on.) Nothing is read back
+ * to the CPU.
  *
  * The gun is a handgun in the player's hand (quest_overlay.c, drawn in a
  * transparent layer over the screen), with iron sights, a red dot or a
@@ -849,8 +849,14 @@ static int chain_fit(uint32_t w, uint32_t h)
  * loop). Framebuffers are per context, so the back end has its own for the
  * images. A swapchain replaced stays alive until the loop has submitted a
  * frame from the new one (direct_retire_done), then the loop destroys it.
- * Used when the session runs with the overlay (no aim dot to draw into the
- * picture every display frame); VC3_XR_DIRECT=0 or VC3_QUEST_DUMP: never. */
+ * Off by default (VC3_XR_DIRECT=1: on, with the overlay -- no aim dot to
+ * draw into the picture every display frame -- and without VC3_QUEST_DUMP):
+ * Meta's runtime ties swapchain images to its frame transactions. Images
+ * released on the back end's clock, between the loop's frames, drew
+ * "xrWaitSwapchainImage: Missing previous frame submission", then
+ * "xrEndFrame frameTransaction failure ... swapchains not marked as
+ * used-in-frame" and "Failed to retire next frame", and the game stalled a
+ * second or two a frame -- in 7 of 15 runs on a Quest 3, intermittently. */
 static struct {
     XrSwapchain h;
     uint32_t w, ht, n;
@@ -864,7 +870,7 @@ static int direct_on(void)
 {
     static int on = -1;
     if (on < 0)
-        on = !(ch_env("XR_DIRECT") && *ch_env("XR_DIRECT") == '0') && !ch_env("QUEST_DUMP");
+        on = ch_env("XR_DIRECT") && *ch_env("XR_DIRECT") == '1' && !ch_env("QUEST_DUMP");
     return on && s_running && s_sess != XR_NULL_HANDLE && s_overlay_ok > 0 && s_chain_fmt;
 }
 

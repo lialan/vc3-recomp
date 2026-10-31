@@ -74,28 +74,29 @@ SCEN=(
   "immersive-1x|stereo=1;vr_screen=immersive;vr_res=1x|"
   "immersive-2x|stereo=1;vr_screen=immersive;vr_res=2x|"
   "immersive-native|stereo=1;vr_screen=immersive;vr_res=native|"
-  # native's levers, each turned off: foveation (on for immersive frames by
-  # default), the frame blitted straight into the swapchain, deferred clears
+  # native's levers: foveation off (on for immersive frames by default),
+  # stronger; the frame blitted straight into the swapchain (off by default:
+  # Meta's runtime stalls on it, see quest_host.c direct_on)
   "immersive-native-nofov|stereo=1;vr_screen=immersive;vr_res=native|CHIHIRO_FOVEATION=0"
-  "immersive-native-nodirect|stereo=1;vr_screen=immersive;vr_res=native|CHIHIRO_XR_DIRECT=0"
+  "immersive-native-direct|stereo=1;vr_screen=immersive;vr_res=native|CHIHIRO_XR_DIRECT=1"
   "immersive-native-fovgain8|stereo=1;vr_screen=immersive;vr_res=native|CHIHIRO_FOV_GAIN=8"
   # attract with no coin and no input (run it with --secs 125): the title
   # logo must give way to the demo -- the attract stall on the device
   "attract-native|stereo=1;vr_screen=immersive;vr_res=native;vr_coins=manual|VC3_AUTOKEYS=none CHIHIRO_IMM_LOG=1"
-  # the push-buffer decode and the GL submission on one thread (the default
-  # is two, RECOMP_PB_DECODE_THREAD=1)
-  "immersive-native-decode0|stereo=1;vr_screen=immersive;vr_res=native|RECOMP_PB_DECODE_THREAD=0"
-  "immersive-2x-decode0|stereo=1;vr_screen=immersive;vr_res=2x|RECOMP_PB_DECODE_THREAD=0"
+  # the push-buffer decode and the GL submission on two threads (the Quest's
+  # default is one: no gain measured there)
+  "immersive-native-decode1|stereo=1;vr_screen=immersive;vr_res=native|RECOMP_PB_DECODE_THREAD=1"
+  "immersive-2x-decode1|stereo=1;vr_screen=immersive;vr_res=2x|RECOMP_PB_DECODE_THREAD=1"
   # E.S. mode (the pedal held from 64 s): the game's ~40 full-screen
   # distortion layers over the scene, combat's heaviest fill
   "immersive-2x-es|stereo=1;vr_screen=immersive;vr_res=2x|VC3_AUTOKEYS=$KEYS,$PEDAL"
   "immersive-native-es|stereo=1;vr_screen=immersive;vr_res=native|VC3_AUTOKEYS=$KEYS,$PEDAL"
   "immersive-native-es-nofov|stereo=1;vr_screen=immersive;vr_res=native|VC3_AUTOKEYS=$KEYS,$PEDAL CHIHIRO_FOVEATION=0"
   # the E.S. stack's effect target (gl_backend.c): off (every layer at full
-  # size), and at a third and a quarter each way (the default is half)
+  # size), at a half and a third each way (the default is a quarter)
+  "immersive-native-es-fx2|stereo=1;vr_screen=immersive;vr_res=native|VC3_AUTOKEYS=$KEYS,$PEDAL CHIHIRO_GL_EFFECT_SCALE=2"
   "immersive-native-es-fx1|stereo=1;vr_screen=immersive;vr_res=native|VC3_AUTOKEYS=$KEYS,$PEDAL CHIHIRO_GL_EFFECT_SCALE=1"
   "immersive-native-es-fx3|stereo=1;vr_screen=immersive;vr_res=native|VC3_AUTOKEYS=$KEYS,$PEDAL CHIHIRO_GL_EFFECT_SCALE=3"
-  "immersive-native-es-fx4|stereo=1;vr_screen=immersive;vr_res=native|VC3_AUTOKEYS=$KEYS,$PEDAL CHIHIRO_GL_EFFECT_SCALE=4"
   "immersive-2x-foveation|stereo=1;vr_screen=immersive;vr_res=2x|CHIHIRO_FOVEATION=1"
   "immersive-2x-nofov|stereo=1;vr_screen=immersive;vr_res=2x|CHIHIRO_FOVEATION=0"
   "immersive-2x-bigcores|stereo=1;vr_screen=immersive;vr_res=2x|CHIHIRO_BIGCORES=1"
