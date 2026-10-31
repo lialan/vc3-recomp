@@ -41,6 +41,7 @@ set(VC3_SOURCES
     src/host_input.c
     src/display_settings.c
     src/gpu/gl_backend.c
+    src/gpu/gl_texdec.c
     ${RECOMP_GEN_SOURCES}
 )
 
