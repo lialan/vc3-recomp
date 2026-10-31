@@ -65,6 +65,10 @@ mkdir -p "$OUT"
 STAMP=$(date +%H%M%S)
 
 KEYS=30:coin,31:start,40:fire,44:fire,46:fire,48:fire,50:fire,55:fire,60:fire,65:fire,70:fire,75:fire
+PEDAL2=$(for t in $(seq 98 0.5 106) $(seq 120 0.5 132); do printf '%s:pedal,' $t; done)
+PEDAL2=${PEDAL2%,}
+FIRE2=$(for t in $(seq 86 2 148); do printf '%s:fire,' $t; done)
+FIRE2=${FIRE2%,}
 PEDAL=64:pedal,64.5:pedal,65:pedal,65.5:pedal,66:pedal,66.5:pedal,67:pedal,67.5:pedal,68:pedal,68.5:pedal,69:pedal,69.5:pedal,70:pedal,70.5:pedal,71:pedal,71.5:pedal,72:pedal,72.5:pedal,73:pedal,73.5:pedal,74:pedal,74.5:pedal,75:pedal,75.5:pedal,76:pedal,76.5:pedal,77:pedal,77.5:pedal,78:pedal,78.5:pedal,79:pedal,79.5:pedal,80:pedal,80.5:pedal,81:pedal,81.5:pedal,82:pedal,82.5:pedal,83:pedal,83.5:pedal,84:pedal
 # name | settings lines (;-separated) | extra env (space-separated)
 SCEN=(
@@ -106,6 +110,9 @@ SCEN=(
   # source at full size; GL errors checked (VC3_GL_ERRCHECK)
   "immersive-native-es-nospec|stereo=1;vr_screen=immersive;vr_res=native|VC3_AUTOKEYS=$KEYS,$PEDAL CHIHIRO_GL_RC_SPEC=0"
   "immersive-native-es-nofxlow|stereo=1;vr_screen=immersive;vr_res=native|VC3_AUTOKEYS=$KEYS,$PEDAL CHIHIRO_GL_FX_LOW=0"
+  # E.S. entered and left three times (64-84, 98-106, 120-132 s), firing
+  # throughout: run with --secs 150
+  "immersive-native-es-multi|stereo=1;vr_screen=immersive;vr_res=native|VC3_AUTOKEYS=$KEYS,$PEDAL,$PEDAL2,$FIRE2 CHIHIRO_GL_EFFECT_LOG=1"
   "immersive-native-es-errcheck|stereo=1;vr_screen=immersive;vr_res=native|VC3_AUTOKEYS=$KEYS,$PEDAL CHIHIRO_GL_ERRCHECK=1"
   "immersive-2x-foveation|stereo=1;vr_screen=immersive;vr_res=2x|CHIHIRO_FOVEATION=1"
   "immersive-2x-nofov|stereo=1;vr_screen=immersive;vr_res=2x|CHIHIRO_FOVEATION=0"
