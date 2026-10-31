@@ -1494,6 +1494,7 @@ typedef struct {
     /* Stereo: both eyes side by side in one framebuffer twice pw wide, the
      * left eye's picture at x 0 (what guest memory gets), the right's at pw. */
     int st;
+    int fov;                   /* foveated (fov_params) */
     GLuint fbo, color, depth;
     int dirty;                 /* drawn since the last readback */
     /* Guest memory as the GPU last left it, to spot the CPU writing the
@@ -1841,50 +1842,117 @@ void vc3_gl_stereo_separation(float ndc)
         s_st_sep = ndc;
 }
 
-/* VC3_FOVEATION=1 (the Quest): a stereo surface rendered with fixed
- * foveation (QCOM_texture_foveated) -- full detail round each eye's middle,
- * coarser towards the edges, one focal point per half. Off by default until
- * it has been seen on the headset; skipped without the extension or two
- * focal points. The texture bound. */
-static void surf_foveate(const Surf *f)
+/* Fixed foveation (QCOM_texture_foveated) of the stereo surfaces: full
+ * detail round each eye's centre of view, coarser towards the edges, one
+ * focal point per eye's half. VC3_FOVEATION: unset or "auto", on for the
+ * frames drawn immersive at native size (each eye's picture is the whole
+ * field of view; the periphery is what the lenses blur anyway) and flat
+ * (gain 0: every pixel full detail) for everything else -- the virtual
+ * screen shows the whole picture; 1: always; 0: never. The gain and the
+ * full-detail area (VC3_FOV_GAIN, default 4; VC3_FOV_AREA, 0.4) are the
+ * extension's: pixel density falls off as 1 / (gain * distance^2 - area)
+ * from the focal point, across -1..1. Skipped without the extension or two
+ * focal points. Set when a surface is made (the texture bound) and at each
+ * flip for the next frame (fov_frame). */
+#if defined(VC3_GLES)
+typedef void (*FovFn)(GLuint, GLuint, GLuint, GLfloat, GLfloat, GLfloat, GLfloat, GLfloat);
+static FovFn s_fov_fn;
+#endif
+static int s_fov_mode = -1;             /* 0 never, 1 always, 2 auto */
+static int s_fov_now;                   /* this frame foveated */
+
+static int fov_mode(void)
 {
 #if defined(VC3_GLES)
-    typedef void (*FovFn)(GLuint, GLuint, GLuint, GLfloat, GLfloat, GLfloat, GLfloat, GLfloat);
-    static FovFn fov;
-    static int tried, on;
-    GLint n = 0;
-    if (!tried) {
+    if (s_fov_mode < 0) {
         const char *e = genv("FOVEATION");
-        tried = 1;
-        on = e && e[0] == '1';
-        if (on) {
-            GLint i, k = 0;
+        GLint i, k = 0;
+        int have = 0;
+        s_fov_mode = !e || !strcmp(e, "auto") ? 2 : e[0] == '1' ? 1 : 0;
+        if (s_fov_mode) {
             glGetIntegerv(GL_NUM_EXTENSIONS, &k);
-            on = 0;
             for (i = 0; i < k; i++) {
                 const char *x = (const char *)glGetStringi(GL_EXTENSIONS, (GLuint)i);
                 if (x && !strcmp(x, "GL_QCOM_texture_foveated"))
-                    on = 1;
+                    have = 1;
             }
-            if (on)
-                fov = (FovFn)eglGetProcAddress("glTextureFoveationParametersQCOM");
-            on = on && fov;
-            fprintf(stderr, "[GL] foveation: %s\n", on ? "on" : "not available");
+            if (have)
+                s_fov_fn = (FovFn)eglGetProcAddress("glTextureFoveationParametersQCOM");
+            if (!s_fov_fn)
+                s_fov_mode = 0;
+            fprintf(stderr, "[GL] foveation: %s\n", !s_fov_mode ? "not available"
+                    : s_fov_mode == 1 ? "always" : "immersive frames at native size");
         }
     }
-    if (!on)
+    return s_fov_mode;
+#else
+    return 0;
+#endif
+}
+
+/* f's focal points for this frame (f->color bound or not: by name). */
+static void fov_params(const Surf *f)
+{
+#if defined(VC3_GLES)
+    float gain = 0.0f, area = 0.0f;
+    int e;
+    if (!f->fov)
+        return;
+    if (s_fov_now) {
+        gain = genv("FOV_GAIN") ? (float)atof(genv("FOV_GAIN")) : 4.0f;
+        area = genv("FOV_AREA") ? (float)atof(genv("FOV_AREA")) : 0.4f;
+    }
+    for (e = 0; e < 2; e++) {
+        /* the eye's straight ahead in its half: its projection's centre
+         * (an eye's field of view is wider outwards); rows top first */
+        float cx = 0.0f, cy = 0.0f;
+        if (s_imm && s_view.on) {
+            float l = s_view.tan_fov[e][0], r = s_view.tan_fov[e][1];
+            float u = s_view.tan_fov[e][2], d = s_view.tan_fov[e][3];
+            if (r - l > 0.0f && u - d > 0.0f) {
+                cx = -(r + l) / (r - l);
+                cy = (u + d) / (u - d);
+            }
+        }
+        s_fov_fn(f->color, 0, (GLuint)e, (e ? 0.5f : -0.5f) + 0.5f * cx, cy, gain,
+                 gain, area);
+    }
+#else
+    (void)f;
+#endif
+}
+
+static void surf_foveate(Surf *f)
+{
+#if defined(VC3_GLES)
+    GLint n = 0;
+    f->fov = 0;
+    if (!fov_mode())
         return;
     glTexParameteri(GL_TEXTURE_2D, 0x8BFB /* TEXTURE_FOVEATED_FEATURE_BITS_QCOM */,
                     0x1 /* FOVEATION_ENABLE_BIT */ | 0x2 /* SCALED_BIN_METHOD_BIT */);
     glGetTexParameteriv(GL_TEXTURE_2D, 0x8BFD /* NUM_FOCAL_POINTS_QUERY */, &n);
     if (n < 2)
         return;
-    /* the eyes' middles in the double-wide surface, -1..1 across */
-    fov(f->color, 0, 0, -0.5f, 0.0f, 4.0f, 4.0f, 0.4f);
-    fov(f->color, 0, 1, 0.5f, 0.0f, 4.0f, 4.0f, 0.4f);
+    f->fov = 1;
+    fov_params(f);
 #else
     (void)f;
 #endif
+}
+
+/* At the flip, for the next frame: foveated or flat (s_fov_now). */
+static void fov_frame(void)
+{
+    int i, now;
+    if (!fov_mode())
+        return;
+    now = s_fov_mode == 1 || (s_imm && s_view.scale == 0 && s_view.eye_w > 0);
+    if (now == s_fov_now && !now)
+        return;
+    s_fov_now = now;
+    for (i = 0; i < s_nsurfs; i++)
+        fov_params(&s_surfs[i]);
 }
 
 /* Multisampling (VC3_GL_MSAA=2/4, GLES, off by default): the 3D surfaces
@@ -5836,6 +5904,7 @@ static void gl_flip(void)
         scale_pick(on);
         s_stereo = vc3_stereo_get() || on;
         s_imm = on && s_stereo && s_3d_prev > 0 && s_gp_ok;
+        fov_frame();
         if (genv("IMM_LOG")) {
             static uint32_t n;
             if (++n % 60 == 0)
