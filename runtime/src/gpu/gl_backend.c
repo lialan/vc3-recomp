@@ -2151,6 +2151,7 @@ typedef struct {
      * left eye's picture at x 0 (what guest memory gets), the right's at pw. */
     int st;
     int fov;                   /* foveated (fov_params) */
+    int nofov;                 /* made without foveation: an effect target's S (fov_frame) */
     GLuint fbo, color, depth;
     int dirty;                 /* drawn since the last readback */
     /* Guest memory as the GPU last left it, to spot the CPU writing the
@@ -2198,6 +2199,7 @@ static struct {
     GLsizei save_pw, save_ph, save_cw;
     uint32_t n_this, n_prev, runs;   /* qualifying batches this frame, the last */
     uint64_t t_begin, t_small, t_resolve, t_draws;   /* ns this second (VC3_GL_EFFECT_LOG) */
+    uint32_t last_frame;             /* the frame of the last run begun (fov_frame) */
     /* the render target the run samples, reduced as L is, once a run */
     GLuint small_fbo, small_tex;
     GLsizei small_w, small_h;
@@ -2610,7 +2612,7 @@ static void surf_foveate(Surf *f)
 #if defined(VC3_GLES)
     GLint n = 0;
     f->fov = 0;
-    if (!fov_mode())
+    if (!fov_mode() || f->nofov)
         return;
     glTexParameteri(GL_TEXTURE_2D, 0x8BFB /* TEXTURE_FOVEATED_FEATURE_BITS_QCOM */,
                     0x1 /* FOVEATION_ENABLE_BIT */ | 0x2 /* SCALED_BIN_METHOD_BIT */);
@@ -2624,12 +2626,34 @@ static void surf_foveate(Surf *f)
 #endif
 }
 
-/* At the flip, for the next frame: foveated or flat (s_fov_now). */
+/* At the flip, for the next frame: foveated or flat (s_fov_now).
+ *
+ * The effect target's surface S is not foveated while the target is in use
+ * (a run begun within FOV_FX_HOLD frames). The target takes S's depth with
+ * a blit, and on the Quest (Adreno) the depth of a foveated surface does
+ * not read back right -- some frames the E.S. layers were depth-tested
+ * against garbage and wiped or smeared the scene, both eyes differently: a
+ * bad flicker. Flat (gain 0) is not enough: a texture's foveation cannot
+ * be switched off once on. So S is made again without it (surf_bind, next
+ * frame: sc_stale) and with it once E.S. is over. Native E.S. without
+ * foveation still holds ~58. */
+#define FOV_FX_HOLD 120
 static void fov_frame(void)
 {
     int i, now;
     if (!fov_mode())
         return;
+    for (i = 0; i < s_nsurfs; i++) {
+        Surf *f = &s_surfs[i];
+        int busy = s_fx.runs && f == s_fx.s && s_frame - s_fx.last_frame < FOV_FX_HOLD;
+        if (busy != f->nofov && f->fbo) {
+            f->nofov = busy;
+            f->sc_stale = 1;
+            if (genv("GL_EFFECT_LOG"))
+                fprintf(stderr, "[FX] %08X made again %s foveation\n", f->va,
+                        busy ? "without" : "with");
+        }
+    }
     now = s_fov_mode == 1 || (s_imm && s_view.scale == 0 && s_view.eye_w > 0);
     if (now == s_fov_now && !now)
         return;
@@ -6190,6 +6214,7 @@ static void fx_begin(Surf *f)
     s_fx.on = 1;
     s_fx.s = f;
     s_fx.runs++;
+    s_fx.last_frame = s_frame;
     s_fx.t_begin += tm_now() - t0;
     GLCK("effect target: begin", NULL, f->va);
 }
