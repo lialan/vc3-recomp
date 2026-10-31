@@ -14,6 +14,7 @@
 #error "vc3-recomp's host entry is POSIX-only; use the xboxrecomp template on Windows"
 #endif
 
+#include "thread_acct.h"
 #include <dlfcn.h>
 #if defined(__APPLE__)
 #include <mach-o/dyld.h>   /* _NSGetExecutablePath */
@@ -253,6 +254,7 @@ static int guest_main(void)
     xbox_WatchdogStart();
 
     printf("entry 0x%08X, esp 0x%08X\n", VC3_ENTRY_POINT, g_esp);
+    xbox_ThreadAcctName("guest main");      /* RECOMP_THREAD_LOG */
     xbe_entry_point();
 
     printf("game returned\n");

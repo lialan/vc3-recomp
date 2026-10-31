@@ -76,6 +76,9 @@ SCEN=(
   "immersive-2x-msaa4|stereo=1;vr_screen=immersive;vr_detail=2|VC3_GL_MSAA=4"
   "immersive-2x-vpcpu|stereo=1;vr_screen=immersive;vr_detail=2|RECOMP_GPU_XF=ff"
   "immersive-2x-vpcheck|stereo=1;vr_screen=immersive;vr_detail=2|RECOMP_GPU_XF_CHECK=300"
+  "immersive-2x-vp2dcpu|stereo=1;vr_screen=immersive;vr_detail=2|VC3_GL_VP_2D=0"
+  "immersive-2x-vp2dcheck|stereo=1;vr_screen=immersive;vr_detail=2|RECOMP_GPU_XF_CHECK=300 RECOMP_GPU_XF_CHECK_EVERY=20"
+  "immersive-2x-noregrun|stereo=1;vr_screen=immersive;vr_detail=2|RECOMP_PB_REGRUN=0"
   # texture decode (src/gpu/gl_texdec.c): GPU (compute, the default) against
   # CPU, by time; the fragment pass; and the compare modes, which read every
   # upload back and count texels unlike the CPU decode ([TEXCMP] lines)
@@ -85,6 +88,10 @@ SCEN=(
   "immersive-2x-texcompare|stereo=1;vr_screen=immersive;vr_detail=2|VC3_TEX_COMPARE=1"
   "immersive-2x-texcompare-frag|stereo=1;vr_screen=immersive;vr_detail=2|VC3_TEX_GPU=frag VC3_TEX_COMPARE=1"
   "immersive-2x-texcompare-s3tc|stereo=1;vr_screen=immersive;vr_detail=2|VC3_TEX_S3TC=1 VC3_TEX_COMPARE=1"
+  # the write-back flush answered by the walker alone, as before (the A/B)
+  "immersive-2x-noflushack|stereo=1;vr_screen=immersive;vr_detail=2|RECOMP_FLUSH_ACK_US=0"
+  "immersive-2x-glerr|stereo=1;vr_screen=immersive;vr_detail=2|VC3_GL_ERRCHECK=10"
+  "screen-stereo-glerr|stereo=1;vr_screen=screen|VC3_GL_ERRCHECK=10"
 )
 KEYS=30:coin,31:start,40:fire,44:fire,46:fire,48:fire,50:fire,55:fire,60:fire,65:fire,70:fire,75:fire
 LOGS=()
@@ -95,7 +102,7 @@ for s in "${SCEN[@]}"; do
     { echo "scale=1"; echo "aspect=16:9"; echo "$settings" | tr ';' '\n'; } > "$tmp/settings"
     {
         echo VC3_SOUND=0; echo VC3_FPS_LOG=1; echo VC3_PACE_LOG=1; echo VC3_GPU_TIME=1
-        echo RECOMP_PROF=1; echo VC3_FENCE_LOG=1; echo VC3_CONFIG_DIR=/sdcard/VirtuaCop3/testcfg
+        echo RECOMP_PROF=1; echo VC3_FENCE_LOG=1; echo RECOMP_THREAD_LOG=1; echo VC3_CONFIG_DIR=/sdcard/VirtuaCop3/testcfg
         echo VC3_AUTOKEYS=$KEYS; echo VC3_AUTOAIM=0.5,0.5
         # the stand-in gun: the overlay drawn as in real play (no one holds
         # the controllers in a scripted run)
@@ -109,6 +116,7 @@ for s in "${SCEN[@]}"; do
     rm -rf "$tmp"
     echo "== $name ($SECS s)"
     $A shell am force-stop $PKG
+    $A logcat -G 16M >/dev/null 2>&1     # the default ring lost the first minute (the intro)
     $A logcat -c
     $A shell am start -n $PKG/org.vc3recomp.VirtuaCop3VR >/dev/null
     sleep "$SECS"

@@ -27,6 +27,10 @@ def summary(path):
     gpu = [(float(a), int(b)) for a, b in nums(r'\[GPUTIME\] ([\d.]+) ms/frame over \d+ frames \(fixed-function (\d+) draws', lines)]
     walk = [float(g[0]) for g in nums(r'\[PROF\] walk (\d+) ms', lines)]
     fence = [float(g[0]) for g in nums(r'\[fence\] \d+ waits/s, \d+ slept, ([\d.]+) ms waiting', lines)]
+    gcpu = [float(g[0]) for g in nums(r'\[THREADS\].*guest main cpu (\d+)', lines)]
+    gobj = [float(g[0]) for g in nums(r'\[THREADS\].*guest main cpu \d+ obj (\d+)', lines)]
+    ecpu = [float(g[0]) for g in nums(r'\[THREADS\].*nv2a exec cpu (\d+)', lines)]
+    kick = [float(g[0]) for g in nums(r'\[THREADS\].*waited <= ([\d.]+) ms', lines)]
     intro_gpu = [g for g, d in gpu if d >= 600]
     combat = slice(-20, None)
 
@@ -38,12 +42,14 @@ def summary(path):
     tot = sum(shown) or 1
     return ('%-24s fps intro-low10 %.1f combat %.1f min %.1f | pace combat p50 %.1f p95 %.1f ms | '
             'shown 1x/2x/3x/4x %d/%d/%d/%d%% | GPU intro %.1f combat %.1f ms | walk %.0f ms/s | '
-            'fence wait %.2f ms/s' % (
+            'fence wait %.2f ms/s | game thread cpu %.0f blocked %.0f, executor cpu %.0f,'
+            ' kick-off wait <= %.0f ms/s' % (
                 path.split('/')[-1], avg(intro_fps), avg(fps[combat]), min(fps[combat]) if fps else 0,
                 avg([a for a, b in pace[combat]]), avg([b for a, b in pace[combat]]),
                 100 * shown[0] / tot, 100 * shown[1] / tot, 100 * shown[2] / tot, 100 * shown[3] / tot,
                 avg(intro_gpu), avg([g for g, d in gpu[combat]]), avg(walk[combat]),
-                avg(fence)))
+                avg(fence), avg(gcpu[combat]), avg(gobj[combat]), avg(ecpu[combat]),
+                avg(kick[combat])))
 
 
 for p in sys.argv[1:]:

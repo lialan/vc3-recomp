@@ -150,6 +150,9 @@ typedef struct {
     /* the fixed-function state last sent to this program (raw_uniforms) */
     Nv2aFixedState ff_last;
     int ff_valid;
+    /* u_ascale as last sent (16 slots: past the uniform cache's size) */
+    GLfloat ascale_last[16][4];
+    int ascale_valid;
     /* every uniform's last value sent from the draw path (cu*): a value
      * sent again is not sent -- each one is driver work at the draw */
     struct UCache *uc;
@@ -176,6 +179,7 @@ struct UCache {
 
 static void uc_reset(Prog *p)
 {
+    p->ascale_valid = 0;
     if (p->uc)
         memset(p->uc, 0xFF, sizeof *p->uc);    /* loc -1 everywhere: empty */
 }
@@ -246,6 +250,74 @@ static uint32_t s_frame = 1;
 /* What the draw path last bound; anything else that binds a program or a
  * vertex array (the frame interpolator) zeroes these. */
 static GLuint s_cur_prog, s_cur_vao;
+
+/* VC3_GL_ERRCHECK=<n>: glGetError at every checkpoint (GLCK) of the draw,
+ * clear and flip paths; the first n errors of each site logged with the
+ * batch (cpu / raw ff / raw vp), its surface, the bound VAO and program,
+ * and once a second the count per site. Apple's GL 4.1 core has neither
+ * KHR_debug nor ARB_debug_output, so this is the way to find a call GL
+ * refused there; on GLES the KHR_debug callback is installed as well
+ * (gl_ready). An error is charged to the first checkpoint after it. */
+static int s_ek = -1;
+#define EK_SITES 64
+static struct { const char *site; uint32_t n, sec, logged; GLenum last; } s_eks[EK_SITES];
+static int s_ekn;
+
+static void glck(const char *site, const Nv2aBatch *b, uint32_t va)
+{
+    GLenum e;
+    if (s_ek < 0) {
+        s_ek = genv("VC3_GL_ERRCHECK") ? atoi(genv("VC3_GL_ERRCHECK")) : 0;
+        if (s_ek < 0)
+            s_ek = 0;
+        if (s_ek)
+            fprintf(stderr, "[GLERR] checking glGetError at every checkpoint (VC3_GL_ERRCHECK=%d)\n", s_ek);
+    }
+    if (!s_ek)
+        return;
+    while ((e = glGetError()) != GL_NO_ERROR) {
+        int k;
+        for (k = 0; k < s_ekn && s_eks[k].site != site; k++)
+            ;
+        if (k == s_ekn) {
+            if (s_ekn == EK_SITES)
+                k = EK_SITES - 1;
+            else
+                s_eks[s_ekn++].site = site;
+        }
+        s_eks[k].n++;
+        s_eks[k].sec++;
+        s_eks[k].last = e;
+        if (s_eks[k].logged < (uint32_t)s_ek) {
+            GLint vao = 0, prog = 0;
+            s_eks[k].logged++;
+            glGetIntegerv(GL_VERTEX_ARRAY_BINDING, &vao);
+            glGetIntegerv(GL_CURRENT_PROGRAM, &prog);
+            fprintf(stderr, "[GLERR] %s: 0x%04X | %s batch, surface %08X, vao %d, program %d,"
+                    " frame %u\n", site, e,
+                    !b ? "no" : !b->raw ? "cpu" : b->raw->kind == NV2A_RAW_PROGRAM ? "raw vp"
+                    : "raw ff", va, vao, prog, s_frame);
+        }
+    }
+}
+#define GLCK(site, b, va) do { if (s_ek) glck((site), (b), (va)); } while (0)
+
+static void glck_second(void)
+{
+    static uint32_t fr;
+    int k, any = 0;
+    if (s_ek <= 0 || ++fr % 60)
+        return;
+    for (k = 0; k < s_ekn; k++)
+        if (s_eks[k].sec) {
+            if (!any++)
+                fprintf(stderr, "[GLERR] second %u:", fr / 60);
+            fprintf(stderr, " %s %u (0x%04X);", s_eks[k].site, s_eks[k].sec, s_eks[k].last);
+            s_eks[k].sec = 0;
+        }
+    if (any)
+        fputc(10, stderr);
+}
 
 /* VC3_GL_FTRACE=<flag file>: once the file exists, log every clear and batch
  * of the next frame (0 idle, 1 tracing, 2 done). */
@@ -1217,6 +1289,22 @@ static GLsizeiptr ring_put(Ring *r, const void *data, GLsizeiptr bytes)
 
 /* Lazily, on the thread the executor calls from; every entry point makes the
  * context current in case that is ever a different thread. */
+#if defined(VC3_GLES)
+/* KHR_debug (VC3_GL_ERRCHECK): errors and the driver's warnings, the first
+ * 200 of them. */
+static void gl_debug_cb(GLenum source, GLenum type, GLuint id, GLenum severity,
+                        GLsizei len, const char *msg, const void *user)
+{
+    static int n;
+    (void)source; (void)len; (void)user;
+    if (type == 0x8251 /* OTHER */ && severity == 0x826B /* NOTIFICATION */)
+        return;
+    if (n++ < 200)
+        fprintf(stderr, "[GLERR] KHR_debug type 0x%04X id %u severity 0x%04X frame %u: %s\n",
+                type, id, severity, s_frame, msg);
+}
+#endif
+
 static int gl_ready(void)
 {
     if (s_failed)
@@ -1257,6 +1345,21 @@ static int gl_ready(void)
             fprintf(stderr, "[GL] clip distances %s, depth clamp %s\n",
                     s_has_clip ? "yes" : "no (GL's near clip instead)",
                     s_has_dclamp ? "yes" : "no");
+        }
+        /* VC3_GL_ERRCHECK: the driver's own account of what it refused,
+         * besides the checkpoints (GLCK) */
+        if (genv("VC3_GL_ERRCHECK") && atoi(genv("VC3_GL_ERRCHECK")) > 0) {
+            typedef void (*DebugCb)(GLenum, GLenum, GLuint, GLenum, GLsizei, const char *,
+                                    const void *);
+            typedef void (*DebugFn)(DebugCb, const void *);
+            DebugFn fn = (DebugFn)eglGetProcAddress("glDebugMessageCallbackKHR");
+            if (fn) {
+                glEnable(0x92E0);              /* GL_DEBUG_OUTPUT_KHR */
+                fn(gl_debug_cb, NULL);
+                fprintf(stderr, "[GLERR] KHR_debug callback installed\n");
+            } else {
+                fprintf(stderr, "[GLERR] no KHR_debug; checkpoints only\n");
+            }
         }
 #else
         CGLPixelFormatAttribute attrs[] = {
@@ -1557,6 +1660,10 @@ static void z_flip(void)
     }
 }
 static int batch_fullscreen(const Nv2aBatch *b, const Surf *f);
+static int batch_extent(const Nv2aBatch *b, Nv2aRawExtent *e);
+static int batch_d0(const Nv2aBatch *b, uint32_t *d0);
+static int raw_2d(const Nv2aRawGeometry *g);
+static int raw_vp_3d(const Nv2aRawGeometry *g);
 
 /* Only the screen-shaped surfaces widen: render targets of other shapes
  * (VC3's 128x128 and 256x256 effect maps) are sampled whole. */
@@ -2129,7 +2236,6 @@ static void hud_close_frame(struct HudLayout *L, float w)
  *     rest of the picture. */
 static void surf_xform(Surf *f, const Nv2aBatch *b, float *scale, float *offset)
 {
-    uint32_t k;
     float x0 = 1e30f, x1 = -1e30f, y0 = 1e30f, y1 = -1e30f;
     float u0 = 1e30f, u1 = -1e30f, v0 = 1e30f, v1 = -1e30f;
     float mid = (float)(f->w * f->sc) / (float)f->pw;
@@ -2141,18 +2247,12 @@ static void surf_xform(Surf *f, const Nv2aBatch *b, float *scale, float *offset)
     if (!f->wide)
         return;
     *scale = mid;
-    if (b->raw || !b->count)
-        return;
-    for (k = 0; k < b->count; k++) {
-        const Nv2aVertex *q = &b->vertices[k];
-        if (q->x < x0) x0 = q->x;
-        if (q->x > x1) x1 = q->x;
-        if (q->y < y0) y0 = q->y;
-        if (q->y > y1) y1 = q->y;
-        if (q->u < u0) u0 = q->u;
-        if (q->u > u1) u1 = q->u;
-        if (q->v < v0) v0 = q->v;
-        if (q->v > v1) v1 = q->v;
+    {
+        Nv2aRawExtent e;
+        if (!batch_extent(b, &e))
+            return;
+        x0 = e.x0; x1 = e.x1; y0 = e.y0; y1 = e.y1;
+        u0 = e.u0; u1 = e.u1; v0 = e.v0; v1 = e.v1;
     }
     if (x0 <= 1.0f && x1 >= (float)f->w - 1.0f) {
         src = b->texture ? surf_find(b->texture->offset) : NULL;
@@ -3182,7 +3282,10 @@ static void gl_clear(const Nv2aSurface *s, const Nv2aRenderState *rs,
     GLbitfield bits = 0;
 
     (void)rs;
-    if (!gl_ready() || !(f = surf_bind(s)))
+    if (!gl_ready())
+        return;
+    GLCK("before clear (elsewhere)", NULL, s->color_va);
+    if (!(f = surf_bind(s)))
         return;
     if (lazy_skip(f, NULL))
         return;
@@ -3210,7 +3313,9 @@ static void gl_clear(const Nv2aSurface *s, const Nv2aRenderState *rs,
                 "zeta %08X\n", f->va, flags, argb, zstencil, rs->zeta_va);
     if (bits)
         glClear(bits);
+    GLCK("clear: glClear", NULL, f->va);
     z_clear(f, bits);
+    GLCK("clear: z_clear", NULL, f->va);
     f->dirty = 1;
     f->memq_valid = 0;
     f->cpu_owned = 0;
@@ -3485,6 +3590,42 @@ static int raw_attribs(const Nv2aRawGeometry *g, const int *slot, int nslot, VaC
         grp[k].off = total;
         total += ((GLsizeiptr)grp[k].bytes + 15) & ~(GLsizeiptr)15;
     }
+    /* The attribute uniforms (their layout's): set for this program on
+     * either path below. They are the program's own -- when the layout
+     * was kept but the program changed (the plain and combiner variants,
+     * another vertex program), the kept path used to leave the new one's
+     * at its defaults: u_ascale 0, every attribute 0, nothing drawn, no GL
+     * error. VC3's Mission Select and attract screens went black so. */
+    for (r = 0; r < nslot; r++) {
+        const Nv2aAttrib *a = slot[r] >= 0 ? &g->attr[slot[r]] : NULL;
+        int c;
+        for (c = 0; c < 4; c++)
+            scale[r][c] = 1.0f;
+        if (gi[r] < 0)
+            continue;
+        switch (a->type) {
+#if defined(VC3_GLES)
+        case 0: bgra |= 1 << r; break;
+#endif
+        case 1:
+            for (c = 0; c < (int)a->size; c++)
+                scale[r][c] = 1.0f / 32767.0f;
+            break;
+        case 6: packed |= 1 << r; break;
+        default: break;
+        }
+    }
+    if (nslot > 8) {                        /* past the uniform cache's size */
+        if (!U->ascale_valid || memcmp(U->ascale_last, scale, (size_t)nslot * 16)) {
+            glUniform4fv(U->ascale, nslot, &scale[0][0]);
+            memcpy(U->ascale_last, scale, (size_t)nslot * 16);
+            U->ascale_valid = 1;
+        }
+    } else {
+        cu4fv(U->ascale, nslot, &scale[0][0]);
+    }
+    cu1i(U->packed, packed);
+    cu1i(U->bgra, bgra);
     s_basevertex = 0;
     if (ngrp == 1 && grp[0].stride) {
         /* one stream: the same layout as the pointers? */
@@ -3545,10 +3686,7 @@ static int raw_attribs(const Nv2aRawGeometry *g, const int *slot, int nslot, VaC
     for (r = 0; r < nslot; r++) {
         const Nv2aAttrib *a = slot[r] >= 0 ? &g->attr[slot[r]] : NULL;
         GLuint loc = (GLuint)r;
-        int c;
 
-        for (c = 0; c < 4; c++)
-            scale[r][c] = 1.0f;
         if (gi[r] < 0) {
             static const float none[4] = { 0.0f, 0.0f, 0.0f, 1.0f };
             glDisableVertexAttribArray(loc);
@@ -3564,32 +3702,21 @@ static int raw_attribs(const Nv2aRawGeometry *g, const int *slot, int nslot, VaC
 #if defined(VC3_GLES)
             case 0:
                 glVertexAttribPointer(loc, 4, GL_UNSIGNED_BYTE, GL_TRUE, stride, at);
-                bgra |= 1 << r;
                 break;
 #else
             case 0:  glVertexAttribPointer(loc, GL_BGRA, GL_UNSIGNED_BYTE, GL_TRUE, stride, at); break;
 #endif
             case 4:  glVertexAttribPointer(loc, n, GL_UNSIGNED_BYTE, GL_TRUE, stride, at); break;
             case 1:
-                for (c = 0; c < n; c++)
-                    scale[r][c] = 1.0f / 32767.0f;
-                /* fall through */
             case 5:  glVertexAttribPointer(loc, n, GL_SHORT, GL_FALSE, stride, at); break;
             case 6:
                 glVertexAttribPointer(loc, 2, GL_UNSIGNED_SHORT, GL_FALSE, stride, at);
-                packed |= 1 << r;
                 break;
             default: glVertexAttribPointer(loc, n, GL_FLOAT, GL_FALSE, stride, at); break;
             }
             glEnableVertexAttribArray(loc);
         }
     }
-    if (nslot > 8)                          /* past the uniform cache's size */
-        glUniform4fv(U->ascale, nslot, &scale[0][0]);
-    else
-        cu4fv(U->ascale, nslot, &scale[0][0]);
-    cu1i(U->packed, packed);
-    cu1i(U->bgra, bgra);
     if (ngrp == 1 && grp[0].stride && total) {
         s_va.base = grp[0].off;             /* the pointers' stream */
         s_va.valid = 1;
@@ -3799,7 +3926,69 @@ static void lazy_catch_up(Surf *rt)
         glColorMask(mask[0], mask[1], mask[2], mask[3]);
         if (sc)
             glEnable(GL_SCISSOR_TEST);
+        GLCK("lazy_catch_up blit", NULL, rt->va);
     }
+}
+
+/* A program batch the back end transforms that used to stay on the CPU --
+ * screen space (first vertex at w = 1), or a first vertex behind the eye
+ * (w <= 0: VC3's E.S. distortion meshes) -- whose vertices the executor can
+ * still place for us (Nv2aRawGeometry.extent). The choices below that look
+ * at such a batch's vertices treat it as the CPU path's. */
+static int raw_2d(const Nv2aRawGeometry *g)
+{
+    return g && g->kind == NV2A_RAW_PROGRAM && g->extent && !(g->w0 > 0.0f && g->w0 != 1.0f);
+}
+
+/* The CPU path's 3D test, rhw of its first vertex != 1 and > 0, for a raw
+ * program batch: that vertex is the first one left after clipping at
+ * w = 1e-3, so a batch whose first vertex is behind the eye starts with a
+ * clip point (rhw 1000) and is 3D as well. */
+static int raw_vp_3d(const Nv2aRawGeometry *g)
+{
+    return g->w0 != 1.0f && g->w0 == g->w0;
+}
+
+/* The batch's vertices on the surface and in stage-0 texels; 0 when not
+ * known (a 3D raw batch, or one the executor could not place). */
+static int batch_extent(const Nv2aBatch *b, Nv2aRawExtent *e)
+{
+    uint32_t k;
+    if (b->raw)
+        return raw_2d(b->raw) && b->raw->extent(b->raw, e);
+    if (!b->count)
+        return 0;
+    e->x0 = e->y0 = e->u0 = e->v0 = 1e30f;
+    e->x1 = e->y1 = e->u1 = e->v1 = -1e30f;
+    for (k = 0; k < b->count; k++) {
+        const Nv2aVertex *q = &b->vertices[k];
+        if (q->x < e->x0) e->x0 = q->x;
+        if (q->x > e->x1) e->x1 = q->x;
+        if (q->y < e->y0) e->y0 = q->y;
+        if (q->y > e->y1) e->y1 = q->y;
+        if (q->u < e->u0) e->u0 = q->u;
+        if (q->u > e->u1) e->u1 = q->u;
+        if (q->v < e->v0) e->v0 = q->v;
+        if (q->v > e->v1) e->v1 = q->v;
+    }
+    return 1;
+}
+
+/* A 2D batch (rhw 1, as the CPU path has it), and its first vertex's diffuse. */
+static int batch_flat(const Nv2aBatch *b)
+{
+    return b->raw ? raw_2d(b->raw) && b->raw->w0 == 1.0f
+                  : b->count && b->vertices[0].rhw == 1.0f;
+}
+
+static int batch_d0(const Nv2aBatch *b, uint32_t *d0)
+{
+    if (b->raw) {
+        *d0 = b->raw->d0;
+        return raw_2d(b->raw);
+    }
+    *d0 = b->count ? b->vertices[0].diffuse : 0;
+    return b->count != 0;
 }
 
 /* Whether a draw into f (b: the batch, NULL for a clear) is skipped. */
@@ -3808,7 +3997,8 @@ static int lazy_skip(Surf *f, const Nv2aBatch *b)
     int copy;
     if (!f->first_drawn)
         f->first_drawn = s_frame;
-    copy = !b || (!b->raw && b->count && b->vertices[0].rhw == 1.0f && b->texture
+    /* (not_copy never clears: once set, what this batch is no longer matters) */
+    copy = !b || (!f->not_copy && batch_flat(b) && b->texture
                   && surf_find(b->texture->offset) && surf_find(b->texture->offset)->fbo
                   && surf_find(b->texture->offset) != f && batch_fullscreen(b, f));
     if (!copy)
@@ -3830,16 +4020,10 @@ static int lazy_skip(Surf *f, const Nv2aBatch *b)
 /* 2D covering (nearly) the whole surface: a fade or a pass over the scene. */
 static int batch_fullscreen(const Nv2aBatch *b, const Surf *f)
 {
-    float x0 = 1e9f, x1 = -1e9f, y0 = 1e9f, y1 = -1e9f;
-    uint32_t k;
-    for (k = 0; k < b->count; k++) {
-        const Nv2aVertex *q = &b->vertices[k];
-        if (q->x < x0) x0 = q->x;
-        if (q->x > x1) x1 = q->x;
-        if (q->y < y0) y0 = q->y;
-        if (q->y > y1) y1 = q->y;
-    }
-    return x1 - x0 >= 0.9f * (float)f->w && y1 - y0 >= 0.9f * (float)f->h;
+    Nv2aRawExtent e;
+    if (!batch_extent(b, &e))
+        return 0;
+    return e.x1 - e.x0 >= 0.9f * (float)f->w && e.y1 - e.y0 >= 0.9f * (float)f->h;
 }
 
 /* The HUD picture, bound for a draw: an eye's size, transparent at the
@@ -3892,6 +4076,7 @@ static void hud_bind(const Surf *f, const Nv2aRenderState *rs)
 static int batch_needs_rc(const Surf *f, const Nv2aBatch *b, int raw)
 {
     const int has_ext = raw ? b->rc != NULL : (b->rc && b->ext);
+    uint32_t d0;
     int st;
     if (!has_ext)
         return 0;
@@ -3902,7 +4087,7 @@ static int batch_needs_rc(const Surf *f, const Nv2aBatch *b, int raw)
             if (b->stage[st] && b->stage[st]->cube
                 && ((b->rc->stage_program >> (st * 5)) & 0x1F) == 3)
                 return 1;
-    if (!raw && b->texture && b->count && (b->vertices[0].diffuse & 0x00FFFFFFu) == 0) {
+    if (b->texture && batch_d0(b, &d0) && (d0 & 0x00FFFFFFu) == 0) {
         const Surf *rt = surf_find(b->texture->offset);
         if (rt && rt->fbo && !rt->cpu_owned)
             return 1;
@@ -3923,8 +4108,12 @@ static void gl_draw(const Nv2aSurface *s, const Nv2aBatch *b)
                         : b->count / 3;
     GLsizeiptr ioff = 0;
 
-    if ((!raw && !b->count) || !gl_ready() || !(f = surf_bind(s)))
+    if ((!raw && !b->count) || !gl_ready())
         return;
+    GLCK("before draw (elsewhere)", b, s->color_va);
+    if (!(f = surf_bind(s)))
+        return;
+    GLCK("draw: surf_bind", b, f->va);
     if (lazy_skip(f, b))
         return;
     if (raw && raw->kind == NV2A_RAW_PROGRAM)
@@ -3945,9 +4134,12 @@ static void gl_draw(const Nv2aSurface *s, const Nv2aBatch *b)
             s_cur_vao = vao;
         }
     }
+    GLCK("draw: program / VAO", b, f->va);
     TM(0);
     apply_state(b->state);
+    GLCK("draw: apply_state", b, f->va);
     z_use(f, b->state);
+    GLCK("draw: z_use", b, f->va);
     TM(1);
     cu2f(U->surf, (float)f->w, (float)f->h);
     {
@@ -3957,9 +4149,11 @@ static void gl_draw(const Nv2aSurface *s, const Nv2aBatch *b)
         if (s_ftr == 1 && f->wide)
             fprintf(stderr, "[GLTR]   16:9 x scale %.3f offset %+.3f\n", xs, xo);
     }
+    GLCK("draw: surface uniforms", b, f->va);
     active_tex(0);
     if (b->texture)
         textured = tex_bind_for(f, b->texture, &tw, &th);
+    GLCK("draw: stage-0 texture", b, f->va);
     TM(2);
     if (s_st.on) {
         if (!b->texture && (b->stage[1] || b->stage[2] || b->stage[3]))
@@ -4058,6 +4252,7 @@ static void gl_draw(const Nv2aSurface *s, const Nv2aBatch *b)
         glBindTexture(GL_TEXTURE_2D, s_white);
     cu1i(U->textured, textured);
     cu2f(U->texsize, tw, th);
+    GLCK("draw: texture uniforms", b, f->va);
     if (!raw && b->rc && b->ext && s_use_rc && s_st.on && s_st.rc_logged < 4) {
         const Nv2aVertexEx *e = &b->ext[0];
         s_st.rc_logged++;
@@ -4101,8 +4296,8 @@ static void gl_draw(const Nv2aSurface *s, const Nv2aBatch *b)
          * redraws the 3D view through ~40 such distortion meshes; drawn the
          * default way, the whole scene went black for as long as the pedal
          * was held. */
-        if (has_ext && !raw && b->texture && b->count
-            && (b->vertices[0].diffuse & 0x00FFFFFFu) == 0) {
+        uint32_t d0;
+        if (has_ext && b->texture && batch_d0(b, &d0) && (d0 & 0x00FFFFFFu) == 0) {
             const Surf *rt = surf_find(b->texture->offset);
             rt_pass = rt && rt->fbo && !rt->cpu_owned;
         }
@@ -4113,6 +4308,7 @@ static void gl_draw(const Nv2aSurface *s, const Nv2aBatch *b)
             rt_pass = 1;
         if (has_ext && (s_use_rc || has_cube || rt_pass)) {
             bind_combiners(f, b);
+            GLCK("draw: bind_combiners", b, f->va);
             need_ext = 1;
         } else {
             int lmap = has_ext && lightmap_batch(b);
@@ -4139,12 +4335,15 @@ static void gl_draw(const Nv2aSurface *s, const Nv2aBatch *b)
                 active_tex(0);
             }
         }
+        GLCK("draw: lightmap / combiners off", b, f->va);
         if (raw) {
             TM(3);
             if (!raw_submit(raw, &ioff)) {
                 s_rst.declined++;
                 return;
             }
+            GLCK(raw->kind == NV2A_RAW_PROGRAM ? "draw: raw vp attributes + uniforms"
+                 : "draw: raw ff attributes + uniforms", b, f->va);
         } else {
             GLuint k;
             GLsizeiptr off;
@@ -4163,6 +4362,7 @@ static void gl_draw(const Nv2aSurface *s, const Nv2aBatch *b)
                                   (void *)(off + offsetof(Nv2aVertex, diffuse)));
             glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof(Nv2aVertex),
                                   (void *)(off + offsetof(Nv2aVertex, u)));
+            GLCK("draw: cpu vertices + attributes", b, f->va);
         }
     }
     if (raw) {
@@ -4199,6 +4399,7 @@ static void gl_draw(const Nv2aSurface *s, const Nv2aBatch *b)
         else
             glDrawArrays(GL_TRIANGLES, 0, (GLsizei)b->count);
         glEndQuery(GL_SAMPLES_PASSED);
+        GLCK("draw: zpass draw", b, f->va);
         glGetQueryObjectuiv(q, GL_QUERY_RESULT, &passed);
         *b->zpass_out += passed;
         s_st.zpass_batches++;
@@ -4216,7 +4417,7 @@ static void gl_draw(const Nv2aSurface *s, const Nv2aBatch *b)
         }
         /* a program batch: what the CPU path decides from its first vertex */
         is3d = rawff ? s_bgp_ok
-             : raw ? (raw->w0 != 1.0f && raw->w0 > 0.0f && (f->gp_ok || s_gp_ok))
+             : raw ? (raw_vp_3d(raw) && (f->gp_ok || s_gp_ok))
                    : (b->vertices[0].rhw != 1.0f && b->vertices[0].rhw > 0.0f
                       && (f->gp_ok || s_gp_ok));
         if (is3d && f->st) {
@@ -4248,7 +4449,7 @@ static void gl_draw(const Nv2aSurface *s, const Nv2aBatch *b)
         if (s_imm && f->st) {
             if (is3d)
                 imm3d = 1;
-            else if (!raw && surf_shown(f) && !batch_fullscreen(b, f))
+            else if ((!raw || raw_2d(raw)) && surf_shown(f) && !batch_fullscreen(b, f))
                 hud = 1;
         }
         if (s_imm && !is3d && genv("VC3_IMM_LOG") && s_frame % 120 == 0) {
@@ -4257,8 +4458,9 @@ static void gl_draw(const Nv2aSurface *s, const Nv2aBatch *b)
             if (nl++ < 40)
                 fprintf(stderr, "[IMM]   2D %s into %08X %dx%d st %d shown %d full %d count %u rhw %.3f tex %08X\n",
                         raw ? "raw" : "cpu", f->va, f->w, f->h, f->st, surf_shown(f),
-                        raw ? -1 : batch_fullscreen(b, f), raw ? 0 : b->count,
-                        raw ? 0.0f : b->vertices[0].rhw, b->texture ? b->texture->offset : 0);
+                        batch_fullscreen(b, f), raw ? raw->index_count : b->count,
+                        raw ? (raw->w0 != 0.0f ? 1.0f / raw->w0 : 0.0f) : b->vertices[0].rhw,
+                        b->texture ? b->texture->offset : 0);
         }
         if (imm3d) {
             const VrGameProj *g = rawff ? &s_bgp : f->gp_ok ? &f->gp : &s_gp;
@@ -4268,9 +4470,11 @@ static void gl_draw(const Nv2aSurface *s, const Nv2aBatch *b)
         } else {
             cu2f(U->gw, 0.0f, 0.0f);
         }
+        GLCK("draw: eye / immersive uniforms", b, f->va);
         if (hud) {
             hud_bind(f, b->state);
             s_rs_valid = 0;                 /* the blend's alpha was changed */
+            GLCK("draw: hud_bind", b, f->va);
         }
         /* Stereo in one pass: one instanced draw, instance = eye, each in its
          * half of a double-wide viewport, the other half clipped -- one draw
@@ -4304,6 +4508,7 @@ static void gl_draw(const Nv2aSurface *s, const Nv2aBatch *b)
                                                   (void *)ioff, 2, s_basevertex);
             else
                 glDrawArraysInstanced(GL_TRIANGLES, 0, (GLsizei)b->count, 2);
+            GLCK(raw ? "draw: one-pass stereo (raw)" : "draw: one-pass stereo (cpu)", b, f->va);
             glViewport(0, 0, f->pw, f->ph);
         }
         /* Stereo: the same draw for each eye, in its half. */
@@ -4336,6 +4541,8 @@ static void gl_draw(const Nv2aSurface *s, const Nv2aBatch *b)
                                          GL_UNSIGNED_SHORT, (void *)ioff, s_basevertex);
             else
                 glDrawArrays(GL_TRIANGLES, 0, (GLsizei)b->count);
+            GLCK(hud ? (raw ? "draw: HUD picture (raw)" : "draw: HUD picture (cpu)")
+                 : raw ? "draw: draw (raw)" : "draw: draw (cpu)", b, f->va);
         }
         if (hud)
             glBindFramebuffer(GL_FRAMEBUFFER, f->fbo);
@@ -4396,8 +4603,10 @@ static void gl_draw(const Nv2aSurface *s, const Nv2aBatch *b)
     f->dirty = 1;
     f->memq_valid = 0;
     f->cpu_owned = 0;
+    GLCK("draw: end", b, f->va);
     if (vc3_fps_get() > 60)
         interp_scene_snap(f, b);
+    GLCK("draw: interp_scene_snap", b, f->va);
 }
 
 /* Nv2aBackend.draw_raw: fixed-function batches, when the shader linked and
@@ -4411,18 +4620,30 @@ static int gl_draw_raw(const Nv2aSurface *s, const Nv2aBatch *b)
         return 0;
     if (g->kind == NV2A_RAW_PROGRAM) {
         /* A screen-space batch (the CPU's first vertex at w = 1: HUD,
-         * sprites, the full-screen copies) stays on the CPU: the lazy copies,
-         * the immersive HUD panel and the combiner routing look at its
-         * transformed vertices. VC3_GL_VP_2D=1 sends those too (to check the
-         * translation on every program). Immersive, a 3D one needs the game's
+         * sprites, the full-screen copies) and one whose first vertex is
+         * behind the eye (w <= 0: the E.S. distortion meshes) are drawn here
+         * too. The lazy copies, the immersive HUD panel, the combiner routing
+         * and the 16:9 HUD placement look at where their vertices land: the
+         * executor gives that (g->d0, g->extent), the positions transformed
+         * on the CPU only for a batch one of them asks about.
+         * VC3_GL_VP_2D=0 keeps both kinds on the CPU, as before; =1 sends a
+         * first vertex at NaN too. Immersive, a 3D one needs the game's
          * projection the CPU path would use. */
-        static int all2d = -1;
+        static int vp2d = -1;
         const Surf *sf = surf_find(s->color_va);
-        if (all2d < 0)
-            all2d = genv("VC3_GL_VP_2D") && genv("VC3_GL_VP_2D")[0] == '1';
-        if (!all2d && !(g->w0 != 1.0f && g->w0 > 0.0f))
+        const int is3d = raw_vp_3d(g);
+        if (vp2d < 0) {
+            vp2d = !genv("VC3_GL_VP_2D") ? 2 : genv("VC3_GL_VP_2D")[0] == '1' ? 1
+                 : genv("VC3_GL_VP_2D")[0] == '0' ? 0 : 2;
+            fprintf(stderr, "[GL] screen-space program batches: %s (VC3_GL_VP_2D=%s)\n",
+                    vp2d == 0 ? "on the CPU" : vp2d == 1 ? "on the GPU, every one"
+                    : "on the GPU", genv("VC3_GL_VP_2D") ? genv("VC3_GL_VP_2D") : "");
+        }
+        if (vp2d == 0 && !(g->w0 > 0.0f && g->w0 != 1.0f))
+            return 0;                       /* as before: on the CPU */
+        if (vp2d == 2 && g->w0 != g->w0)
             return 0;
-        if (s_imm && !(sf && (sf->gp_ok || s_gp_ok)))
+        if (is3d && s_imm && !(sf && (sf->gp_ok || s_gp_ok)))
             return 0;
         if (!(s_vp_cur = vp_get(g)))
             return 0;
@@ -4496,6 +4717,17 @@ static const char *VS_QUAD =
     "void main() {\n"
     "  vec2 p = vec2((gl_VertexID << 1) & 2, gl_VertexID & 2);\n"
     "  gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0);\n"
+    "}\n";
+
+/* The immersive HUD picture over one eye of the desktop test (gl_flip):
+ * premultiplied, as the headset's quad layer takes it. */
+static const char *FS_HUD =
+    "#version 410\n"
+    "uniform sampler2D u_img;\n"
+    "uniform vec2 u_org, u_size;\n"
+    "out vec4 o;\n"
+    "void main() {\n"
+    "  o = texture(u_img, (gl_FragCoord.xy - u_org) / u_size);\n"
     "}\n";
 
 /* At the guest size, from the frame as drawn (filtered down when larger). */
@@ -4856,20 +5088,18 @@ static void interp_scene_snap(const Surf *f, const Nv2aBatch *b)
 {
     float x0 = 1e30f, x1 = -1e30f, y0 = 1e30f, y1 = -1e30f;
     const Surf *src;
-    uint32_t k;
 
-    if (b->raw || !b->count || !b->texture || f->w * 3 != f->h * 4
+    if ((b->raw && !raw_2d(b->raw)) || !b->texture || f->w * 3 != f->h * 4
         || (s_ip.scene_frame == s_frame && s_ip.scene_va == f->va))
         return;
     src = surf_find(b->texture->offset);
     if (!src || src == f || src->cpu_owned)
         return;
-    for (k = 0; k < b->count; k++) {
-        const Nv2aVertex *q = &b->vertices[k];
-        if (q->x < x0) x0 = q->x;
-        if (q->x > x1) x1 = q->x;
-        if (q->y < y0) y0 = q->y;
-        if (q->y > y1) y1 = q->y;
+    {
+        Nv2aRawExtent e;
+        if (!batch_extent(b, &e))
+            return;
+        x0 = e.x0; x1 = e.x1; y0 = e.y0; y1 = e.y1;
     }
     if (x0 > 1.0f || y0 > 1.0f || x1 < (float)f->w - 1.0f || y1 < (float)f->h - 1.0f)
         return;
@@ -5218,6 +5448,7 @@ static void gl_flip(void)
 
     if (!gl_ready())
         return;
+    GLCK("flip: before (elsewhere)", NULL, nv2a_backend_presented_va());
     if (s_ftr == 1) {
         s_ftr = 2;
         fprintf(stderr, "[GLTR] end of frame\n");
@@ -5230,20 +5461,66 @@ static void gl_flip(void)
         }
     }
 #if !defined(VC3_GLES)
-    /* The desktop's immersive test (vr_view_desktop.c): no headset layer
-     * to show the HUD on, so its picture goes, small and opaque, into the
-     * right eye's lower right corner -- to see what the panel would get. */
+    /* The desktop's immersive test (vr_view_desktop.c) has no headset
+     * layer to show the HUD picture on. It goes over each eye, whole and
+     * blended as the headset's quad layer blends it (premultiplied alpha,
+     * XR_COMPOSITION_LAYER_BLEND_TEXTURE_SOURCE_ALPHA_BIT): the HUD's
+     * elements over the world, the rest transparent. It used to be copied,
+     * opaque, into the right eye's corner -- a black panel there, as the
+     * picture is clear (0,0,0,0) wherever there is no HUD.
+     * VC3_IMM_HUD_INSET=1: that copy instead, to see the picture alone. */
     if (s_imm && s_hud_fbo && s_hud_frame == s_frame && genv("VC3_IMMERSIVE_TEST")) {
         Surf *pf = surf_find(nv2a_backend_presented_va());
+        static GLuint prog;
+        static GLint u_img, u_org, u_size;
+        if (!prog && !(genv("VC3_IMM_HUD_INSET") && genv("VC3_IMM_HUD_INSET")[0] == '1')
+            && (prog = link_quad(FS_HUD))) {
+            u_img = glGetUniformLocation(prog, "u_img");
+            u_org = glGetUniformLocation(prog, "u_org");
+            u_size = glGetUniformLocation(prog, "u_size");
+        }
         if (pf && pf->st && pf->fbo) {
             glDisable(GL_SCISSOR_TEST);
             glColorMask(1, 1, 1, 1);
             s_rs_valid = 0;
-            glBindFramebuffer(GL_READ_FRAMEBUFFER, s_hud_fbo);
-            glBindFramebuffer(GL_DRAW_FRAMEBUFFER, pf->fbo);
-            glBlitFramebuffer(0, 0, s_hud_w, s_hud_h, pf->pw + pf->pw / 2, 0, 2 * pf->pw, pf->ph / 2,
-                              GL_COLOR_BUFFER_BIT, GL_LINEAR);
+            if (prog) {
+                int eye;
+                glBindFramebuffer(GL_FRAMEBUFFER, pf->fbo);
+                static GLuint vao;              /* no attributes: the quad is gl_VertexID */
+                glUseProgram(prog);
+                s_cur_prog = prog;
+                if (!vao)
+                    glGenVertexArrays(1, &vao);
+                /* (not the CPU path's s_vao: its arrays 0-2 are enabled from
+                 * the start and get a buffer only at that path's first draw,
+                 * and with every 2D batch on the GPU that may not have come:
+                 * GL_INVALID_OPERATION, nothing drawn) */
+                glBindVertexArray(vao);
+                s_cur_vao = vao;
+                bind_tex(0, s_hud_tex);
+                glUniform1i(u_img, 0);
+                glUniform2f(u_size, (GLfloat)pf->pw, (GLfloat)pf->ph);
+                glDisable(GL_DEPTH_TEST);
+                glDisable(GL_STENCIL_TEST);
+                glDisable(GL_CULL_FACE);
+                caps_off();
+                glEnable(GL_BLEND);
+                glBlendEquation(GL_FUNC_ADD);
+                glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+                for (eye = 0; eye < 2; eye++) {
+                    glViewport(eye * pf->pw, 0, pf->pw, pf->ph);
+                    glUniform2f(u_org, (GLfloat)(eye * pf->pw), 0.0f);
+                    glDrawArrays(GL_TRIANGLES, 0, 3);
+                }
+                glViewport(0, 0, pf->pw, pf->ph);
+            } else {
+                glBindFramebuffer(GL_READ_FRAMEBUFFER, s_hud_fbo);
+                glBindFramebuffer(GL_DRAW_FRAMEBUFFER, pf->fbo);
+                glBlitFramebuffer(0, 0, s_hud_w, s_hud_h, pf->pw + pf->pw / 2, 0, 2 * pf->pw,
+                                  pf->ph / 2, GL_COLOR_BUFFER_BIT, GL_LINEAR);
+            }
             glBindFramebuffer(GL_FRAMEBUFFER, pf->fbo);
+            GLCK("flip: desktop HUD overlay", NULL, pf->va);
         }
     }
 #endif
@@ -5276,12 +5553,16 @@ static void gl_flip(void)
                 }
 #endif
                 surf_readback_async(&s_surfs[i]);
+                GLCK("flip: readback of the shown surface", NULL, s_surfs[i].va);
             }
-            else if (all || !shown)
+            else if (all || !shown) {
                 surf_readback(&s_surfs[i]);
+                GLCK("flip: readback (other surface)", NULL, s_surfs[i].va);
+            }
         }
     }
     gt_flip();
+    GLCK("flip: GPU timing queries", NULL, 0);
     /* The frame's projection (the HUD panel, the aim): the one of the
      * stereo surface the most 3D went into -- the scene. */
     {
@@ -5302,6 +5583,7 @@ static void gl_flip(void)
     }
 #if defined(VC3_GLES)
     quest_present();
+    GLCK("flip: quest_present", NULL, 0);
 #endif
     /* The picture the window shows: the presented surface's guest size,
      * widened as it is drawn. Then the next frame's scale and aspect. */
@@ -5345,6 +5627,8 @@ static void gl_flip(void)
                         s_gp_good, s_gp_bad);
         }
     }
+    GLCK("flip: end", NULL, 0);
+    glck_second();
     s_frame++;
     if (genv("VC3_FPS_LOG")) {            /* wall-clock flips per second */
         /* With the vblanks delivered over the same second: flips below the
