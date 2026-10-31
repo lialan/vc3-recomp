@@ -1701,11 +1701,14 @@ static Prog *rc_spec(const Nv2aBatch *b, GLuint vs, int fb, int vp, int noat)
     return &s_rcs[slot].p;
 }
 
+static uint64_t tm_now(void);
+
 static VpProg *vp_get(const Nv2aRawGeometry *g)
 {
     static char body[65536], src[98304], decl[2048], fetches[2048];
     VpProg *e = NULL;
     uint32_t ninsn = 0, wc = 0, inputs = 0, dl = 0, fl = 0, r;
+    uint64_t t0;
     GLuint vs;
     int i, n;
 
@@ -1770,6 +1773,7 @@ static VpProg *vp_get(const Nv2aRawGeometry *g)
     if (genv("GL_VP_DUMP"))                /* the GLSL, to compare with the microcode */
         fprintf(stderr, "[GL] vertex program %016llx GLSL:\n%s\n",
                 (unsigned long long)g->program_hash, body);
+    t0 = tm_now();
     vs = compile(GL_VERTEX_SHADER, src);
     if (!vs || !prog_link(&e->p, vs, s_fs_obj, 1)) {
         s_vp_failed++;
@@ -1795,9 +1799,9 @@ static VpProg *vp_get(const Nv2aRawGeometry *g)
     e->vs = vs;                                /* rc_spec links it again */
     e->state = 1;
     s_vp_built++;
-    fprintf(stderr, "[GL] vertex program %016llx: %u instructions on the GPU%s\n",
-            (unsigned long long)g->program_hash, ninsn,
-            wc ? " (its writes to c[] ignored: CXT_WRITE off)" : "");
+    fprintf(stderr, "[GL] vertex program %016llx: %u instructions on the GPU%s; compiled and"
+            " linked in %.1f ms\n", (unsigned long long)g->program_hash, ninsn,
+            wc ? " (its writes to c[] ignored: CXT_WRITE off)" : "", (tm_now() - t0) / 1e6);
     return e;
 }
 
@@ -2277,7 +2281,6 @@ static void clear_leave(Surf *p);
  * depth discarded would have drawn wrong once. Only the HUD surface kept
  * the pattern throughout. */
 #define Z_LEARN 120               /* frames: two seconds of the same pattern */
-static uint64_t tm_now(void);
 static int s_zd = -1;                  /* 0 off, 1 on, 2 dry */
 static uint32_t s_zd_n, s_zd_bad;      /* discards, violations (this second) */
 static Surf *s_z_prev;                 /* the surface surf_bind bound last */
