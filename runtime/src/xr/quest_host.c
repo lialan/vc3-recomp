@@ -19,9 +19,9 @@
  * (any internal resolution, 16:9 or 4:3), into one of three shared
  * textures and fences it (vc3_quest_frame); the headset loop takes the
  * newest, waits on its fence on the GPU, and copies it into the layer's
- * swapchain. (VC3_XR_DIRECT=1: the back end blits straight into the
- * swapchain instead -- off by default, see direct_on.) Nothing is read back
- * to the CPU.
+ * swapchain. (VC3_XR_DIRECT=1: the loop lends the back end a swapchain image
+ * and the back end blits straight into it -- off by default, see "Lent
+ * images".) Nothing is read back to the CPU.
  *
  * The gun is a handgun in the player's hand (quest_overlay.c, drawn in a
  * transparent layer over the screen), with iron sights, a red dot or a
@@ -156,9 +156,9 @@ typedef struct {
     GLuint hud;              /* the HUD picture (vr.hud_w x vr.hud_h) */
     GLsizei hud_w, hud_h;
     int has_hud;
-    int direct;              /* the picture is in the game's swapchain (dchain,
-                                w x h), not in tex */
-    XrSwapchain dchain;
+    int direct;              /* the picture is in the lent swapchain image
+                                (w x h), not in tex */
+    GLsizei tw, th;          /* tex's size */
 } Frame;
 
 static Frame s_frame[3];
@@ -211,15 +211,15 @@ static void pace_game_frame(void)
     }
 }
 
-static int direct_acquire(int w, int h, GLuint *fbo, XrSwapchain *chain);   /* below */
-static void direct_release(void);
-static pthread_mutex_t s_submit = PTHREAD_MUTEX_INITIALIZER;
+static int s_srgb_control;              /* below (xr_init) */
+static GLuint lend_claim(int w, int h);    /* below: the lent image, or 0 */
+static void lend_filled(void);
 
 void vc3_quest_frame(GLuint fbo, int pw, int ph, int eyes, int lw, int lh, const void *vr_frame)
 {
     const Vc3VrFrame *vf = (const Vc3VrFrame *)vr_frame;
-    static GLuint dst_fbo;
-    GLuint dfbo = 0;
+    static GLuint dst_fbo, lend_fbo;
+    GLuint ltex;
     Frame *f = &s_frame[s_back];        /* this thread alone touches s_back */
     int t;
 
@@ -242,16 +242,25 @@ void vc3_quest_frame(GLuint fbo, int pw, int ph, int eyes, int lw, int lh, const
         }
     }
     f->direct = 0;
-    if (direct_acquire(pw, ph, &dfbo, &f->dchain)) {
-        /* straight into the swapchain image, upright (the surfaces hold the
-         * picture top row first, GL's bottom) */
+    f->w = pw;
+    f->h = ph;
+    if ((ltex = lend_claim(pw, ph))) {
+        /* straight into the image the loop lent, upright (the surfaces hold
+         * the picture top row first, GL's bottom) */
+        static int srgb_off;
+        if (!lend_fbo)
+            glGenFramebuffers(1, &lend_fbo);
+        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, lend_fbo);
+        glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, ltex, 0);
+        if (s_srgb_control && !srgb_off) {   /* the colours are sRGB already */
+            glDisable(GL_FRAMEBUFFER_SRGB_EXT);
+            srgb_off = 1;
+        }
         glBindFramebuffer(GL_READ_FRAMEBUFFER, fbo);
-        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, dfbo);
         glBlitFramebuffer(0, 0, pw, ph, 0, ph, pw, 0, GL_COLOR_BUFFER_BIT, GL_NEAREST);
+        glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, 0, 0);
         f->direct = 1;
-        f->w = pw;
-        f->h = ph;
-    } else if (!f->tex || f->w != pw || f->h != ph) {
+    } else if (!f->tex || f->tw != pw || f->th != ph) {
         if (f->tex)
             glDeleteTextures(1, &f->tex);
         glGenTextures(1, &f->tex);
@@ -259,8 +268,8 @@ void vc3_quest_frame(GLuint fbo, int pw, int ph, int eyes, int lw, int lh, const
         glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, pw, ph);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-        f->w = pw;
-        f->h = ph;
+        f->tw = pw;
+        f->th = ph;
     }
     if (f->fence) {
         glDeleteSync(f->fence);
@@ -337,23 +346,15 @@ void vc3_quest_frame(GLuint fbo, int pw, int ph, int eyes, int lw, int lh, const
     glFlush();                          /* the fence must reach the GPU */
 
     pace_game_frame();
-    /* A direct frame's image is released with the frame published, while
-     * the loop is not between taking a frame and submitting its layers (it
-     * holds s_submit then): the layers always show the image of the frame
-     * whose pose they carry. */
-    if (f->direct) {
-        pthread_mutex_lock(&s_submit);
-        direct_release();
-    }
     pthread_mutex_lock(&s_lock);
+    if (f->direct)
+        lend_filled();                  /* the loop releases it when it takes f */
     t = s_ready;
     s_ready = s_back;
     s_back = t;
     s_ready_seq++;
     s_frames_in++;
     pthread_mutex_unlock(&s_lock);
-    if (f->direct)
-        pthread_mutex_unlock(&s_submit);
 }
 
 /* After the host's copy out of f is queued: a fence the back end's GPU
@@ -388,6 +389,7 @@ static Frame *take_frame(int *is_new, int allow)
     f = &s_frame[s_front];
     if (!f->tex && !f->direct)
         return NULL;
+    /* (a direct frame's image is released by xr_frame: lend_take) */
     /* (the read_done fence of the frame given up stays: the back end waits
      * on it before writing that frame again) */
     if (*is_new && f->fence)
@@ -796,6 +798,8 @@ static int xr_init(void)
     return 1;
 }
 
+static int lend_revoke(void);            /* below */
+
 /* A swapchain the size of the frames (they change with the resolution and
  * aspect settings). */
 static int chain_fit(uint32_t w, uint32_t h)
@@ -805,6 +809,8 @@ static int chain_fit(uint32_t w, uint32_t h)
 
     if (s_chain && s_chain_w == w && s_chain_h == h)
         return 1;
+    if (s_chain && !lend_revoke())
+        return 1;                       /* the back end has its image: next frame */
     if (s_chain) {
         glDeleteFramebuffers((GLsizei)s_chain_n, s_chain_fbo);
         xrDestroySwapchain(s_chain);
@@ -840,136 +846,146 @@ static int chain_fit(uint32_t w, uint32_t h)
     return 1;
 }
 
-/* ── Direct frames: the back end's blit lands in the swapchain ───────────
- * The game's swapchain for direct frames belongs to the back end's thread:
- * it creates it (a new one when the frame's size changes), acquires an image
- * at each flip, blits the presented surface into it and releases it as the
- * frame is published (vc3_quest_frame) -- one full-size copy a frame instead
- * of two (into a shared texture, then from it into the swapchain on this
- * loop). Framebuffers are per context, so the back end has its own for the
- * images. A swapchain replaced stays alive until the loop has submitted a
- * frame from the new one (direct_retire_done), then the loop destroys it.
- * Off by default (VC3_XR_DIRECT=1: on, with the overlay -- no aim dot to
- * draw into the picture every display frame -- and without VC3_QUEST_DUMP):
- * Meta's runtime ties swapchain images to its frame transactions. Images
- * released on the back end's clock, between the loop's frames, drew
+/* ── Lent images: the back end's blit straight into the swapchain ─────────
+ * VC3_XR_DIRECT=1; off by default. On a Quest 3 it held the frame rate and
+ * the intro a little better (low10 42.5 against 40.5), but Meta's runtime
+ * still objected -- 79 "Missing previous frame submission" and 44 "Failed
+ * to retire next frame" in a run: it wants an image acquired, waited and
+ * released within one frame, and a lent image spans two (acquired at the
+ * end of one, released when the back end's frame is taken). Each
+ * frame went through two full-size copies: the back end's into one of the
+ * shared textures, this loop's from it into the swapchain. Instead this loop
+ * lends the back end a swapchain image: it acquires and waits for one inside
+ * its own frame (lend_out, between xrBeginFrame and xrEndFrame), the back
+ * end blits the frame it presents into it if the size fits (lend_claim, then
+ * lend_filled as it publishes the frame), and the loop releases it when it
+ * takes that frame (lend_take), its layers then showing it. Acquire, wait and
+ * release all stay on this thread and inside its frame loop, as Meta's
+ * runtime wants: the back end acquiring and releasing on its own clock drew
  * "xrWaitSwapchainImage: Missing previous frame submission", then
  * "xrEndFrame frameTransaction failure ... swapchains not marked as
- * used-in-frame" and "Failed to retire next frame", and the game stalled a
- * second or two a frame -- in 7 of 15 runs on a Quest 3, intermittently. */
+ * used-in-frame" and "Failed to retire next frame", and stalls of a second
+ * or two a frame. A frame that finds no image lent, or one of another size,
+ * takes the texture path; a filled image a newer frame overtook is released
+ * before that frame's copy (lend_drop); a swapchain being replaced waits for
+ * the back end to finish with its image (lend_revoke). State under s_lock. */
+enum { LEND_NONE, LEND_OUT, LEND_FILLING, LEND_FILLED };
 static struct {
-    XrSwapchain h;
-    uint32_t w, ht, n;
-    XrSwapchainImageOpenGLESKHR img[8];
-    GLuint fbo[8];
-} s_dc;
-static XrSwapchain s_dc_retired;        /* under s_lock */
+    int state;
+    uint32_t idx, w, h;
+    GLuint tex;
+} s_lend;
 static int s_overlay_ok = -1;           /* -1 not yet tried (overlay_init) */
 
-static int direct_on(void)
+static int lend_on(void)
 {
     static int on = -1;
     if (on < 0)
         on = ch_env("XR_DIRECT") && *ch_env("XR_DIRECT") == '1' && !ch_env("QUEST_DUMP");
-    return on && s_running && s_sess != XR_NULL_HANDLE && s_overlay_ok > 0 && s_chain_fmt;
+    return on && s_overlay_ok > 0;
 }
 
-static int direct_fit(uint32_t w, uint32_t h)
+/* The back end's thread: the lent image for a w x h frame (its texture),
+ * now the back end's to fill; 0: none (the texture path). */
+static GLuint lend_claim(int w, int h)
 {
-    XrSwapchainCreateInfo ci = { XR_TYPE_SWAPCHAIN_CREATE_INFO };
-    XrSwapchain nc = XR_NULL_HANDLE;
-    uint32_t i, n = 0;
-    int busy;
-
-    if (s_dc.h && s_dc.w == w && s_dc.ht == h)
-        return 1;
+    GLuint tex = 0;
+    if (!lend_on())
+        return 0;
     pthread_mutex_lock(&s_lock);
-    busy = s_dc_retired != XR_NULL_HANDLE;
+    if (s_lend.state == LEND_OUT && s_lend.w == (uint32_t)w && s_lend.h == (uint32_t)h) {
+        s_lend.state = LEND_FILLING;
+        tex = s_lend.tex;
+    }
     pthread_mutex_unlock(&s_lock);
-    if (busy)                           /* the one before last still shown */
-        return 0;
-    ci.usageFlags = XR_SWAPCHAIN_USAGE_COLOR_ATTACHMENT_BIT | XR_SWAPCHAIN_USAGE_TRANSFER_DST_BIT;
-    ci.format = s_chain_fmt;
-    ci.sampleCount = 1;
-    ci.width = w;
-    ci.height = h;
-    ci.faceCount = 1;
-    ci.arraySize = 1;
-    ci.mipCount = 1;
-    if (XR_FAILED(xrCreateSwapchain(s_sess, &ci, &nc)))
-        return 0;
-    if (XR_FAILED(xrEnumerateSwapchainImages(nc, 0, &n, NULL)) || n == 0) {
-        xrDestroySwapchain(nc);
-        return 0;
-    }
-    if (n > 8)
-        n = 8;
-    if (s_dc.h) {
-        glDeleteFramebuffers((GLsizei)s_dc.n, s_dc.fbo);
-        pthread_mutex_lock(&s_lock);
-        s_dc_retired = s_dc.h;
-        pthread_mutex_unlock(&s_lock);
-    }
-    s_dc.h = nc;
-    s_dc.n = n;
-    for (i = 0; i < n; i++)
-        s_dc.img[i].type = XR_TYPE_SWAPCHAIN_IMAGE_OPENGL_ES_KHR;
-    xrEnumerateSwapchainImages(nc, n, &s_dc.n, (XrSwapchainImageBaseHeader *)s_dc.img);
-    glGenFramebuffers((GLsizei)s_dc.n, s_dc.fbo);
-    for (i = 0; i < s_dc.n; i++) {
-        glBindFramebuffer(GL_FRAMEBUFFER, s_dc.fbo[i]);
-        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D,
-                               s_dc.img[i].image, 0);
-    }
-    glBindFramebuffer(GL_FRAMEBUFFER, 0);
-    if (s_srgb_control)                 /* the colours are sRGB already (see xr_init) */
-        glDisable(GL_FRAMEBUFFER_SRGB_EXT);
-    s_dc.w = w;
-    s_dc.ht = h;
-    fprintf(stderr, "[xr] screen %ux%u (direct)\n", w, h);
-    return 1;
+    return tex;
 }
 
-/* The back end's thread: an image of the direct swapchain for a w x h
- * frame, waited for, as a framebuffer; 0: copy the frame the old way. */
-static int direct_acquire(int w, int h, GLuint *fbo, XrSwapchain *chain)
+/* The back end's thread, s_lock held, as it publishes the frame it filled
+ * the image with (whose fence covers the blit). */
+static void lend_filled(void)
+{
+    if (s_lend.state == LEND_FILLING)
+        s_lend.state = LEND_FILLED;
+}
+
+static void lend_release(void)
+{
+    XrSwapchainImageReleaseInfo ri = { XR_TYPE_SWAPCHAIN_IMAGE_RELEASE_INFO };
+    xrReleaseSwapchainImage(s_chain, &ri);
+}
+
+/* This loop, a new frame taken whose picture is in the lent image (its
+ * fence waited on by take_frame): released, the layers show it. */
+static int lend_take(void)
+{
+    int filled;
+    pthread_mutex_lock(&s_lock);
+    filled = s_lend.state == LEND_FILLED;
+    if (filled)
+        s_lend.state = LEND_NONE;
+    pthread_mutex_unlock(&s_lock);
+    if (filled)
+        lend_release();
+    return filled;
+}
+
+/* This loop, a new frame taken that is not in the lent image: a filled one
+ * (an older frame's) released first, the new frame's copy goes after it. */
+static void lend_drop(void)
+{
+    int filled;
+    pthread_mutex_lock(&s_lock);
+    filled = s_lend.state == LEND_FILLED;
+    if (filled)
+        s_lend.state = LEND_NONE;
+    pthread_mutex_unlock(&s_lock);
+    if (filled)
+        lend_release();
+}
+
+/* This loop, before replacing the swapchain: an image lent and unused back
+ * (released: the old swapchain goes anyway); 0 while the back end has it. */
+static int lend_revoke(void)
+{
+    int st;
+    pthread_mutex_lock(&s_lock);
+    st = s_lend.state;
+    if (st == LEND_OUT)
+        s_lend.state = LEND_NONE;
+    pthread_mutex_unlock(&s_lock);
+    if (st == LEND_OUT)
+        lend_release();
+    return st == LEND_OUT || st == LEND_NONE;
+}
+
+/* This loop, inside its frame: an image lent for the back end's next frame
+ * when none is. */
+static void lend_out(void)
 {
     XrSwapchainImageAcquireInfo ai = { XR_TYPE_SWAPCHAIN_IMAGE_ACQUIRE_INFO };
     XrSwapchainImageWaitInfo wi = { XR_TYPE_SWAPCHAIN_IMAGE_WAIT_INFO };
     uint32_t idx = 0;
-
-    if (!direct_on() || !direct_fit((uint32_t)w, (uint32_t)h))
-        return 0;
-    if (XR_FAILED(xrAcquireSwapchainImage(s_dc.h, &ai, &idx)) || idx >= s_dc.n)
-        return 0;
-    wi.timeout = XR_INFINITE_DURATION;
-    if (XR_FAILED(xrWaitSwapchainImage(s_dc.h, &wi))) {
-        fprintf(stderr, "[xr] direct: waiting for the image failed\n");
-        return 0;
-    }
-    *fbo = s_dc.fbo[idx];
-    *chain = s_dc.h;
-    return 1;
-}
-
-static void direct_release(void)
-{
-    XrSwapchainImageReleaseInfo ri = { XR_TYPE_SWAPCHAIN_IMAGE_RELEASE_INFO };
-    xrReleaseSwapchainImage(s_dc.h, &ri);
-}
-
-/* The loop, after submitting a direct frame from chain: the swapchain it
- * replaced is not shown any more. */
-static void direct_retire_done(XrSwapchain chain)
-{
-    XrSwapchain old;
+    int none;
+    if (!lend_on() || !s_chain)
+        return;
     pthread_mutex_lock(&s_lock);
-    old = s_dc_retired != chain ? s_dc_retired : XR_NULL_HANDLE;
-    if (old)
-        s_dc_retired = XR_NULL_HANDLE;
+    none = s_lend.state == LEND_NONE;
     pthread_mutex_unlock(&s_lock);
-    if (old)
-        xrDestroySwapchain(old);
+    if (!none || XR_FAILED(xrAcquireSwapchainImage(s_chain, &ai, &idx)) || idx >= s_chain_n)
+        return;
+    wi.timeout = XR_INFINITE_DURATION;
+    if (XR_FAILED(xrWaitSwapchainImage(s_chain, &wi))) {
+        fprintf(stderr, "[xr] lending: waiting for the image failed\n");
+        return;
+    }
+    pthread_mutex_lock(&s_lock);
+    s_lend.idx = idx;
+    s_lend.tex = s_chain_img[idx].image;
+    s_lend.w = s_chain_w;
+    s_lend.h = s_chain_h;
+    s_lend.state = LEND_OUT;
+    pthread_mutex_unlock(&s_lock);
 }
 
 /* The display rate (the panel's Refresh, vr_refresh=): 120 by default --
@@ -2297,7 +2313,6 @@ static void xr_frame(void)
         if (locked && allow)
             xbox_VblankAlign(xbox_HostNowNs());
     }
-    pthread_mutex_lock(&s_submit);     /* to xrEndFrame: see vc3_quest_frame */
     xrgt_begin();
     f = take_frame(&is_new, allow);
     if (s_pace > 0) {   /* how many headset frames each game frame showed for */
@@ -2348,7 +2363,7 @@ static void xr_frame(void)
 
     ei.displayTime = fs.predictedDisplayTime;
     ei.environmentBlendMode = XR_ENVIRONMENT_BLEND_MODE_OPAQUE;
-    if (fs.shouldRender && f && (f->direct || chain_fit((uint32_t)f->w, (uint32_t)f->h))) {
+    if (fs.shouldRender && f && chain_fit((uint32_t)f->w, (uint32_t)f->h)) {
         XrSwapchainImageAcquireInfo ai = { XR_TYPE_SWAPCHAIN_IMAGE_ACQUIRE_INFO };
         XrSwapchainImageWaitInfo wti = { XR_TYPE_SWAPCHAIN_IMAGE_WAIT_INFO };
         XrSwapchainImageReleaseInfo ri = { XR_TYPE_SWAPCHAIN_IMAGE_RELEASE_INFO };
@@ -2366,20 +2381,26 @@ static void xr_frame(void)
         int copy;
         if (reblit < 0)
             reblit = ch_env("XR_REBLIT") && *ch_env("XR_REBLIT") == '1';
-        /* a direct frame is in its swapchain already: only its HUD is copied */
-        XrSwapchain chain = f->direct ? f->dchain : s_chain;
-        uint32_t cw = f->direct ? (uint32_t)f->w : s_chain_w;
-        uint32_t ch = f->direct ? (uint32_t)f->h : s_chain_h;
-        copy = reblit || is_new || dot || drawn_chain != s_chain_gen || drawn_f != f;
+        /* a frame in a lent image is in the swapchain already: released now
+         * (only its HUD is copied); a filled image a newer frame overtook,
+         * released before that frame's copy goes in after it */
+        XrSwapchain chain = s_chain;
+        uint32_t cw = s_chain_w, ch = s_chain_h;
+        int lent = is_new && f->direct && lend_take();
+        if (is_new && !lent)
+            lend_drop();
+        copy = !lent && !f->direct     /* a lent frame's picture is not in tex */
+               && (reblit || is_new || dot || drawn_chain != s_chain_gen || drawn_f != f);
 
         wti.timeout = XR_INFINITE_DURATION;
-        if (!copy || f->direct
+        if (lent || !copy
             || (XR_SUCCEEDED(xrAcquireSwapchainImage(s_chain, &ai, &idx))
                 && XR_SUCCEEDED(xrWaitSwapchainImage(s_chain, &wti)))) {
             uint32_t e;
             float c[3], yq = s_anchor_yaw * 0.5f;
 
-            if (f->direct) {
+            if (lent) {
+                drawn_chain = s_chain_gen;
                 drawn_f = f;
             } else if (copy) {
                 draw_frame(s_chain_fbo[idx], f, (GLsizei)s_chain_w, (GLsizei)s_chain_h, dot);
@@ -2394,12 +2415,12 @@ static void xr_frame(void)
                 world.viewCount = 2;
                 world.views = wv;
                 layers[nl++] = (const XrCompositionLayerBaseHeader *)&world;
-                if (hud_layer(f, &hudq, copy))
+                if (hud_layer(f, &hudq, copy || lent))   /* the HUD: a new frame's */
                     layers[nl++] = (const XrCompositionLayerBaseHeader *)&hudq;
-                if (copy)
+                if (copy || lent)
                     frame_read_done(f);
             } else {
-            if (copy)
+            if (copy || lent)
                 frame_read_done(f);
             {
                 float fwd[3] = { 0, 0, -s_dist };
@@ -2466,11 +2487,9 @@ static void xr_frame(void)
     }
     ei.layerCount = nl;
     ei.layers = layers;
+    lend_out();                         /* the image for the back end's next frame */
     xrgt_end();
     xrEndFrame(s_sess, &ei);
-    pthread_mutex_unlock(&s_submit);
-    if (f && f->direct)
-        direct_retire_done(f->dchain);
 }
 
 /* ── Without a headset: the SDL window ────────────────────────────────── */
