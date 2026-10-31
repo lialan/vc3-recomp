@@ -6261,6 +6261,11 @@ static GLuint fx_small(const Surf *rt)
         return s_fx.small_tex;
     t0 = tm_now();
     glGetIntegerv(GL_TEXTURE_BINDING_2D, &tex);
+    /* Allocation also binds GL_FRAMEBUFFER (both read and draw). Save
+     * before it so the first reduction/resize restores the effect target,
+     * rather than drawing into the texture the effect is sampling. */
+    glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &rd);
+    glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &dr);
     if (!s_fx.small_tex || s_fx.small_w != w || s_fx.small_h != h) {
         if (!s_fx.small_tex) {
             glGenTextures(1, &s_fx.small_tex);
@@ -6276,8 +6281,6 @@ static GLuint fx_small(const Surf *rt)
         s_fx.small_w = w;
         s_fx.small_h = h;
     }
-    glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &rd);
-    glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &dr);
     glBindFramebuffer(GL_READ_FRAMEBUFFER, rt->fbo);
     glBindFramebuffer(GL_DRAW_FRAMEBUFFER, s_fx.small_fbo);
     glDisable(GL_SCISSOR_TEST);
