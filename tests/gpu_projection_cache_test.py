@@ -10,14 +10,16 @@ function = source[a:source.index('static void raw_uniforms(', a)]
 harness = r'''
 #include <assert.h>
 #include <stdint.h>
+#include <stdio.h>
 #include "host/vr_math.h"
-typedef struct { float composite[16], mv[4][16], proj[16], c59[4]; uint32_t use_composite; } Nv2aFixedState;
+typedef struct { float composite[16], mv[4][16], proj[16], c59[4]; uint32_t use_composite, skin_mode; } Nv2aFixedState;
 typedef struct { const Nv2aFixedState *ff; float aa_sx, aa_sy; } Nv2aRawGeometry;
 typedef struct { Nv2aFixedState ff_last; int ff_valid; VrGameProj ff_gp; float ff_aa[2]; int ff_gp_ok; } Prog;
 static Prog *U;
 static VrGameProj s_bgp;
 static int s_bgp_ok;
-static uint32_t s_gp_good, s_gp_bad;
+static uint32_t s_gp_good, s_gp_bad, s_frame = 1;
+static int s_ftr;
 '''
 checks = r'''
 static void draw(Prog *program, const Nv2aRawGeometry *g) {

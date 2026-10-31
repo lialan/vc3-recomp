@@ -4832,6 +4832,30 @@ static void raw_projection(const Nv2aRawGeometry *g)
     s_bgp_ok = U->ff_gp_ok;
     if (s_bgp_ok)
         s_bgp = U->ff_gp;
+    if (!s_bgp_ok && s_ftr == 1) {
+        static uint32_t traced_frame;
+        if (traced_frame != s_frame) {
+            float inverse[16];
+            VrGameProj projection_only;
+            const int inverse_ok = vr_inverse(ff->mv[0], inverse);
+            const int projection_ok = vr_game_proj_from(ff->composite, ff->mv[0], 0,
+                                  ff->proj, g->aa_sx, g->aa_sy, ff->c59, &projection_only);
+            const float *matrix[3] = {ff->mv[0], ff->proj, ff->composite};
+            const char *name[3] = {"model-view", "projection", "composite"};
+            int m, k;
+            traced_frame = s_frame;
+            fprintf(stderr, "[GLTR] rejected projection usecomp %u skin %u inverse-mv %d"
+                    " projection-only %d aa %.9g %.9g c59 %.9g %.9g %.9g %.9g\n",
+                    ff->use_composite, ff->skin_mode, inverse_ok, projection_ok,
+                    g->aa_sx, g->aa_sy, ff->c59[0], ff->c59[1], ff->c59[2], ff->c59[3]);
+            for (m = 0; m < 3; m++) {
+                fprintf(stderr, "[GLTR] rejected %s:", name[m]);
+                for (k = 0; k < 16; k++)
+                    fprintf(stderr, " %.9g", matrix[m][k]);
+                fprintf(stderr, "\n");
+            }
+        }
+    }
 }
 
 static void raw_uniforms(const Nv2aRawGeometry *g)
@@ -5206,6 +5230,18 @@ static int batch_needs_rc(const Surf *f, const Nv2aBatch *b, int raw)
 /* The draw calls of a batch once everything is bound: one instanced draw
  * for both eyes (one-pass stereo), each eye on its own, or one. raw: indexed
  * (mode, count, itype at ioff, base vertex bv); otherwise b's vertices. */
+/* Diagnostic control: an immersive draw can use only the headset's native
+ * frustum. Keep the one-pass eye boundary (different varying for CPU/raw). */
+static void immersive_native_caps(int raw, int one_pass, int enabled)
+{
+    if (!enabled)
+        return;
+    set_cap(0, raw ? 0 : one_pass);
+    set_cap(1, 0);
+    set_cap(2, raw && one_pass);
+    set_cap(3, 0);
+}
+
 static void emit_eyes(Surf *f, const Nv2aBatch *b, int raw, int hud, int imm3d, GLenum mode,
                       GLsizei count, GLenum itype, GLsizeiptr ioff, GLint bv)
 {
@@ -5216,6 +5252,18 @@ static void emit_eyes(Surf *f, const Nv2aBatch *b, int raw, int hud, int imm3d, 
     static int one_pass = -1;
     if (one_pass < 0)
         one_pass = !(genv("STEREO_1PASS") && genv("STEREO_1PASS")[0] == '0');
+    {
+        static int native_clip = -1;
+        if (native_clip < 0) {
+            const char *e = genv("GL_IMM_NATIVE_CLIP");
+            native_clip = e && e[0] == '1';
+            if (native_clip)
+                fprintf(stderr, "[GL] immersive native clip control: guest planes and depth clamp off;"
+                        " one-pass eye boundary retained\n");
+        }
+        immersive_native_caps(raw, f->st && !hud && one_pass && s_has_clip,
+                              imm3d && native_clip);
+    }
     if (f->st && !hud && one_pass && s_has_clip) {
         GLfloat sb[8], e2[4];
         GLenum cd = raw ? GL_CLIP_DISTANCE0 + 2 : GL_CLIP_DISTANCE0;
