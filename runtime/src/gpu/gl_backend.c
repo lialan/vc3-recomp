@@ -381,6 +381,7 @@ static int s_failed;
 static GLuint s_vao, s_vao_raw, s_vao_vp, s_white;
 static GLuint s_fs_obj, s_fs_rc_obj;     /* linked into each program shader */
 static GLuint s_fs_na_obj, s_fs_rc_na_obj;   /* the same without the alpha test */
+static GLuint s_vs_cpu, s_vs_ff;             /* kept for rc_spec */
 
 /* A linked program and its uniform locations, looked up once at link time:
  * glGetUniformLocation per draw was a string search per call. The fragment
@@ -1016,6 +1017,7 @@ static const char *FS =
     "uniform vec4 u_sbs[2];\n"                /* per stage: stereo surface?, eye's half */
     "flat in int v_eye;\n"                    /* one-pass stereo: the eye */
     "out vec4 o_col;\n"
+    "#ifndef RC_SPEC\n"
     "vec4 R[16];\n"
     "float map_in(float x, uint b) {\n"
     "  float p = max(x, 0.0);\n"
@@ -1055,6 +1057,9 @@ static const char *FS =
     "  if (mode <= 3u) return u_on[st] != 0 ? texel : vec4(1.0);\n"
     "  return vec4(0.0);\n"
     "}\n"
+    "#else\n"
+    "vec4 combiners();\n"                    /* rc_glsl's, appended */
+    "#endif\n"
     "vec2 sbs(int st, vec2 uv) {\n"
     "  vec2 e = st == 0 ? u_sbs[0].xy : st == 1 ? u_sbs[0].zw : st == 2 ? u_sbs[1].xy : u_sbs[1].zw;\n"
     "  return e.x != 0.0 ? vec2(clamp(uv.x, 0.0, 1.0) * 0.5 + e.y + 0.5 * float(v_eye), uv.y) : uv;\n"
@@ -1064,6 +1069,7 @@ static const char *FS =
     "  float q = tc.w != 0.0 ? tc.w : 1.0;\n"
     "  return sbs(st, (mode == 3u ? tc.xy : tc.xy / q) * u_ts[st]);\n"
     "}\n"
+    "#ifndef RC_SPEC\n"
     "vec4 combiners() {\n"
     "  vec4 t0 = stage(0, v_tc0, u_iscube[0] != 0 ? texture(u_c0, v_tc0.xyz) : texture(u_tex, stage_uv(0, v_tc0)));\n"
     "  vec4 t1 = stage(1, v_tc1, u_iscube[1] != 0 ? texture(u_c1, v_tc1.xyz) : texture(u_t1, stage_uv(1, v_tc1)));\n"
@@ -1132,6 +1138,7 @@ static const char *FS =
     "  }\n"
     "  return clamp(o, 0.0, 1.0);\n"
     "}\n"
+    "#endif\n"
     "void main() {\n"
     "  vec4 c = v_col;\n"
 
@@ -1342,6 +1349,7 @@ typedef struct {
     uint32_t inputs;                      /* the v[] it reads, a bit each */
     Prog p, p_rc;
     Prog p_na, p_rc_na;                   /* without the alpha test (prog 0: none) */
+    GLuint vs;                            /* kept for the specialised combiner programs */
 } VpProg;
 static VpProg s_vp[VP_SLOTS];
 static VpProg *s_vp_cur;                  /* the program gl_draw draws with */
@@ -1349,12 +1357,311 @@ static uint32_t s_vp_built, s_vp_failed;
 
 #define VC_BINDING 1                       /* the VshConst block's binding */
 
+/* ── Combiner specialisation ────────────────────────────────────────────
+ *
+ * The combiner fragment shader above interprets the register combiners:
+ * every pixel samples all four stages, loops over up to eight stages and
+ * reads its sixteen registers by computed index. A desktop GPU shrugs; a
+ * mobile one keeps R[] in memory and runs the loop -- the Quest spent ~200
+ * ms a frame on VC3's E.S. stack (63 near-full layers of a four-stage
+ * setup) at 2x. So a batch through the combiners gets a fragment shader
+ * generated for its own setup (rc_glsl): the stages unrolled, the registers
+ * plain temporaries, every input and output mapping folded to its one
+ * expression, only the textures something reads fetched. What stays a
+ * uniform is what changes between batches of one setup: the factors, the
+ * final constants, the fog colour, which stages have a texture. Each
+ * setup's programs are linked once, with the vertex shader the batch uses,
+ * and cached (RCS_SLOTS, oldest out). It computes what combiners() does,
+ * line for line; VC3_GL_RC_SPEC=0 draws with the interpreter instead. */
+#define RCS_SLOTS 96
+
+typedef struct {
+    uint32_t ctl, sprog, fin0, fin1, n;
+    uint32_t cicw[8], aicw[8], cocw[8], aocw[8];
+} RcKey;
+
+static struct {
+    RcKey key;
+    GLuint vs;
+    int noat, raw;                /* raw: the program feeds back (prog_link) */
+    uint32_t used;
+    Prog p;
+} s_rcs[RCS_SLOTS];
+static int s_rcs_n;
+static uint32_t s_rcs_built, s_rcs_failed;
+
+static void rc_key(const Nv2aCombiner *rc, RcKey *k)
+{
+    uint32_t s;
+    memset(k, 0, sizeof *k);
+    k->ctl = rc->control;
+    k->sprog = rc->stage_program;
+    k->fin0 = rc->final0;
+    k->fin1 = rc->final1;
+    k->n = rc->control & 0xFF;
+    if (k->n > 8)
+        k->n = 8;
+    for (s = 0; s < k->n; s++) {
+        k->cicw[s] = rc->color_icw[s];
+        k->aicw[s] = rc->alpha_icw[s];
+        k->cocw[s] = rc->color_ocw[s];
+        k->aocw[s] = rc->alpha_ocw[s];
+    }
+}
+
+/* An input byte as GLSL: register, its alpha replicated or not, mapped. */
+static void rc_in(char *o, size_t n, uint32_t b, int alpha_only)
+{
+    char v[40];
+    unsigned r = b & 15u;
+    int rep = (b & 0x10u) != 0;
+    if (alpha_only)
+        snprintf(v, sizeof v, "r%u.%c", r, rep ? 'a' : 'b');
+    else if (rep)
+        snprintf(v, sizeof v, "vec3(r%u.a)", r);
+    else
+        snprintf(v, sizeof v, "r%u.rgb", r);
+    switch ((b >> 5) & 7u) {
+    case 0: snprintf(o, n, "max(%s, 0.0)", v); break;
+    case 1: snprintf(o, n, "(1.0 - clamp(%s, 0.0, 1.0))", v); break;
+    case 2: snprintf(o, n, "(2.0 * max(%s, 0.0) - 1.0)", v); break;
+    case 3: snprintf(o, n, "(-2.0 * max(%s, 0.0) + 1.0)", v); break;
+    case 4: snprintf(o, n, "(max(%s, 0.0) - 0.5)", v); break;
+    case 5: snprintf(o, n, "(-max(%s, 0.0) + 0.5)", v); break;
+    case 6: snprintf(o, n, "(%s)", v); break;
+    default: snprintf(o, n, "(-%s)", v); break;
+    }
+}
+
+static const char *rc_out_fmt(uint32_t om)
+{
+    switch (om) {
+    case 0x08: return "(%s - 0.5)";
+    case 0x10: return "(%s * 2.0)";
+    case 0x18: return "((%s - 0.5) * 2.0)";
+    case 0x20: return "(%s * 4.0)";
+    case 0x30: return "(%s * 0.5)";
+    default: return "(%s)";
+    }
+}
+
+#define RCP(...) do { int k_ = snprintf(src + len, cap - len, __VA_ARGS__); \
+                      if (k_ < 0 || (size_t)k_ >= cap - len) return 0; len += (size_t)k_; } while (0)
+
+/* The setup's combiners() in GLSL; 0 if it does not fit. */
+static int rc_glsl(const RcKey *k, char *src, size_t cap)
+{
+    size_t len = 0;
+    uint32_t s, flags = k->ctl >> 8, used = 0, st;
+    char A[96], B[96], C[96], D[96], t1[160], t2[160];
+    int fin = k->fin0 != 0 || k->fin1 != 0;
+
+    /* which registers an input reads (a texture is fetched only if read) */
+    for (s = 0; s < k->n; s++)
+        for (st = 0; st < 32; st += 8) {
+            used |= 1u << ((k->cicw[s] >> st) & 15u);
+            used |= 1u << ((k->aicw[s] >> st) & 15u);
+        }
+    if (fin) {
+        for (st = 0; st < 32; st += 8)
+            used |= 1u << ((k->fin0 >> st) & 15u);
+        for (st = 8; st < 32; st += 8)
+            used |= 1u << ((k->fin1 >> st) & 15u);
+        used |= 1u << 5 | 1u << 12;           /* the final's sum reads r5, r12 */
+    } else {
+        used |= 1u << 12;
+    }
+    RCP("vec4 combiners() {\n");
+    for (st = 0; st < 4; st++) {
+        uint32_t mode = (k->sprog >> (st * 5)) & 31u;
+        int need = (used >> (8 + st)) & 1u;
+        if (st == 0 && (k->sprog & 31u) && ((used >> 12) & 1u))
+            need = 1;                          /* r12.a starts as t0.a */
+        if (!need || mode == 0)
+            RCP("  vec4 t%u = vec4(0.0, 0.0, 0.0, 1.0);\n", st);
+        else if (mode == 4)
+            RCP("  vec4 t%u = clamp(v_tc%u, 0.0, 1.0);\n", st, st);
+        else if (mode <= 3)
+            RCP("  vec4 t%u = u_on[%u] != 0 ? texture(%s, stage_uv(%u, v_tc%u)) : vec4(1.0);\n",
+                st, st, st == 0 ? "u_tex" : st == 1 ? "u_t1" : st == 2 ? "u_t2" : "u_t3", st, st);
+        else
+            RCP("  vec4 t%u = vec4(0.0);\n", st);
+    }
+    RCP("  vec4 r0 = vec4(0.0), r1 = vec4(0.0), r2 = vec4(0.0), r6 = vec4(0.0), r7 = vec4(0.0);\n"
+        "  vec4 r13 = vec4(0.0), r14 = vec4(0.0), r15 = vec4(0.0);\n"
+        "  vec4 r3 = vec4(u_fogc, u_nofog != 0 ? 1.0 : v_fog);\n"
+        "  vec4 r4 = v_col, r5 = v_spec;\n"
+        "  vec4 r8 = t0, r9 = t1, r10 = t2, r11 = t3;\n"
+        "  vec4 r12 = vec4(0.0, 0.0, 0.0, %s);\n", (k->sprog & 31u) ? "t0.a" : "1.0");
+    for (s = 0; s < k->n; s++) {
+        uint32_t icw = k->cicw[s], ocw = k->cocw[s], aicw = k->aicw[s], aocw = k->aocw[s];
+        uint32_t fl = ocw >> 12, afl = aocw >> 12, d;
+        const char *om = rc_out_fmt(fl & 0x38u), *aom = rc_out_fmt(afl & 0x38u);
+        RCP("  {\n    r1 = u_f0[%u]; r2 = u_f1[%u];\n", (flags & 0x010u) ? s : 0u,
+            (flags & 0x100u) ? s : 0u);
+        if ((fl & 4u) || (afl & 4u))
+            RCP("    bool mux = %s;\n", (flags & 1u) ? "r12.a >= 0.5"
+                                                       : "(int(r12.a * 255.0) & 1) != 0");
+        rc_in(A, sizeof A, icw >> 24, 0);
+        rc_in(B, sizeof B, icw >> 16, 0);
+        rc_in(C, sizeof C, icw >> 8, 0);
+        rc_in(D, sizeof D, icw, 0);
+        if (fl & 2u)
+            RCP("    vec3 pab = vec3(dot(%s, %s));\n", A, B);
+        else
+            RCP("    vec3 pab = %s * %s;\n", A, B);
+        if (fl & 1u)
+            RCP("    vec3 pcd = vec3(dot(%s, %s));\n", C, D);
+        else
+            RCP("    vec3 pcd = %s * %s;\n", C, D);
+        if (fl & 4u)
+            RCP("    vec3 sum = mux ? pcd : pab;\n");
+        else
+            RCP("    vec3 sum = pab + pcd;\n");
+        rc_in(A, sizeof A, aicw >> 24, 1);
+        rc_in(B, sizeof B, aicw >> 16, 1);
+        rc_in(C, sizeof C, aicw >> 8, 1);
+        rc_in(D, sizeof D, aicw, 1);
+        RCP("    float apab = %s * %s, apcd = %s * %s;\n", A, B, C, D);
+        if (afl & 4u)
+            RCP("    float asum = mux ? apcd : apab;\n");
+        else
+            RCP("    float asum = apab + apcd;\n");
+        snprintf(t1, sizeof t1, om, "pab");
+        RCP("    vec3 ab = clamp(%s, -1.0, 1.0);\n", t1);
+        snprintf(t1, sizeof t1, om, "pcd");
+        RCP("    vec3 cd = clamp(%s, -1.0, 1.0);\n", t1);
+        snprintf(t1, sizeof t1, om, "sum");
+        RCP("    vec3 ms = clamp(%s, -1.0, 1.0);\n", t1);
+        snprintf(t1, sizeof t1, aom, "apab");
+        snprintf(t2, sizeof t2, aom, "apcd");
+        RCP("    float aab = clamp(%s, -1.0, 1.0), acd = clamp(%s, -1.0, 1.0);\n", t1, t2);
+        snprintf(t1, sizeof t1, aom, "asum");
+        RCP("    float ams = clamp(%s, -1.0, 1.0);\n", t1);
+        if ((d = (ocw >> 4) & 15u)) {
+            RCP("    r%u.rgb = ab;\n", d);
+            if (fl & 0x80u)
+                RCP("    r%u.a = ab.z;\n", d);
+        }
+        if ((d = ocw & 15u)) {
+            RCP("    r%u.rgb = cd;\n", d);
+            if (fl & 0x40u)
+                RCP("    r%u.a = cd.z;\n", d);
+        }
+        if ((d = (ocw >> 8) & 15u))
+            RCP("    r%u.rgb = ms;\n", d);
+        if ((d = (aocw >> 4) & 15u))
+            RCP("    r%u.a = aab;\n", d);
+        if ((d = aocw & 15u))
+            RCP("    r%u.a = acd;\n", d);
+        if ((d = (aocw >> 8) & 15u))
+            RCP("    r%u.a = ams;\n", d);
+        RCP("    r0 = vec4(0.0);\n  }\n");
+    }
+    if (fin) {
+        uint32_t ff = k->fin1 & 0xFFu;
+        RCP("  r1 = u_fc0; r2 = u_fc1;\n");
+        RCP("  vec3 fa = %s, fb = %s;\n", (ff & 0x40u) ? "1.0 - r5.rgb" : "r5.rgb",
+            (ff & 0x20u) ? "1.0 - r12.rgb" : "r12.rgb");
+        RCP("  r14 = vec4(%s, 0.0);\n", (ff & 0x80u) ? "clamp(fa + fb, 0.0, 1.0)" : "fa + fb");
+        rc_in(A, sizeof A, k->fin1 >> 24, 0);
+        rc_in(B, sizeof B, k->fin1 >> 16, 0);
+        RCP("  r15 = vec4(%s * %s, 0.0);\n", A, B);
+        rc_in(A, sizeof A, k->fin0 >> 24, 0);
+        rc_in(B, sizeof B, k->fin0 >> 16, 0);
+        rc_in(C, sizeof C, k->fin0 >> 8, 0);
+        rc_in(D, sizeof D, k->fin0, 0);
+        rc_in(t1, sizeof t1, k->fin1 >> 8, 1);
+        RCP("  vec3 fA = %s;\n", A);
+        RCP("  vec4 o = vec4(%s + %s * (1.0 - fA) + %s * fA, %s);\n", D, C, B, t1);
+    } else {
+        RCP("  vec4 o = r12;\n");
+    }
+    RCP("  return clamp(o, 0.0, 1.0);\n}\n");
+    return 1;
+}
 /* A vertex program's constants block at VC_BINDING. */
 static void vc_block(const Prog *p)
 {
     GLuint i = glGetUniformBlockIndex(p->prog, "VshConst");
     if (i != GL_INVALID_INDEX)
         glUniformBlockBinding(p->prog, i, VC_BINDING);
+}
+
+
+static int rc_spec_on(void)
+{
+    static int on = -1;
+    if (on < 0)
+        on = !(genv("GL_RC_SPEC") && genv("GL_RC_SPEC")[0] == '0');
+    return on;
+}
+
+/* The program for b's combiner setup with vertex shader vs (fb: the
+ * program feeds back, as raw batches' do; vp: a vertex program's, with its
+ * constants block); NULL if it cannot be built. */
+static Prog *rc_spec(const Nv2aBatch *b, GLuint vs, int fb, int vp, int noat)
+{
+    static char body[32768], full[160000];
+    static const char *defs_at = "#define RC\n#define RC_SPEC\n";
+    static const char *defs_na = "#define RC\n#define RC_SPEC\n#define NOAT\n";
+    RcKey k;
+    int i, slot = -1;
+    GLuint fs;
+    if (!vs)
+        return NULL;
+    rc_key(b->rc, &k);
+    for (i = 0; i < s_rcs_n; i++)
+        if (s_rcs[i].vs == vs && s_rcs[i].noat == noat && !memcmp(&s_rcs[i].key, &k, sizeof k)) {
+            s_rcs[i].used = s_frame;
+            return s_rcs[i].p.prog ? &s_rcs[i].p : NULL;
+        }
+    if (s_rcs_n < RCS_SLOTS) {
+        slot = s_rcs_n++;
+    } else {
+        slot = 0;
+        for (i = 1; i < RCS_SLOTS; i++)
+            if (s_rcs[i].used < s_rcs[slot].used)
+                slot = i;
+        if (s_rcs[slot].p.prog) {
+            glDeleteProgram(s_rcs[slot].p.prog);
+            free(s_rcs[slot].p.uc);
+            if (U == &s_rcs[slot].p)
+                U = &s_pcpu;
+            s_cur_prog = 0;
+        }
+    }
+    memset(&s_rcs[slot], 0, sizeof s_rcs[slot]);
+    s_rcs[slot].key = k;
+    s_rcs[slot].vs = vs;
+    s_rcs[slot].noat = noat;
+    s_rcs[slot].used = s_frame;
+    if (!rc_glsl(&k, body, sizeof body)
+        || (size_t)snprintf(full, sizeof full, "%s%s", FS, body) >= sizeof full) {
+        s_rcs_failed++;
+        return NULL;
+    }
+    s_compile_defs = noat ? defs_na : defs_at;
+    fs = compile(GL_FRAGMENT_SHADER, full);
+    s_compile_defs = "";
+    if (!fs || !prog_link(&s_rcs[slot].p, vs, fs, fb)) {
+        if (fs)
+            glDeleteShader(fs);
+        memset(&s_rcs[slot].p, 0, sizeof s_rcs[slot].p);
+        s_rcs_failed++;
+        fprintf(stderr, "[GL] combiner setup %08X/%05X: no specialised program; interpreted\n",
+                k.ctl, k.sprog);
+        return NULL;
+    }
+    glDeleteShader(fs);                 /* the program keeps it */
+    if (vp)
+        vc_block(&s_rcs[slot].p);
+    s_cur_prog = 0;                     /* prog_link left it in use */
+    s_rcs_built++;
+    if (genv("GL_RC_SPEC_LOG"))
+        fprintf(stderr, "[GL] combiner setup %08X/%05X (%u stages): specialised program %u\n%s",
+                k.ctl, k.sprog, k.n, s_rcs[slot].p.prog, body);
+    return &s_rcs[slot].p;
 }
 
 static VpProg *vp_get(const Nv2aRawGeometry *g)
@@ -1375,6 +1682,8 @@ static VpProg *vp_get(const Nv2aRawGeometry *g)
         if (!e || s_vp[i].used < e->used) e = &s_vp[i];
     }
     if (e->state > 0) {
+        if (e->vs)
+            glDeleteShader(e->vs);
         glDeleteProgram(e->p.prog);
         if (e->p_rc.prog != e->p.prog)
             glDeleteProgram(e->p_rc.prog);
@@ -1446,7 +1755,7 @@ static VpProg *vp_get(const Nv2aRawGeometry *g)
         memset(&e->p_rc_na, 0, sizeof e->p_rc_na);
     else
         vc_block(&e->p_rc_na);
-    glDeleteShader(vs);                        /* the programs keep it */
+    e->vs = vs;                                /* rc_spec links it again */
     e->state = 1;
     s_vp_built++;
     fprintf(stderr, "[GL] vertex program %016llx: %u instructions on the GPU%s\n",
@@ -1706,6 +2015,8 @@ static int gl_ready(void)
             s_failed = 1;
             return 0;
         }
+        s_vs_cpu = compile(GL_VERTEX_SHADER, VS);   /* for rc_spec */
+        s_vs_ff = compile(GL_VERTEX_SHADER, VS_FF);
         /* Without it every batch is transformed on the CPU, as before. */
         if (!prog_link(&s_praw, compile(GL_VERTEX_SHADER, VS_FF), fs, 1))
             fprintf(stderr, "[GL] fixed-function shader failed; raw draws declined\n");
@@ -4750,6 +5061,21 @@ static void gl_draw_inner(const Nv2aSurface *s, const Nv2aBatch *b)
             na = rc ? &s_pcpu_rc_na : &s_pcpu_na;
         }
         U = !at && na->prog && !genv("GL_ATEST_ALL") ? na : a;
+        /* a combiner batch: its setup's own program (rc_spec), not the
+         * interpreter -- unless a stage is a cube map */
+        if (rc && b->rc && rc_spec_on()) {
+            int st, cube = 0;
+            for (st = 0; st < 4; st++)
+                if (b->stage[st] && b->stage[st]->cube)
+                    cube = 1;
+            if (!cube) {
+                int vp = raw && raw->kind == NV2A_RAW_PROGRAM;
+                Prog *sp = rc_spec(b, vp ? s_vp_cur->vs : raw ? s_vs_ff : s_vs_cpu, raw != NULL,
+                                   vp, U == na);
+                if (sp)
+                    U = sp;
+            }
+        }
     }
     memset(s_sbs, 0, sizeof s_sbs);
     {
