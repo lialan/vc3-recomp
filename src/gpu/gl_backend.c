@@ -248,7 +248,7 @@ static int s_ftr;
 /* VC3_GL_STATS=1: every 300 flips, what the batches asked for. */
 static struct {
     int on;
-    uint32_t draws, tris, textured, rt, uploads, mipped, untex, rt_logged, rc_logged;
+    uint32_t draws, tris, textured, rt, uploads, mipped, qskip, untex, rt_logged, rc_logged;
     uint32_t zpass_batches, zpass_pixels;
     uint32_t fail[256];        /* failed decodes by format code */
     uint32_t stage0_empty;     /* no stage-0 texture, a later stage has one */
@@ -2626,6 +2626,18 @@ static int tex_bind(const Nv2aTexture *t, float *sw, float *sh)
          * whenever the sampled hash (every bind) says the memory now holds
          * something else -- how a texture streamed through one address
          * within a frame shows. */
+        /* A texture that has never changed and was already checked this
+         * frame skips even the sampled hash (64 scattered reads a bind):
+         * VC3 binds its level textures hundreds of times a frame. A change
+         * to one then shows the next frame; a streamed texture keeps its
+         * per-bind check. VC3_GL_TEXQUICK=0: every bind, as before. */
+        static int quick_skip = -1;
+        if (quick_skip < 0)
+            quick_skip = !(genv("VC3_GL_TEXQUICK") && *genv("VC3_GL_TEXQUICK") == '0');
+        if (quick_skip && e->hash && !e->streamed && e->checked == s_frame) {
+            s_st.qskip++;
+            goto tex_ready;
+        }
         uint64_t q = hash_sampled(mem + t->offset, tex_bytes(t));
         if (q != e->quick || !e->checked
             || (e->streamed ? e->checked != s_frame : s_frame - e->checked >= 4)) {
@@ -2703,6 +2715,7 @@ static int tex_bind(const Nv2aTexture *t, float *sw, float *sh)
                 e->hash = h;
             }
         }
+tex_ready:
         e->used = s_frame;
         *sw = (float)t->width;
         *sh = (float)t->height;
@@ -4960,9 +4973,10 @@ static void gl_flip(void)
     }
     if (s_st.on && s_frame % 300 == 0) {
         fprintf(stderr, "[GL] %u flips: %u draws (%u tris), %u textured, %u "
-                "no texture, %u from surfaces, %u uploads (%u mipmapped); surfaces:",
+                "no texture, %u from surfaces, %u uploads (%u mipmapped), %u binds "
+                "without a hash; surfaces:",
                 300u, s_st.draws, s_st.tris, s_st.textured, s_st.untex,
-                s_st.rt, s_st.uploads, s_st.mipped);
+                s_st.rt, s_st.uploads, s_st.mipped, s_st.qskip);
         for (i = 0; i < s_nsurfs; i++)
             fprintf(stderr, " %08X/%dx%d", s_surfs[i].va, s_surfs[i].w,
                     s_surfs[i].h);
