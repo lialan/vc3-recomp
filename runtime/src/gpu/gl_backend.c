@@ -89,6 +89,238 @@ static void es_bgra(GLenum target);
 #include "chihiro/ch_env.h"
 #include "chihiro/chihiro_profile.h"
 
+/* ── Shadow state ───────────────────────────────────────────
+ * The fixed-function state, the framebuffer bindings and the viewport as
+ * last set on this context: a call that would set them to what they are is
+ * not made. Each draw rebound its surface's framebuffer and viewport (one-
+ * pass stereo set the viewport twice more), and a change of render state
+ * re-sent all of it -- a dozen driver calls validated per draw on the GL
+ * thread, now the limit. Everything below this point calls these through
+ * the macros; gl_texdec.c restores what it changes, and the host's frame
+ * hand-off (vc3_quest_frame) does not, so sh_reset after it. Unknown values
+ * (~0) never match. */
+enum { SH_BLEND, SH_DEPTH, SH_STENCIL, SH_CULL, SH_SCISSOR, SH_CAPS };
+static struct {
+    GLuint draw_fb, read_fb;
+    GLint vp[4];
+    signed char cap[SH_CAPS];              /* -1 unknown */
+    GLenum bsrc, bdst, bsrc_a, bdst_a, beq, dfunc, cface, fface;
+    GLfloat bcol[4];
+    signed char dmask;
+    signed char cmask[4];
+    GLenum sfunc, sfail, szfail, szpass;
+    GLint sref;
+    GLuint smask_func, smask_write;
+    int valid;
+} s_sh;
+
+static void sh_reset(void)
+{
+    memset(&s_sh, 0xFF, sizeof s_sh);
+    s_sh.valid = 0;
+}
+
+static int sh_cap(GLenum cap)
+{
+    switch (cap) {
+    case GL_BLEND: return SH_BLEND;
+    case GL_DEPTH_TEST: return SH_DEPTH;
+    case GL_STENCIL_TEST: return SH_STENCIL;
+    case GL_CULL_FACE: return SH_CULL;
+    case GL_SCISSOR_TEST: return SH_SCISSOR;
+    default: return -1;
+    }
+}
+
+static void sh_glEnable(GLenum cap)
+{
+    int i = sh_cap(cap);
+    if (i >= 0) {
+        if (s_sh.cap[i] == 1)
+            return;
+        s_sh.cap[i] = 1;
+    }
+    glEnable(cap);
+}
+
+static void sh_glDisable(GLenum cap)
+{
+    int i = sh_cap(cap);
+    if (i >= 0) {
+        if (s_sh.cap[i] == 0)
+            return;
+        s_sh.cap[i] = 0;
+    }
+    glDisable(cap);
+}
+
+static void sh_glBindFramebuffer(GLenum target, GLuint fb)
+{
+    if (target == GL_FRAMEBUFFER) {
+        if (s_sh.draw_fb == fb && s_sh.read_fb == fb)
+            return;
+        s_sh.draw_fb = s_sh.read_fb = fb;
+    } else if (target == GL_DRAW_FRAMEBUFFER) {
+        if (s_sh.draw_fb == fb)
+            return;
+        s_sh.draw_fb = fb;
+    } else if (target == GL_READ_FRAMEBUFFER) {
+        if (s_sh.read_fb == fb)
+            return;
+        s_sh.read_fb = fb;
+    }
+    glBindFramebuffer(target, fb);
+}
+
+static void sh_glDeleteFramebuffers(GLsizei n, const GLuint *fbs)
+{
+    GLsizei i;
+    for (i = 0; i < n; i++) {           /* a bound one unbinds: unknown */
+        if (fbs[i] == s_sh.draw_fb)
+            s_sh.draw_fb = ~0u;
+        if (fbs[i] == s_sh.read_fb)
+            s_sh.read_fb = ~0u;
+    }
+    glDeleteFramebuffers(n, fbs);
+}
+
+static void sh_glViewport(GLint x, GLint y, GLsizei w, GLsizei h)
+{
+    if (s_sh.vp[0] == x && s_sh.vp[1] == y && s_sh.vp[2] == w && s_sh.vp[3] == h)
+        return;
+    s_sh.vp[0] = x;
+    s_sh.vp[1] = y;
+    s_sh.vp[2] = w;
+    s_sh.vp[3] = h;
+    glViewport(x, y, w, h);
+}
+
+static void sh_glBlendFuncSeparate(GLenum s, GLenum d, GLenum sa, GLenum da)
+{
+    if (s_sh.bsrc == s && s_sh.bdst == d && s_sh.bsrc_a == sa && s_sh.bdst_a == da)
+        return;
+    s_sh.bsrc = s;
+    s_sh.bdst = d;
+    s_sh.bsrc_a = sa;
+    s_sh.bdst_a = da;
+    glBlendFuncSeparate(s, d, sa, da);
+}
+
+static void sh_glBlendFunc(GLenum s, GLenum d)
+{
+    sh_glBlendFuncSeparate(s, d, s, d);
+}
+
+static void sh_glBlendEquation(GLenum eq)
+{
+    if (s_sh.beq == eq)
+        return;
+    s_sh.beq = eq;
+    glBlendEquation(eq);
+}
+
+static void sh_glBlendColor(GLfloat r, GLfloat g, GLfloat b, GLfloat a)
+{
+    if (s_sh.bcol[0] == r && s_sh.bcol[1] == g && s_sh.bcol[2] == b && s_sh.bcol[3] == a)
+        return;
+    s_sh.bcol[0] = r;
+    s_sh.bcol[1] = g;
+    s_sh.bcol[2] = b;
+    s_sh.bcol[3] = a;
+    glBlendColor(r, g, b, a);
+}
+
+static void sh_glDepthFunc(GLenum f)
+{
+    if (s_sh.dfunc == f)
+        return;
+    s_sh.dfunc = f;
+    glDepthFunc(f);
+}
+
+static void sh_glDepthMask(GLboolean m)
+{
+    if (s_sh.dmask == (signed char)(m != 0))
+        return;
+    s_sh.dmask = (signed char)(m != 0);
+    glDepthMask(m);
+}
+
+static void sh_glColorMask(GLboolean r, GLboolean g, GLboolean b, GLboolean a)
+{
+    if (s_sh.cmask[0] == (r != 0) && s_sh.cmask[1] == (g != 0) && s_sh.cmask[2] == (b != 0)
+        && s_sh.cmask[3] == (a != 0))
+        return;
+    s_sh.cmask[0] = (signed char)(r != 0);
+    s_sh.cmask[1] = (signed char)(g != 0);
+    s_sh.cmask[2] = (signed char)(b != 0);
+    s_sh.cmask[3] = (signed char)(a != 0);
+    glColorMask(r, g, b, a);
+}
+
+static void sh_glStencilFunc(GLenum f, GLint ref, GLuint mask)
+{
+    if (s_sh.sfunc == f && s_sh.sref == ref && s_sh.smask_func == mask)
+        return;
+    s_sh.sfunc = f;
+    s_sh.sref = ref;
+    s_sh.smask_func = mask;
+    glStencilFunc(f, ref, mask);
+}
+
+static void sh_glStencilMask(GLuint mask)
+{
+    if (s_sh.smask_write == mask)
+        return;
+    s_sh.smask_write = mask;
+    glStencilMask(mask);
+}
+
+static void sh_glStencilOp(GLenum fail, GLenum zfail, GLenum zpass)
+{
+    if (s_sh.sfail == fail && s_sh.szfail == zfail && s_sh.szpass == zpass)
+        return;
+    s_sh.sfail = fail;
+    s_sh.szfail = zfail;
+    s_sh.szpass = zpass;
+    glStencilOp(fail, zfail, zpass);
+}
+
+static void sh_glCullFace(GLenum f)
+{
+    if (s_sh.cface == f)
+        return;
+    s_sh.cface = f;
+    glCullFace(f);
+}
+
+static void sh_glFrontFace(GLenum f)
+{
+    if (s_sh.fface == f)
+        return;
+    s_sh.fface = f;
+    glFrontFace(f);
+}
+
+#define glEnable sh_glEnable
+#define glDisable sh_glDisable
+#define glBindFramebuffer sh_glBindFramebuffer
+#define glDeleteFramebuffers sh_glDeleteFramebuffers
+#define glViewport sh_glViewport
+#define glBlendFuncSeparate sh_glBlendFuncSeparate
+#define glBlendFunc sh_glBlendFunc
+#define glBlendEquation sh_glBlendEquation
+#define glBlendColor sh_glBlendColor
+#define glDepthFunc sh_glDepthFunc
+#define glDepthMask sh_glDepthMask
+#define glColorMask sh_glColorMask
+#define glStencilFunc sh_glStencilFunc
+#define glStencilMask sh_glStencilMask
+#define glStencilOp sh_glStencilOp
+#define glCullFace sh_glCullFace
+#define glFrontFace sh_glFrontFace
+
+
 /* getenv, looked up once per name: several debug switches are tested per
  * draw, and getenv walks the whole environment each time. They do not change
  * while the game runs, and this all runs on the executor thread. */
@@ -1375,6 +1607,7 @@ static int gl_ready(void)
             return 0;
         }
         s_ctx = 1;
+        sh_reset();
         fprintf(stderr, "[GL] %s, %s\n", glGetString(GL_RENDERER),
                 glGetString(GL_VERSION));
         {
@@ -1428,6 +1661,7 @@ static int gl_ready(void)
         }
         CGLDestroyPixelFormat(pf);
         CGLSetCurrentContext(s_ctx);
+        sh_reset();
         fprintf(stderr, "[GL] %s, %s\n", glGetString(GL_RENDERER),
                 glGetString(GL_VERSION));
 #endif
@@ -5677,6 +5911,7 @@ static void quest_present(void)
         vf.gw = f->w;
         vf.gh = f->h;
         vc3_quest_frame(f->fbo, f->pw, f->ph, f->st ? 2 : 1, lw, lh, &vf);
+        sh_reset();                     /* the host's calls, on this context */
         return;
     }
     /* One texture, reallocated only when the size or format changes, and
@@ -5735,6 +5970,7 @@ static void quest_present(void)
     glBindFramebuffer(GL_FRAMEBUFFER, fbo);
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, tex, 0);
     vc3_quest_frame(fbo, f->w, f->h, 1, f->w, f->h, NULL);
+    sh_reset();
 }
 #endif
 
