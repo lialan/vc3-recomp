@@ -74,6 +74,8 @@ SCEN=(
   "immersive-2x-nomips|stereo=1;vr_screen=immersive;vr_detail=2|VC3_GL_MIPS=0 VC3_GL_ANISO=1"
   "immersive-2x-zdiscard|stereo=1;vr_screen=immersive;vr_detail=2|VC3_GL_ZDISCARD=1"
   "immersive-2x-msaa4|stereo=1;vr_screen=immersive;vr_detail=2|VC3_GL_MSAA=4"
+  "immersive-2x-vpcpu|stereo=1;vr_screen=immersive;vr_detail=2|RECOMP_GPU_XF=ff"
+  "immersive-2x-vpcheck|stereo=1;vr_screen=immersive;vr_detail=2|RECOMP_GPU_XF_CHECK=300"
 )
 KEYS=30:coin,31:start,40:fire,44:fire,46:fire,48:fire,50:fire,55:fire,60:fire,65:fire,70:fire,75:fire
 LOGS=()

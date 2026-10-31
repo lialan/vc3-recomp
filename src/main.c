@@ -308,10 +308,12 @@ int main(int argc, char **argv)
     /* D3D is linked into the XBE, so frames exist only as NV2A pushbuffer:
      * the toolkit's executor runs it and answers D3D's fences. */
     setenv("RECOMP_PB_EXEC", "1", 0);
-    /* Fixed-function batches -- nearly all of VC3's geometry -- transform on
-     * the GPU; RECOMP_GPU_XF=0 brings back the CPU path. Vertex programs
-     * (HUD and composite quads) stay on the CPU. */
-    setenv("RECOMP_GPU_XF", "ff", 0);
+    /* Fixed-function batches -- nearly all of VC3's geometry -- and the 3D
+     * vertex-program batches (E.S. mode's meshes: millions of triangles)
+     * transform on the GPU; the screen-space program batches (HUD and
+     * composite quads) stay on the CPU, where the back end can see their
+     * vertices. RECOMP_GPU_XF=ff keeps programs on the CPU, =0 everything. */
+    setenv("RECOMP_GPU_XF", "all", 0);
     /* D3D's present path waits on a KEVENT it built in the device itself
      * (0x119254), set by its vblank ISR/DPC: it needs title-built events and
      * a 60 Hz vblank that honours the interrupt enables. */
