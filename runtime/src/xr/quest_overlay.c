@@ -12,8 +12,9 @@
  * guard), with three sights:
  *
  *   iron sights    a three-dot front post and rear notch;
- *   red dot        a small reflex sight on the slide, a 3 MOA dot;
- *   holographic    a window sight, a 65 MOA ring round a 1 MOA dot.
+ *   red dot        a small pane of glass on the slide, a 3 MOA dot;
+ *   holographic    a wider pane, a 65 MOA ring round a 1 MOA dot --
+ *                  both bare glass on a low mount, no housing or hood.
  *
  * The aim ray quest_host.c fires along is the sight's line (the bore raised
  * by qo_sight_height), so whichever sight is on, it shows where the shot
@@ -69,21 +70,16 @@ static const Box REAR_SIGHT[] = {   /* the notch, white dots either side */
     { {  0.0075f, 0.0285f, 0.1092f }, { 0.0010f, 0.0010f, 0.0003f }, WHITE },
     { { -0.0075f, 0.0285f, 0.1092f }, { 0.0010f, 0.0010f, 0.0003f }, WHITE },
 };
-static const Box RED_DOT[] = {      /* a reflex sight, like an RMR, where the rear sight was */
-    { { 0, 0.0275f, 0.082f }, { 0.0125f, 0.0035f, 0.022f }, OPTIC },        /* body */
-    { {  0.0115f, 0.0385f, 0.066f }, { 0.0015f, 0.0075f, 0.0055f }, OPTIC },/* hood */
-    { { -0.0115f, 0.0385f, 0.066f }, { 0.0015f, 0.0075f, 0.0055f }, OPTIC },
-    { { 0, 0.0475f, 0.066f }, { 0.013f, 0.0015f, 0.0055f }, OPTIC },
-    { { 0, 0.0330f, 0.097f }, { 0.007f, 0.0025f, 0.006f }, OPTIC },         /* emitter */
-    { { 0.0125f, 0.0300f, 0.084f }, { 0.0012f, 0.0020f, 0.003f }, DARK },   /* button */
+/* The optics are bare glass: a thin pane standing on the slide, on a low
+ * mount strip, with no housing, hood or frame round it -- nothing in the
+ * way of the view through it or past it. */
+#define SLIDE_TOP 0.024f
+#define MOUNT_H   0.0012f                    /* the mount strip's height */
+static const Box RED_DOT[] = {      /* an RMR-sized pane where the rear sight was */
+    { { 0, SLIDE_TOP + MOUNT_H / 2, 0.066f }, { 0.0100f, MOUNT_H / 2, 0.0025f }, DARK },
 };
-static const Box HOLO[] = {         /* a window sight, like an EOTech */
-    { { 0, 0.0300f, 0.072f }, { 0.0150f, 0.0060f, 0.040f }, OPTIC },        /* body */
-    { {  0.0170f, 0.0500f, 0.050f }, { 0.0025f, 0.0140f, 0.020f }, { 0.14f, 0.14f, 0.15f } },
-    { { -0.0170f, 0.0500f, 0.050f }, { 0.0025f, 0.0140f, 0.020f }, { 0.14f, 0.14f, 0.15f } },
-    { { 0, 0.0655f, 0.050f }, { 0.0195f, 0.0025f, 0.020f }, { 0.14f, 0.14f, 0.15f } },
-    { { 0.0070f, 0.0365f, 0.100f }, { 0.0050f, 0.0008f, 0.006f }, DARK },   /* buttons */
-    { { -0.0070f, 0.0365f, 0.100f }, { 0.0050f, 0.0008f, 0.006f }, DARK },
+static const Box HOLO[] = {         /* a wider window, like an EOTech's */
+    { { 0, SLIDE_TOP + MOUNT_H / 2, 0.050f }, { 0.0125f, MOUNT_H / 2, 0.0030f }, DARK },
 };
 static const Box FRAME[] = {
     { { 0, -0.014f, 0.027f }, { 0.0115f, 0.008f, 0.092f }, POLY },          /* dust cover to tang */
@@ -104,11 +100,14 @@ static const Box FRAME[] = {
     { { 0, -0.1290f, 0.112f }, { 0.0155f, 0.0025f, 0.026f }, DARK },        /* magazine base */
 };
 
-/* Each sight's line above the bore, and its glass: centre z, half width,
- * half height (around the line). */
-static const float SIGHT_Y[QO_SIGHT_COUNT] = { 0.0285f, 0.0385f, 0.0500f };
-static const float GLASS[QO_SIGHT_COUNT][3] = {
-    { 0, 0, 0 }, { 0.066f, 0.0100f, 0.0075f }, { 0.050f, 0.0145f, 0.0125f },
+/* Each sight's line above the bore, and its glass: z, half width, bottom
+ * and top (gun-space y; the bottom on the mount strip, the line between).
+ * The lines are games/vc3/src/game.c's sight_height too. */
+static const float SIGHT_Y[QO_SIGHT_COUNT] = { 0.0285f, 0.0335f, 0.0400f };
+static const float GLASS[QO_SIGHT_COUNT][4] = {
+    { 0, 0, 0, 0 },
+    { 0.066f, 0.0100f, SLIDE_TOP + MOUNT_H, 0.0420f },     /* 20 x 17 mm */
+    { 0.050f, 0.0125f, SLIDE_TOP + MOUNT_H, 0.0540f },     /* 25 x 29 mm */
 };
 
 #define MAX_BOXES 64
@@ -175,7 +174,7 @@ void qo_muzzle(float out[3])
 static GLuint prog_gun, prog_spot, prog_panel, vao_gun, vbo_gun, vao_spot, vbo_spot,
               vao_quad, vbo_quad, panel_tex;
 static GLuint prog_ret;                  /* the sight's glass with its reticle */
-static GLint u_ret_mvp, u_ret_color, u_ret_tint, u_ret_c, u_ret_r;
+static GLint u_ret_mvp, u_ret_color, u_ret_tint, u_ret_c, u_ret_r, u_ret_box;
 static GLint u_gun_mvp, u_gun_model, u_spot_mvp, u_spot_color, u_spot_shape,
              u_panel_mvp, u_panel_tex;
 
@@ -239,20 +238,36 @@ int qo_init(void)
         "          : clamp(1.0 - d, 0.0, 1.0);\n"
         "  a = color.a * (shape.x < 0.0 ? 1.0 : a * a);\n"
         "  o = vec4(color.rgb * a, a); }\n");      /* premultiplied */
-    /* The glass: a faint tint, and the reticle where the eye's line to the
-     * target crosses it (t: glass coordinates in metres, c: that point,
-     * r: dot radius, ring radius, ring half-width). Premultiplied. */
+    /* The glass: a bare pane, its top corners rounded, a faint blue tint
+     * with a sheen across it and a thin bright edge, and the reticle where
+     * the eye's line to the target crosses it (t: glass coordinates in
+     * metres, c: that point, r: dot radius, ring radius, ring half-width,
+     * box: the pane's x0 y0 x1 y1). Outside the outline, nothing: the
+     * reticle is clipped to it. Premultiplied. */
     prog_ret = program(
         "#version 300 es\nlayout(location=0) in vec3 p; layout(location=1) in vec2 uv;\n"
         "uniform mat4 mvp; out vec2 t; void main() { t = uv; gl_Position = mvp * vec4(p, 1.0); }\n",
         "#version 300 es\nprecision highp float; in vec2 t; uniform vec4 color, tint;\n"
-        "uniform vec2 c; uniform vec3 r; out vec4 o;\n"
-        "void main() { float d = length(t - c);\n"
+        "uniform vec2 c; uniform vec3 r; uniform vec4 box; out vec4 o;\n"
+        "void main() {\n"
+        "  vec2 mid = 0.5 * (box.xy + box.zw), hs = 0.5 * (box.zw - box.xy);\n"
+        "  float rad = t.y > mid.y ? 0.0035 : 0.0008;\n"   /* round top, near-square foot */
+        "  vec2 q = abs(t - mid) - hs + rad;\n"
+        "  float sd = length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - rad;\n"
+        "  float aa = max(fwidth(sd), 1e-5);\n"
+        "  float cov = 1.0 - smoothstep(-aa, aa, sd);\n"
+        "  if (cov <= 0.0) discard;\n"
+        "  float d = length(t - c);\n"
         "  float dotA = 1.0 - smoothstep(r.x * 0.55, r.x, d);\n"
         "  float ringA = r.y > 0.0 ? 1.0 - smoothstep(r.z * 0.4, r.z, abs(d - r.y)) : 0.0;\n"
         "  float a = max(dotA, ringA) * color.a;\n"
-        "  float ta = tint.a * (1.0 - a);\n"
-        "  o = vec4(color.rgb * a + tint.rgb * ta, a + ta); }\n");
+        "  vec2 u = (t - box.xy) / (box.zw - box.xy);\n"
+        "  float sheen = exp(-pow((u.x + u.y * 0.6 - 0.95) * 7.0, 2.0)) * 0.07;\n"
+        "  float rim = (1.0 - smoothstep(0.0, 0.0006, -sd)) * 0.30;\n"
+        "  float ta = tint.a * (0.8 + 0.4 * (1.0 - u.y)) + sheen + rim;\n"
+        "  vec3 tc = (tint.rgb * tint.a + vec3(0.92, 0.96, 1.0) * (sheen + rim)) / ta;\n"
+        "  ta = min(ta, 0.6) * (1.0 - a);\n"
+        "  o = vec4(color.rgb * a + tc * ta, a + ta) * cov; }\n");
     prog_panel = program(
         "#version 300 es\nlayout(location=0) in vec2 p; uniform mat4 mvp; out vec2 t;\n"
         "void main() { t = vec2(p.x * 0.5 + 0.5, 0.5 - p.y * 0.5);\n"
@@ -266,6 +281,7 @@ int qo_init(void)
     u_ret_tint = glGetUniformLocation(prog_ret, "tint");
     u_ret_c = glGetUniformLocation(prog_ret, "c");
     u_ret_r = glGetUniformLocation(prog_ret, "r");
+    u_ret_box = glGetUniformLocation(prog_ret, "box");
     u_gun_mvp = glGetUniformLocation(prog_gun, "mvp");
     u_gun_model = glGetUniformLocation(prog_gun, "model");
     u_spot_mvp = glGetUniformLocation(prog_spot, "mvp");
@@ -434,13 +450,17 @@ static void glass_reticle(const float *vp, const float *model, int sight, const 
 {
     static const float c[6][2] = { { -1, -1 }, { 1, -1 }, { 1, 1 }, { -1, -1 }, { 1, 1 }, { -1, 1 } };
     const float *gz = GLASS[sight];
+    const float line = qo_sight_height(sight);
     float q[6][5], e[3], t[3], cx = 1e3f, cy = 1e3f, r[3] = { 0, 0, 0 };
     int k;
+    /* the pane, its coordinates in metres from the sight's line (the
+     * reticle and the edge are worked out in them) */
     for (k = 0; k < 6; k++) {
-        float lp[3] = { c[k][0] * gz[1], qo_sight_height(sight) + c[k][1] * gz[2], gz[0] };
+        float y = c[k][1] < 0 ? gz[2] : gz[3];
+        float lp[3] = { c[k][0] * gz[1], y, gz[0] };
         apply(model, lp, q[k]);
         q[k][3] = c[k][0] * gz[1];
-        q[k][4] = c[k][1] * gz[2];
+        q[k][4] = y - line;
     }
     unapply(model, eye, e);
     unapply(model, target, t);
@@ -451,7 +471,7 @@ static void glass_reticle(const float *vp, const float *model, int sight, const 
             float L = sqrtf((px - e[0]) * (px - e[0]) + (py - e[1]) * (py - e[1])
                             + (gz[0] - e[2]) * (gz[0] - e[2]));
             cx = px;
-            cy = py - SIGHT_Y[sight];
+            cy = py - line;
             if (sight == QO_SIGHT_RED_DOT) {
                 r[0] = 0.0025f * L;                 /* a dot about 0.3 degrees across */
             } else {                                /* a ring of 1.2 degrees, a small dot */
@@ -466,8 +486,9 @@ static void glass_reticle(const float *vp, const float *model, int sight, const 
     glBufferData(GL_ARRAY_BUFFER, 6 * 5 * sizeof(float), q, GL_DYNAMIC_DRAW);
     glUniformMatrix4fv(u_ret_mvp, 1, GL_FALSE, vp);
     glUniform4f(u_ret_color, 1.0f, 0.09f, 0.05f, 1.0f);
-    glUniform4f(u_ret_tint, 0.55f, 0.75f, 0.85f, 0.10f);
+    glUniform4f(u_ret_tint, 0.55f, 0.75f, 0.85f, 0.06f);
     glUniform2f(u_ret_c, cx, cy);
+    glUniform4f(u_ret_box, -gz[1], gz[2] - line, gz[1], gz[3] - line);
     glUniform3f(u_ret_r, r[0], r[1], r[2]);
     glDrawArrays(GL_TRIANGLES, 0, 6);
     glUseProgram(prog_spot);
@@ -538,7 +559,7 @@ void qo_draw(const QoFrame *f, const float viewproj[16], const float eye[3])
     glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
 
     /* The optic's glass with its reticle, part of the gun: depth-tested
-     * against the gun (the hood in front of it hides it), not written. */
+     * against the gun, not written. */
     if (f->gun_valid && f->show_gun && sight != QO_SIGHT_IRON) {
         glEnable(GL_DEPTH_TEST);
         glDepthFunc(GL_LEQUAL);

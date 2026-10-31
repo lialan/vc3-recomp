@@ -381,6 +381,7 @@ static int s_failed;
 static GLuint s_vao, s_vao_raw, s_vao_vp, s_white;
 static GLuint s_fs_obj, s_fs_rc_obj;     /* linked into each program shader */
 static GLuint s_fs_na_obj, s_fs_rc_na_obj;   /* the same without the alpha test */
+static GLuint s_vs_cpu, s_vs_ff;             /* kept for rc_spec */
 
 /* A linked program and its uniform locations, looked up once at link time:
  * glGetUniformLocation per draw was a string search per call. The fragment
@@ -1046,6 +1047,7 @@ static const char *FS =
     "uniform vec4 u_sbs[2];\n"                /* per stage: stereo surface?, eye's half */
     "flat in int v_eye;\n"                    /* one-pass stereo: the eye */
     "out vec4 o_col;\n"
+    "#ifndef RC_SPEC\n"
     "vec4 R[16];\n"
     "float map_in(float x, uint b) {\n"
     "  float p = max(x, 0.0);\n"
@@ -1085,6 +1087,9 @@ static const char *FS =
     "  if (mode <= 3u) return u_on[st] != 0 ? texel : vec4(1.0);\n"
     "  return vec4(0.0);\n"
     "}\n"
+    "#else\n"
+    "vec4 combiners();\n"                    /* rc_glsl's, appended */
+    "#endif\n"
     "vec2 sbs(int st, vec2 uv) {\n"
     "  vec2 e = st == 0 ? u_sbs[0].xy : st == 1 ? u_sbs[0].zw : st == 2 ? u_sbs[1].xy : u_sbs[1].zw;\n"
     "  return e.x != 0.0 ? vec2(clamp(uv.x, 0.0, 1.0) * 0.5 + e.y + 0.5 * float(v_eye), uv.y) : uv;\n"
@@ -1094,6 +1099,7 @@ static const char *FS =
     "  float q = tc.w != 0.0 ? tc.w : 1.0;\n"
     "  return sbs(st, (mode == 3u ? tc.xy : tc.xy / q) * u_ts[st]);\n"
     "}\n"
+    "#ifndef RC_SPEC\n"
     "vec4 combiners() {\n"
     "  vec4 t0 = stage(0, v_tc0, u_iscube[0] != 0 ? texture(u_c0, v_tc0.xyz) : texture(u_tex, stage_uv(0, v_tc0)));\n"
     "  vec4 t1 = stage(1, v_tc1, u_iscube[1] != 0 ? texture(u_c1, v_tc1.xyz) : texture(u_t1, stage_uv(1, v_tc1)));\n"
@@ -1162,6 +1168,7 @@ static const char *FS =
     "  }\n"
     "  return clamp(o, 0.0, 1.0);\n"
     "}\n"
+    "#endif\n"
     "void main() {\n"
     "  vec4 c = v_col;\n"
 
@@ -1379,6 +1386,7 @@ typedef struct {
     uint32_t inputs;                      /* the v[] it reads, a bit each */
     Prog p, p_rc;
     Prog p_na, p_rc_na;                   /* without the alpha test (prog 0: none) */
+    GLuint vs;                            /* kept for the specialised combiner programs */
 } VpProg;
 static VpProg s_vp[VP_SLOTS];
 static VpProg *s_vp_cur;                  /* the program gl_draw draws with */
@@ -1386,12 +1394,311 @@ static uint32_t s_vp_built, s_vp_failed;
 
 #define VC_BINDING 1                       /* the VshConst block's binding */
 
+/* ── Combiner specialisation ────────────────────────────────────────────
+ *
+ * The combiner fragment shader above interprets the register combiners:
+ * every pixel samples all four stages, loops over up to eight stages and
+ * reads its sixteen registers by computed index. A desktop GPU shrugs; a
+ * mobile one keeps R[] in memory and runs the loop -- the Quest spent ~200
+ * ms a frame on VC3's E.S. stack (63 near-full layers of a four-stage
+ * setup) at 2x. So a batch through the combiners gets a fragment shader
+ * generated for its own setup (rc_glsl): the stages unrolled, the registers
+ * plain temporaries, every input and output mapping folded to its one
+ * expression, only the textures something reads fetched. What stays a
+ * uniform is what changes between batches of one setup: the factors, the
+ * final constants, the fog colour, which stages have a texture. Each
+ * setup's programs are linked once, with the vertex shader the batch uses,
+ * and cached (RCS_SLOTS, oldest out). It computes what combiners() does,
+ * line for line; VC3_GL_RC_SPEC=0 draws with the interpreter instead. */
+#define RCS_SLOTS 96
+
+typedef struct {
+    uint32_t ctl, sprog, fin0, fin1, n;
+    uint32_t cicw[8], aicw[8], cocw[8], aocw[8];
+} RcKey;
+
+static struct {
+    RcKey key;
+    GLuint vs;
+    int noat, raw;                /* raw: the program feeds back (prog_link) */
+    uint32_t used;
+    Prog p;
+} s_rcs[RCS_SLOTS];
+static int s_rcs_n;
+static uint32_t s_rcs_built, s_rcs_failed;
+
+static void rc_key(const Nv2aCombiner *rc, RcKey *k)
+{
+    uint32_t s;
+    memset(k, 0, sizeof *k);
+    k->ctl = rc->control;
+    k->sprog = rc->stage_program;
+    k->fin0 = rc->final0;
+    k->fin1 = rc->final1;
+    k->n = rc->control & 0xFF;
+    if (k->n > 8)
+        k->n = 8;
+    for (s = 0; s < k->n; s++) {
+        k->cicw[s] = rc->color_icw[s];
+        k->aicw[s] = rc->alpha_icw[s];
+        k->cocw[s] = rc->color_ocw[s];
+        k->aocw[s] = rc->alpha_ocw[s];
+    }
+}
+
+/* An input byte as GLSL: register, its alpha replicated or not, mapped. */
+static void rc_in(char *o, size_t n, uint32_t b, int alpha_only)
+{
+    char v[40];
+    unsigned r = b & 15u;
+    int rep = (b & 0x10u) != 0;
+    if (alpha_only)
+        snprintf(v, sizeof v, "r%u.%c", r, rep ? 'a' : 'b');
+    else if (rep)
+        snprintf(v, sizeof v, "vec3(r%u.a)", r);
+    else
+        snprintf(v, sizeof v, "r%u.rgb", r);
+    switch ((b >> 5) & 7u) {
+    case 0: snprintf(o, n, "max(%s, 0.0)", v); break;
+    case 1: snprintf(o, n, "(1.0 - clamp(%s, 0.0, 1.0))", v); break;
+    case 2: snprintf(o, n, "(2.0 * max(%s, 0.0) - 1.0)", v); break;
+    case 3: snprintf(o, n, "(-2.0 * max(%s, 0.0) + 1.0)", v); break;
+    case 4: snprintf(o, n, "(max(%s, 0.0) - 0.5)", v); break;
+    case 5: snprintf(o, n, "(-max(%s, 0.0) + 0.5)", v); break;
+    case 6: snprintf(o, n, "(%s)", v); break;
+    default: snprintf(o, n, "(-%s)", v); break;
+    }
+}
+
+static const char *rc_out_fmt(uint32_t om)
+{
+    switch (om) {
+    case 0x08: return "(%s - 0.5)";
+    case 0x10: return "(%s * 2.0)";
+    case 0x18: return "((%s - 0.5) * 2.0)";
+    case 0x20: return "(%s * 4.0)";
+    case 0x30: return "(%s * 0.5)";
+    default: return "(%s)";
+    }
+}
+
+#define RCP(...) do { int k_ = snprintf(src + len, cap - len, __VA_ARGS__); \
+                      if (k_ < 0 || (size_t)k_ >= cap - len) return 0; len += (size_t)k_; } while (0)
+
+/* The setup's combiners() in GLSL; 0 if it does not fit. */
+static int rc_glsl(const RcKey *k, char *src, size_t cap)
+{
+    size_t len = 0;
+    uint32_t s, flags = k->ctl >> 8, used = 0, st;
+    char A[96], B[96], C[96], D[96], t1[160], t2[160];
+    int fin = k->fin0 != 0 || k->fin1 != 0;
+
+    /* which registers an input reads (a texture is fetched only if read) */
+    for (s = 0; s < k->n; s++)
+        for (st = 0; st < 32; st += 8) {
+            used |= 1u << ((k->cicw[s] >> st) & 15u);
+            used |= 1u << ((k->aicw[s] >> st) & 15u);
+        }
+    if (fin) {
+        for (st = 0; st < 32; st += 8)
+            used |= 1u << ((k->fin0 >> st) & 15u);
+        for (st = 8; st < 32; st += 8)
+            used |= 1u << ((k->fin1 >> st) & 15u);
+        used |= 1u << 5 | 1u << 12;           /* the final's sum reads r5, r12 */
+    } else {
+        used |= 1u << 12;
+    }
+    RCP("vec4 combiners() {\n");
+    for (st = 0; st < 4; st++) {
+        uint32_t mode = (k->sprog >> (st * 5)) & 31u;
+        int need = (used >> (8 + st)) & 1u;
+        if (st == 0 && (k->sprog & 31u) && ((used >> 12) & 1u))
+            need = 1;                          /* r12.a starts as t0.a */
+        if (!need || mode == 0)
+            RCP("  vec4 t%u = vec4(0.0, 0.0, 0.0, 1.0);\n", st);
+        else if (mode == 4)
+            RCP("  vec4 t%u = clamp(v_tc%u, 0.0, 1.0);\n", st, st);
+        else if (mode <= 3)
+            RCP("  vec4 t%u = u_on[%u] != 0 ? texture(%s, stage_uv(%u, v_tc%u)) : vec4(1.0);\n",
+                st, st, st == 0 ? "u_tex" : st == 1 ? "u_t1" : st == 2 ? "u_t2" : "u_t3", st, st);
+        else
+            RCP("  vec4 t%u = vec4(0.0);\n", st);
+    }
+    RCP("  vec4 r0 = vec4(0.0), r1 = vec4(0.0), r2 = vec4(0.0), r6 = vec4(0.0), r7 = vec4(0.0);\n"
+        "  vec4 r13 = vec4(0.0), r14 = vec4(0.0), r15 = vec4(0.0);\n"
+        "  vec4 r3 = vec4(u_fogc, u_nofog != 0 ? 1.0 : v_fog);\n"
+        "  vec4 r4 = v_col, r5 = v_spec;\n"
+        "  vec4 r8 = t0, r9 = t1, r10 = t2, r11 = t3;\n"
+        "  vec4 r12 = vec4(0.0, 0.0, 0.0, %s);\n", (k->sprog & 31u) ? "t0.a" : "1.0");
+    for (s = 0; s < k->n; s++) {
+        uint32_t icw = k->cicw[s], ocw = k->cocw[s], aicw = k->aicw[s], aocw = k->aocw[s];
+        uint32_t fl = ocw >> 12, afl = aocw >> 12, d;
+        const char *om = rc_out_fmt(fl & 0x38u), *aom = rc_out_fmt(afl & 0x38u);
+        RCP("  {\n    r1 = u_f0[%u]; r2 = u_f1[%u];\n", (flags & 0x010u) ? s : 0u,
+            (flags & 0x100u) ? s : 0u);
+        if ((fl & 4u) || (afl & 4u))
+            RCP("    bool mux = %s;\n", (flags & 1u) ? "r12.a >= 0.5"
+                                                       : "(int(r12.a * 255.0) & 1) != 0");
+        rc_in(A, sizeof A, icw >> 24, 0);
+        rc_in(B, sizeof B, icw >> 16, 0);
+        rc_in(C, sizeof C, icw >> 8, 0);
+        rc_in(D, sizeof D, icw, 0);
+        if (fl & 2u)
+            RCP("    vec3 pab = vec3(dot(%s, %s));\n", A, B);
+        else
+            RCP("    vec3 pab = %s * %s;\n", A, B);
+        if (fl & 1u)
+            RCP("    vec3 pcd = vec3(dot(%s, %s));\n", C, D);
+        else
+            RCP("    vec3 pcd = %s * %s;\n", C, D);
+        if (fl & 4u)
+            RCP("    vec3 sum = mux ? pcd : pab;\n");
+        else
+            RCP("    vec3 sum = pab + pcd;\n");
+        rc_in(A, sizeof A, aicw >> 24, 1);
+        rc_in(B, sizeof B, aicw >> 16, 1);
+        rc_in(C, sizeof C, aicw >> 8, 1);
+        rc_in(D, sizeof D, aicw, 1);
+        RCP("    float apab = %s * %s, apcd = %s * %s;\n", A, B, C, D);
+        if (afl & 4u)
+            RCP("    float asum = mux ? apcd : apab;\n");
+        else
+            RCP("    float asum = apab + apcd;\n");
+        snprintf(t1, sizeof t1, om, "pab");
+        RCP("    vec3 ab = clamp(%s, -1.0, 1.0);\n", t1);
+        snprintf(t1, sizeof t1, om, "pcd");
+        RCP("    vec3 cd = clamp(%s, -1.0, 1.0);\n", t1);
+        snprintf(t1, sizeof t1, om, "sum");
+        RCP("    vec3 ms = clamp(%s, -1.0, 1.0);\n", t1);
+        snprintf(t1, sizeof t1, aom, "apab");
+        snprintf(t2, sizeof t2, aom, "apcd");
+        RCP("    float aab = clamp(%s, -1.0, 1.0), acd = clamp(%s, -1.0, 1.0);\n", t1, t2);
+        snprintf(t1, sizeof t1, aom, "asum");
+        RCP("    float ams = clamp(%s, -1.0, 1.0);\n", t1);
+        if ((d = (ocw >> 4) & 15u)) {
+            RCP("    r%u.rgb = ab;\n", d);
+            if (fl & 0x80u)
+                RCP("    r%u.a = ab.z;\n", d);
+        }
+        if ((d = ocw & 15u)) {
+            RCP("    r%u.rgb = cd;\n", d);
+            if (fl & 0x40u)
+                RCP("    r%u.a = cd.z;\n", d);
+        }
+        if ((d = (ocw >> 8) & 15u))
+            RCP("    r%u.rgb = ms;\n", d);
+        if ((d = (aocw >> 4) & 15u))
+            RCP("    r%u.a = aab;\n", d);
+        if ((d = aocw & 15u))
+            RCP("    r%u.a = acd;\n", d);
+        if ((d = (aocw >> 8) & 15u))
+            RCP("    r%u.a = ams;\n", d);
+        RCP("    r0 = vec4(0.0);\n  }\n");
+    }
+    if (fin) {
+        uint32_t ff = k->fin1 & 0xFFu;
+        RCP("  r1 = u_fc0; r2 = u_fc1;\n");
+        RCP("  vec3 fa = %s, fb = %s;\n", (ff & 0x40u) ? "1.0 - r5.rgb" : "r5.rgb",
+            (ff & 0x20u) ? "1.0 - r12.rgb" : "r12.rgb");
+        RCP("  r14 = vec4(%s, 0.0);\n", (ff & 0x80u) ? "clamp(fa + fb, 0.0, 1.0)" : "fa + fb");
+        rc_in(A, sizeof A, k->fin1 >> 24, 0);
+        rc_in(B, sizeof B, k->fin1 >> 16, 0);
+        RCP("  r15 = vec4(%s * %s, 0.0);\n", A, B);
+        rc_in(A, sizeof A, k->fin0 >> 24, 0);
+        rc_in(B, sizeof B, k->fin0 >> 16, 0);
+        rc_in(C, sizeof C, k->fin0 >> 8, 0);
+        rc_in(D, sizeof D, k->fin0, 0);
+        rc_in(t1, sizeof t1, k->fin1 >> 8, 1);
+        RCP("  vec3 fA = %s;\n", A);
+        RCP("  vec4 o = vec4(%s + %s * (1.0 - fA) + %s * fA, %s);\n", D, C, B, t1);
+    } else {
+        RCP("  vec4 o = r12;\n");
+    }
+    RCP("  return clamp(o, 0.0, 1.0);\n}\n");
+    return 1;
+}
 /* A vertex program's constants block at VC_BINDING. */
 static void vc_block(const Prog *p)
 {
     GLuint i = glGetUniformBlockIndex(p->prog, "VshConst");
     if (i != GL_INVALID_INDEX)
         glUniformBlockBinding(p->prog, i, VC_BINDING);
+}
+
+
+static int rc_spec_on(void)
+{
+    static int on = -1;
+    if (on < 0)
+        on = !(genv("GL_RC_SPEC") && genv("GL_RC_SPEC")[0] == '0');
+    return on;
+}
+
+/* The program for b's combiner setup with vertex shader vs (fb: the
+ * program feeds back, as raw batches' do; vp: a vertex program's, with its
+ * constants block); NULL if it cannot be built. */
+static Prog *rc_spec(const Nv2aBatch *b, GLuint vs, int fb, int vp, int noat)
+{
+    static char body[32768], full[160000];
+    static const char *defs_at = "#define RC\n#define RC_SPEC\n";
+    static const char *defs_na = "#define RC\n#define RC_SPEC\n#define NOAT\n";
+    RcKey k;
+    int i, slot = -1;
+    GLuint fs;
+    if (!vs)
+        return NULL;
+    rc_key(b->rc, &k);
+    for (i = 0; i < s_rcs_n; i++)
+        if (s_rcs[i].vs == vs && s_rcs[i].noat == noat && !memcmp(&s_rcs[i].key, &k, sizeof k)) {
+            s_rcs[i].used = s_frame;
+            return s_rcs[i].p.prog ? &s_rcs[i].p : NULL;
+        }
+    if (s_rcs_n < RCS_SLOTS) {
+        slot = s_rcs_n++;
+    } else {
+        slot = 0;
+        for (i = 1; i < RCS_SLOTS; i++)
+            if (s_rcs[i].used < s_rcs[slot].used)
+                slot = i;
+        if (s_rcs[slot].p.prog) {
+            glDeleteProgram(s_rcs[slot].p.prog);
+            free(s_rcs[slot].p.uc);
+            if (U == &s_rcs[slot].p)
+                U = &s_pcpu;
+            s_cur_prog = 0;
+        }
+    }
+    memset(&s_rcs[slot], 0, sizeof s_rcs[slot]);
+    s_rcs[slot].key = k;
+    s_rcs[slot].vs = vs;
+    s_rcs[slot].noat = noat;
+    s_rcs[slot].used = s_frame;
+    if (!rc_glsl(&k, body, sizeof body)
+        || (size_t)snprintf(full, sizeof full, "%s%s", FS, body) >= sizeof full) {
+        s_rcs_failed++;
+        return NULL;
+    }
+    s_compile_defs = noat ? defs_na : defs_at;
+    fs = compile(GL_FRAGMENT_SHADER, full);
+    s_compile_defs = "";
+    if (!fs || !prog_link(&s_rcs[slot].p, vs, fs, fb)) {
+        if (fs)
+            glDeleteShader(fs);
+        memset(&s_rcs[slot].p, 0, sizeof s_rcs[slot].p);
+        s_rcs_failed++;
+        fprintf(stderr, "[GL] combiner setup %08X/%05X: no specialised program; interpreted\n",
+                k.ctl, k.sprog);
+        return NULL;
+    }
+    glDeleteShader(fs);                 /* the program keeps it */
+    if (vp)
+        vc_block(&s_rcs[slot].p);
+    s_cur_prog = 0;                     /* prog_link left it in use */
+    s_rcs_built++;
+    if (genv("GL_RC_SPEC_LOG"))
+        fprintf(stderr, "[GL] combiner setup %08X/%05X (%u stages): specialised program %u\n%s",
+                k.ctl, k.sprog, k.n, s_rcs[slot].p.prog, body);
+    return &s_rcs[slot].p;
 }
 
 static VpProg *vp_get(const Nv2aRawGeometry *g)
@@ -1412,6 +1719,8 @@ static VpProg *vp_get(const Nv2aRawGeometry *g)
         if (!e || s_vp[i].used < e->used) e = &s_vp[i];
     }
     if (e->state > 0) {
+        if (e->vs)
+            glDeleteShader(e->vs);
         glDeleteProgram(e->p.prog);
         if (e->p_rc.prog != e->p.prog)
             glDeleteProgram(e->p_rc.prog);
@@ -1483,7 +1792,7 @@ static VpProg *vp_get(const Nv2aRawGeometry *g)
         memset(&e->p_rc_na, 0, sizeof e->p_rc_na);
     else
         vc_block(&e->p_rc_na);
-    glDeleteShader(vs);                        /* the programs keep it */
+    e->vs = vs;                                /* rc_spec links it again */
     e->state = 1;
     s_vp_built++;
     fprintf(stderr, "[GL] vertex program %016llx: %u instructions on the GPU%s\n",
@@ -1516,17 +1825,23 @@ typedef struct {
     int seg;                     /* the segment being written */
     GLsync fence[RING_SEGS];
 } Ring;
-static Ring s_vring = { 0, GL_ARRAY_BUFFER, 16 << 20, 0, NULL, 0, { 0 } };
-static Ring s_iring = { 0, GL_ELEMENT_ARRAY_BUFFER, 4 << 20, 0, NULL, 0, { 0 } };
+/* Sized so a segment comes round again long after the GPU is done with it:
+ * at 16 and 4 MB, E.S. mode (more GPU work queued) had the GL thread
+ * waiting on the rings' fences a quarter of each second on the Quest. */
+static Ring s_vring = { 0, GL_ARRAY_BUFFER, 64 << 20, 0, NULL, 0, { 0 } };
+static Ring s_iring = { 0, GL_ELEMENT_ARRAY_BUFFER, 32 << 20, 0, NULL, 0, { 0 } };
 /* The vertex programs' constants (the VshConst block, 192 vec4): a copy
  * streamed in whenever they change and bound as a range at VC_BINDING for
  * every program at once -- where each program had its 192 uniforms sent per
  * draw that changed them, and again on every switch of program. Ranges
  * start at the driver's uniform-buffer alignment. */
 #define VC_BYTES (192 * 16)
-static Ring s_cring = { 0, GL_UNIFORM_BUFFER, 16 << 20, 0, NULL, 0, { 0 } };
+static Ring s_cring = { 0, GL_UNIFORM_BUFFER, 32 << 20, 0, NULL, 0, { 0 } };
 static GLint s_ubo_align = 256;
 static uint32_t s_vc_gen_bound;         /* the constants' change count bound */
+
+static uint32_t s_ring_waits;           /* the GL thread waited for a segment (GPU log) */
+static uint64_t s_ring_wait_ns;
 
 #if defined(VC3_GLES)
 typedef void (*BufferStorageFn)(GLenum, GLsizeiptr, const void *, GLbitfield);
@@ -1578,7 +1893,15 @@ static void ring_enter(Ring *r, GLsizeiptr from, GLsizeiptr to)
         r->fence[r->seg] = glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
         r->seg = sg;
         if (r->fence[sg]) {
-            glClientWaitSync(r->fence[sg], GL_SYNC_FLUSH_COMMANDS_BIT, 1000000000ull);
+            struct timespec a_, b_;
+            clock_gettime(CLOCK_MONOTONIC, &a_);
+            if (glClientWaitSync(r->fence[sg], 0, 0) == GL_TIMEOUT_EXPIRED) {
+                s_ring_waits++;
+                glClientWaitSync(r->fence[sg], GL_SYNC_FLUSH_COMMANDS_BIT, 1000000000ull);
+                clock_gettime(CLOCK_MONOTONIC, &b_);
+                s_ring_wait_ns += (uint64_t)((b_.tv_sec - a_.tv_sec) * 1000000000ll
+                                             + (b_.tv_nsec - a_.tv_nsec));
+            }
             glDeleteSync(r->fence[sg]);
             r->fence[sg] = 0;
         }
@@ -1743,6 +2066,8 @@ static int gl_ready(void)
             s_failed = 1;
             return 0;
         }
+        s_vs_cpu = compile(GL_VERTEX_SHADER, VS);   /* for rc_spec */
+        s_vs_ff = compile(GL_VERTEX_SHADER, VS_FF);
         /* Without it every batch is transformed on the CPU, as before. */
         if (!prog_link(&s_praw, compile(GL_VERTEX_SHADER, VS_FF), fs, 1))
             fprintf(stderr, "[GL] fixed-function shader failed; raw draws declined\n");
@@ -1863,6 +2188,7 @@ typedef struct {
      * left eye's picture at x 0 (what guest memory gets), the right's at pw. */
     int st;
     int fov;                   /* foveated (fov_params) */
+    int nofov;                 /* made without foveation: an effect target's S (fov_frame) */
     GLuint fbo, color, depth;
     int dirty;                 /* drawn since the last readback */
     /* Guest memory as the GPU last left it, to spot the CPU writing the
@@ -1880,6 +2206,11 @@ typedef struct {
      * the render target the skipped copies read. */
     uint32_t last_sampled, first_drawn;
     int not_copy, skipping;
+    /* The effect target's source (fx_low): drawn at the effect scale while
+     * only effect-target runs sample it. The frames it was last sampled by
+     * one and by anything else; frames in a row it qualified. */
+    int fxlow, sc_stale;
+    uint32_t fx_samp, other_samp, fxlow_run;
     uint32_t copy_src;
     /* Depth discard (z_*): this frame's first depth/stencil access (0 none,
      * 1 a clear, 2 a draw), left for another surface this frame, came back
@@ -1904,6 +2235,8 @@ static struct {
     GLuint save_fbo;
     GLsizei save_pw, save_ph, save_cw;
     uint32_t n_this, n_prev, runs;   /* qualifying batches this frame, the last */
+    uint64_t t_begin, t_small, t_resolve, t_draws;   /* ns this second (VC3_GL_EFFECT_LOG) */
+    uint32_t last_frame;             /* the frame of the last run begun (fov_frame) */
     /* the render target the run samples, reduced as L is, once a run */
     GLuint small_fbo, small_tex;
     GLsizei small_w, small_h;
@@ -2316,7 +2649,7 @@ static void surf_foveate(Surf *f)
 #if defined(VC3_GLES)
     GLint n = 0;
     f->fov = 0;
-    if (!fov_mode())
+    if (!fov_mode() || f->nofov)
         return;
     glTexParameteri(GL_TEXTURE_2D, 0x8BFB /* TEXTURE_FOVEATED_FEATURE_BITS_QCOM */,
                     0x1 /* FOVEATION_ENABLE_BIT */ | 0x2 /* SCALED_BIN_METHOD_BIT */);
@@ -2330,12 +2663,34 @@ static void surf_foveate(Surf *f)
 #endif
 }
 
-/* At the flip, for the next frame: foveated or flat (s_fov_now). */
+/* At the flip, for the next frame: foveated or flat (s_fov_now).
+ *
+ * The effect target's surface S is not foveated while the target is in use
+ * (a run begun within FOV_FX_HOLD frames). The target takes S's depth with
+ * a blit, and on the Quest (Adreno) the depth of a foveated surface does
+ * not read back right -- some frames the E.S. layers were depth-tested
+ * against garbage and wiped or smeared the scene, both eyes differently: a
+ * bad flicker. Flat (gain 0) is not enough: a texture's foveation cannot
+ * be switched off once on. So S is made again without it (surf_bind, next
+ * frame: sc_stale) and with it once E.S. is over. Native E.S. without
+ * foveation still holds ~58. */
+#define FOV_FX_HOLD 120
 static void fov_frame(void)
 {
     int i, now;
     if (!fov_mode())
         return;
+    for (i = 0; i < s_nsurfs; i++) {
+        Surf *f = &s_surfs[i];
+        int busy = s_fx.runs && f == s_fx.s && s_frame - s_fx.last_frame < FOV_FX_HOLD;
+        if (busy != f->nofov && f->fbo) {
+            f->nofov = busy;
+            f->sc_stale = 1;
+            if (genv("GL_EFFECT_LOG"))
+                fprintf(stderr, "[FX] %08X made again %s foveation\n", f->va,
+                        busy ? "without" : "with");
+        }
+    }
     now = s_fov_mode == 1 || (s_imm && s_view.scale == 0 && s_view.eye_w > 0);
     if (now == s_fov_now && !now)
         return;
@@ -2392,6 +2747,17 @@ static int msaa_samples(void)
     return n;
 }
 
+static int fx_scale(void);
+
+/* The scale a surface is drawn at: the frame's, divided by the effect
+ * scale for an effect target's source (fx_low). */
+static void surf_want(const Surf *f, float *sx, float *sy)
+{
+    int sc = f->fxlow ? fx_scale() : 1;
+    *sx = s_sx / (float)sc;
+    *sy = s_sy / (float)sc;
+}
+
 static void surf_alloc(Surf *f, GLsizei w, GLsizei h)
 {
     GLsizei pw, ph;
@@ -2403,8 +2769,8 @@ static void surf_alloc(Surf *f, GLsizei w, GLsizei h)
     }
     f->w = w;
     f->h = h;
-    f->sx = s_sx;
-    f->sy = s_sy;
+    f->sc_stale = 0;
+    surf_want(f, &f->sx, &f->sy);
     f->wide = surf_widens(w, h);
     pw = (GLsizei)((float)w * f->sx + 0.5f);
     ph = (GLsizei)((float)h * f->sy + 0.5f);
@@ -2581,8 +2947,10 @@ static void gt_flip(void)
         s_zp_frame = s_sw_frame = 0;
         fprintf(stderr, "[GPUTIME]   attribute pointers kept %u, set %u; state calls made %u,"
                 " not repeated %u; uniforms sent %u, not repeated %u; program constants"
-                " sent %u\n", s_va_hit, s_va_miss, s_sh.made, s_sh.skipped, s_uc_sent,
-                s_uc_kept, s_vc_sent);
+                " sent %u; ring waits %u (%.1f ms)\n", s_va_hit, s_va_miss, s_sh.made, s_sh.skipped,
+                s_uc_sent, s_uc_kept, s_vc_sent, s_ring_waits, s_ring_wait_ns / 1e6);
+        s_ring_waits = 0;
+        s_ring_wait_ns = 0;
         s_sh.made = s_sh.skipped = 0;
         s_uc_sent = s_uc_kept = s_vc_sent = 0;
         s_va_hit = s_va_miss = 0;
@@ -2628,7 +2996,13 @@ static Surf *surf_bind(const Nv2aSurface *s)
         memset(f, 0, sizeof *f);
         f->va = s->color_va;
     }
-    if (!f->fbo || w > f->w || h > f->h || f->sx != s_sx || f->sy != s_sy
+    {
+        float wsx, wsy;
+        surf_want(f, &wsx, &wsy);
+        if (f->sx != wsx || f->sy != wsy)
+            f->sc_stale = 1;            /* the frame's scale, or fx_low, changed */
+    }
+    if (!f->fbo || w > f->w || h > f->h || f->sc_stale
         || f->wide != surf_widens(w > f->w ? w : f->w, h > f->h ? h : f->h)
         || f->st != surf_stereo(w > f->w ? w : f->w, h > f->h ? h : f->h))
         surf_alloc(f, w > f->w ? w : f->w, h > f->h ? h : f->h);
@@ -3503,6 +3877,10 @@ static int tex_bind(const Nv2aTexture *t, float *sw, float *sh)
             }
         }
         /* drawing into the effect target: the render target reduced alike */
+        if (s_fx.draw && rt != s_fx.s)
+            rt->fx_samp = s_frame;
+        else
+            rt->other_samp = s_frame;
         bound = s_fx.draw && rt != s_fx.s ? fx_small(rt) : rt->color;
         glBindTexture(GL_TEXTURE_2D, bound);
         if (rt->st && s_unit < 4)
@@ -5587,7 +5965,13 @@ static void gl_draw(const Nv2aSurface *s, const Nv2aBatch *b)
         return;
     mg_flush();
     fx_pre(s, b);
-    gl_draw_inner(s, b);
+    if (s_fx.draw) {
+        uint64_t t0 = tm_now();
+        gl_draw_inner(s, b);
+        s_fx.t_draws += tm_now() - t0;
+    } else {
+        gl_draw_inner(s, b);
+    }
     fx_post();
 }
 
@@ -5626,6 +6010,21 @@ static void gl_draw_inner(const Nv2aSurface *s, const Nv2aBatch *b)
             na = rc ? &s_pcpu_rc_na : &s_pcpu_na;
         }
         U = !at && na->prog && !genv("GL_ATEST_ALL") ? na : a;
+        /* a combiner batch: its setup's own program (rc_spec), not the
+         * interpreter -- unless a stage is a cube map */
+        if (rc && b->rc && rc_spec_on()) {
+            int st, cube = 0;
+            for (st = 0; st < 4; st++)
+                if (b->stage[st] && b->stage[st]->cube)
+                    cube = 1;
+            if (!cube) {
+                int vp = raw && raw->kind == NV2A_RAW_PROGRAM;
+                Prog *sp = rc_spec(b, vp ? s_vp_cur->vs : raw ? s_vs_ff : s_vs_cpu, raw != NULL,
+                                   vp, U == na);
+                if (sp)
+                    U = sp;
+            }
+        }
     }
     memset(s_sbs, 0, sizeof s_sbs);
     {
@@ -5650,7 +6049,18 @@ static void gl_draw_inner(const Nv2aSurface *s, const Nv2aBatch *b)
     cu2f(U->surf, (float)f->w, (float)f->h);
     {
         float xs, xo;
-        surf_xform(f, b, &xs, &xo);
+        /* An immersive frame's 3D program batch is drawn through the eyes'
+         * matrices: the 16:9 placement is not its, and asking it for the
+         * batch's extent ran the program over every vertex on the CPU --
+         * VC3's E.S. meshes (first vertex behind the eye, so "screen
+         * space" to batch_extent), 60 us each, a quarter of a second a
+         * second on the Quest. It gets what a 3D batch gets. */
+        if (s_imm && f->st && raw && raw->kind == NV2A_RAW_PROGRAM && raw_vp_3d(raw)) {
+            xs = f->wide ? (float)f->cw / (float)f->pw : 1.0f;
+            xo = 0.0f;
+        } else {
+            surf_xform(f, b, &xs, &xo);
+        }
         cu2f(U->xs, xs, xo);
         if (s_ftr == 1 && f->wide)
             fprintf(stderr, "[GLTR]   16:9 x scale %.3f offset %+.3f\n", xs, xo);
@@ -6518,7 +6928,7 @@ static void quad_into(GLuint fbo, GLsizei w, GLsizei h)
  *
  * So a run of such batches (blended that way, sampling another render
  * target, no depth or stencil writes, 3D, into a large stereo surface S,
- * after a frame that had at least FX_MIN of them) is drawn into
+ * after a frame that had enough of them) is drawn into
  * an effect target L of 1/scale the size each way instead: its depth is S's
  * scaled down (the meshes are depth-tested against the scene); its colour
  * starts as (0, 0, 0, 1) and each batch blends colour as it would over S
@@ -6529,18 +6939,22 @@ static void quad_into(GLuint fbo, GLsizei w, GLsizei h)
  * give, but with the contribution at the effect's resolution and the scene
  * itself kept native wherever the effect leaves it.
  *
- * VC3_GL_EFFECT_SCALE: 2 (default: half each way, a quarter of the pixels),
- * 3, 4, or 1 (off: every layer at full size). Only surfaces of FX_PX
- * pixels an eye and up (native immersive), never at 2x. */
-#define FX_MIN 8                   /* qualifying batches in the frame before */
-#define FX_PX 2000000L             /* an eye's pixels for the effect target */
+ * The scale, the run's minimum length and the surfaces' minimum size are
+ * the game's (ChihiroProfile gpu.effect_*: VC3 asks a quarter each way
+ * after 8 layers on 2 Mpx an eye; the defaults are a half, 8, 2 Mpx), the
+ * scale VC3_GL_EFFECT_SCALE's to override (1: off, every layer at full
+ * size). The detection is the batches' own -- blend, depth and stencil
+ * writes, what they sample -- not any game's addresses. */
+static int s_fx_min = 8;           /* qualifying batches in the frame before (profile) */
+static long s_fx_px = 2000000L;    /* an eye's pixels for the effect target (profile) */
+static int s_fx_scale_def = 2;     /* the profile's effect scale */
 
 static int fx_scale(void)
 {
     static int sc = -1;
     if (sc < 0) {
         const char *e = genv("GL_EFFECT_SCALE");
-        sc = e ? atoi(e) : 2;
+        sc = e ? atoi(e) : s_fx_scale_def;
         if (sc < 1 || sc > 8)
             sc = 1;
     }
@@ -6571,6 +6985,7 @@ static int fx_qualifies(const Surf *f, const Nv2aBatch *b)
 
 static void fx_begin(Surf *f)
 {
+    uint64_t t0 = tm_now();
     int sc = fx_scale();
     GLsizei w = (f->pw + sc - 1) / sc, h = (f->ph + sc - 1) / sc;
     static int logged;
@@ -6618,6 +7033,8 @@ static void fx_begin(Surf *f)
     s_fx.on = 1;
     s_fx.s = f;
     s_fx.runs++;
+    s_fx.last_frame = s_frame;
+    s_fx.t_begin += tm_now() - t0;
     GLCK("effect target: begin", NULL, f->va);
 }
 
@@ -6630,8 +7047,12 @@ static GLuint fx_small(const Surf *rt)
     int sc = fx_scale();
     GLsizei w = (rt->pw * (rt->st ? 2 : 1) + sc - 1) / sc, h = (rt->ph + sc - 1) / sc;
     GLint rd = 0, dr = 0, tex = 0;
+    uint64_t t0;
+    if (rt->fxlow)                      /* drawn at the effect scale already */
+        return rt->color;
     if (s_fx.small_run == s_fx.runs && s_fx.small_va == rt->va && s_fx.small_tex)
         return s_fx.small_tex;
+    t0 = tm_now();
     glGetIntegerv(GL_TEXTURE_BINDING_2D, &tex);
     if (!s_fx.small_tex || s_fx.small_w != w || s_fx.small_h != h) {
         if (!s_fx.small_tex) {
@@ -6660,6 +7081,7 @@ static GLuint fx_small(const Surf *rt)
     glBindTexture(GL_TEXTURE_2D, (GLuint)tex);
     s_fx.small_run = s_fx.runs;
     s_fx.small_va = rt->va;
+    s_fx.t_small += tm_now() - t0;
     return s_fx.small_tex;
 }
 
@@ -6669,6 +7091,7 @@ static void fx_resolve(void)
     static GLuint prog, vao;
     static GLint u_img, u_org, u_size;
     Surf *f = s_fx.s;
+    uint64_t t0 = tm_now();
 
     s_fx.on = 0;
     if (!f || !f->fbo)
@@ -6706,6 +7129,7 @@ static void fx_resolve(void)
     glViewport(0, 0, f->pw, f->ph);
     s_rs_valid = 0;
     f->dirty = 1;
+    s_fx.t_resolve += tm_now() - t0;
     GLCK("effect target: resolve", NULL, f->va);
 }
 
@@ -6722,7 +7146,8 @@ static void fx_pre(const Nv2aSurface *s, const Nv2aBatch *b)
     if (!q)
         return;
     s_fx.n_this++;
-    if (!s_fx.on && s_fx.n_prev >= FX_MIN && fx_scale() > 1 && (long)f->pw * f->ph >= FX_PX)
+    if (!s_fx.on && s_fx.n_prev >= (uint32_t)s_fx_min && fx_scale() > 1
+        && (long)f->pw * f->ph >= s_fx_px)
         fx_begin(f);
     if (s_fx.on) {
         s_fx.draw = 1;
@@ -7176,17 +7601,62 @@ static void scale_pick(int on)
     s_sx = s_sy = (float)vc3_scale_get();
 }
 
+/* The effect target's source at the effect scale (fx_low). VC3 copies its
+ * scene into 80C28000 three times an E.S. frame, full-screen, and in E.S.
+ * nothing samples 80C28000 but the effect-target run -- which wants it
+ * reduced (fx_small). So a stereo render target that, two frames in a row,
+ * only effect-target runs sampled is drawn at the effect scale itself: what
+ * goes into it (the copies) at a sixteenth of the pixels at 1/4, and no
+ * reduction. The first frame anything else samples it, it goes back to
+ * full size (that sampler reads the reduced picture, the right picture,
+ * once). VC3_GL_FX_LOW=0: never. */
+static void fx_low_frame(void)
+{
+    static int on = -1;
+    int i;
+    if (on < 0)
+        on = !(genv("GL_FX_LOW") && genv("GL_FX_LOW")[0] == '0');
+    for (i = 0; i < s_nsurfs; i++) {
+        Surf *f = &s_surfs[i];
+        int only_fx = on && f->st && fx_scale() > 1 && f->fx_samp == s_frame
+                      && f->other_samp != s_frame;
+        f->fxlow_run = only_fx ? f->fxlow_run + 1 : 0;
+        if (!f->fxlow && f->fxlow_run >= 2) {
+            f->fxlow = 1;
+            if (genv("GL_EFFECT_LOG"))
+                fprintf(stderr, "[FX] %08X drawn at 1/%d: only the effect target samples it\n",
+                        f->va, fx_scale());
+        } else if (f->fxlow && f->other_samp == s_frame) {
+            f->fxlow = 0;
+            if (genv("GL_EFFECT_LOG"))
+                fprintf(stderr, "[FX] %08X back to full size\n", f->va);
+        }
+    }
+}
+
 static void gl_flip(void)
 {
     mg_flush();
     mg_report();
     if (s_fx.on)                    /* the effect target's run ends with the frame */
         fx_resolve();
-    if (genv("GL_EFFECT_LOG") && s_fx.n_this)   /* VC3_GL_EFFECT_LOG=1 */
-        fprintf(stderr, "[FX] frame %u: %u qualifying batches, %u runs so far\n", s_frame,
-                s_fx.n_this, s_fx.runs);
+    if (genv("GL_EFFECT_LOG")) {                 /* VC3_GL_EFFECT_LOG=1 */
+        static uint32_t fr0, n;
+        n += s_fx.n_this;
+        if (s_frame - fr0 >= 60) {
+            if (n)
+                fprintf(stderr, "[FX] %u frames: %u qualifying batches, %u runs so far; CPU ms:"
+                        " begin %.1f, reduce %.1f, draws %.1f, resolve %.1f\n", s_frame - fr0, n,
+                        s_fx.runs, s_fx.t_begin / 1e6, s_fx.t_small / 1e6, s_fx.t_draws / 1e6,
+                        s_fx.t_resolve / 1e6);
+            fr0 = s_frame;
+            n = 0;
+            s_fx.t_begin = s_fx.t_small = s_fx.t_draws = s_fx.t_resolve = 0;
+        }
+    }
     s_fx.n_prev = s_fx.n_this;
     s_fx.n_this = 0;
+    fx_low_frame();
     int i;
 
     if (gl_ready()) {
@@ -7499,6 +7969,12 @@ void vc3_gl_backend_register(void)
         if (gp->gpu.picture_min_w > 0)
             s_pic_min_w = gp->gpu.picture_min_w;
         s_lazy_rt = gp->gpu.lazy_rt >= 0;
+        if (gp->gpu.effect_scale > 0)
+            s_fx_scale_def = gp->gpu.effect_scale;
+        if (gp->gpu.effect_min_layers > 0)
+            s_fx_min = gp->gpu.effect_min_layers;
+        if (gp->gpu.effect_min_px > 0)
+            s_fx_px = gp->gpu.effect_min_px;
         if (gp->gpu.stereo_depth > 0.0f)
             s_st_depth = gp->gpu.stereo_depth;
         if (gp->gpu.stereo_sep > 0.0f)
