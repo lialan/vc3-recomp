@@ -1,6 +1,8 @@
-/* vr_math_test.c - checks of src/vr_math.h, the immersive view's maths:
+/* vr_math_test.c - checks of runtime/src/host/vr_math.h, the immersive view's
+ * maths, for a game (scripts/vr-math-test.sh [id]: its projection from
+ * games/<id>/game.conf, TEST_PROJ and TEST_SCREEN_H; VC3's by default):
  *
- *   cc -O1 -Isrc tests/vr_math_test.c -o /tmp/vr_math_test -lm && /tmp/vr_math_test
+ *   cc -O1 -Iruntime/src/host [-DTEST_PROJ=...] tests/vr_math_test.c -lm
  *
  * A Direct3D-style camera is built as the NV2A sees it (projection with the
  * viewport folded in, composite = that * model-view), and the immersive
@@ -12,6 +14,15 @@
 #include <stdlib.h>
 
 #include "vr_math.h"
+
+/* The game's projection as the back end recovers it (kx ky cx cy 1/pz) and
+ * its screen height: game.conf's TEST_PROJ / TEST_SCREEN_H; VC3's here. */
+#ifndef TEST_PROJ
+#define TEST_PROJ -772.5f, 772.5f, 320.5f, 240.5f, -1.0f
+#endif
+#ifndef TEST_SCREEN_H
+#define TEST_SCREEN_H 480.0f
+#endif
 
 static int fails;
 #define CHECK(c, ...) do { if (!(c)) { fails++; printf("FAIL %s:%d: ", __FILE__, __LINE__); \
@@ -205,7 +216,7 @@ static void test_aim_through_panel(void)
  * a point on the HUD plane to the screen and back. */
 static void test_vc3_orientation(void)
 {
-    VrGameProj g = { -772.5f, 772.5f, 320.5f, 240.5f, -1.0f };
+    VrGameProj g = { TEST_PROJ };
     const float id[4] = { 0, 0, 0, 1 }, tan_fov[4] = { -1.2f, 1.1f, 1.1f, -1.2f };
     float sx, sy, m[16], c[4];
     float up[3] = { 0, 1, -10 }, right[3] = { 1, 0, -10 };
@@ -227,7 +238,7 @@ static void test_vc3_orientation(void)
          * negative surface y; the immersive one, negated, must agree */
         float game_surface_y, imm_surface_y;
         vr_project_gl(&g, up, &sx, &sy);
-        game_surface_y = sy / 480.0f * 2.0f - 1.0f;
+        game_surface_y = sy / TEST_SCREEN_H * 2.0f - 1.0f;
         imm_surface_y = -(c[1] / c[3]);
         CHECK(game_surface_y < 0 && imm_surface_y < 0,
               "surface y: game %f, immersive %f (both should be negative)", game_surface_y,

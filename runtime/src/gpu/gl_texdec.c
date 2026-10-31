@@ -46,6 +46,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include "chihiro/ch_env.h"
 
 #ifndef GL_COPY_WRITE_BUFFER_BINDING
 #define GL_COPY_WRITE_BUFFER_BINDING GL_COPY_WRITE_BUFFER   /* same enum */
@@ -84,7 +85,7 @@ uint64_t texstat_now(void)
 
 void texstat_init(void)
 {
-    const char *e = getenv("VC3_TEX_STATS");
+    const char *e = ch_env("TEX_STATS");
     g_texstat_on = e && *e && *e != '0' ? atoi(e) > 1 ? 2 : 1 : 0;
 }
 
@@ -478,8 +479,8 @@ static void warm_up(void)
 
 static void texdec_init(void)
 {
-    const char *e = getenv("VC3_TEX_GPU"), *c = getenv("VC3_TEX_COMPARE");
-    const char *z = getenv("VC3_TEX_S3TC");
+    const char *e = ch_env("TEX_GPU"), *c = ch_env("TEX_COMPARE");
+    const char *z = ch_env("TEX_S3TC");
     int want = !e ? 1 : !strcmp(e, "frag") ? 2 : !strcmp(e, "compute") ? 3 : *e != '0';
     GLint maj = 0, min = 0, cur = 0, act = 0;
     GLuint vs, fs;

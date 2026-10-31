@@ -34,9 +34,8 @@
 #include "kernel.h"
 #include "xbox_memory_layout.h"
 #include "display_settings.h"
-
-#define VC3_ENTRY_POINT 0x000B6407 /* XBE entry, debug-key decoded */
-#define VC3_XBE_NAME    "vc3.xbe"
+#include "chihiro/ch_env.h"
+#include "chihiro/chihiro_profile.h"
 
 extern void xbe_entry_point(void);
 extern void xbox_path_init(const char *game_dir, const char *save_dir);
@@ -186,12 +185,12 @@ void vc3_relaunch(void)
     fflush(stderr);
     /* A scripted run's presses belong to the boot that read them; the next
      * boot gets VC3_AUTOKEYS_RELAUNCH, if any. */
-    if (getenv("VC3_AUTOKEYS_RELAUNCH"))
-        setenv("VC3_AUTOKEYS", getenv("VC3_AUTOKEYS_RELAUNCH"), 1);
+    if (ch_env("AUTOKEYS_RELAUNCH"))
+        ch_setenv("AUTOKEYS", ch_env("AUTOKEYS_RELAUNCH"), 1);
     else
-        unsetenv("VC3_AUTOKEYS");
-    unsetenv("VC3_AUTOKEYS_RELAUNCH");
-    unsetenv("VC3_TEST_LAUNCH");      /* leaving test mode boots the game */
+        ch_unsetenv("AUTOKEYS");
+    ch_unsetenv("AUTOKEYS_RELAUNCH");
+    ch_unsetenv("TEST_LAUNCH");      /* leaving test mode boots the game */
 #if defined(__ANDROID__)
     /* An app cannot exec itself: the activity starts a fresh process. */
     (void)exe; (void)size;
@@ -253,7 +252,7 @@ static int guest_main(void)
         fprintf(stderr, "[BOOT] flat dispatch unavailable; using binary search\n");
     xbox_WatchdogStart();
 
-    printf("entry 0x%08X, esp 0x%08X\n", VC3_ENTRY_POINT, g_esp);
+    printf("entry 0x%08X, esp 0x%08X\n", chihiro_profile()->entry, g_esp);
     xbox_ThreadAcctName("guest main");      /* RECOMP_THREAD_LOG */
     xbe_entry_point();
 
@@ -268,31 +267,36 @@ static int guest_main(void)
 int main(int argc, char **argv)
 {
     char *game_dir = s_game_dir, *save_dir = s_save_dir, xbe_path[PATH_MAX];
-    const char *dir = argc > 1 ? argv[1] : getenv("VC3_GAME_DIR");
-    const char *save = getenv("VC3_SAVE_DIR");
+    const ChihiroProfile *gp;
+    const char *dir, *save;
     int rc;
+
+    chihiro_profile_apply(chihiro_game());
+    gp = chihiro_profile();
+    dir = argc > 1 ? argv[1] : ch_env("GAME_DIR");
+    save = ch_env("SAVE_DIR");
 
     s_argv = argv;
     setvbuf(stdout, NULL, _IONBF, 0);
     setvbuf(stderr, NULL, _IONBF, 0);
 
     if (!dir || !realpath(dir, game_dir)) {
-        fprintf(stderr, "usage: %s <game_dir>   (or set VC3_GAME_DIR)\n"
+        fprintf(stderr, "usage: %s <game_dir>   (or set %s_GAME_DIR)\n"
                         "game_dir must contain %s and media/\n",
-                argv[0], VC3_XBE_NAME);
+                argv[0], ch_env_prefix(), gp->xbe);
         return 2;
     }
     if (save)
         snprintf(save_dir, sizeof(s_save_dir), "%s", save);
     else
         snprintf(save_dir, sizeof(s_save_dir),
-                 "%s/Library/Application Support/vc3-recomp",
-                 getenv("HOME") ? getenv("HOME") : ".");
+                 "%s/Library/Application Support/%s",
+                 getenv("HOME") ? getenv("HOME") : ".", gp->save_name);
     mkdirs(save_dir);
 
     /* Silent by default: SDL's dummy driver consumes the mix without playing
      * it. VC3_SOUND=1 plays it; RECOMP_AUDIO_WAV captures it either way. */
-    if (!getenv("VC3_SOUND") || strcmp(getenv("VC3_SOUND"), "1") != 0)
+    if (!ch_env("SOUND") || strcmp(ch_env("SOUND"), "1") != 0)
         setenv("SDL_AUDIODRIVER", "dummy", 1);
     /* The emulated MCPX APU: without it the game has no sound at all. With
      * it, VC3 starts the APU itself and mixes music and effects (measured:
@@ -328,27 +332,25 @@ int main(int argc, char **argv)
     setenv("RECOMP_FB_WINDOW", "1", 0);
 #endif
     {
-        const char *res = getenv("VC3_RES");
-        if (res && !strcmp(res, "1024")) {
-            setenv("RECOMP_FB_SIZE", "1024x768", 0);
-            setenv("RECOMP_WINDOW_SCALE", "1", 0);
-        } else if (res && !strcmp(res, "800")) {
-            setenv("RECOMP_FB_SIZE", "800x600", 0);
-            setenv("RECOMP_WINDOW_SCALE", "1", 0);
-        } else {
-            setenv("RECOMP_FB_SIZE", "640x480", 0);
-            setenv("RECOMP_WINDOW_SCALE", "2", 0);
-        }
+        /* the profile's display modes: the first is the default */
+        const char *res = ch_env("RES");
+        const ChihiroDisplayMode *m = &gp->modes[0];
+        int i;
+        for (i = 1; res && i < 4 && gp->modes[i].fb_size; i++)
+            if (gp->modes[i].res && !strcmp(res, gp->modes[i].res))
+                m = &gp->modes[i];
+        setenv("RECOMP_FB_SIZE", m->fb_size, 0);
+        setenv("RECOMP_WINDOW_SCALE", m->window_scale, 0);
     }
 
-    snprintf(xbe_path, sizeof(xbe_path), "%s/%s", game_dir, VC3_XBE_NAME);
+    snprintf(xbe_path, sizeof(xbe_path), "%s/%s", game_dir, gp->xbe);
     s_xbe = load_file(xbe_path, &s_xbe_size);
     if (!s_xbe) {
         fprintf(stderr, "cannot read %s\n", xbe_path);
         return 1;
     }
-    printf("=== Virtua Cop 3 (recomp) ===\ngame: %s\nsave: %s\n",
-           game_dir, save_dir);
+    printf("=== %s (recomp) ===\ngame: %s\nsave: %s\n",
+           gp->title, game_dir, save_dir);
 
     /* Shown frames per game frame (VC3_FPS, else the saved setting); the
      * Display menu changes it from the window. */

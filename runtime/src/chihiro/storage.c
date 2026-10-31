@@ -19,6 +19,7 @@
 #include <time.h>
 
 #include "recomp_types.h"
+#include "chihiro/chihiro_profile.h"
 
 extern const char *chihiro_save_dir(void);
 
@@ -124,9 +125,12 @@ static uint32_t store_xfer(store_t *s, int write, const char *op)
  * and ordered as a calibration must be. */
 int chihiro_gun_calibration(int16_t cal[10])
 {
-    const uint8_t *p = s_backup_data + 0x476;
+    uint32_t at = chihiro_profile()->aim.backup_offset;   /* VC3: 0x476 */
+    const uint8_t *p = s_backup_data + at;
     int i;
 
+    if (!at || at + 22 > BACKUP_SIZE)
+        return 0;
     store_load(&s_backup);
     if ((p[0] | p[1] << 8) != 0x0010)
         return 0;

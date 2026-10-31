@@ -18,12 +18,13 @@
 #include <stdlib.h>
 
 #include "recomp_types.h"
-#include "recomp_funcs.h"
 #include "host_time.h"
+#include "chihiro/ch_env.h"
+#include "chihiro/chihiro_profile.h"
 
 void nv2a_pb_set_semaphore_target(uint32_t guest_va);
 
-#define D3D_DEVICE_PTR   0x001178F8u   /* g_pDevice */
+/* g_pDevice, KickOff and its return address: the profile's d3d block */
 #define DEV_WRITE_TIME   0x2C          /* newest fence time */
 #define DEV_SEMAPHORE    0x30          /* -> GPU's progress */
 #define WAIT_BOUND_NS    250000000ull
@@ -35,7 +36,7 @@ static void fence_stats(int slept, uint64_t ns)
     static int on = -1;
     static uint64_t t0, calls, sleeps, wait_ns;
     uint64_t now;
-    if (on < 0) { const char *e = getenv("VC3_FENCE_LOG"); on = e && *e == '1'; }
+    if (on < 0) { const char *e = ch_env("FENCE_LOG"); on = e && *e == '1'; }
     if (!on) return;
     calls++; sleeps += slept; wait_ns += ns;
     now = xbox_HostNowNs();
@@ -51,8 +52,9 @@ void vc3_d3d_block_on_time(void)
 {
     static uint32_t s_sem_va;
     static int s_timeouts;
+    const ChihiroProfile *gp = chihiro_profile();
     uint32_t time = MEM32(g_esp + 4);
-    uint32_t dev = MEM32(D3D_DEVICE_PTR);
+    uint32_t dev = MEM32(gp->d3d.device_ptr);
     uint32_t sem, head;
     uint64_t deadline, start;
     int slept = 0;
@@ -71,8 +73,8 @@ void vc3_d3d_block_on_time(void)
      * the pushbuffer that holds it, as the original does first. */
     if (time == MEM32(dev + DEV_WRITE_TIME)) {
         PUSH32(g_esp, 0);
-        PUSH32(g_esp, 0x0010CAEFu);
-        sub_0010CA10();              /* KickOff(0), ret 4 */
+        PUSH32(g_esp, gp->d3d.kickoff_ret);
+        gp->d3d.kickoff();           /* KickOff(0), ret 4 */
     }
 
     /* Done once the fence is no newer than the GPU's progress, in ring order

@@ -30,7 +30,7 @@ Release/
 x64/
 
 # Generated recompiled code (regenerate from XBE with the recomp pipeline)
-src/recomp/gen/
+games/*/generated/
 
 # Game files (user must provide their own legally-owned copies)
 game/
@@ -51,9 +51,9 @@ Thumbs.db
 
 # vc3-recomp: never commit game files, analysis output or lifted code
 .venv
-analysis/out
+games/*/analysis
 analysis/*.log
-src/recomp/gen
+games/*/generated
 game/
 *.xbe
 *.squashfs
@@ -68,9 +68,9 @@ xbox_kernel.log
 quest/*.apk
 quest/local.properties
 quest/.gradle/
-quest/vc3/build/
-quest/vc3/src/main/libs/
-quest/vc3/src/main/java/org/libsdl/
+quest/*/build/
+quest/*/src/main/libs/
+quest/*/src/main/java/org/libsdl/
 quest/devtest-out/
 
 # PGO profiles (quest/pgo-profile.sh)

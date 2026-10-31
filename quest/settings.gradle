@@ -1,2 +1,6 @@
-// Virtua Cop 3 VR for Meta Quest: quest/vc3, built by quest/build.sh
-include ':vc3'
+// The Chihiro games' Quest apps: one module per game, quest/<id> (a folder
+// with a build.gradle; vc3: Virtua Cop 3 VR), built by quest/build.sh <id>.
+file('.').eachDir { d ->
+    if (new File(d, 'build.gradle').exists())
+        include ":${d.name}"
+}

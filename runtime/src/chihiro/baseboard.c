@@ -13,6 +13,8 @@
 #include <string.h>
 
 #include "recomp_types.h"
+#include "chihiro/ch_env.h"
+#include "chihiro/chihiro_profile.h"
 
 #define STDCALL_ARG(n)  MEM32(g_esp + 4 + 4 * (n))
 
@@ -25,16 +27,16 @@ void chihiro_jamma_firmware_load(void)
     g_esp += 8;
 }
 
-/* 0x7D220: sets [0x36983C] when the boot memory probe (0x34F60) finds more
- * than 64 MB of contiguous memory -- that is, when the game runs on a
- * Chihiro (128 MB) rather than an Xbox (64 MB). Eight places read it through
- * 0x7D240: at 1 the game sets up the JVS I/O board (0x7D3A0 -> 0xF30E0) and
- * polls it every frame; at 0 it reads Xbox gamepads and never touches JVS.
- * Set it outright rather than trusting the probe against the toolkit's
- * contiguous window. cdecl. */
+/* The game's "is this a Chihiro" probe (profile xpp.devunit_probe): it sets
+ * a flag (xpp.devunit_flag) when the boot memory probe finds more than 64 MB
+ * of contiguous memory -- a Chihiro (128 MB) rather than an Xbox (64 MB).
+ * VC3 (0x7D220, setting [0x36983C]) reads it in eight places: at 1 it sets
+ * up the JVS I/O board and polls it every frame; at 0 it reads Xbox gamepads
+ * and never touches JVS. Set it outright rather than trusting the probe
+ * against the toolkit's contiguous window. cdecl. */
 void chihiro_devunit_probe(void)
 {
-    MEM32(0x0036983Cu) = 1;
+    MEM32(chihiro_profile()->xpp.devunit_flag) = 1;
     g_esp += 4;
 }
 
@@ -44,21 +46,24 @@ void chihiro_devunit_probe(void)
  * progressive, 9 800x600, 11 1024x768, 0 640x480 interlaced. With no board
  * the index is 11, but VC3 lays its 2D out at 640x480, so a 1024x768 frame
  * shows menus and text in its top-left corner. Default to a 31 kHz monitor at
- * 640x480; VC3_RES=800|1024 picks the others, VC3_DIP sets the raw value.
- * cdecl, no arguments. */
+ * 640x480. The modes come from the profile (modes[], the first the default:
+ * VC3's 640x480p, 800x600, 1024x768); VC3_RES=800|1024 picks the others,
+ * VC3_DIP sets the raw value. cdecl, no arguments. */
 void chihiro_dip_switches(void)
 {
     static int logged;
-    const char *raw = getenv("VC3_DIP");
-    const char *res = getenv("VC3_RES");
-    uint32_t dip = 0x2;                        /* index 10: 640x480p */
+    const ChihiroProfile *gp = chihiro_profile();
+    const char *raw = ch_env("DIP");
+    const char *res = ch_env("RES");
+    uint32_t dip = gp->modes[0].dip;
+    int i;
 
     if (raw)
         dip = (uint32_t)strtoul(raw, NULL, 0);
-    else if (res && !strcmp(res, "800"))
-        dip = 0x4;                             /* index 9: 800x600 */
-    else if (res && !strcmp(res, "1024"))
-        dip = 0x0;                             /* index 11: 1024x768 */
+    else
+        for (i = 1; res && i < 4 && gp->modes[i].fb_size; i++)
+            if (gp->modes[i].res && !strcmp(res, gp->modes[i].res))
+                dip = gp->modes[i].dip;
     if (!logged) {
         logged = 1;
         fprintf(stderr, "[CHIHIRO] DIP switches 0x%08X (display index %u)\n",

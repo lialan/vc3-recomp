@@ -32,6 +32,7 @@
 #include <time.h>
 
 #include "display_settings.h"
+#include "chihiro/ch_env.h"
 
 static int s_fps = 60, s_scale = 1, s_wide, s_stereo;
 
@@ -47,7 +48,7 @@ static int scale_ok(int scale)
 
 static void settings_path(char *buf, size_t n, int dir_only)
 {
-    const char *dir = getenv("VC3_CONFIG_DIR");
+    const char *dir = ch_env("CONFIG_DIR");
     if (dir && *dir)
         snprintf(buf, n, "%s%s", dir, dir_only ? "" : "/settings");
     else
@@ -108,7 +109,7 @@ void vc3_setting_put(const char *key, const char *value)
 /* The env value of name, else the saved one of key. */
 static const char *setting(const char *name, const char *key, int *from_env)
 {
-    const char *e = getenv(name);
+    const char *e = ch_env(name);
     *from_env = e != NULL;
     return e ? e : vc3_setting_get(key);
 }
@@ -123,7 +124,7 @@ void vc3_display_init(void)
     const char *v;
     int env, n;
 
-    v = setting("VC3_FPS", "fps=", &env);
+    v = setting("FPS", "fps=", &env);
     n = v ? atoi(v) : 60;
 #if defined(__ANDROID__)
     n = 60;            /* the headset makes its own in-between frames */
@@ -136,7 +137,7 @@ void vc3_display_init(void)
     }
     __atomic_store_n(&s_fps, n, __ATOMIC_RELAXED);
 
-    v = setting("VC3_SCALE", "scale=", &env);
+    v = setting("SCALE", "scale=", &env);
 #if defined(__ANDROID__)
     /* The Quest: 1x. Stereo at 2x is twice 1706x960 through every pass,
      * which the Quest 3's GPU holds at 15-35 fps in combat (56-60 at 1x);
@@ -152,7 +153,7 @@ void vc3_display_init(void)
     }
     __atomic_store_n(&s_scale, n, __ATOMIC_RELAXED);
 
-    v = setting("VC3_ASPECT", "aspect=", &env);
+    v = setting("ASPECT", "aspect=", &env);
 #if defined(__ANDROID__)
     if (!v)
         v = "16:9";                    /* the Quest: a wide screen in front */
@@ -161,7 +162,7 @@ void vc3_display_init(void)
         fprintf(stderr, "[VC3] VC3_ASPECT=%s: not 4:3 or 16:9; using 4:3\n", v);
     __atomic_store_n(&s_wide, parse_wide(v), __ATOMIC_RELAXED);
 
-    v = setting("VC3_STEREO", "stereo=", &env);
+    v = setting("STEREO", "stereo=", &env);
 #if defined(__ANDROID__)
     n = v ? atoi(v) != 0 : 1;          /* the Quest: 3D */
 #else
