@@ -1541,7 +1541,16 @@ static void ring_enter(Ring *r, GLsizeiptr from, GLsizeiptr to)
         r->fence[r->seg] = glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
         r->seg = sg;
         if (r->fence[sg]) {
-            glClientWaitSync(r->fence[sg], GL_SYNC_FLUSH_COMMANDS_BIT, 1000000000ull);
+            GLenum result;
+            do {
+                result = glClientWaitSync(r->fence[sg], GL_SYNC_FLUSH_COMMANDS_BIT,
+                                          1000000000ull);
+            } while (result == GL_TIMEOUT_EXPIRED);
+            if (result == GL_WAIT_FAILED) {
+                fprintf(stderr, "[GL] ring wait failed (target 0x%X segment %d); finishing\n",
+                        (unsigned)r->target, sg);
+                glFinish();
+            }
             glDeleteSync(r->fence[sg]);
             r->fence[sg] = 0;
         }
