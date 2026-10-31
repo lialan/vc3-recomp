@@ -37,6 +37,7 @@ set(VC3_SOURCES
     src/chihiro/jvs.c
     src/chihiro/baseboard.c
     src/d3d_fence.c
+    src/vc3_idle.c
     src/host_input.c
     src/display_settings.c
     src/gpu/gl_backend.c

@@ -78,6 +78,10 @@ void sub_000B6256(void) { vc3_relaunch(); }          /* XLaunchNewImage */
 extern void vc3_d3d_block_on_time(void);
 void sub_0010CAC0(void) { vc3_d3d_block_on_time(); } /* D3D_BlockOnTime */
 
+/* The idle thread, sleeping between its checks (src/vc3_idle.c). */
+extern void vc3_idle_thread(void);
+void sub_000BA050(void) { vc3_idle_thread(); }      /* idle loop thread */
+
 /* ── Manual function overrides ─────────────────────────────── */
 
 /*
