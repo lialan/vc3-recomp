@@ -49,6 +49,8 @@
 #include <pthread.h>
 #include <sched.h>
 #include <sys/syscall.h>
+#include <sys/resource.h>                 /* setpriority: a thread hint's fallback */
+#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -1032,10 +1034,46 @@ static unsigned long big_cores(void)
     return mask;
 }
 
+/* A GL-side worker thread's hint. XR_KHR_android_thread_settings has a
+ * renderer-worker type, but Meta's runtime rejects it ("Unsupported
+ * threadType; 4" in its log, XR_ERROR_ANDROID_THREAD_SETTINGS_FAILURE_KHR):
+ * so the renderer-worker type first (a runtime that has it), then the
+ * application-worker one, then, if the runtime takes neither, the thread's
+ * niceness raised (setpriority, -10: Android's urgent-display level is -8,
+ * display -4). Each attempt logged. */
+static void hint_worker(pid_t tid, const char *what)
+{
+    static const struct { XrAndroidThreadTypeKHR type; const char *name; } ty[2] = {
+        { XR_ANDROID_THREAD_TYPE_RENDERER_WORKER_KHR, "renderer worker" },
+        { XR_ANDROID_THREAD_TYPE_APPLICATION_WORKER_KHR, "application worker" },
+    };
+    int i;
+    for (i = 0; i < 2; i++) {
+        XrResult r = s_set_thread(s_sess, ty[i].type, (uint32_t)tid);
+        fprintf(stderr, "[xr] thread hint: %s as %s: %s (%d)\n", what, ty[i].name,
+                XR_SUCCEEDED(r) ? "accepted" : "rejected", (int)r);
+        if (XR_SUCCEEDED(r))
+            return;
+    }
+    {
+        static const int nice_try[3] = { -10, -8, -4 };
+        int k;
+        for (k = 0; k < 3; k++) {
+            if (setpriority(PRIO_PROCESS, (id_t)tid, nice_try[k]) == 0) {
+                fprintf(stderr, "[xr] thread hint: %s: niceness %d instead\n", what, nice_try[k]);
+                return;
+            }
+        }
+        fprintf(stderr, "[xr] thread hint: %s: niceness not raised either (errno %d)\n", what,
+                errno);
+    }
+}
+
 /* Each headset frame until done: tell the runtime which thread is which
  * once each exists -- the loop (it submits the frames) the renderer's main,
- * the GL back end a renderer worker, the game the application's main -- and
- * with VC3_BIGCORES=1 put the game and the back end on the fastest cores. */
+ * the GL back end and the push-buffer decode workers (hint_worker), the game
+ * the application's main -- and with VC3_BIGCORES=1 put the game and the
+ * back end on the fastest cores. */
 static void perf_frame(void)
 {
     static int told_host, told_exec, told_decode, told_guest, pinned;
@@ -1048,19 +1086,14 @@ static void perf_frame(void)
             fprintf(stderr, "[xr] thread hint: loop as renderer main: %d\n", (int)r);
         }
         if (!told_exec && s_tid_exec) {
-            XrResult r = s_set_thread(s_sess, XR_ANDROID_THREAD_TYPE_RENDERER_WORKER_KHR,
-                                      (uint32_t)s_tid_exec);
             told_exec = 1;
-            fprintf(stderr, "[xr] thread hint: GL back end as renderer worker: %d\n", (int)r);
+            hint_worker(s_tid_exec, "GL back end");
         }
         /* the decode thread, when it is not the GL thread: a renderer
          * worker too (it feeds the GL thread every draw of the frame) */
         if (!told_decode && s_tid_decode && s_tid_exec && s_tid_decode != s_tid_exec) {
-            XrResult r = s_set_thread(s_sess, XR_ANDROID_THREAD_TYPE_RENDERER_WORKER_KHR,
-                                      (uint32_t)s_tid_decode);
             told_decode = 1;
-            fprintf(stderr, "[xr] thread hint: push-buffer decode as renderer worker: %d\n",
-                    (int)r);
+            hint_worker(s_tid_decode, "push-buffer decode");
         }
         if (!told_guest && s_tid_guest) {
             XrResult r = s_set_thread(s_sess, XR_ANDROID_THREAD_TYPE_APPLICATION_MAIN_KHR,
