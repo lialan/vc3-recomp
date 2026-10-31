@@ -4744,37 +4744,59 @@ static void quest_present(void)
         vc3_quest_frame(f->fbo, f->pw, f->ph, f->st ? 2 : 1, lw, lh, &vf);
         return;
     }
-    if (cap < (size_t)f->w * f->h * 4) {
-        free(rgba);
-        cap = (size_t)f->w * f->h * 4;
-        if (!(rgba = (uint8_t *)malloc(cap))) {
-            cap = 0;
-            return;
+    /* One texture, reallocated only when the size or format changes, and
+     * filled with glTexSubImage2D: a 16-bit surface goes up as it is (an
+     * RGB565 texture, the row pitch given to GL), a 32-bit one has red and
+     * blue swapped a word at a time -- the host blits from this texture, and
+     * a blit ignores texture swizzles. */
+    {
+        static GLsizei tw, th;
+        static GLenum tfmt;
+        GLenum want = f->bpp == 4 ? GL_RGBA8 : GL_RGB565;
+        mem = (const uint8_t *)xbox_GetMemoryOffset() + f->va;
+        if (!tex) {
+            glGenTextures(1, &tex);
+            glGenFramebuffers(1, &fbo);
         }
-    }
-    mem = (const uint8_t *)xbox_GetMemoryOffset() + f->va;
-    for (y = 0; y < f->h; y++) {
-        const uint8_t *src = mem + (size_t)y * f->pitch;
-        uint8_t *d = rgba + (size_t)y * f->w * 4;
-        for (x = 0; x < f->w; x++, d += 4) {
-            if (f->bpp == 4) {
-                d[0] = src[x * 4 + 2]; d[1] = src[x * 4 + 1]; d[2] = src[x * 4]; d[3] = 255;
-            } else {
-                uint16_t v = (uint16_t)(src[x * 2] | src[x * 2 + 1] << 8);
-                d[0] = (uint8_t)((v >> 11) << 3);
-                d[1] = (uint8_t)(((v >> 5) & 0x3F) << 2);
-                d[2] = (uint8_t)((v & 0x1F) << 3);
-                d[3] = 255;
+        active_tex(0);
+        glBindTexture(GL_TEXTURE_2D, tex);
+        if (tw != f->w || th != f->h || tfmt != want) {
+            glDeleteTextures(1, &tex);         /* immutable storage: a new one */
+            glGenTextures(1, &tex);
+            glBindTexture(GL_TEXTURE_2D, tex);
+            glTexStorage2D(GL_TEXTURE_2D, 1, want, f->w, f->h);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+            tw = f->w;
+            th = f->h;
+            tfmt = want;
+        }
+        if (f->bpp == 4) {
+            if (cap < (size_t)f->w * f->h * 4) {
+                free(rgba);
+                cap = (size_t)f->w * f->h * 4;
+                if (!(rgba = (uint8_t *)malloc(cap))) {
+                    cap = 0;
+                    return;
+                }
             }
+            for (y = 0; y < f->h; y++) {
+                const uint32_t *src = (const uint32_t *)(mem + (size_t)y * f->pitch);
+                uint32_t *d = (uint32_t *)rgba + (size_t)y * f->w;
+                for (x = 0; x < f->w; x++) {    /* BGRX in memory -> RGBA */
+                    uint32_t v = src[x];
+                    d[x] = ((v >> 16) & 0xFFu) | (v & 0xFF00u) | ((v & 0xFFu) << 16)
+                         | 0xFF000000u;
+                }
+            }
+            glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, f->w, f->h, GL_RGBA, GL_UNSIGNED_BYTE, rgba);
+        } else {
+            glPixelStorei(GL_UNPACK_ROW_LENGTH, (GLint)(f->pitch / 2));
+            glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, f->w, f->h, GL_RGB,
+                            GL_UNSIGNED_SHORT_5_6_5, mem);
+            glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
         }
     }
-    if (!tex) {
-        glGenTextures(1, &tex);
-        glGenFramebuffers(1, &fbo);
-    }
-    active_tex(0);
-    glBindTexture(GL_TEXTURE_2D, tex);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, f->w, f->h, 0, GL_RGBA, GL_UNSIGNED_BYTE, rgba);
     glBindFramebuffer(GL_FRAMEBUFFER, fbo);
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, tex, 0);
     vc3_quest_frame(fbo, f->w, f->h, 1, f->w, f->h, NULL);
