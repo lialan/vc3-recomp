@@ -17,52 +17,55 @@ set(XBOXRECOMP_DIR "${CMAKE_CURRENT_SOURCE_DIR}/external/xboxrecomp" CACHE PATH
     "Path to the xboxrecomp toolkit root directory")
 add_subdirectory(${XBOXRECOMP_DIR} ${CMAKE_BINARY_DIR}/xboxrecomp)
 
+set(RT ${CMAKE_CURRENT_SOURCE_DIR}/runtime/src)
+set(GAME ${CMAKE_CURRENT_SOURCE_DIR}/games/vc3)
+
 # Lifted code from tools.recomp (gitignored; regenerate with scripts/lift.sh).
 # The generated code includes its own copy of the runtime header; keep it the
 # toolkit's (the register layout must match the runtime's), as lift.sh would.
-if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/src/recomp/gen")
+if(EXISTS "${GAME}/generated")
     configure_file("${XBOXRECOMP_DIR}/templates/runtime/recomp_types.h"
-                   "${CMAKE_CURRENT_SOURCE_DIR}/src/recomp/gen/recomp_types.h" COPYONLY)
+                   "${GAME}/generated/recomp_types.h" COPYONLY)
 endif()
-file(GLOB RECOMP_GEN_SOURCES CONFIGURE_DEPENDS "src/recomp/gen/*.c")
+file(GLOB RECOMP_GEN_SOURCES CONFIGURE_DEPENDS "${GAME}/generated/*.c")
 if(NOT RECOMP_GEN_SOURCES)
-    message(FATAL_ERROR "src/recomp/gen is empty: run scripts/lift.sh first")
+    message(FATAL_ERROR "games/vc3/generated is empty: run scripts/lift.sh first")
 endif()
 
 set(VC3_SOURCES
-    src/main.c
-    src/recomp_manual.c
-    src/chihiro/chihiro.c
-    src/chihiro/storage.c
-    src/chihiro/jvs.c
-    src/chihiro/baseboard.c
-    src/chihiro/ch_env.c
-    src/chihiro/chihiro_profile.c
-    games/vc3/src/game.c
-    src/d3d_fence.c
-    src/vc3_idle.c
-    src/host_input.c
-    src/display_settings.c
-    src/gpu/gl_backend.c
-    src/gpu/gl_texdec.c
+    ${RT}/host/main.c
+    ${GAME}/src/recomp_manual.c
+    ${RT}/chihiro/chihiro.c
+    ${RT}/chihiro/storage.c
+    ${RT}/chihiro/jvs.c
+    ${RT}/chihiro/baseboard.c
+    ${RT}/chihiro/ch_env.c
+    ${RT}/chihiro/chihiro_profile.c
+    ${GAME}/src/game.c
+    ${RT}/chihiro/d3d_fence.c
+    ${GAME}/src/vc3_idle.c
+    ${RT}/host/host_input.c
+    ${RT}/host/display_settings.c
+    ${RT}/gpu/gl_backend.c
+    ${RT}/gpu/gl_texdec.c
     ${RECOMP_GEN_SOURCES}
 )
 
 if(ANDROID)
     # Meta Quest (quest/build.sh): SDL's Java side loads libmain.so and calls
-    # SDL_main (src/android/android_main.c), which runs main.c's main; the
-    # headset, its controllers and the window are src/android/quest_host.c.
+    # SDL_main (runtime/src/xr/android_main.c), which runs main.c's main; the
+    # headset, its controllers and the window are runtime/src/xr/quest_host.c.
     # The GL back end is the same file built for GLES 3.2 on EGL.
     set(OPENXR_DIR "" CACHE PATH "OpenXR headers (the loader .aar's prefab headers)")
     set(OPENXR_LIB "" CACHE FILEPATH "libopenxr_loader.so for arm64-v8a")
     find_package(SDL2 REQUIRED)
     add_library(vc3 SHARED ${VC3_SOURCES}
-        src/android/android_main.c
-        src/android/quest_host.c
-        src/android/quest_overlay.c
-        src/android/quest_menu.c)
+        ${RT}/xr/android_main.c
+        ${RT}/xr/quest_host.c
+        ${RT}/xr/quest_overlay.c
+        ${RT}/xr/quest_menu.c)
     set_target_properties(vc3 PROPERTIES OUTPUT_NAME main)
-    set_source_files_properties(src/main.c PROPERTIES COMPILE_DEFINITIONS main=vc3_main)
+    set_source_files_properties(${RT}/host/main.c PROPERTIES COMPILE_DEFINITIONS main=vc3_main)
     target_compile_definitions(vc3 PRIVATE VC3_GLES=1)
     target_include_directories(vc3 PRIVATE ${OPENXR_DIR})
     # Calls between the generated functions bind inside libmain.so, not
@@ -72,7 +75,7 @@ if(ANDROID)
     target_link_libraries(vc3 PRIVATE xboxrecomp SDL2::SDL2 ${OPENXR_LIB}
         EGL GLESv3 android log m)
 else()
-    add_executable(vc3 ${VC3_SOURCES} src/vr_view_desktop.c)
+    add_executable(vc3 ${VC3_SOURCES} ${RT}/host/vr_view_desktop.c)
     target_link_libraries(vc3 PRIVATE xboxrecomp "-framework OpenGL")
 endif()
 
@@ -81,13 +84,16 @@ endif()
 # still set the rate.
 if(APPLE)
     enable_language(OBJC)
-    target_sources(vc3 PRIVATE src/macos_menu.m)
+    target_sources(vc3 PRIVATE ${RT}/host/macos_menu.m)
     target_compile_definitions(vc3 PRIVATE VC3_MACOS_MENU=1)
     target_link_libraries(vc3 PRIVATE "-framework Cocoa")
 endif()
 target_include_directories(vc3 PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/src
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/recomp/gen
+    ${RT}
+    ${RT}/host
+    ${RT}/xr
+    ${RT}/gpu
+    ${GAME}/generated
     ${XBOXRECOMP_DIR}/include
     ${XBOXRECOMP_DIR}/src/kernel
     ${XBOXRECOMP_DIR}/src/platform

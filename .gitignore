@@ -30,7 +30,7 @@ Release/
 x64/
 
 # Generated recompiled code (regenerate from XBE with the recomp pipeline)
-src/recomp/gen/
+games/*/generated/
 
 # Game files (user must provide their own legally-owned copies)
 game/
@@ -53,7 +53,7 @@ Thumbs.db
 .venv
 analysis/out
 analysis/*.log
-src/recomp/gen
+games/*/generated
 game/
 *.xbe
 *.squashfs

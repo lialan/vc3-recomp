@@ -80,9 +80,9 @@ extern void vc3_quest_frame(GLuint fbo, int pw, int ph, int eyes, int lw, int lh
 #include "gl_texdec.h"
 #include "nv2a_vsh_glsl.h"
 #include "nv2a_vsh_interp.h"
-#include "../display_settings.h"
-#include "../vr_math.h"
-#include "../vr_view.h"
+#include "host/display_settings.h"
+#include "host/vr_math.h"
+#include "host/vr_view.h"
 
 static void es_bgra(GLenum target);
 #include "../d3d/d3d8_swizzle.h"   /* relative to src/kernel, as the executor */
