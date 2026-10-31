@@ -1556,6 +1556,10 @@ static void z_flip(void)
     }
 }
 static int batch_fullscreen(const Nv2aBatch *b, const Surf *f);
+static int batch_extent(const Nv2aBatch *b, Nv2aRawExtent *e);
+static int batch_d0(const Nv2aBatch *b, uint32_t *d0);
+static int raw_2d(const Nv2aRawGeometry *g);
+static int raw_vp_3d(const Nv2aRawGeometry *g);
 
 /* Only the screen-shaped surfaces widen: render targets of other shapes
  * (VC3's 128x128 and 256x256 effect maps) are sampled whole. */
@@ -2128,7 +2132,6 @@ static void hud_close_frame(struct HudLayout *L, float w)
  *     rest of the picture. */
 static void surf_xform(Surf *f, const Nv2aBatch *b, float *scale, float *offset)
 {
-    uint32_t k;
     float x0 = 1e30f, x1 = -1e30f, y0 = 1e30f, y1 = -1e30f;
     float u0 = 1e30f, u1 = -1e30f, v0 = 1e30f, v1 = -1e30f;
     float mid = (float)(f->w * f->sc) / (float)f->pw;
@@ -2140,18 +2143,12 @@ static void surf_xform(Surf *f, const Nv2aBatch *b, float *scale, float *offset)
     if (!f->wide)
         return;
     *scale = mid;
-    if (b->raw || !b->count)
-        return;
-    for (k = 0; k < b->count; k++) {
-        const Nv2aVertex *q = &b->vertices[k];
-        if (q->x < x0) x0 = q->x;
-        if (q->x > x1) x1 = q->x;
-        if (q->y < y0) y0 = q->y;
-        if (q->y > y1) y1 = q->y;
-        if (q->u < u0) u0 = q->u;
-        if (q->u > u1) u1 = q->u;
-        if (q->v < v0) v0 = q->v;
-        if (q->v > v1) v1 = q->v;
+    {
+        Nv2aRawExtent e;
+        if (!batch_extent(b, &e))
+            return;
+        x0 = e.x0; x1 = e.x1; y0 = e.y0; y1 = e.y1;
+        u0 = e.u0; u1 = e.u1; v0 = e.v0; v1 = e.v1;
     }
     if (x0 <= 1.0f && x1 >= (float)f->w - 1.0f) {
         src = b->texture ? surf_find(b->texture->offset) : NULL;
@@ -3733,13 +3730,75 @@ static void lazy_catch_up(Surf *rt)
     }
 }
 
+/* A program batch the back end transforms that used to stay on the CPU --
+ * screen space (first vertex at w = 1), or a first vertex behind the eye
+ * (w <= 0: VC3's E.S. distortion meshes) -- whose vertices the executor can
+ * still place for us (Nv2aRawGeometry.extent). The choices below that look
+ * at such a batch's vertices treat it as the CPU path's. */
+static int raw_2d(const Nv2aRawGeometry *g)
+{
+    return g && g->kind == NV2A_RAW_PROGRAM && g->extent && !(g->w0 > 0.0f && g->w0 != 1.0f);
+}
+
+/* The CPU path's 3D test, rhw of its first vertex != 1 and > 0, for a raw
+ * program batch: that vertex is the first one left after clipping at
+ * w = 1e-3, so a batch whose first vertex is behind the eye starts with a
+ * clip point (rhw 1000) and is 3D as well. */
+static int raw_vp_3d(const Nv2aRawGeometry *g)
+{
+    return g->w0 != 1.0f && g->w0 == g->w0;
+}
+
+/* The batch's vertices on the surface and in stage-0 texels; 0 when not
+ * known (a 3D raw batch, or one the executor could not place). */
+static int batch_extent(const Nv2aBatch *b, Nv2aRawExtent *e)
+{
+    uint32_t k;
+    if (b->raw)
+        return raw_2d(b->raw) && b->raw->extent(b->raw, e);
+    if (!b->count)
+        return 0;
+    e->x0 = e->y0 = e->u0 = e->v0 = 1e30f;
+    e->x1 = e->y1 = e->u1 = e->v1 = -1e30f;
+    for (k = 0; k < b->count; k++) {
+        const Nv2aVertex *q = &b->vertices[k];
+        if (q->x < e->x0) e->x0 = q->x;
+        if (q->x > e->x1) e->x1 = q->x;
+        if (q->y < e->y0) e->y0 = q->y;
+        if (q->y > e->y1) e->y1 = q->y;
+        if (q->u < e->u0) e->u0 = q->u;
+        if (q->u > e->u1) e->u1 = q->u;
+        if (q->v < e->v0) e->v0 = q->v;
+        if (q->v > e->v1) e->v1 = q->v;
+    }
+    return 1;
+}
+
+/* A 2D batch (rhw 1, as the CPU path has it), and its first vertex's diffuse. */
+static int batch_flat(const Nv2aBatch *b)
+{
+    return b->raw ? raw_2d(b->raw) && b->raw->w0 == 1.0f
+                  : b->count && b->vertices[0].rhw == 1.0f;
+}
+
+static int batch_d0(const Nv2aBatch *b, uint32_t *d0)
+{
+    if (b->raw) {
+        *d0 = b->raw->d0;
+        return raw_2d(b->raw);
+    }
+    *d0 = b->count ? b->vertices[0].diffuse : 0;
+    return b->count != 0;
+}
+
 /* Whether a draw into f (b: the batch, NULL for a clear) is skipped. */
 static int lazy_skip(Surf *f, const Nv2aBatch *b)
 {
     int copy;
     if (!f->first_drawn)
         f->first_drawn = s_frame;
-    copy = !b || (!b->raw && b->count && b->vertices[0].rhw == 1.0f && b->texture
+    /* (not_copy never clears: once set, what this batch is no longer matters) */
+    copy = !b || (!f->not_copy && batch_flat(b) && b->texture
                   && surf_find(b->texture->offset) && surf_find(b->texture->offset)->fbo
                   && surf_find(b->texture->offset) != f && batch_fullscreen(b, f));
     if (!copy)
@@ -3761,16 +3820,10 @@ static int lazy_skip(Surf *f, const Nv2aBatch *b)
 /* 2D covering (nearly) the whole surface: a fade or a pass over the scene. */
 static int batch_fullscreen(const Nv2aBatch *b, const Surf *f)
 {
-    float x0 = 1e9f, x1 = -1e9f, y0 = 1e9f, y1 = -1e9f;
-    uint32_t k;
-    for (k = 0; k < b->count; k++) {
-        const Nv2aVertex *q = &b->vertices[k];
-        if (q->x < x0) x0 = q->x;
-        if (q->x > x1) x1 = q->x;
-        if (q->y < y0) y0 = q->y;
-        if (q->y > y1) y1 = q->y;
-    }
-    return x1 - x0 >= 0.9f * (float)f->w && y1 - y0 >= 0.9f * (float)f->h;
+    Nv2aRawExtent e;
+    if (!batch_extent(b, &e))
+        return 0;
+    return e.x1 - e.x0 >= 0.9f * (float)f->w && e.y1 - e.y0 >= 0.9f * (float)f->h;
 }
 
 /* The HUD picture, bound for a draw: an eye's size, transparent at the
@@ -3823,6 +3876,7 @@ static void hud_bind(const Surf *f, const Nv2aRenderState *rs)
 static int batch_needs_rc(const Surf *f, const Nv2aBatch *b, int raw)
 {
     const int has_ext = raw ? b->rc != NULL : (b->rc && b->ext);
+    uint32_t d0;
     int st;
     if (!has_ext)
         return 0;
@@ -3833,7 +3887,7 @@ static int batch_needs_rc(const Surf *f, const Nv2aBatch *b, int raw)
             if (b->stage[st] && b->stage[st]->cube
                 && ((b->rc->stage_program >> (st * 5)) & 0x1F) == 3)
                 return 1;
-    if (!raw && b->texture && b->count && (b->vertices[0].diffuse & 0x00FFFFFFu) == 0) {
+    if (b->texture && batch_d0(b, &d0) && (d0 & 0x00FFFFFFu) == 0) {
         const Surf *rt = surf_find(b->texture->offset);
         if (rt && rt->fbo && !rt->cpu_owned)
             return 1;
@@ -4032,8 +4086,8 @@ static void gl_draw(const Nv2aSurface *s, const Nv2aBatch *b)
          * redraws the 3D view through ~40 such distortion meshes; drawn the
          * default way, the whole scene went black for as long as the pedal
          * was held. */
-        if (has_ext && !raw && b->texture && b->count
-            && (b->vertices[0].diffuse & 0x00FFFFFFu) == 0) {
+        uint32_t d0;
+        if (has_ext && b->texture && batch_d0(b, &d0) && (d0 & 0x00FFFFFFu) == 0) {
             const Surf *rt = surf_find(b->texture->offset);
             rt_pass = rt && rt->fbo && !rt->cpu_owned;
         }
@@ -4147,7 +4201,7 @@ static void gl_draw(const Nv2aSurface *s, const Nv2aBatch *b)
         }
         /* a program batch: what the CPU path decides from its first vertex */
         is3d = rawff ? s_bgp_ok
-             : raw ? (raw->w0 != 1.0f && raw->w0 > 0.0f && (f->gp_ok || s_gp_ok))
+             : raw ? (raw_vp_3d(raw) && (f->gp_ok || s_gp_ok))
                    : (b->vertices[0].rhw != 1.0f && b->vertices[0].rhw > 0.0f
                       && (f->gp_ok || s_gp_ok));
         if (is3d && f->st) {
@@ -4179,7 +4233,7 @@ static void gl_draw(const Nv2aSurface *s, const Nv2aBatch *b)
         if (s_imm && f->st) {
             if (is3d)
                 imm3d = 1;
-            else if (!raw && surf_shown(f) && !batch_fullscreen(b, f))
+            else if ((!raw || raw_2d(raw)) && surf_shown(f) && !batch_fullscreen(b, f))
                 hud = 1;
         }
         if (s_imm && !is3d && genv("VC3_IMM_LOG") && s_frame % 120 == 0) {
@@ -4188,8 +4242,9 @@ static void gl_draw(const Nv2aSurface *s, const Nv2aBatch *b)
             if (nl++ < 40)
                 fprintf(stderr, "[IMM]   2D %s into %08X %dx%d st %d shown %d full %d count %u rhw %.3f tex %08X\n",
                         raw ? "raw" : "cpu", f->va, f->w, f->h, f->st, surf_shown(f),
-                        raw ? -1 : batch_fullscreen(b, f), raw ? 0 : b->count,
-                        raw ? 0.0f : b->vertices[0].rhw, b->texture ? b->texture->offset : 0);
+                        batch_fullscreen(b, f), raw ? raw->index_count : b->count,
+                        raw ? (raw->w0 != 0.0f ? 1.0f / raw->w0 : 0.0f) : b->vertices[0].rhw,
+                        b->texture ? b->texture->offset : 0);
         }
         if (imm3d) {
             const VrGameProj *g = rawff ? &s_bgp : f->gp_ok ? &f->gp : &s_gp;
@@ -4342,18 +4397,30 @@ static int gl_draw_raw(const Nv2aSurface *s, const Nv2aBatch *b)
         return 0;
     if (g->kind == NV2A_RAW_PROGRAM) {
         /* A screen-space batch (the CPU's first vertex at w = 1: HUD,
-         * sprites, the full-screen copies) stays on the CPU: the lazy copies,
-         * the immersive HUD panel and the combiner routing look at its
-         * transformed vertices. VC3_GL_VP_2D=1 sends those too (to check the
-         * translation on every program). Immersive, a 3D one needs the game's
+         * sprites, the full-screen copies) and one whose first vertex is
+         * behind the eye (w <= 0: the E.S. distortion meshes) are drawn here
+         * too. The lazy copies, the immersive HUD panel, the combiner routing
+         * and the 16:9 HUD placement look at where their vertices land: the
+         * executor gives that (g->d0, g->extent), the positions transformed
+         * on the CPU only for a batch one of them asks about.
+         * VC3_GL_VP_2D=0 keeps both kinds on the CPU, as before; =1 sends a
+         * first vertex at NaN too. Immersive, a 3D one needs the game's
          * projection the CPU path would use. */
-        static int all2d = -1;
+        static int vp2d = -1;
         const Surf *sf = surf_find(s->color_va);
-        if (all2d < 0)
-            all2d = genv("VC3_GL_VP_2D") && genv("VC3_GL_VP_2D")[0] == '1';
-        if (!all2d && !(g->w0 != 1.0f && g->w0 > 0.0f))
+        const int is3d = raw_vp_3d(g);
+        if (vp2d < 0) {
+            vp2d = !genv("VC3_GL_VP_2D") ? 2 : genv("VC3_GL_VP_2D")[0] == '1' ? 1
+                 : genv("VC3_GL_VP_2D")[0] == '0' ? 0 : 2;
+            fprintf(stderr, "[GL] screen-space program batches: %s (VC3_GL_VP_2D=%s)\n",
+                    vp2d == 0 ? "on the CPU" : vp2d == 1 ? "on the GPU, every one"
+                    : "on the GPU", genv("VC3_GL_VP_2D") ? genv("VC3_GL_VP_2D") : "");
+        }
+        if (vp2d == 0 && !(g->w0 > 0.0f && g->w0 != 1.0f))
+            return 0;                       /* as before: on the CPU */
+        if (vp2d == 2 && g->w0 != g->w0)
             return 0;
-        if (s_imm && !(sf && (sf->gp_ok || s_gp_ok)))
+        if (is3d && s_imm && !(sf && (sf->gp_ok || s_gp_ok)))
             return 0;
         if (!(s_vp_cur = vp_get(g)))
             return 0;
@@ -4787,20 +4854,18 @@ static void interp_scene_snap(const Surf *f, const Nv2aBatch *b)
 {
     float x0 = 1e30f, x1 = -1e30f, y0 = 1e30f, y1 = -1e30f;
     const Surf *src;
-    uint32_t k;
 
-    if (b->raw || !b->count || !b->texture || f->w * 3 != f->h * 4
+    if ((b->raw && !raw_2d(b->raw)) || !b->texture || f->w * 3 != f->h * 4
         || (s_ip.scene_frame == s_frame && s_ip.scene_va == f->va))
         return;
     src = surf_find(b->texture->offset);
     if (!src || src == f || src->cpu_owned)
         return;
-    for (k = 0; k < b->count; k++) {
-        const Nv2aVertex *q = &b->vertices[k];
-        if (q->x < x0) x0 = q->x;
-        if (q->x > x1) x1 = q->x;
-        if (q->y < y0) y0 = q->y;
-        if (q->y > y1) y1 = q->y;
+    {
+        Nv2aRawExtent e;
+        if (!batch_extent(b, &e))
+            return;
+        x0 = e.x0; x1 = e.x1; y0 = e.y0; y1 = e.y1;
     }
     if (x0 > 1.0f || y0 > 1.0f || x1 < (float)f->w - 1.0f || y1 < (float)f->h - 1.0f)
         return;
