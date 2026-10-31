@@ -16,11 +16,12 @@
  *                          first (vc3_quest_gl_context).
  *
  * Frames: at each flip the back end blits the presented surface, as drawn
- * (any internal resolution, 16:9 or 4:3), into one of three shared
- * textures and fences it (vc3_quest_frame); the headset loop takes the
- * newest, waits on its fence on the GPU, and copies it into the quad
- * layer's swapchain. Nothing is read back to the CPU, and neither thread
- * ever waits for the other.
+ * (any internal resolution, 16:9 or 4:3), straight into an image of the
+ * game's swapchain and releases it (vc3_quest_frame, "direct"); the headset
+ * loop takes the newest frame and submits its layers, which show the image
+ * released last. Without the headset's overlay (and VC3_XR_DIRECT=0) the
+ * frame goes into one of three shared textures instead, fenced, and the
+ * loop copies it into the swapchain. Nothing is read back to the CPU.
  *
  * The gun is a handgun in the player's hand (quest_overlay.c, drawn in a
  * transparent layer over the screen), with iron sights, a red dot or a
@@ -58,6 +59,7 @@
 #include <GLES3/gl32.h>
 #include <GLES2/gl2ext.h>
 #include <jni.h>
+#include <sys/system_properties.h>
 #include <SDL.h>
 
 #define XR_USE_PLATFORM_ANDROID
@@ -73,6 +75,7 @@
 #include "vr_view.h"
 #include "chihiro/ch_env.h"
 #include "chihiro/chihiro_profile.h"
+#include "thread_acct.h"                  /* g_xbox_thread_named */
 
 void vc3_quest_restart(void);       /* below: a fresh process */
 void xbox_VblankAlign(uint64_t edge_ns);   /* the toolkit's kernel */
@@ -90,8 +93,17 @@ static EGLContext s_ctx = EGL_NO_CONTEXT;
 static EGLConfig  s_cfg;
 static int s_es_minor = 2;          /* 3.2 on the Quest; 3.0 in the emulator */
 /* The threads the headset is told about (perf_frame): the loop's, the GL
- * back end's, the game's; 0 until each has started. */
-static volatile pid_t s_tid_host, s_tid_exec, s_tid_guest;
+ * back end's, the push-buffer decode's (the toolkit's "nv2a exec": the GL
+ * thread itself unless RECOMP_PB_DECODE_THREAD splits them), the game's;
+ * 0 until each has started. */
+static volatile pid_t s_tid_host, s_tid_exec, s_tid_decode, s_tid_guest;
+
+/* The toolkit names its threads as they start (thread_acct.h). */
+static void thread_named(const char *name)
+{
+    if (!strcmp(name, "nv2a exec"))
+        s_tid_decode = (pid_t)syscall(SYS_gettid);
+}
 static volatile int s_quit;
 
 /* Called once on the executor thread by gl_backend.c's gl_ready: a context
@@ -142,6 +154,9 @@ typedef struct {
     GLuint hud;              /* the HUD picture (vr.hud_w x vr.hud_h) */
     GLsizei hud_w, hud_h;
     int has_hud;
+    int direct;              /* the picture is in the game's swapchain (dchain,
+                                w x h), not in tex */
+    XrSwapchain dchain;
 } Frame;
 
 static Frame s_frame[3];
@@ -194,10 +209,15 @@ static void pace_game_frame(void)
     }
 }
 
+static int direct_acquire(int w, int h, GLuint *fbo, XrSwapchain *chain);   /* below */
+static void direct_release(void);
+static pthread_mutex_t s_submit = PTHREAD_MUTEX_INITIALIZER;
+
 void vc3_quest_frame(GLuint fbo, int pw, int ph, int eyes, int lw, int lh, const void *vr_frame)
 {
     const Vc3VrFrame *vf = (const Vc3VrFrame *)vr_frame;
     static GLuint dst_fbo;
+    GLuint dfbo = 0;
     Frame *f = &s_frame[s_back];        /* this thread alone touches s_back */
     int t;
 
@@ -219,7 +239,17 @@ void vc3_quest_frame(GLuint fbo, int pw, int ph, int eyes, int lw, int lh, const
             glDeleteSync(rd);
         }
     }
-    if (!f->tex || f->w != pw || f->h != ph) {
+    f->direct = 0;
+    if (direct_acquire(pw, ph, &dfbo, &f->dchain)) {
+        /* straight into the swapchain image, upright (the surfaces hold the
+         * picture top row first, GL's bottom) */
+        glBindFramebuffer(GL_READ_FRAMEBUFFER, fbo);
+        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, dfbo);
+        glBlitFramebuffer(0, 0, pw, ph, 0, ph, pw, 0, GL_COLOR_BUFFER_BIT, GL_NEAREST);
+        f->direct = 1;
+        f->w = pw;
+        f->h = ph;
+    } else if (!f->tex || f->w != pw || f->h != ph) {
         if (f->tex)
             glDeleteTextures(1, &f->tex);
         glGenTextures(1, &f->tex);
@@ -236,9 +266,10 @@ void vc3_quest_frame(GLuint fbo, int pw, int ph, int eyes, int lw, int lh, const
     }
     glBindFramebuffer(GL_READ_FRAMEBUFFER, fbo);
     glBindFramebuffer(GL_DRAW_FRAMEBUFFER, dst_fbo);
-    glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, f->tex, 0);
-    glBlitFramebuffer(0, 0, pw, ph, 0, 0, pw, ph, GL_COLOR_BUFFER_BIT, GL_NEAREST);
-    {   /* VC3_QUEST_DUMP=first,count: those game frames (both eyes) as PPM
+    if (!f->direct) {
+        glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, f->tex, 0);
+        glBlitFramebuffer(0, 0, pw, ph, 0, 0, pw, ph, GL_COLOR_BUFFER_BIT, GL_NEAREST);
+        /* VC3_QUEST_DUMP=first,count: those game frames (both eyes) as PPM
          * files beside the game, to see frame-to-frame changes (stalls) */
         static long first = -2, count, n;
         if (first == -2) {
@@ -304,6 +335,14 @@ void vc3_quest_frame(GLuint fbo, int pw, int ph, int eyes, int lw, int lh, const
     glFlush();                          /* the fence must reach the GPU */
 
     pace_game_frame();
+    /* A direct frame's image is released with the frame published, while
+     * the loop is not between taking a frame and submitting its layers (it
+     * holds s_submit then): the layers always show the image of the frame
+     * whose pose they carry. */
+    if (f->direct) {
+        pthread_mutex_lock(&s_submit);
+        direct_release();
+    }
     pthread_mutex_lock(&s_lock);
     t = s_ready;
     s_ready = s_back;
@@ -311,6 +350,8 @@ void vc3_quest_frame(GLuint fbo, int pw, int ph, int eyes, int lw, int lh, const
     s_ready_seq++;
     s_frames_in++;
     pthread_mutex_unlock(&s_lock);
+    if (f->direct)
+        pthread_mutex_unlock(&s_submit);
 }
 
 /* After the host's copy out of f is queued: a fence the back end's GPU
@@ -343,7 +384,7 @@ static Frame *take_frame(int *is_new, int allow)
     }
     pthread_mutex_unlock(&s_lock);
     f = &s_frame[s_front];
-    if (!f->tex)
+    if (!f->tex && !f->direct)
         return NULL;
     /* (the read_done fence of the frame given up stays: the back end waits
      * on it before writing that frame again) */
@@ -371,9 +412,12 @@ static struct {
     int auto_coins;     /* a coin at start-up and with every Start */
     int immersive;      /* the game's 3D around the player; else on the screen */
     int refresh;        /* display Hz asked for: 120 (default), 90, 72 */
-    int imm_scale;      /* immersive detail: the game drawn at 1x-3x (default 2) */
-} s_vr = { QO_SIGHT_IRON, LASER_DOT, 1, 0, 1, 1, 120, 2 };
-static uint32_t s_rec_w;                /* the headset's recommended eye width */
+    int imm_scale;      /* immersive detail: 0 native (default), else 1x or 2x */
+    int screen_native;  /* the virtual screen drawn at its size on the display
+                           (default), else at the Resolution setting's scale */
+} s_vr = { QO_SIGHT_IRON, LASER_DOT, 1, 0, 1, 1, 120, 0, 1 };
+/* The display's own pixels per eye (native_init): what "Native" draws. */
+static uint32_t s_native_w, s_native_h;
 
 static int key_index(const char *v, const char *const *keys, int n, int dflt)
 {
@@ -404,8 +448,12 @@ static void screen_load(void)
         s_vr.immersive = strcmp(v, "screen") != 0;
     if ((v = vc3_setting_get("vr_refresh=")) && atoi(v) >= 60 && atoi(v) <= 144)
         s_vr.refresh = atoi(v);
-    if ((v = vc3_setting_get("vr_detail=")) && atoi(v) >= 1 && atoi(v) <= 3)
-        s_vr.imm_scale = atoi(v);
+    /* vr_res= (vr_detail= before it: 1x-3x, 2x by default, not read, so a
+     * settings file from then comes up at Native) */
+    if ((v = vc3_setting_get("vr_res=")))
+        s_vr.imm_scale = !strcmp(v, "1x") ? 1 : !strcmp(v, "2x") ? 2 : 0;
+    if ((v = vc3_setting_get("vr_screen_res=")))
+        s_vr.screen_native = strcmp(v, "scale") != 0;
 }
 
 static void screen_save(void)
@@ -429,8 +477,9 @@ static void vr_save(void)
         char b[16];
         snprintf(b, sizeof b, "%d", s_vr.refresh);
         vc3_setting_put("vr_refresh=", b);
-        snprintf(b, sizeof b, "%d", s_vr.imm_scale);
-        vc3_setting_put("vr_detail=", b);
+        vc3_setting_put("vr_res=", s_vr.imm_scale == 1 ? "1x" : s_vr.imm_scale == 2 ? "2x"
+                                                         : "native");
+        vc3_setting_put("vr_screen_res=", s_vr.screen_native ? "native" : "scale");
     }
     screen_save();
 }
@@ -549,6 +598,71 @@ static int xr_input_init(void)
     return 1;
 }
 
+/* The display's own pixels per eye, which "Native" draws the game at: the
+ * panel of the headset (OpenXR's recommended size is smaller, sized for its
+ * lens-distortion pass), from the model; any other headset gets the
+ * recommended size. Within the runtime's limits -- an eye's image rect and,
+ * for the game's layer holding both eyes side by side, a swapchain image --
+ * which are logged. VC3_NATIVE_EYE=WxH: that size instead. */
+static void native_init(void)
+{
+    static const struct { const char *model; uint32_t w, h; } panel[] = {
+        { "Quest 3S", 1832, 1920 },
+        { "Quest 3", 2064, 2208 },
+        { "Quest Pro", 1800, 1920 },
+        { "Quest 2", 1832, 1920 },
+    };
+    XrSystemProperties sp = { XR_TYPE_SYSTEM_PROPERTIES };
+    XrViewConfigurationView vcv[2] = { { XR_TYPE_VIEW_CONFIGURATION_VIEW },
+                                       { XR_TYPE_VIEW_CONFIGURATION_VIEW } };
+    char model[PROP_VALUE_MAX] = "";
+    const char *e = ch_env("NATIVE_EYE");
+    uint32_t nv = 0, mw, mh, i;
+    unsigned ew, eh;
+
+    xrGetSystemProperties(s_inst, s_sys, &sp);
+    if (XR_FAILED(xrEnumerateViewConfigurationViews(s_inst, s_sys,
+                                                    XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO,
+                                                    2, &nv, vcv)) || nv < 1) {
+        fprintf(stderr, "[xr] no view configuration: native unknown\n");
+        return;
+    }
+    __system_property_get("ro.product.model", model);
+    s_native_w = vcv[0].recommendedImageRectWidth;
+    s_native_h = vcv[0].recommendedImageRectHeight;
+    for (i = 0; i < sizeof panel / sizeof panel[0]; i++)
+        if (strstr(model, panel[i].model)) {
+            s_native_w = panel[i].w;
+            s_native_h = panel[i].h;
+            break;
+        }
+    if (e && sscanf(e, "%ux%u", &ew, &eh) == 2 && ew >= 320 && eh >= 240) {
+        s_native_w = ew;
+        s_native_h = eh;
+    }
+    mw = vcv[0].maxImageRectWidth;
+    mh = vcv[0].maxImageRectHeight;
+    if (sp.graphicsProperties.maxSwapchainImageWidth / 2 < mw)
+        mw = sp.graphicsProperties.maxSwapchainImageWidth / 2;
+    if (sp.graphicsProperties.maxSwapchainImageHeight < mh)
+        mh = sp.graphicsProperties.maxSwapchainImageHeight;
+    fprintf(stderr, "[xr] %s (model %s): recommended eye %ux%u, max image rect %ux%u, max "
+            "swapchain image %ux%u, max layers %u\n", sp.systemName, model,
+            vcv[0].recommendedImageRectWidth, vcv[0].recommendedImageRectHeight,
+            vcv[0].maxImageRectWidth, vcv[0].maxImageRectHeight,
+            sp.graphicsProperties.maxSwapchainImageWidth,
+            sp.graphicsProperties.maxSwapchainImageHeight, sp.graphicsProperties.maxLayerCount);
+    if (s_native_w > mw || s_native_h > mh) {
+        fprintf(stderr, "[xr] native %ux%u over the limits: %ux%u\n", s_native_w, s_native_h,
+                s_native_w > mw ? mw : s_native_w, s_native_h > mh ? mh : s_native_h);
+        if (s_native_w > mw)
+            s_native_w = mw;
+        if (s_native_h > mh)
+            s_native_h = mh;
+    }
+    fprintf(stderr, "[xr] native eye %ux%u\n", s_native_w, s_native_h);
+}
+
 static int xr_init(void)
 {
     JNIEnv *env = (JNIEnv *)SDL_AndroidGetJNIEnv();
@@ -643,6 +757,7 @@ static int xr_init(void)
     sc.next = &gb;
     sc.systemId = s_sys;
     XRCHECK(xrCreateSession(s_inst, &sc, &s_sess));
+    native_init();
 
     rc.referenceSpaceType = XR_REFERENCE_SPACE_TYPE_LOCAL;
     rc.poseInReferenceSpace.orientation.w = 1;
@@ -723,6 +838,132 @@ static int chain_fit(uint32_t w, uint32_t h)
     return 1;
 }
 
+/* ── Direct frames: the back end's blit lands in the swapchain ───────────
+ * The game's swapchain for direct frames belongs to the back end's thread:
+ * it creates it (a new one when the frame's size changes), acquires an image
+ * at each flip, blits the presented surface into it and releases it as the
+ * frame is published (vc3_quest_frame) -- one full-size copy a frame instead
+ * of two (into a shared texture, then from it into the swapchain on this
+ * loop). Framebuffers are per context, so the back end has its own for the
+ * images. A swapchain replaced stays alive until the loop has submitted a
+ * frame from the new one (direct_retire_done), then the loop destroys it.
+ * Used when the session runs with the overlay (no aim dot to draw into the
+ * picture every display frame); VC3_XR_DIRECT=0 or VC3_QUEST_DUMP: never. */
+static struct {
+    XrSwapchain h;
+    uint32_t w, ht, n;
+    XrSwapchainImageOpenGLESKHR img[8];
+    GLuint fbo[8];
+} s_dc;
+static XrSwapchain s_dc_retired;        /* under s_lock */
+static int s_overlay_ok = -1;           /* -1 not yet tried (overlay_init) */
+
+static int direct_on(void)
+{
+    static int on = -1;
+    if (on < 0)
+        on = !(ch_env("XR_DIRECT") && *ch_env("XR_DIRECT") == '0') && !ch_env("QUEST_DUMP");
+    return on && s_running && s_sess != XR_NULL_HANDLE && s_overlay_ok > 0 && s_chain_fmt;
+}
+
+static int direct_fit(uint32_t w, uint32_t h)
+{
+    XrSwapchainCreateInfo ci = { XR_TYPE_SWAPCHAIN_CREATE_INFO };
+    XrSwapchain nc = XR_NULL_HANDLE;
+    uint32_t i, n = 0;
+    int busy;
+
+    if (s_dc.h && s_dc.w == w && s_dc.ht == h)
+        return 1;
+    pthread_mutex_lock(&s_lock);
+    busy = s_dc_retired != XR_NULL_HANDLE;
+    pthread_mutex_unlock(&s_lock);
+    if (busy)                           /* the one before last still shown */
+        return 0;
+    ci.usageFlags = XR_SWAPCHAIN_USAGE_COLOR_ATTACHMENT_BIT | XR_SWAPCHAIN_USAGE_TRANSFER_DST_BIT;
+    ci.format = s_chain_fmt;
+    ci.sampleCount = 1;
+    ci.width = w;
+    ci.height = h;
+    ci.faceCount = 1;
+    ci.arraySize = 1;
+    ci.mipCount = 1;
+    if (XR_FAILED(xrCreateSwapchain(s_sess, &ci, &nc)))
+        return 0;
+    if (XR_FAILED(xrEnumerateSwapchainImages(nc, 0, &n, NULL)) || n == 0) {
+        xrDestroySwapchain(nc);
+        return 0;
+    }
+    if (n > 8)
+        n = 8;
+    if (s_dc.h) {
+        glDeleteFramebuffers((GLsizei)s_dc.n, s_dc.fbo);
+        pthread_mutex_lock(&s_lock);
+        s_dc_retired = s_dc.h;
+        pthread_mutex_unlock(&s_lock);
+    }
+    s_dc.h = nc;
+    s_dc.n = n;
+    for (i = 0; i < n; i++)
+        s_dc.img[i].type = XR_TYPE_SWAPCHAIN_IMAGE_OPENGL_ES_KHR;
+    xrEnumerateSwapchainImages(nc, n, &s_dc.n, (XrSwapchainImageBaseHeader *)s_dc.img);
+    glGenFramebuffers((GLsizei)s_dc.n, s_dc.fbo);
+    for (i = 0; i < s_dc.n; i++) {
+        glBindFramebuffer(GL_FRAMEBUFFER, s_dc.fbo[i]);
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D,
+                               s_dc.img[i].image, 0);
+    }
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    if (s_srgb_control)                 /* the colours are sRGB already (see xr_init) */
+        glDisable(GL_FRAMEBUFFER_SRGB_EXT);
+    s_dc.w = w;
+    s_dc.ht = h;
+    fprintf(stderr, "[xr] screen %ux%u (direct)\n", w, h);
+    return 1;
+}
+
+/* The back end's thread: an image of the direct swapchain for a w x h
+ * frame, waited for, as a framebuffer; 0: copy the frame the old way. */
+static int direct_acquire(int w, int h, GLuint *fbo, XrSwapchain *chain)
+{
+    XrSwapchainImageAcquireInfo ai = { XR_TYPE_SWAPCHAIN_IMAGE_ACQUIRE_INFO };
+    XrSwapchainImageWaitInfo wi = { XR_TYPE_SWAPCHAIN_IMAGE_WAIT_INFO };
+    uint32_t idx = 0;
+
+    if (!direct_on() || !direct_fit((uint32_t)w, (uint32_t)h))
+        return 0;
+    if (XR_FAILED(xrAcquireSwapchainImage(s_dc.h, &ai, &idx)) || idx >= s_dc.n)
+        return 0;
+    wi.timeout = XR_INFINITE_DURATION;
+    if (XR_FAILED(xrWaitSwapchainImage(s_dc.h, &wi))) {
+        fprintf(stderr, "[xr] direct: waiting for the image failed\n");
+        return 0;
+    }
+    *fbo = s_dc.fbo[idx];
+    *chain = s_dc.h;
+    return 1;
+}
+
+static void direct_release(void)
+{
+    XrSwapchainImageReleaseInfo ri = { XR_TYPE_SWAPCHAIN_IMAGE_RELEASE_INFO };
+    xrReleaseSwapchainImage(s_dc.h, &ri);
+}
+
+/* The loop, after submitting a direct frame from chain: the swapchain it
+ * replaced is not shown any more. */
+static void direct_retire_done(XrSwapchain chain)
+{
+    XrSwapchain old;
+    pthread_mutex_lock(&s_lock);
+    old = s_dc_retired != chain ? s_dc_retired : XR_NULL_HANDLE;
+    if (old)
+        s_dc_retired = XR_NULL_HANDLE;
+    pthread_mutex_unlock(&s_lock);
+    if (old)
+        xrDestroySwapchain(old);
+}
+
 /* The display rate (the panel's Refresh, vr_refresh=): 120 by default --
  * the game's 60 frames shown exactly twice each, with the cadence lock in
  * xr_frame -- or 90 / 72 when asked; only rates the headset offers. */
@@ -797,7 +1038,7 @@ static unsigned long big_cores(void)
  * with VC3_BIGCORES=1 put the game and the back end on the fastest cores. */
 static void perf_frame(void)
 {
-    static int told_host, told_exec, told_guest, pinned;
+    static int told_host, told_exec, told_decode, told_guest, pinned;
     if (s_set_thread) {
         /* each when its thread exists; logged as the runtime answers */
         if (!told_host && s_tid_host) {
@@ -811,6 +1052,15 @@ static void perf_frame(void)
                                       (uint32_t)s_tid_exec);
             told_exec = 1;
             fprintf(stderr, "[xr] thread hint: GL back end as renderer worker: %d\n", (int)r);
+        }
+        /* the decode thread, when it is not the GL thread: a renderer
+         * worker too (it feeds the GL thread every draw of the frame) */
+        if (!told_decode && s_tid_decode && s_tid_exec && s_tid_decode != s_tid_exec) {
+            XrResult r = s_set_thread(s_sess, XR_ANDROID_THREAD_TYPE_RENDERER_WORKER_KHR,
+                                      (uint32_t)s_tid_decode);
+            told_decode = 1;
+            fprintf(stderr, "[xr] thread hint: push-buffer decode as renderer worker: %d\n",
+                    (int)r);
         }
         if (!told_guest && s_tid_guest) {
             XrResult r = s_set_thread(s_sess, XR_ANDROID_THREAD_TYPE_APPLICATION_MAIN_KHR,
@@ -832,6 +1082,8 @@ static void perf_frame(void)
                     CPU_SET(c, &set);
             a = m ? sched_setaffinity(s_tid_guest, sizeof set, &set) : -1;
             b = m ? sched_setaffinity(s_tid_exec, sizeof set, &set) : -1;
+            if (m && s_tid_decode && s_tid_decode != s_tid_exec)
+                sched_setaffinity(s_tid_decode, sizeof set, &set);
             fprintf(stderr, "[xr] game and back end on cores %#lx: %d %d (0 done)\n", m, a, b);
         }
     }
@@ -973,6 +1225,8 @@ static XrView s_pub_views[2];
 static int s_pub_ok;
 static float s_pub_anchor_p[3], s_pub_anchor_yaw;
 static uint64_t s_pub_id;
+static XrFovf s_pub_fov;                /* the left eye's, for vc3_vr_screen_px */
+static int s_pub_fov_ok;
 
 static float imm_units(void)
 {
@@ -989,6 +1243,9 @@ static void view_publish(void)
 {
     pthread_mutex_lock(&s_view_lock);
     s_pub_ok = s_views_ok && s_vr.immersive && s_running;
+    s_pub_fov_ok = s_views_ok;
+    if (s_views_ok)
+        s_pub_fov = s_views[0].fov;
     if (s_pub_ok) {
         memcpy(s_pub_views, s_views, sizeof s_pub_views);
         memcpy(s_pub_anchor_p, s_anchor_p, sizeof s_pub_anchor_p);
@@ -1037,7 +1294,34 @@ int vc3_vr_view_latch(Vc3VrView *v)
                       v->vp[e]);
     }
     v->scale = s_vr.imm_scale;
+    v->eye_w = (int)s_native_w;
+    v->eye_h = (int)s_native_h;
     return v->on = 1;
+}
+
+/* The virtual screen on the display: its angular size (height s_height at
+ * s_dist, the picture's aspect) in the display's pixels per tangent at the
+ * middle of the newest view. */
+int vc3_vr_screen_px(int *w, int *h)
+{
+    XrView v = { XR_TYPE_VIEW };
+    float tx, ty, aspect = vc3_wide_get() ? 16.0f / 9.0f : 4.0f / 3.0f;
+    int ok;
+    if (!s_vr.screen_native || !s_native_w || !s_native_h)
+        return 0;
+    pthread_mutex_lock(&s_view_lock);
+    ok = s_pub_fov_ok;
+    v.fov = s_pub_fov;
+    pthread_mutex_unlock(&s_view_lock);
+    if (!ok)
+        return 0;
+    tx = tanf(v.fov.angleRight) - tanf(v.fov.angleLeft);
+    ty = tanf(v.fov.angleUp) - tanf(v.fov.angleDown);
+    if (!(tx > 0.1f) || !(ty > 0.1f) || !(s_dist > 0.1f))
+        return 0;
+    *h = (int)((float)s_native_h / ty * s_height / s_dist + 0.5f);
+    *w = (int)((float)s_native_w / tx * s_height * aspect / s_dist + 0.5f);
+    return *w > 0 && *h > 0;
 }
 
 /* An eye of a frame's view, back in LOCAL (with the anchor as it is now). */
@@ -1087,7 +1371,6 @@ typedef struct {
     GLuint fbo[8], depth;
 } Eye;
 static Eye s_eye[2];
-static int s_overlay_ok = -1;           /* -1 not yet tried */
 
 static int overlay_init(void)
 {
@@ -1103,9 +1386,6 @@ static int overlay_init(void)
         return 0;
     XRCHECK(xrEnumerateViewConfigurationViews(s_inst, s_sys, XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO,
                                               2, &nv, vcv));
-    s_rec_w = vcv[0].recommendedImageRectWidth;
-    fprintf(stderr, "[xr] recommended eye %ux%u\n", vcv[0].recommendedImageRectWidth,
-            vcv[0].recommendedImageRectHeight);
     if (exts && strstr(exts, "GL_EXT_multisampled_render_to_texture")) {
         fb_ms = (PFNGLFRAMEBUFFERTEXTURE2DMULTISAMPLEEXTPROC)
             eglGetProcAddress("glFramebufferTexture2DMultisampleEXT");
@@ -1117,16 +1397,15 @@ static int overlay_init(void)
     for (e = 0; e < 2; e++) {
         Eye *y = &s_eye[e];
         XrSwapchainCreateInfo ci = { XR_TYPE_SWAPCHAIN_CREATE_INFO };
-        /* half the headset's own size (VC3_OVERLAY_SCALE=0.75 etc.): the gun
-         * is small and the samples smooth it, and the whole layer is
-         * cleared, resolved and blended by the compositor each time it is
-         * drawn -- GPU time only real play paid (no controllers in a
-         * scripted run, no overlay) */
+        /* the display's own size (VC3_OVERLAY_SCALE=0.5 etc.: that part of
+         * it): the gun and the panel as sharp as the world behind them */
         {
             const char *sc = ch_env("OVERLAY_SCALE");
-            float f = sc && atof(sc) > 0.2 && atof(sc) <= 1.0 ? (float)atof(sc) : 0.5f;
-            y->w = (uint32_t)(vcv[e].recommendedImageRectWidth * f);
-            y->h = (uint32_t)(vcv[e].recommendedImageRectHeight * f);
+            float f = sc && atof(sc) > 0.2 && atof(sc) <= 1.0 ? (float)atof(sc) : 1.0f;
+            uint32_t nw = s_native_w ? s_native_w : vcv[e].recommendedImageRectWidth;
+            uint32_t nh = s_native_h ? s_native_h : vcv[e].recommendedImageRectHeight;
+            y->w = (uint32_t)(nw * f);
+            y->h = (uint32_t)(nh * f);
         }
         ci.usageFlags = XR_SWAPCHAIN_USAGE_COLOR_ATTACHMENT_BIT;
         ci.format = s_chain_fmt;
@@ -1200,11 +1479,13 @@ static void menu_items(XmItem *it)
         it[i].value[0] = 0;
     }
     snprintf(it[M_SCREEN].value, 40, "%s", s_vr.immersive ? "Immersive" : "Virtual screen");
-    /* the game's 640 across in an eye spanning the whole view: how close
-     * to the headset's own recommended sharpness */
-    if (s_rec_w)
-        snprintf(it[M_DETAIL].value, 40, "%dx (%u%% of headset)", s_vr.imm_scale,
-                 (unsigned)(640u * (unsigned)s_vr.imm_scale * 100u / s_rec_w));
+    /* Native: the display's own pixels; 1x / 2x: the game's 640 across an
+     * eye spanning the whole view, as a share of them */
+    if (!s_vr.imm_scale)
+        snprintf(it[M_DETAIL].value, 40, "Native (%ux%u)", s_native_w, s_native_h);
+    else if (s_native_w)
+        snprintf(it[M_DETAIL].value, 40, "%dx (%u%% of native)", s_vr.imm_scale,
+                 (unsigned)(640u * (unsigned)s_vr.imm_scale * 100u / s_native_w));
     else
         snprintf(it[M_DETAIL].value, 40, "%dx", s_vr.imm_scale);
     snprintf(it[M_REFRESH].value, 40, "%d Hz%s", s_vr.refresh,
@@ -1216,8 +1497,11 @@ static void menu_items(XmItem *it)
     snprintf(it[M_STEREO].value, 40, "%s", s_vr.immersive ? "On (immersive)"
              : vc3_stereo_get() ? "On" : "Off");
     snprintf(it[M_ASPECT].value, 40, "%s", vc3_wide_get() ? "16:9" : "4:3");
-    snprintf(it[M_RES].value, 40, "%dx%s", vc3_scale_get(),
-             vc3_scale_get() > 1 && vc3_stereo_get() ? " (slow in 3D)" : "");
+    if (s_vr.screen_native)
+        snprintf(it[M_RES].value, 40, "Native");
+    else
+        snprintf(it[M_RES].value, 40, "%dx%s", vc3_scale_get(),
+                 vc3_scale_get() > 1 && vc3_stereo_get() ? " (slow in 3D)" : "");
     snprintf(it[M_DIST].value, 40, "%.1f m", s_dist);
     snprintf(it[M_SIZE].value, 40, "%.1f m tall", s_height);
     snprintf(it[M_COINS].value, 40, "%s", s_vr.auto_coins ? "Automatic" : "By menu");
@@ -1309,7 +1593,7 @@ static void menu_choose(int item)
     s_menu.reset_armed = 0;             /* anything else chosen in between: no reset */
     switch (item) {
     case M_SCREEN: s_vr.immersive = !s_vr.immersive; break;
-    case M_DETAIL: s_vr.imm_scale = s_vr.imm_scale % 3 + 1; break;
+    case M_DETAIL: s_vr.imm_scale = (s_vr.imm_scale + 1) % 3; break;   /* native, 1x, 2x */
     case M_REFRESH:
         s_vr.refresh = s_vr.refresh >= 120 ? 72 : s_vr.refresh >= 90 ? 120 : 90;
         rate_apply();
@@ -1323,7 +1607,16 @@ static void menu_choose(int item)
         break;
     case M_STEREO: vc3_stereo_set(!vc3_stereo_get()); break;
     case M_ASPECT: vc3_wide_set(!vc3_wide_get()); break;
-    case M_RES: vc3_scale_set(vc3_scale_get() % VC3_SCALE_MAX + 1); break;
+    case M_RES:         /* native, 1x .. VC3_SCALE_MAX */
+        if (s_vr.screen_native) {
+            s_vr.screen_native = 0;
+            vc3_scale_set(1);
+        } else if (vc3_scale_get() >= VC3_SCALE_MAX) {
+            s_vr.screen_native = 1;
+        } else {
+            vc3_scale_set(vc3_scale_get() + 1);
+        }
+        break;
     case M_DIST: cycle(&s_dist, dists, 6); break;
     case M_SIZE: cycle(&s_height, sizes, 5); break;
     case M_COINS: s_vr.auto_coins = !s_vr.auto_coins; break;
@@ -1846,7 +2139,8 @@ static int hud_layer(const Frame *f, XrCompositionLayerQuad *q, int copy)
 /* An immersive frame's two eyes as a projection layer: each half of the
  * frame as that eye's view, with the pose and field of view it was drawn
  * with (the compositor turns it to where the head is now). */
-static void world_views(const Frame *f, XrCompositionLayerProjectionView wv[2])
+static void world_views(const Frame *f, XrCompositionLayerProjectionView wv[2],
+                        XrSwapchain chain, uint32_t cw, uint32_t ch)
 {
     int e;
     for (e = 0; e < 2; e++) {
@@ -1857,10 +2151,71 @@ static void world_views(const Frame *f, XrCompositionLayerProjectionView wv[2])
         wv[e].fov.angleRight = f->vr.view.fov[e][1];
         wv[e].fov.angleUp = f->vr.view.fov[e][2];
         wv[e].fov.angleDown = f->vr.view.fov[e][3];
-        wv[e].subImage.swapchain = s_chain;
-        wv[e].subImage.imageRect.offset.x = (int32_t)((uint32_t)e * s_chain_w / 2);
-        wv[e].subImage.imageRect.extent.width = (int32_t)(s_chain_w / 2);
-        wv[e].subImage.imageRect.extent.height = (int32_t)s_chain_h;
+        wv[e].subImage.swapchain = chain;
+        wv[e].subImage.imageRect.offset.x = (int32_t)((uint32_t)e * cw / 2);
+        wv[e].subImage.imageRect.extent.width = (int32_t)(cw / 2);
+        wv[e].subImage.imageRect.extent.height = (int32_t)ch;
+    }
+}
+
+/* VC3_GPU_TIME=1: the GPU time of this loop's own drawing per display frame
+ * -- the copy into the swapchain (when not direct), the HUD panel's, the
+ * gun overlay -- logged once a second as [XRGPU] (the back end's passes are
+ * its [GPUTIME]; the compositor's are not the app's to time). */
+#ifndef GL_TIME_ELAPSED_EXT
+#define GL_TIME_ELAPSED_EXT 0x88BF
+#endif
+#define XRGT_RING 16
+static int s_xrgt_on = -1;
+static GLuint s_xrgt_q[XRGT_RING];
+static unsigned s_xrgt_head, s_xrgt_tail;
+static double s_xrgt_ms;
+static uint32_t s_xrgt_n;
+
+static void xrgt_begin(void)
+{
+    if (s_xrgt_on < 0) {
+        s_xrgt_on = ch_env("GPU_TIME") && *ch_env("GPU_TIME") == '1';
+        if (s_xrgt_on)
+            glGenQueries(XRGT_RING, s_xrgt_q);
+    }
+    if (s_xrgt_on && s_xrgt_head - s_xrgt_tail < XRGT_RING - 1)
+        glBeginQuery(GL_TIME_ELAPSED_EXT, s_xrgt_q[s_xrgt_head % XRGT_RING]);
+    else if (s_xrgt_on)
+        s_xrgt_on = 2;                  /* this frame not timed */
+}
+
+static void xrgt_end(void)
+{
+    static uint64_t t0;
+    uint64_t now;
+    if (s_xrgt_on <= 0)
+        return;
+    if (s_xrgt_on == 1) {
+        glEndQuery(GL_TIME_ELAPSED_EXT);
+        s_xrgt_head++;
+    }
+    s_xrgt_on = 1;
+    while (s_xrgt_tail != s_xrgt_head) {
+        GLuint avail = 0, ns = 0;
+        GLuint q = s_xrgt_q[s_xrgt_tail % XRGT_RING];
+        glGetQueryObjectuiv(q, GL_QUERY_RESULT_AVAILABLE, &avail);
+        if (!avail)
+            break;
+        glGetQueryObjectuiv(q, GL_QUERY_RESULT, &ns);
+        s_xrgt_ms += ns / 1e6;
+        s_xrgt_n++;
+        s_xrgt_tail++;
+    }
+    now = pace_now_us();
+    if (!t0)
+        t0 = now;
+    if (now - t0 >= 1000000 && s_xrgt_n) {
+        fprintf(stderr, "[XRGPU] %.2f ms per display frame over %u (swapchain copy, HUD, overlay)\n",
+                s_xrgt_ms / s_xrgt_n, s_xrgt_n);
+        s_xrgt_ms = 0;
+        s_xrgt_n = 0;
+        t0 = now;
     }
 }
 
@@ -1903,6 +2258,8 @@ static void xr_frame(void)
         if (locked && allow)
             xbox_VblankAlign(xbox_HostNowNs());
     }
+    pthread_mutex_lock(&s_submit);     /* to xrEndFrame: see vc3_quest_frame */
+    xrgt_begin();
     f = take_frame(&is_new, allow);
     if (s_pace > 0) {   /* how many headset frames each game frame showed for */
         static int shown, hist[5], xr_n;
@@ -1952,7 +2309,7 @@ static void xr_frame(void)
 
     ei.displayTime = fs.predictedDisplayTime;
     ei.environmentBlendMode = XR_ENVIRONMENT_BLEND_MODE_OPAQUE;
-    if (fs.shouldRender && f && chain_fit((uint32_t)f->w, (uint32_t)f->h)) {
+    if (fs.shouldRender && f && (f->direct || chain_fit((uint32_t)f->w, (uint32_t)f->h))) {
         XrSwapchainImageAcquireInfo ai = { XR_TYPE_SWAPCHAIN_IMAGE_ACQUIRE_INFO };
         XrSwapchainImageWaitInfo wti = { XR_TYPE_SWAPCHAIN_IMAGE_WAIT_INFO };
         XrSwapchainImageReleaseInfo ri = { XR_TYPE_SWAPCHAIN_IMAGE_RELEASE_INFO };
@@ -1970,16 +2327,22 @@ static void xr_frame(void)
         int copy;
         if (reblit < 0)
             reblit = ch_env("XR_REBLIT") && *ch_env("XR_REBLIT") == '1';
+        /* a direct frame is in its swapchain already: only its HUD is copied */
+        XrSwapchain chain = f->direct ? f->dchain : s_chain;
+        uint32_t cw = f->direct ? (uint32_t)f->w : s_chain_w;
+        uint32_t ch = f->direct ? (uint32_t)f->h : s_chain_h;
         copy = reblit || is_new || dot || drawn_chain != s_chain_gen || drawn_f != f;
 
         wti.timeout = XR_INFINITE_DURATION;
-        if (!copy
+        if (!copy || f->direct
             || (XR_SUCCEEDED(xrAcquireSwapchainImage(s_chain, &ai, &idx))
                 && XR_SUCCEEDED(xrWaitSwapchainImage(s_chain, &wti)))) {
             uint32_t e;
             float c[3], yq = s_anchor_yaw * 0.5f;
 
-            if (copy) {
+            if (f->direct) {
+                drawn_f = f;
+            } else if (copy) {
                 draw_frame(s_chain_fbo[idx], f, (GLsizei)s_chain_w, (GLsizei)s_chain_h, dot);
                 xrReleaseSwapchainImage(s_chain, &ri);
                 drawn_chain = s_chain_gen;
@@ -1987,7 +2350,7 @@ static void xr_frame(void)
             }
             if (f->vr.imm && f->eyes == 2) {
                 /* Immersive: the world in each eye, the HUD on its panel. */
-                world_views(f, wv);
+                world_views(f, wv, chain, cw, ch);
                 world.space = s_local;
                 world.viewCount = 2;
                 world.views = wv;
@@ -2012,10 +2375,10 @@ static void xr_frame(void)
                 q->space = s_local;            /* opaque: no blend flags */
                 q->eyeVisibility = f->eyes == 1 ? XR_EYE_VISIBILITY_BOTH
                                  : e == 0 ? XR_EYE_VISIBILITY_LEFT : XR_EYE_VISIBILITY_RIGHT;
-                q->subImage.swapchain = s_chain;
-                q->subImage.imageRect.offset.x = (int32_t)(e * s_chain_w / (uint32_t)f->eyes);
-                q->subImage.imageRect.extent.width = (int32_t)(s_chain_w / (uint32_t)f->eyes);
-                q->subImage.imageRect.extent.height = (int32_t)s_chain_h;
+                q->subImage.swapchain = chain;
+                q->subImage.imageRect.offset.x = (int32_t)(e * cw / (uint32_t)f->eyes);
+                q->subImage.imageRect.extent.width = (int32_t)(cw / (uint32_t)f->eyes);
+                q->subImage.imageRect.extent.height = (int32_t)ch;
                 q->pose.orientation.y = sinf(yq);
                 q->pose.orientation.w = cosf(yq);
                 q->pose.position.x = c[0];
@@ -2064,7 +2427,11 @@ static void xr_frame(void)
     }
     ei.layerCount = nl;
     ei.layers = layers;
+    xrgt_end();
     xrEndFrame(s_sess, &ei);
+    pthread_mutex_unlock(&s_submit);
+    if (f && f->direct)
+        direct_retire_done(f->dchain);
 }
 
 /* ── Without a headset: the SDL window ────────────────────────────────── */
@@ -2141,6 +2508,7 @@ int vc3_quest_run(int (*guest_main)(void))
     /* SDL owns the activity's surface; its GLES 3.2 context is the one the
      * headset is given, and the back end's shares with it. */
     s_tid_host = (pid_t)syscall(SYS_gettid);
+    g_xbox_thread_named = thread_named;   /* before the toolkit's threads start */
     SDL_SetHint(SDL_HINT_NO_SIGNAL_HANDLERS, "1");
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS | SDL_INIT_GAMECONTROLLER) != 0) {
         fprintf(stderr, "[quest] SDL: %s\n", SDL_GetError());

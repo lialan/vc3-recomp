@@ -89,6 +89,257 @@ static void es_bgra(GLenum target);
 #include "chihiro/ch_env.h"
 #include "chihiro/chihiro_profile.h"
 
+/* ── Shadow state ───────────────────────────────────────────
+ * The fixed-function state, the framebuffer bindings and the viewport as
+ * last set on this context: a call that would set them to what they are is
+ * not made. Each draw rebound its surface's framebuffer and viewport (one-
+ * pass stereo set the viewport twice more), and a change of render state
+ * re-sent all of it -- a dozen driver calls validated per draw on the GL
+ * thread, now the limit. Everything below this point calls these through
+ * the macros; gl_texdec.c restores what it changes, and the host's frame
+ * hand-off (vc3_quest_frame) does not, so sh_reset after it. Unknown values
+ * (~0) never match. */
+enum { SH_BLEND, SH_DEPTH, SH_STENCIL, SH_CULL, SH_SCISSOR, SH_CAPS };
+static struct {
+    GLuint draw_fb, read_fb;
+    GLint vp[4];
+    signed char cap[SH_CAPS];              /* -1 unknown */
+    GLenum bsrc, bdst, bsrc_a, bdst_a, beq, dfunc, cface, fface;
+    GLfloat bcol[4];
+    signed char dmask;
+    signed char cmask[4];
+    GLenum sfunc, sfail, szfail, szpass;
+    GLint sref;
+    GLuint smask_func, smask_write;
+    int valid;
+    uint32_t made, skipped;                /* this second (the GPU time log) */
+} s_sh;
+
+static void sh_reset(void)
+{
+    uint32_t made = s_sh.made, skipped = s_sh.skipped;
+    memset(&s_sh, 0xFF, sizeof s_sh);
+    s_sh.valid = 0;
+    s_sh.made = made;
+    s_sh.skipped = skipped;
+}
+
+static int sh_cap(GLenum cap)
+{
+    switch (cap) {
+    case GL_BLEND: return SH_BLEND;
+    case GL_DEPTH_TEST: return SH_DEPTH;
+    case GL_STENCIL_TEST: return SH_STENCIL;
+    case GL_CULL_FACE: return SH_CULL;
+    case GL_SCISSOR_TEST: return SH_SCISSOR;
+    default: return -1;
+    }
+}
+
+static void sh_glEnable(GLenum cap)
+{
+    int i = sh_cap(cap);
+    if (i >= 0) {
+        if (s_sh.cap[i] == 1)
+            { s_sh.skipped++; return; }
+        s_sh.cap[i] = 1;
+    }
+    s_sh.made++;
+    glEnable(cap);
+}
+
+static void sh_glDisable(GLenum cap)
+{
+    int i = sh_cap(cap);
+    if (i >= 0) {
+        if (s_sh.cap[i] == 0)
+            { s_sh.skipped++; return; }
+        s_sh.cap[i] = 0;
+    }
+    s_sh.made++;
+    glDisable(cap);
+}
+
+static void sh_glBindFramebuffer(GLenum target, GLuint fb)
+{
+    if (target == GL_FRAMEBUFFER) {
+        if (s_sh.draw_fb == fb && s_sh.read_fb == fb)
+            { s_sh.skipped++; return; }
+        s_sh.draw_fb = s_sh.read_fb = fb;
+    } else if (target == GL_DRAW_FRAMEBUFFER) {
+        if (s_sh.draw_fb == fb)
+            { s_sh.skipped++; return; }
+        s_sh.draw_fb = fb;
+    } else if (target == GL_READ_FRAMEBUFFER) {
+        if (s_sh.read_fb == fb)
+            { s_sh.skipped++; return; }
+        s_sh.read_fb = fb;
+    }
+    s_sh.made++;
+    glBindFramebuffer(target, fb);
+}
+
+static void sh_glDeleteFramebuffers(GLsizei n, const GLuint *fbs)
+{
+    GLsizei i;
+    for (i = 0; i < n; i++) {           /* a bound one unbinds: unknown */
+        if (fbs[i] == s_sh.draw_fb)
+            s_sh.draw_fb = ~0u;
+        if (fbs[i] == s_sh.read_fb)
+            s_sh.read_fb = ~0u;
+    }
+    glDeleteFramebuffers(n, fbs);
+}
+
+static void sh_glViewport(GLint x, GLint y, GLsizei w, GLsizei h)
+{
+    if (s_sh.vp[0] == x && s_sh.vp[1] == y && s_sh.vp[2] == w && s_sh.vp[3] == h)
+        { s_sh.skipped++; return; }
+    s_sh.vp[0] = x;
+    s_sh.vp[1] = y;
+    s_sh.vp[2] = w;
+    s_sh.vp[3] = h;
+    s_sh.made++;
+    glViewport(x, y, w, h);
+}
+
+static void sh_glBlendFuncSeparate(GLenum s, GLenum d, GLenum sa, GLenum da)
+{
+    if (s_sh.bsrc == s && s_sh.bdst == d && s_sh.bsrc_a == sa && s_sh.bdst_a == da)
+        { s_sh.skipped++; return; }
+    s_sh.bsrc = s;
+    s_sh.bdst = d;
+    s_sh.bsrc_a = sa;
+    s_sh.bdst_a = da;
+    s_sh.made++;
+    glBlendFuncSeparate(s, d, sa, da);
+}
+
+static void sh_glBlendFunc(GLenum s, GLenum d)
+{
+    sh_glBlendFuncSeparate(s, d, s, d);
+}
+
+static void sh_glBlendEquation(GLenum eq)
+{
+    if (s_sh.beq == eq)
+        { s_sh.skipped++; return; }
+    s_sh.beq = eq;
+    s_sh.made++;
+    glBlendEquation(eq);
+}
+
+static void sh_glBlendColor(GLfloat r, GLfloat g, GLfloat b, GLfloat a)
+{
+    if (s_sh.bcol[0] == r && s_sh.bcol[1] == g && s_sh.bcol[2] == b && s_sh.bcol[3] == a)
+        { s_sh.skipped++; return; }
+    s_sh.bcol[0] = r;
+    s_sh.bcol[1] = g;
+    s_sh.bcol[2] = b;
+    s_sh.bcol[3] = a;
+    s_sh.made++;
+    glBlendColor(r, g, b, a);
+}
+
+static void sh_glDepthFunc(GLenum f)
+{
+    if (s_sh.dfunc == f)
+        { s_sh.skipped++; return; }
+    s_sh.dfunc = f;
+    s_sh.made++;
+    glDepthFunc(f);
+}
+
+static void sh_glDepthMask(GLboolean m)
+{
+    if (s_sh.dmask == (signed char)(m != 0))
+        { s_sh.skipped++; return; }
+    s_sh.dmask = (signed char)(m != 0);
+    s_sh.made++;
+    glDepthMask(m);
+}
+
+static void sh_glColorMask(GLboolean r, GLboolean g, GLboolean b, GLboolean a)
+{
+    if (s_sh.cmask[0] == (r != 0) && s_sh.cmask[1] == (g != 0) && s_sh.cmask[2] == (b != 0)
+        && s_sh.cmask[3] == (a != 0))
+        { s_sh.skipped++; return; }
+    s_sh.cmask[0] = (signed char)(r != 0);
+    s_sh.cmask[1] = (signed char)(g != 0);
+    s_sh.cmask[2] = (signed char)(b != 0);
+    s_sh.cmask[3] = (signed char)(a != 0);
+    s_sh.made++;
+    glColorMask(r, g, b, a);
+}
+
+static void sh_glStencilFunc(GLenum f, GLint ref, GLuint mask)
+{
+    if (s_sh.sfunc == f && s_sh.sref == ref && s_sh.smask_func == mask)
+        { s_sh.skipped++; return; }
+    s_sh.sfunc = f;
+    s_sh.sref = ref;
+    s_sh.smask_func = mask;
+    s_sh.made++;
+    glStencilFunc(f, ref, mask);
+}
+
+static void sh_glStencilMask(GLuint mask)
+{
+    if (s_sh.smask_write == mask)
+        { s_sh.skipped++; return; }
+    s_sh.smask_write = mask;
+    s_sh.made++;
+    glStencilMask(mask);
+}
+
+static void sh_glStencilOp(GLenum fail, GLenum zfail, GLenum zpass)
+{
+    if (s_sh.sfail == fail && s_sh.szfail == zfail && s_sh.szpass == zpass)
+        { s_sh.skipped++; return; }
+    s_sh.sfail = fail;
+    s_sh.szfail = zfail;
+    s_sh.szpass = zpass;
+    s_sh.made++;
+    glStencilOp(fail, zfail, zpass);
+}
+
+static void sh_glCullFace(GLenum f)
+{
+    if (s_sh.cface == f)
+        { s_sh.skipped++; return; }
+    s_sh.cface = f;
+    s_sh.made++;
+    glCullFace(f);
+}
+
+static void sh_glFrontFace(GLenum f)
+{
+    if (s_sh.fface == f)
+        { s_sh.skipped++; return; }
+    s_sh.fface = f;
+    s_sh.made++;
+    glFrontFace(f);
+}
+
+#define glEnable sh_glEnable
+#define glDisable sh_glDisable
+#define glBindFramebuffer sh_glBindFramebuffer
+#define glDeleteFramebuffers sh_glDeleteFramebuffers
+#define glViewport sh_glViewport
+#define glBlendFuncSeparate sh_glBlendFuncSeparate
+#define glBlendFunc sh_glBlendFunc
+#define glBlendEquation sh_glBlendEquation
+#define glBlendColor sh_glBlendColor
+#define glDepthFunc sh_glDepthFunc
+#define glDepthMask sh_glDepthMask
+#define glColorMask sh_glColorMask
+#define glStencilFunc sh_glStencilFunc
+#define glStencilMask sh_glStencilMask
+#define glStencilOp sh_glStencilOp
+#define glCullFace sh_glCullFace
+#define glFrontFace sh_glFrontFace
+
+
 /* getenv, looked up once per name: several debug switches are tested per
  * draw, and getenv walks the whole environment each time. They do not change
  * while the game runs, and this all runs on the executor thread. */
@@ -129,6 +380,7 @@ static CGLContextObj s_ctx;
 static int s_failed;
 static GLuint s_vao, s_vao_raw, s_vao_vp, s_white;
 static GLuint s_fs_obj, s_fs_rc_obj;     /* linked into each program shader */
+static GLuint s_fs_na_obj, s_fs_rc_na_obj;   /* the same without the alpha test */
 
 /* A linked program and its uniform locations, looked up once at link time:
  * glGetUniformLocation per draw was a string search per call. The fragment
@@ -147,8 +399,6 @@ typedef struct {
      * projection, on / 1 / pz. */
     GLint immvp, gp, gw;
     GLint st2, eye2, immvp2;     /* one-pass stereo */
-    GLint vc;                    /* vertex programs: u_vc[192] */
-    uint32_t vc_gen;             /* the constants' change count last sent */
     /* the fixed-function state last sent to this program (raw_uniforms) */
     Nv2aFixedState ff_last;
     int ff_valid;
@@ -165,6 +415,11 @@ typedef struct {
  * combiners' registers on every pixel: half the GPU time of the mission
  * intro's thousand draws on the Quest. */
 static Prog s_pcpu, s_praw, s_pcpu_rc, s_praw_rc, *U = &s_pcpu;
+/* And each again without the alpha test (NOAT; prog 0 if it failed), for
+ * the batches that have it off -- nearly all: a shader that can discard
+ * leaves the depth test until after it has run, so every hidden fragment of
+ * every batch was shaded, and a tiler cannot reject them early either. */
+static Prog s_pcpu_na, s_praw_na, s_pcpu_rc_na, s_praw_rc_na;
 
 /* ── Uniforms sent only when they change ──────────────────────────────────
    The draw path sets some thirty uniforms a batch, most of them the same as
@@ -187,7 +442,7 @@ static void uc_reset(Prog *p)
 }
 
 /* 1 if loc already holds these bytes (or is not a uniform); else records them. */
-static int uc_same(GLint loc, const void *d, size_t n)
+static int uc_same_(GLint loc, const void *d, size_t n)
 {
     struct UCache *c;
     unsigned h, k;
@@ -223,6 +478,20 @@ static int uc_same(GLint loc, const void *d, size_t n)
         }
     }
     return 0;                               /* full: send */
+}
+
+/* Uniform calls made and not repeated (the GPU time log). */
+static uint32_t s_uc_sent, s_uc_kept, s_vc_sent;
+static int uc_same(GLint loc, const void *d, size_t n)
+{
+    int same = uc_same_(loc, d, n);
+    if (loc >= 0) {
+        if (same)
+            s_uc_kept++;
+        else
+            s_uc_sent++;
+    }
+    return same;
 }
 
 static void cu1i(GLint l, GLint a) { if (!uc_same(l, &a, sizeof a)) glUniform1i(l, a); }
@@ -885,6 +1154,7 @@ static const char *FS =
     "    c *= texture(u_tex, sbs(0, v_uv));\n"
     "    if (u_lmap != 0) c.rgb *= texture(u_t1, stage_uv(1, v_tc1)).rgb;\n"
     "  }\n"
+    "#ifndef NOAT\n"
     "  if (u_atest != 0) {\n"
     /* In 8 bits, as the hardware and the software rasteriser compare: a
      * modulated 0x80 lands at 0.5, below 128/255 as a float. */
@@ -899,6 +1169,7 @@ static const char *FS =
     "    else if (f == 6) pass = a >= u_aref;\n"
     "    if (!pass) discard;\n"
     "  }\n"
+    "#endif\n"
     "  o_col = c;\n"
     "}\n";
 
@@ -1038,7 +1309,7 @@ static int prog_link(Prog *p, GLuint vs, GLuint fs, int feedback)
     LOC(ascale, "u_ascale"); LOC(packed, "u_packed"); LOC(aa, "u_aa");
     LOC(vpz, "u_vpz"); LOC(nearz, "u_nearz"); LOC(fogen, "u_fogen");
     LOC(fogmode, "u_fogmode"); LOC(fogp, "u_fogp"); LOC(uvs0, "u_uvs0");
-    LOC(bgra, "u_bgra"); LOC(vc, "u_vc");
+    LOC(bgra, "u_bgra");
 #undef LOC
     glUseProgram(p->prog);
     glUniform1i(glGetUniformLocation(p->prog, "u_tex"), 0);
@@ -1070,10 +1341,21 @@ typedef struct {
     uint32_t used;
     uint32_t inputs;                      /* the v[] it reads, a bit each */
     Prog p, p_rc;
+    Prog p_na, p_rc_na;                   /* without the alpha test (prog 0: none) */
 } VpProg;
 static VpProg s_vp[VP_SLOTS];
 static VpProg *s_vp_cur;                  /* the program gl_draw draws with */
 static uint32_t s_vp_built, s_vp_failed;
+
+#define VC_BINDING 1                       /* the VshConst block's binding */
+
+/* A vertex program's constants block at VC_BINDING. */
+static void vc_block(const Prog *p)
+{
+    GLuint i = glGetUniformBlockIndex(p->prog, "VshConst");
+    if (i != GL_INVALID_INDEX)
+        glUniformBlockBinding(p->prog, i, VC_BINDING);
+}
 
 static VpProg *vp_get(const Nv2aRawGeometry *g)
 {
@@ -1099,6 +1381,14 @@ static VpProg *vp_get(const Nv2aRawGeometry *g)
         free(e->p.uc);
         if (e->p_rc.uc != e->p.uc)
             free(e->p_rc.uc);
+        if (e->p_na.prog) {
+            glDeleteProgram(e->p_na.prog);
+            free(e->p_na.uc);
+        }
+        if (e->p_rc_na.prog) {
+            glDeleteProgram(e->p_rc_na.prog);
+            free(e->p_rc_na.uc);
+        }
     }
     memset(e, 0, sizeof *e);
     e->hash = g->program_hash;
@@ -1143,8 +1433,19 @@ static VpProg *vp_get(const Nv2aRawGeometry *g)
             glDeleteShader(vs);
         return NULL;
     }
+    vc_block(&e->p);
     if (!s_fs_rc_obj || !prog_link(&e->p_rc, vs, s_fs_rc_obj, 1))
         e->p_rc = e->p;
+    else
+        vc_block(&e->p_rc);
+    if (!s_fs_na_obj || !prog_link(&e->p_na, vs, s_fs_na_obj, 1))
+        memset(&e->p_na, 0, sizeof e->p_na);
+    else
+        vc_block(&e->p_na);
+    if (!s_fs_rc_na_obj || e->p_rc.prog == e->p.prog || !prog_link(&e->p_rc_na, vs, s_fs_rc_na_obj, 1))
+        memset(&e->p_rc_na, 0, sizeof e->p_rc_na);
+    else
+        vc_block(&e->p_rc_na);
     glDeleteShader(vs);                        /* the programs keep it */
     e->state = 1;
     s_vp_built++;
@@ -1180,6 +1481,15 @@ typedef struct {
 } Ring;
 static Ring s_vring = { 0, GL_ARRAY_BUFFER, 16 << 20, 0, NULL, 0, { 0 } };
 static Ring s_iring = { 0, GL_ELEMENT_ARRAY_BUFFER, 4 << 20, 0, NULL, 0, { 0 } };
+/* The vertex programs' constants (the VshConst block, 192 vec4): a copy
+ * streamed in whenever they change and bound as a range at VC_BINDING for
+ * every program at once -- where each program had its 192 uniforms sent per
+ * draw that changed them, and again on every switch of program. Ranges
+ * start at the driver's uniform-buffer alignment. */
+#define VC_BYTES (192 * 16)
+static Ring s_cring = { 0, GL_UNIFORM_BUFFER, 16 << 20, 0, NULL, 0, { 0 } };
+static GLint s_ubo_align = 256;
+static uint32_t s_vc_gen_bound;         /* the constants' change count bound */
 
 #if defined(VC3_GLES)
 typedef void (*BufferStorageFn)(GLenum, GLsizeiptr, const void *, GLbitfield);
@@ -1243,7 +1553,8 @@ static void ring_enter(Ring *r, GLsizeiptr from, GLsizeiptr to)
  * NULL if bytes cannot fit even an empty buffer. */
 static void *ring_map(Ring *r, GLsizeiptr bytes, GLsizeiptr *offset)
 {
-    GLsizeiptr at = (r->at + 15) & ~(GLsizeiptr)15;
+    GLsizeiptr al = r->target == GL_UNIFORM_BUFFER && s_ubo_align > 16 ? s_ubo_align : 16;
+    GLsizeiptr at = (r->at + al - 1) / al * al;
 
     if (bytes > r->size)
         return NULL;
@@ -1329,6 +1640,7 @@ static int gl_ready(void)
             return 0;
         }
         s_ctx = 1;
+        sh_reset();
         fprintf(stderr, "[GL] %s, %s\n", glGetString(GL_RENDERER),
                 glGetString(GL_VERSION));
         {
@@ -1382,6 +1694,7 @@ static int gl_ready(void)
         }
         CGLDestroyPixelFormat(pf);
         CGLSetCurrentContext(s_ctx);
+        sh_reset();
         fprintf(stderr, "[GL] %s, %s\n", glGetString(GL_RENDERER),
                 glGetString(GL_VERSION));
 #endif
@@ -1406,10 +1719,28 @@ static int gl_ready(void)
             if (s_praw.prog && !prog_link(&s_praw_rc, compile(GL_VERTEX_SHADER, VS_FF), fs_rc, 1))
                 s_praw_rc = s_praw;
         }
+        /* and both without the alpha test */
+        s_compile_defs = "#define NOAT\n";
+        if ((s_fs_na_obj = compile(GL_FRAGMENT_SHADER, FS))) {
+            if (!prog_link(&s_pcpu_na, compile(GL_VERTEX_SHADER, VS), s_fs_na_obj, 0))
+                memset(&s_pcpu_na, 0, sizeof s_pcpu_na);
+            if (!s_praw.prog || !prog_link(&s_praw_na, compile(GL_VERTEX_SHADER, VS_FF), s_fs_na_obj, 1))
+                memset(&s_praw_na, 0, sizeof s_praw_na);
+        }
+        s_compile_defs = "#define RC\n#define NOAT\n";
+        if ((s_fs_rc_na_obj = compile(GL_FRAGMENT_SHADER, FS))) {
+            if (s_pcpu_rc.prog == s_pcpu.prog
+                || !prog_link(&s_pcpu_rc_na, compile(GL_VERTEX_SHADER, VS), s_fs_rc_na_obj, 0))
+                memset(&s_pcpu_rc_na, 0, sizeof s_pcpu_rc_na);
+            if (!s_praw.prog || s_praw_rc.prog == s_praw.prog
+                || !prog_link(&s_praw_rc_na, compile(GL_VERTEX_SHADER, VS_FF), s_fs_rc_na_obj, 1))
+                memset(&s_praw_rc_na, 0, sizeof s_praw_rc_na);
+        }
         s_compile_defs = "";
 
         /* The CPU path's layout; pointers are set per draw, as each batch
          * lands at a different place in the stream. */
+        glGetIntegerv(GL_UNIFORM_BUFFER_OFFSET_ALIGNMENT, &s_ubo_align);
         glGenVertexArrays(1, &s_vao);
         glBindVertexArray(s_vao);
         glEnableVertexAttribArray(0);
@@ -1469,18 +1800,24 @@ static void es_to_guest(uint8_t *dst, uint32_t pitch, uint32_t bpp,
 
 /* Internal resolution and aspect (display_settings.c), as this frame draws
  * them: taken at each flip, so a frame never mixes two. A surface drawn at
- * scale s is s times its guest size; a widened one (16:9: a 4:3 surface,
- * 640x480 in VC3) is also a third wider, with the guest's picture in the
- * middle -- see surf_xform. Guest memory always gets the guest size and
- * the middle part (surf_resolve). */
-static int s_scale = 1, s_wide;
+ * scale sx, sy is that many times its guest size across and down -- whole
+ * numbers from the Resolution setting, any from a headset's native size
+ * (scale_pick) --; a widened one (16:9: a 4:3 surface, 640x480 in VC3) is
+ * also a third wider, with the guest's picture in the middle -- see
+ * surf_xform. Guest memory always gets the guest size and the middle part
+ * (surf_resolve). */
+static float s_sx = 1.0f, s_sy = 1.0f;
+static int s_wide;
+static float s_hud_sc = 1.0f;           /* the HUD picture's scale (immersive) */
 
 #define MAX_SURFS 32
 typedef struct {
     uint32_t va, pitch, bpp;
     GLsizei w, h;              /* guest size: what coordinates are in */
     GLsizei pw, ph;            /* drawn size: w, h times sc, widened */
-    int sc, wide;
+    float sx, sy;
+    int wide;
+    GLsizei cw;                /* the guest picture's drawn width (pw unwidened) */
     /* 16:9: the frame a widened view was composited onto this surface, and
      * its 2D overlays (surf_xform). */
     uint32_t hor_frame;
@@ -1488,6 +1825,7 @@ typedef struct {
     /* Stereo: both eyes side by side in one framebuffer twice pw wide, the
      * left eye's picture at x 0 (what guest memory gets), the right's at pw. */
     int st;
+    int fov;                   /* foveated (fov_params) */
     GLuint fbo, color, depth;
     int dirty;                 /* drawn since the last readback */
     /* Guest memory as the GPU last left it, to spot the CPU writing the
@@ -1511,11 +1849,39 @@ typedef struct {
      * and drew with depth before clearing it, frames in a row that began
      * with a clear and never came back for the depth, discarded since. */
     int z_state, z_left, z_ret, z_good, z_inv, z_sten, z_logged;   /* z_sten: stencil ever tested */
+    /* A clear not done yet (clear_defer): its buffers, colour mask and values. */
+    GLbitfield pc_bits;
+    GLboolean pc_mask[4];
+    GLfloat pc_col[4], pc_depth;
+    GLint pc_sten;
 } Surf;
 static void lazy_catch_up(Surf *rt);
+/* The effect target's run (see "The effect target" below): drawing into L
+ * for S; this draw goes there (surf_bind swaps S's framebuffer and size for
+ * L's while it lasts). */
+static struct {
+    int on, draw, swapped;
+    Surf *s;
+    GLuint fbo, color, depth;
+    GLsizei w, h;                    /* L, an eye */
+    GLuint save_fbo;
+    GLsizei save_pw, save_ph, save_cw;
+    uint32_t n_this, n_prev, runs;   /* qualifying batches this frame, the last */
+    /* the render target the run samples, reduced as L is, once a run */
+    GLuint small_fbo, small_tex;
+    GLsizei small_w, small_h;
+    uint32_t small_va, small_run;
+} s_fx;
+static GLuint fx_small(const Surf *rt);
+static void fx_pre(const Nv2aSurface *s, const Nv2aBatch *b);
+static void fx_post(void);
+static void fx_resolve(void);
+static int fx_scale(void);
 static Surf s_surfs[MAX_SURFS];
 static int s_nsurfs;
 static int lazy_skip(Surf *f, const Nv2aBatch *b);
+static void clear_flush(Surf *f, GLbitfield want);
+static void clear_leave(Surf *p);
 
 /* ── Depth discard ──────────────────────────────────────────
  *
@@ -1586,6 +1952,8 @@ static void z_switch(Surf *f)
 {
     Surf *p = s_z_prev;
     s_z_prev = f;
+    if (p && p != f)
+        clear_leave(p);
     if (!s_zd || p == f || !p)
         return;
     if (p->z_state)
@@ -1826,50 +2194,117 @@ void vc3_gl_stereo_separation(float ndc)
         s_st_sep = ndc;
 }
 
-/* VC3_FOVEATION=1 (the Quest): a stereo surface rendered with fixed
- * foveation (QCOM_texture_foveated) -- full detail round each eye's middle,
- * coarser towards the edges, one focal point per half. Off by default until
- * it has been seen on the headset; skipped without the extension or two
- * focal points. The texture bound. */
-static void surf_foveate(const Surf *f)
+/* Fixed foveation (QCOM_texture_foveated) of the stereo surfaces: full
+ * detail round each eye's centre of view, coarser towards the edges, one
+ * focal point per eye's half. VC3_FOVEATION: unset or "auto", on for the
+ * frames drawn immersive at native size (each eye's picture is the whole
+ * field of view; the periphery is what the lenses blur anyway) and flat
+ * (gain 0: every pixel full detail) for everything else -- the virtual
+ * screen shows the whole picture; 1: always; 0: never. The gain and the
+ * full-detail area (VC3_FOV_GAIN, default 4; VC3_FOV_AREA, 0.4) are the
+ * extension's: pixel density falls off as 1 / (gain * distance^2 - area)
+ * from the focal point, across -1..1. Skipped without the extension or two
+ * focal points. Set when a surface is made (the texture bound) and at each
+ * flip for the next frame (fov_frame). */
+#if defined(VC3_GLES)
+typedef void (*FovFn)(GLuint, GLuint, GLuint, GLfloat, GLfloat, GLfloat, GLfloat, GLfloat);
+static FovFn s_fov_fn;
+#endif
+static int s_fov_mode = -1;             /* 0 never, 1 always, 2 auto */
+static int s_fov_now;                   /* this frame foveated */
+
+static int fov_mode(void)
 {
 #if defined(VC3_GLES)
-    typedef void (*FovFn)(GLuint, GLuint, GLuint, GLfloat, GLfloat, GLfloat, GLfloat, GLfloat);
-    static FovFn fov;
-    static int tried, on;
-    GLint n = 0;
-    if (!tried) {
+    if (s_fov_mode < 0) {
         const char *e = genv("FOVEATION");
-        tried = 1;
-        on = e && e[0] == '1';
-        if (on) {
-            GLint i, k = 0;
+        GLint i, k = 0;
+        int have = 0;
+        s_fov_mode = !e || !strcmp(e, "auto") ? 2 : e[0] == '1' ? 1 : 0;
+        if (s_fov_mode) {
             glGetIntegerv(GL_NUM_EXTENSIONS, &k);
-            on = 0;
             for (i = 0; i < k; i++) {
                 const char *x = (const char *)glGetStringi(GL_EXTENSIONS, (GLuint)i);
                 if (x && !strcmp(x, "GL_QCOM_texture_foveated"))
-                    on = 1;
+                    have = 1;
             }
-            if (on)
-                fov = (FovFn)eglGetProcAddress("glTextureFoveationParametersQCOM");
-            on = on && fov;
-            fprintf(stderr, "[GL] foveation: %s\n", on ? "on" : "not available");
+            if (have)
+                s_fov_fn = (FovFn)eglGetProcAddress("glTextureFoveationParametersQCOM");
+            if (!s_fov_fn)
+                s_fov_mode = 0;
+            fprintf(stderr, "[GL] foveation: %s\n", !s_fov_mode ? "not available"
+                    : s_fov_mode == 1 ? "always" : "immersive frames at native size");
         }
     }
-    if (!on)
+    return s_fov_mode;
+#else
+    return 0;
+#endif
+}
+
+/* f's focal points for this frame (f->color bound or not: by name). */
+static void fov_params(const Surf *f)
+{
+#if defined(VC3_GLES)
+    float gain = 0.0f, area = 0.0f;
+    int e;
+    if (!f->fov)
+        return;
+    if (s_fov_now) {
+        gain = genv("FOV_GAIN") ? (float)atof(genv("FOV_GAIN")) : 4.0f;
+        area = genv("FOV_AREA") ? (float)atof(genv("FOV_AREA")) : 0.4f;
+    }
+    for (e = 0; e < 2; e++) {
+        /* the eye's straight ahead in its half: its projection's centre
+         * (an eye's field of view is wider outwards); rows top first */
+        float cx = 0.0f, cy = 0.0f;
+        if (s_imm && s_view.on) {
+            float l = s_view.tan_fov[e][0], r = s_view.tan_fov[e][1];
+            float u = s_view.tan_fov[e][2], d = s_view.tan_fov[e][3];
+            if (r - l > 0.0f && u - d > 0.0f) {
+                cx = -(r + l) / (r - l);
+                cy = (u + d) / (u - d);
+            }
+        }
+        s_fov_fn(f->color, 0, (GLuint)e, (e ? 0.5f : -0.5f) + 0.5f * cx, cy, gain,
+                 gain, area);
+    }
+#else
+    (void)f;
+#endif
+}
+
+static void surf_foveate(Surf *f)
+{
+#if defined(VC3_GLES)
+    GLint n = 0;
+    f->fov = 0;
+    if (!fov_mode())
         return;
     glTexParameteri(GL_TEXTURE_2D, 0x8BFB /* TEXTURE_FOVEATED_FEATURE_BITS_QCOM */,
                     0x1 /* FOVEATION_ENABLE_BIT */ | 0x2 /* SCALED_BIN_METHOD_BIT */);
     glGetTexParameteriv(GL_TEXTURE_2D, 0x8BFD /* NUM_FOCAL_POINTS_QUERY */, &n);
     if (n < 2)
         return;
-    /* the eyes' middles in the double-wide surface, -1..1 across */
-    fov(f->color, 0, 0, -0.5f, 0.0f, 4.0f, 4.0f, 0.4f);
-    fov(f->color, 0, 1, 0.5f, 0.0f, 4.0f, 4.0f, 0.4f);
+    f->fov = 1;
+    fov_params(f);
 #else
     (void)f;
 #endif
+}
+
+/* At the flip, for the next frame: foveated or flat (s_fov_now). */
+static void fov_frame(void)
+{
+    int i, now;
+    if (!fov_mode())
+        return;
+    now = s_fov_mode == 1 || (s_imm && s_view.scale == 0 && s_view.eye_w > 0);
+    if (now == s_fov_now && !now)
+        return;
+    s_fov_now = now;
+    for (i = 0; i < s_nsurfs; i++)
+        fov_params(&s_surfs[i]);
 }
 
 /* Multisampling (VC3_GL_MSAA=2/4, GLES, off by default): the 3D surfaces
@@ -1931,10 +2366,12 @@ static void surf_alloc(Surf *f, GLsizei w, GLsizei h)
     }
     f->w = w;
     f->h = h;
-    f->sc = s_scale;
+    f->sx = s_sx;
+    f->sy = s_sy;
     f->wide = surf_widens(w, h);
-    pw = w * f->sc;
-    ph = h * f->sc;
+    pw = (GLsizei)((float)w * f->sx + 0.5f);
+    ph = (GLsizei)((float)h * f->sy + 0.5f);
+    f->cw = pw;
     if (f->wide)
         pw = (pw * 4 / 3 + 1) & ~1;
     f->pw = pw;
@@ -1986,6 +2423,16 @@ static Surf *surf_find(uint32_t va)
 #define GL_TIME_ELAPSED 0x88BF            /* EXT_disjoint_timer_query on ES */
 #endif
 #define GT_RING 512
+/* not surfaces: the copies, timed apart from the surface they serve */
+#define GT_PRESENT 1u                     /* the frame's copy to the headset */
+#define GT_SELF 2u                        /* snapshots for batches sampling their target */
+#define GT_LAZY 3u                        /* lazy copies brought up to date */
+static uint32_t s_gt_nself, s_gt_nlazy;  /* how many (GPU time log) */
+static const char *gt_label(uint32_t va)
+{
+    return va == GT_PRESENT ? "present" : va == GT_SELF ? "self-copies"
+         : va == GT_LAZY ? "lazy-copies" : NULL;
+}
 static struct { uint32_t draws, tris, declined; } s_rst;   /* fixed-function draws */
 static uint32_t s_zp_frame;              /* visibility tests (GPU time log) */
 static uint32_t s_sw_frame;              /* surface switches (GPU time log) */
@@ -1993,6 +2440,8 @@ static uint32_t s_va_hit, s_va_miss;     /* attribute pointers kept / set (log) 
 static int s_gt_on = -1;
 static GLuint s_gt_q[GT_RING];
 static uint32_t s_gt_va[GT_RING];
+static uint8_t s_gt_tr[GT_RING];          /* logged pass by pass ([GTSEG]) */
+static uint32_t s_gt_fr[GT_RING];         /* the frame each was issued in */
 static unsigned s_gt_head, s_gt_tail;     /* issued [tail, head) */
 static int s_gt_open;
 static uint32_t s_gt_cur_va;
@@ -2021,6 +2470,8 @@ static void gt_poll(void)
         if (!avail)
             break;
         glGetQueryObjectuiv(s_gt_q[k], GL_QUERY_RESULT, &ns);
+        if (s_gt_tr[k])             /* the traced frame's passes, in order */
+            fprintf(stderr, "[GTSEG] frame %u %08X %.3f ms\n", s_gt_fr[k], s_gt_va[k], ns / 1e6);
         s_gt_total += ns / 1e6;
         for (j = 0; j < GT_SURFS; j++)
             if (s_gt_sum[j].va == s_gt_va[k] || !s_gt_sum[j].va) {
@@ -2047,6 +2498,11 @@ static void gt_surface(uint32_t va)
     if (s_gt_head - s_gt_tail >= GT_RING - 1)
         return;                             /* all in flight: skip */
     s_gt_va[s_gt_head % GT_RING] = va;
+    /* VC3_GPU_TIME_SEG=1: every pass of every frame, in order ([GTSEG]) */
+    s_gt_tr[s_gt_head % GT_RING] = s_ftr == 1 || genv("GPU_TIME_SEG");
+    s_gt_fr[s_gt_head % GT_RING] = s_frame;
+    if (s_ftr == 1)
+        fprintf(stderr, "[GLTR] -- GPU timer: %08X\n", va);
     glBeginQuery(GL_TIME_ELAPSED, s_gt_q[s_gt_head % GT_RING]);
     s_gt_head++;
     s_gt_open = 1;
@@ -2074,22 +2530,35 @@ static void gt_flip(void)
     {
         char line[512];
         int n = snprintf(line, sizeof line, "[GPUTIME] %.1f ms/frame over %u frames"
-                         " (fixed-function %u draws, %u triangles, %u visibility tests, %u surface switches a frame):",
+                         " (fixed-function %u draws, %u triangles, %u visibility tests, %u surface switches,"
+                         " %u self-copies, %u lazy copies a frame):",
                          s_gt_frames ? s_gt_total / s_gt_frames : 0.0, s_gt_frames,
                          s_gt_frames ? s_rst.draws / s_gt_frames : 0,
                          s_gt_frames ? s_rst.tris / s_gt_frames : 0,
                          s_gt_frames ? s_zp_frame / s_gt_frames : 0,
-                         s_gt_frames ? s_sw_frame / s_gt_frames : 0);
+                         s_gt_frames ? s_sw_frame / s_gt_frames : 0,
+                         s_gt_frames ? s_gt_nself / s_gt_frames : 0,
+                         s_gt_frames ? s_gt_nlazy / s_gt_frames : 0);
+        s_gt_nself = s_gt_nlazy = 0;
         s_rst.draws = s_rst.tris = 0;
         s_zp_frame = s_sw_frame = 0;
-        fprintf(stderr, "[GPUTIME]   attribute pointers kept %u, set %u\n", s_va_hit, s_va_miss);
+        fprintf(stderr, "[GPUTIME]   attribute pointers kept %u, set %u; state calls made %u,"
+                " not repeated %u; uniforms sent %u, not repeated %u; program constants"
+                " sent %u\n", s_va_hit, s_va_miss, s_sh.made, s_sh.skipped, s_uc_sent,
+                s_uc_kept, s_vc_sent);
+        s_sh.made = s_sh.skipped = 0;
+        s_uc_sent = s_uc_kept = s_vc_sent = 0;
         s_va_hit = s_va_miss = 0;
         for (j = 0; j < GT_SURFS && s_gt_sum[j].va && n < (int)sizeof line - 40; j++)
             if (s_gt_sum[j].ms / s_gt_frames >= 0.3) {
                 const Surf *q = surf_find(s_gt_sum[j].va);
-                n += snprintf(line + n, sizeof line - (size_t)n, " %08X(%dx%d%s) %.1f",
-                              s_gt_sum[j].va, q ? q->w : 0, q ? q->h : 0,
-                              q && q->st ? " st" : "", s_gt_sum[j].ms / s_gt_frames);
+                if (gt_label(s_gt_sum[j].va))
+                    n += snprintf(line + n, sizeof line - (size_t)n, " %s %.1f",
+                                  gt_label(s_gt_sum[j].va), s_gt_sum[j].ms / s_gt_frames);
+                else
+                    n += snprintf(line + n, sizeof line - (size_t)n, " %08X(%dx%d%s) %.1f",
+                                  s_gt_sum[j].va, q ? q->w : 0, q ? q->h : 0,
+                                  q && q->st ? " st" : "", s_gt_sum[j].ms / s_gt_frames);
             }
         fprintf(stderr, "%s\n", line);
     }
@@ -2100,6 +2569,7 @@ static void gt_flip(void)
 }
 
 static GLuint s_bound_fbo;              /* surf_bind's, for lazy_catch_up */
+static uint32_t s_bound_va;
 
 /* The framebuffer for a guest surface, created or grown to fit, and bound.
  * A change of scale or aspect remakes it at the first draw after the flip
@@ -2121,15 +2591,28 @@ static Surf *surf_bind(const Nv2aSurface *s)
         memset(f, 0, sizeof *f);
         f->va = s->color_va;
     }
-    if (!f->fbo || w > f->w || h > f->h || f->sc != s_scale
+    if (!f->fbo || w > f->w || h > f->h || f->sx != s_sx || f->sy != s_sy
         || f->wide != surf_widens(w > f->w ? w : f->w, h > f->h ? h : f->h)
         || f->st != surf_stereo(w > f->w ? w : f->w, h > f->h ? h : f->h))
         surf_alloc(f, w > f->w ? w : f->w, h > f->h ? h : f->h);
     f->pitch = s->pitch;
     f->bpp = bpp;
+    if (s_fx.draw && f == s_fx.s && !s_fx.swapped) {   /* into the effect target */
+        int sc = fx_scale();
+        s_fx.save_fbo = f->fbo;
+        s_fx.save_pw = f->pw;
+        s_fx.save_ph = f->ph;
+        s_fx.save_cw = f->cw;
+        f->fbo = s_fx.fbo;
+        f->pw = s_fx.w;
+        f->ph = s_fx.h;
+        f->cw = (f->cw + sc - 1) / sc;
+        s_fx.swapped = 1;
+    }
     gt_surface(f->va);
     z_switch(f);
     s_bound_fbo = f->fbo;
+    s_bound_va = f->va;
     glBindFramebuffer(GL_FRAMEBUFFER, f->fbo);
     glViewport(0, 0, f->pw, f->ph);
     return f;
@@ -2245,7 +2728,7 @@ static void surf_xform(Surf *f, const Nv2aBatch *b, float *scale, float *offset)
 {
     float x0 = 1e30f, x1 = -1e30f, y0 = 1e30f, y1 = -1e30f;
     float u0 = 1e30f, u1 = -1e30f, v0 = 1e30f, v1 = -1e30f;
-    float mid = (float)(f->w * f->sc) / (float)f->pw;
+    float mid = (float)f->cw / (float)f->pw;
     const Surf *src;
     int place;
 
@@ -2333,7 +2816,8 @@ static GLuint surf_resolve(const Surf *f)
     static GLsizei rw, rh;
     GLint x0;
 
-    if (f->sc == 1 && !f->wide)
+    clear_flush((Surf *)f, GL_COLOR_BUFFER_BIT);
+    if (f->pw == f->w && f->ph == f->h)
         return f->fbo;
     if (!fbo || rw != f->w || rh != f->h) {
         if (!tex)
@@ -2349,11 +2833,11 @@ static GLuint surf_resolve(const Surf *f)
         rw = f->w;
         rh = f->h;
     }
-    x0 = (f->pw - f->w * f->sc) / 2;
+    x0 = (f->pw - f->cw) / 2;
     glDisable(GL_SCISSOR_TEST);
     glBindFramebuffer(GL_READ_FRAMEBUFFER, f->fbo);
     glBindFramebuffer(GL_DRAW_FRAMEBUFFER, fbo);
-    glBlitFramebuffer(x0, 0, x0 + f->w * f->sc, f->ph, 0, 0, f->w, f->h,
+    glBlitFramebuffer(x0, 0, x0 + f->cw, f->ph, 0, 0, f->w, f->h,
                       GL_COLOR_BUFFER_BIT, GL_LINEAR);
     return fbo;
 }
@@ -2453,6 +2937,7 @@ static void show_read(Readback *r, const Surf *f, int fps)
         r->show_cap = bytes;
     }
     glBindBuffer(GL_PIXEL_PACK_BUFFER, r->show_pbo);
+    clear_flush((Surf *)f, GL_COLOR_BUFFER_BIT);
     glBindFramebuffer(GL_READ_FRAMEBUFFER, f->fbo);
     glReadPixels(0, 0, sw, f->ph, GL_BGRA, GL_UNSIGNED_INT_8_8_8_8_REV, NULL);
     r->sw = sw;
@@ -2530,7 +3015,7 @@ static void surf_readback_async(Surf *f)
 #if !defined(VC3_GLES)
     /* The Quest shows the drawn frame itself (vc3_quest_frame), with the
      * headset making any in-between frames. */
-    if (fps > 60 || f->sc > 1 || f->wide || f->st)
+    if (fps > 60 || f->pw != f->w || f->ph != f->h || f->st)
         show_read(r, f, fps);
 #else
     (void)fps;
@@ -2962,6 +3447,7 @@ static int tex_bind(const Nv2aTexture *t, float *sw, float *sh)
     if (rt && rt->fbo && !rt->cpu_owned) {
         s_st.rt++;
         lazy_catch_up(rt);
+        clear_flush(rt, GL_COLOR_BUFFER_BIT);
         if (genv("RT_USE_LOG")) {   /* which render targets are sampled (debug) */
             static uint32_t vas[16], cnt[16], fr;
             int k;
@@ -2979,8 +3465,9 @@ static int tex_bind(const Nv2aTexture *t, float *sw, float *sh)
                 cnt[k]++;
             }
         }
-        glBindTexture(GL_TEXTURE_2D, rt->color);
-        bound = rt->color;
+        /* drawing into the effect target: the render target reduced alike */
+        bound = s_fx.draw && rt != s_fx.s ? fx_small(rt) : rt->color;
+        glBindTexture(GL_TEXTURE_2D, bound);
         if (rt->st && s_unit < 4)
             s_sbs[s_unit] = 1.0f;
         *sw = (float)rt->w;
@@ -3192,8 +3679,12 @@ static int tex_bind_for(const Surf *f, const Nv2aTexture *t, float *sw, float *s
         glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, s_self_w, s_self_h, 0, GL_BGRA,
                      GL_UNSIGNED_INT_8_8_8_8_REV, NULL);
     }
+    clear_flush((Surf *)f, GL_COLOR_BUFFER_BIT);
     glBindFramebuffer(GL_READ_FRAMEBUFFER, f->fbo);
+    gt_surface(GT_SELF);
+    s_gt_nself++;
     glCopyTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 0, 0, s_self_w, s_self_h);
+    gt_surface(f->va);
     if (f->st && s_unit < 4)
         s_sbs[s_unit] = 1.0f;          /* both eyes: each reads its half */
     tex_sampling(s_self_tex, t, 0);
@@ -3227,7 +3718,10 @@ static void apply_state(const Nv2aRenderState *rs)
     s_rs_valid = 1;
     if (rs->blend_enable) {
         glEnable(GL_BLEND);
-        glBlendFunc(rs->blend_src, rs->blend_dst);
+        if (s_fx.draw)          /* the effect target: alpha keeps the scene's weight */
+            glBlendFuncSeparate(rs->blend_src, rs->blend_dst, GL_ZERO, GL_ONE_MINUS_SRC_ALPHA);
+        else
+            glBlendFunc(rs->blend_src, rs->blend_dst);
         glBlendEquation(rs->blend_eq ? rs->blend_eq : GL_FUNC_ADD);
         glBlendColor(((rs->blend_color >> 16) & 0xFF) / 255.0f,
                      ((rs->blend_color >> 8) & 0xFF) / 255.0f,
@@ -3282,6 +3776,97 @@ uniforms:
 
 /* ── Back end entry points ─────────────────────────────────── */
 
+/* ── Deferred clears ────────────────────────────────────────
+ *
+ * A tiler starts a pass by loading the surface into tile memory, unless the
+ * pass begins with a clear, and ends it by storing everything back, unless
+ * told a buffer is dead. VC3 clears its back buffer, then draws the scene
+ * into another surface, then comes back to composite: done as it comes, the
+ * clear is a pass of its own that stores the whole cleared surface, and the
+ * composite's pass loads it all back -- at native size twice the colour and
+ * depth of a 2064x2208 pair of eyes for nothing. So a clear is only noted
+ * (clear_defer) and done where the surface is next used: first thing in its
+ * next drawing pass (gl_draw), or before its colour is read (sampled, copied,
+ * shown, read back: clear_flush with the colour bit). A clear noted on top
+ * of one still pending replaces what it covers. When the back end leaves a
+ * surface with a clear pending for its depth and stencil (or its whole
+ * colour), those are dead until then and the pass discards them instead of
+ * storing (clear_leave; GLES). */
+/* Do f's pending clear of the buffers in want (all: before drawing into
+ * f), with f bound for it; the bindings are left as they were. */
+static void clear_flush(Surf *f, GLbitfield want)
+{
+    GLbitfield bits = f->pc_bits & want;
+    GLint rd = 0, dr = 0;
+    if (!bits || !f->fbo)
+        return;
+    glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &rd);
+    glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &dr);
+    if ((GLuint)dr != f->fbo)
+        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, f->fbo);
+    glDisable(GL_SCISSOR_TEST);
+    if (bits & GL_COLOR_BUFFER_BIT) {
+        glColorMask(f->pc_mask[0], f->pc_mask[1], f->pc_mask[2], f->pc_mask[3]);
+        glClearColor(f->pc_col[0], f->pc_col[1], f->pc_col[2], f->pc_col[3]);
+    }
+    if (bits & GL_DEPTH_BUFFER_BIT) {
+        glDepthMask(GL_TRUE);
+        glClearDepth((double)f->pc_depth);
+    }
+    if (bits & GL_STENCIL_BUFFER_BIT) {
+        glStencilMask(0xFF);
+        glClearStencil(f->pc_sten);
+    }
+    glClear(bits);
+    f->pc_bits &= ~bits;
+    s_rs_valid = 0;                     /* the masks changed */
+    if ((GLuint)dr != f->fbo)
+        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, (GLuint)dr);
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, (GLuint)rd);
+    GLCK("clear_flush", NULL, f->va);
+}
+
+static void clear_defer(Surf *f, GLbitfield bits, const GLboolean m[4], const GLfloat c[4],
+                        GLfloat depth, GLint sten)
+{
+    if (bits & GL_COLOR_BUFFER_BIT) {
+        /* a partial colour mask over a pending colour clear: that one first */
+        if ((f->pc_bits & GL_COLOR_BUFFER_BIT) && !(m[0] && m[1] && m[2] && m[3]))
+            clear_flush(f, GL_COLOR_BUFFER_BIT);
+        memcpy(f->pc_mask, m, sizeof f->pc_mask);
+        memcpy(f->pc_col, c, sizeof f->pc_col);
+    }
+    if (bits & GL_DEPTH_BUFFER_BIT)
+        f->pc_depth = depth;
+    if (bits & GL_STENCIL_BUFFER_BIT)
+        f->pc_sten = sten;
+    f->pc_bits |= bits;
+}
+
+/* The back end leaves p (another surface is bound next): what a pending
+ * clear will overwrite is not stored. */
+static void clear_leave(Surf *p)
+{
+#if defined(VC3_GLES)
+    GLenum att[2];
+    GLsizei n = 0;
+    if (!p->fbo || !p->pc_bits)
+        return;
+    if ((p->pc_bits & GL_COLOR_BUFFER_BIT) && p->pc_mask[0] && p->pc_mask[1] && p->pc_mask[2]
+        && p->pc_mask[3])
+        att[n++] = GL_COLOR_ATTACHMENT0;
+    if ((p->pc_bits & (GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT))
+        == (GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT))
+        att[n++] = GL_DEPTH_STENCIL_ATTACHMENT;
+    if (n) {
+        glBindFramebuffer(GL_FRAMEBUFFER, p->fbo);
+        glInvalidateFramebuffer(GL_FRAMEBUFFER, n, att);
+    }
+#else
+    (void)p;
+#endif
+}
+
 static void gl_clear(const Nv2aSurface *s, const Nv2aRenderState *rs,
                      uint32_t flags, uint32_t argb, uint32_t zstencil)
 {
@@ -3291,36 +3876,32 @@ static void gl_clear(const Nv2aSurface *s, const Nv2aRenderState *rs,
     (void)rs;
     if (!gl_ready())
         return;
+    if (s_fx.on)
+        fx_resolve();
     GLCK("before clear (elsewhere)", NULL, s->color_va);
     if (!(f = surf_bind(s)))
         return;
     if (lazy_skip(f, NULL))
         return;
-    glDisable(GL_SCISSOR_TEST);
-    s_rs_valid = 0;                    /* masks change below */
-    if (flags & 0xF0) {
-        glColorMask((flags & 0x10) != 0, (flags & 0x20) != 0,
-                    (flags & 0x40) != 0, (flags & 0x80) != 0);
-        glClearColor(((argb >> 16) & 0xFF) / 255.0f, ((argb >> 8) & 0xFF) / 255.0f,
-                     (argb & 0xFF) / 255.0f, (argb >> 24) / 255.0f);
-        bits |= GL_COLOR_BUFFER_BIT;
+    {
+        const GLboolean m[4] = { (flags & 0x10) != 0, (flags & 0x20) != 0,
+                                 (flags & 0x40) != 0, (flags & 0x80) != 0 };
+        const GLfloat c[4] = { ((argb >> 16) & 0xFF) / 255.0f, ((argb >> 8) & 0xFF) / 255.0f,
+                               (argb & 0xFF) / 255.0f, (argb >> 24) / 255.0f };
+        if (flags & 0xF0)
+            bits |= GL_COLOR_BUFFER_BIT;
+        if (flags & 0x1)
+            bits |= GL_DEPTH_BUFFER_BIT;
+        if (flags & 0x2)
+            bits |= GL_STENCIL_BUFFER_BIT;
+        if (s_ftr == 1)
+            fprintf(stderr, "[GLTR] clear surf %08X flags %X colour %08X zstencil %08X "
+                    "zeta %08X\n", f->va, flags, argb, zstencil, rs->zeta_va);
+        if (bits)
+            clear_defer(f, bits, m, c, (GLfloat)((double)(zstencil >> 8) / 16777215.0),
+                        (GLint)(zstencil & 0xFF));
     }
-    if (flags & 0x1) {
-        glDepthMask(GL_TRUE);
-        glClearDepth((double)(zstencil >> 8) / 16777215.0);
-        bits |= GL_DEPTH_BUFFER_BIT;
-    }
-    if (flags & 0x2) {
-        glStencilMask(0xFF);
-        glClearStencil((GLint)(zstencil & 0xFF));
-        bits |= GL_STENCIL_BUFFER_BIT;
-    }
-    if (s_ftr == 1)
-        fprintf(stderr, "[GLTR] clear surf %08X flags %X colour %08X zstencil %08X "
-                "zeta %08X\n", f->va, flags, argb, zstencil, rs->zeta_va);
-    if (bits)
-        glClear(bits);
-    GLCK("clear: glClear", NULL, f->va);
+    GLCK("clear: deferred", NULL, f->va);
     z_clear(f, bits);
     GLCK("clear: z_clear", NULL, f->va);
     f->dirty = 1;
@@ -3850,9 +4431,13 @@ static int raw_submit(const Nv2aRawGeometry *g, GLsizeiptr *ioff)
         if (!raw_attribs(g, slot, 16, &s_va_vp))
             return 0;
         raw_uniforms_common(g);
-        if (U->vc >= 0 && U->vc_gen != g->const_gen) {   /* the constants, when changed */
-            glUniform4fv(U->vc, 192, &g->constants[0][0]);
-            U->vc_gen = g->const_gen;
+        if (s_vc_gen_bound != g->const_gen || !s_cring.buf) {   /* the constants, when changed */
+            GLsizeiptr off = ring_put(&s_cring, g->constants, VC_BYTES);
+            if (off < 0)
+                return 0;
+            glBindBufferRange(GL_UNIFORM_BUFFER, VC_BINDING, s_cring.buf, off, VC_BYTES);
+            s_vc_gen_bound = g->const_gen;
+            s_vc_sent++;
         }
     } else {
         raw_roles(g, slot);
@@ -3921,14 +4506,20 @@ static void lazy_catch_up(Surf *rt)
         fprintf(stderr, "[GL] lazy: %08X sampled again, brought up to date from %08X\n",
                 rt->va, src ? src->va : 0);
     if (src && src->fbo && src != rt) {
-        GLboolean mask[4], sc = glIsEnabled(GL_SCISSOR_TEST);
+        GLboolean mask[4], sc;
+        clear_flush(src, GL_COLOR_BUFFER_BIT);
+        rt->pc_bits &= ~(GLbitfield)GL_COLOR_BUFFER_BIT;
+        sc = glIsEnabled(GL_SCISSOR_TEST);
         glGetBooleanv(GL_COLOR_WRITEMASK, mask);
         glDisable(GL_SCISSOR_TEST);
         glColorMask(1, 1, 1, 1);
         glBindFramebuffer(GL_READ_FRAMEBUFFER, src->fbo);
         glBindFramebuffer(GL_DRAW_FRAMEBUFFER, rt->fbo);
+        gt_surface(GT_LAZY);
+        s_gt_nlazy++;
         glBlitFramebuffer(0, 0, src->pw * (src->st ? 2 : 1), src->ph,
                           0, 0, rt->pw * (rt->st ? 2 : 1), rt->ph, GL_COLOR_BUFFER_BIT, GL_LINEAR);
+        gt_surface(s_bound_va);
         glBindFramebuffer(GL_FRAMEBUFFER, s_bound_fbo);
         glColorMask(mask[0], mask[1], mask[2], mask[3]);
         if (sc)
@@ -4045,9 +4636,11 @@ static int batch_fullscreen(const Nv2aBatch *b, const Surf *f)
  * over), for the headset's blended layer. */
 static void hud_bind(const Surf *f, const Nv2aRenderState *rs)
 {
-    /* at the game's own 1x whatever the immersive detail: a flat panel at
-     * 5 m, and a quarter of the pixels to clear and fill at 2x */
-    GLsizei hw = f->pw / (f->sc > 0 ? f->sc : 1), hh = f->ph / (f->sc > 0 ? f->sc : 1);
+    /* the game's own size (widened) times s_hud_sc: 1 at a fixed detail (a
+     * flat panel at 5 m, a quarter of the pixels to fill at 2x), at native
+     * as many as the panel covers on the display (scale_pick) */
+    GLsizei hw = (GLsizei)((float)(f->wide ? (f->w * 4 / 3 + 1) & ~1 : f->w) * s_hud_sc + 0.5f);
+    GLsizei hh = (GLsizei)((float)f->h * s_hud_sc + 0.5f);
     if (!s_hud_fbo || s_hud_w != hw || s_hud_h != hh) {
         GLint was = 0;
         if (!s_hud_fbo) {
@@ -4112,7 +4705,18 @@ static int batch_needs_rc(const Surf *f, const Nv2aBatch *b, int raw)
     return 0;
 }
 
+static void gl_draw_inner(const Nv2aSurface *s, const Nv2aBatch *b);
+
 static void gl_draw(const Nv2aSurface *s, const Nv2aBatch *b)
+{
+    if (!gl_ready())
+        return;
+    fx_pre(s, b);
+    gl_draw_inner(s, b);
+    fx_post();
+}
+
+static void gl_draw_inner(const Nv2aSurface *s, const Nv2aBatch *b)
 {
     const Nv2aRawGeometry *raw = b->raw;
     Surf *f;
@@ -4130,11 +4734,23 @@ static void gl_draw(const Nv2aSurface *s, const Nv2aBatch *b)
     GLCK("draw: surf_bind", b, f->va);
     if (lazy_skip(f, b))
         return;
-    if (raw && raw->kind == NV2A_RAW_PROGRAM)
-        U = batch_needs_rc(f, b, 1) ? &s_vp_cur->p_rc : &s_vp_cur->p;
-    else
-        U = raw ? (batch_needs_rc(f, b, raw != NULL) ? &s_praw_rc : &s_praw)
-                : (batch_needs_rc(f, b, raw != NULL) ? &s_pcpu_rc : &s_pcpu);
+    {
+        /* the program: the combiners or not, the alpha test or not */
+        const int rc = batch_needs_rc(f, b, raw != NULL);
+        const int at = b->state->alpha_test_enable && !genv("GL_NOATEST");
+        Prog *a, *na;
+        if (raw && raw->kind == NV2A_RAW_PROGRAM) {
+            a = rc ? &s_vp_cur->p_rc : &s_vp_cur->p;
+            na = rc ? &s_vp_cur->p_rc_na : &s_vp_cur->p_na;
+        } else if (raw) {
+            a = rc ? &s_praw_rc : &s_praw;
+            na = rc ? &s_praw_rc_na : &s_praw_na;
+        } else {
+            a = rc ? &s_pcpu_rc : &s_pcpu;
+            na = rc ? &s_pcpu_rc_na : &s_pcpu_na;
+        }
+        U = !at && na->prog && !genv("GL_ATEST_ALL") ? na : a;
+    }
     memset(s_sbs, 0, sizeof s_sbs);
     {
         /* Consecutive batches mostly share program and layout. */
@@ -4395,6 +5011,10 @@ static void gl_draw(const Nv2aSurface *s, const Nv2aBatch *b)
         set_cap(2, 0);
         set_cap(3, 0);
     }
+    if (b->zpass_out && f->pc_bits) {
+        clear_flush(f, ~(GLbitfield)0);
+        apply_state(b->state);
+    }
     if (b->zpass_out) {
         GLfloat sb0[8] = { 0 };
         cu1i(U->st2, 0);
@@ -4489,6 +5109,9 @@ static void gl_draw(const Nv2aSurface *s, const Nv2aBatch *b)
             hud_bind(f, b->state);
             s_rs_valid = 0;                 /* the blend's alpha was changed */
             GLCK("draw: hud_bind", b, f->va);
+        } else if (f->pc_bits) {            /* the pass begins with its clear */
+            clear_flush(f, ~(GLbitfield)0);
+            apply_state(b->state);
         }
         /* Stereo in one pass: one instanced draw, instance = eye, each in its
          * half of a double-wide viewport, the other half clipped -- one draw
@@ -5065,6 +5688,246 @@ static void quad_into(GLuint fbo, GLsizei w, GLsizei h)
     glDrawArrays(GL_TRIANGLES, 0, 3);
 }
 
+/* ── The effect target (reduced-resolution blended stacks) ─────────────
+ *
+ * VC3's E.S. mode redraws the scene through ~63 distortion meshes, each
+ * blended (SRC_ALPHA, ONE_MINUS_SRC_ALPHA) over the whole view through the
+ * combiners, sampling a copy of the scene at distorted coordinates, most of
+ * each one then discarded by its alpha test. At native size that is 63
+ * layers over two 2064x2208 eyes -- ~570 Mpx of combiner shading a frame,
+ * 6-9 fps even on the Mac -- for an effect that is a blur and a ripple.
+ *
+ * So a run of such batches (blended that way, sampling another render
+ * target, no depth or stencil writes, 3D, into a large stereo surface S,
+ * after a frame that had at least FX_MIN of them) is drawn into
+ * an effect target L of 1/scale the size each way instead: its depth is S's
+ * scaled down (the meshes are depth-tested against the scene); its colour
+ * starts as (0, 0, 0, 1) and each batch blends colour as it would over S
+ * and alpha as ZERO, ONE_MINUS_SRC_ALPHA -- so L holds the stack's own
+ * contribution C and the scene's remaining weight T. When the run ends (a
+ * draw or clear of anything else, the flip) L goes onto S once, filtered up:
+ * S = C + S * T -- exactly what the layers blended one by one over S would
+ * give, but with the contribution at the effect's resolution and the scene
+ * itself kept native wherever the effect leaves it.
+ *
+ * VC3_GL_EFFECT_SCALE: 2 (default: half each way, a quarter of the pixels),
+ * 3, 4, or 1 (off: every layer at full size). Only surfaces of FX_PX
+ * pixels an eye and up (native immersive), never at 2x. */
+#define FX_MIN 8                   /* qualifying batches in the frame before */
+#define FX_PX 2000000L             /* an eye's pixels for the effect target */
+
+static int fx_scale(void)
+{
+    static int sc = -1;
+    if (sc < 0) {
+        const char *e = genv("GL_EFFECT_SCALE");
+        sc = e ? atoi(e) : 2;
+        if (sc < 1 || sc > 8)
+            sc = 1;
+    }
+    return sc;
+}
+
+static int fx_qualifies(const Surf *f, const Nv2aBatch *b)
+{
+    const Nv2aRenderState *rs = b->state;
+    const Surf *rt;
+    if (!f || !f->st || !f->fbo || !rs || !b->texture || b->zpass_out)
+        return 0;
+    if (!rs->blend_enable || rs->blend_src != GL_SRC_ALPHA
+        || rs->blend_dst != GL_ONE_MINUS_SRC_ALPHA
+        || (rs->blend_eq && rs->blend_eq != GL_FUNC_ADD))
+        return 0;
+    if ((rs->depth_write && rs->zeta_va) || (rs->stencil_enable && rs->zeta_va)
+        || rs->color_mask != 0x01010101u)
+        return 0;
+    rt = surf_find(b->texture->offset);
+    if (!rt || rt == f || !rt->fbo || rt->cpu_owned)
+        return 0;
+    /* 3D (drawn into the eyes): never a 2D batch, which may go to the HUD */
+    if (b->raw)
+        return b->raw->kind != NV2A_RAW_PROGRAM || raw_vp_3d(b->raw);
+    return b->count && b->vertices[0].rhw != 1.0f && b->vertices[0].rhw > 0.0f;
+}
+
+static void fx_begin(Surf *f)
+{
+    int sc = fx_scale();
+    GLsizei w = (f->pw + sc - 1) / sc, h = (f->ph + sc - 1) / sc;
+    static int logged;
+
+    clear_flush(f, ~(GLbitfield)0);
+    if (!s_fx.fbo || s_fx.w != w || s_fx.h != h) {
+        if (!s_fx.fbo) {
+            glGenFramebuffers(1, &s_fx.fbo);
+            glGenTextures(1, &s_fx.color);
+            glGenRenderbuffers(1, &s_fx.depth);
+        }
+        glBindTexture(GL_TEXTURE_2D, s_fx.color);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, 2 * w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        glBindRenderbuffer(GL_RENDERBUFFER, s_fx.depth);
+        glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH24_STENCIL8, 2 * w, h);
+        glBindFramebuffer(GL_FRAMEBUFFER, s_fx.fbo);
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, s_fx.color, 0);
+        glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_RENDERBUFFER,
+                                  s_fx.depth);
+        if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
+            fprintf(stderr, "[GL] effect target %dx%d incomplete\n", 2 * w, h);
+        s_fx.w = w;
+        s_fx.h = h;
+    }
+    if (!logged) {
+        logged = 1;
+        fprintf(stderr, "[GL] effect target: a blended stack into %08X drawn at 1/%d"
+                " (%dx%d an eye; VC3_GL_EFFECT_SCALE)\n", f->va, sc, w, h);
+    }
+    /* the scene's depth, scaled down; the stack's contribution none yet */
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, f->fbo);
+    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, s_fx.fbo);
+    glDisable(GL_SCISSOR_TEST);
+    glBlitFramebuffer(0, 0, 2 * f->pw, f->ph, 0, 0, 2 * w, h,
+                      GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT, GL_NEAREST);
+    glBindFramebuffer(GL_FRAMEBUFFER, s_fx.fbo);
+    glColorMask(1, 1, 1, 1);
+    glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+    glClear(GL_COLOR_BUFFER_BIT);
+    s_rs_valid = 0;
+    s_fx.on = 1;
+    s_fx.s = f;
+    s_fx.runs++;
+    GLCK("effect target: begin", NULL, f->va);
+}
+
+/* rt reduced to the effect target's scale, for the batches of this run to
+ * sample: each pixel of L read the full-size copy of the scene at distorted
+ * coordinates, a scattered walk over 4128x2208 texels per layer -- half of
+ * what the stack cost. Made once per run (the copy changes every frame). */
+static GLuint fx_small(const Surf *rt)
+{
+    int sc = fx_scale();
+    GLsizei w = (rt->pw * (rt->st ? 2 : 1) + sc - 1) / sc, h = (rt->ph + sc - 1) / sc;
+    GLint rd = 0, dr = 0, tex = 0;
+    if (s_fx.small_run == s_fx.runs && s_fx.small_va == rt->va && s_fx.small_tex)
+        return s_fx.small_tex;
+    glGetIntegerv(GL_TEXTURE_BINDING_2D, &tex);
+    if (!s_fx.small_tex || s_fx.small_w != w || s_fx.small_h != h) {
+        if (!s_fx.small_tex) {
+            glGenTextures(1, &s_fx.small_tex);
+            glGenFramebuffers(1, &s_fx.small_fbo);
+        }
+        glBindTexture(GL_TEXTURE_2D, s_fx.small_tex);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glBindFramebuffer(GL_FRAMEBUFFER, s_fx.small_fbo);
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D,
+                               s_fx.small_tex, 0);
+        s_fx.small_w = w;
+        s_fx.small_h = h;
+    }
+    glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &rd);
+    glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &dr);
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, rt->fbo);
+    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, s_fx.small_fbo);
+    glDisable(GL_SCISSOR_TEST);
+    glBlitFramebuffer(0, 0, rt->pw * (rt->st ? 2 : 1), rt->ph, 0, 0, w, h, GL_COLOR_BUFFER_BIT,
+                      GL_LINEAR);
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, (GLuint)rd);
+    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, (GLuint)dr);
+    glBindTexture(GL_TEXTURE_2D, (GLuint)tex);
+    s_fx.small_run = s_fx.runs;
+    s_fx.small_va = rt->va;
+    return s_fx.small_tex;
+}
+
+/* L onto S: S = C + S * T (see above). */
+static void fx_resolve(void)
+{
+    static GLuint prog, vao;
+    static GLint u_img, u_org, u_size;
+    Surf *f = s_fx.s;
+
+    s_fx.on = 0;
+    if (!f || !f->fbo)
+        return;
+    if (!prog && (prog = link_quad(FS_HUD))) {
+        u_img = glGetUniformLocation(prog, "u_img");
+        u_org = glGetUniformLocation(prog, "u_org");
+        u_size = glGetUniformLocation(prog, "u_size");
+    }
+    if (!prog)
+        return;
+    if (!vao)
+        glGenVertexArrays(1, &vao);
+    glBindFramebuffer(GL_FRAMEBUFFER, f->fbo);
+    s_bound_fbo = f->fbo;
+    glViewport(0, 0, 2 * f->pw, f->ph);
+    glUseProgram(prog);
+    s_cur_prog = prog;
+    glBindVertexArray(vao);
+    s_cur_vao = vao;
+    bind_tex(0, s_fx.color);
+    glUniform1i(u_img, 0);
+    glUniform2f(u_org, 0.0f, 0.0f);
+    glUniform2f(u_size, (GLfloat)(2 * f->pw), (GLfloat)f->ph);
+    glDisable(GL_DEPTH_TEST);
+    glDisable(GL_STENCIL_TEST);
+    glDisable(GL_CULL_FACE);
+    glDisable(GL_SCISSOR_TEST);
+    caps_off();
+    glColorMask(1, 1, 1, 1);
+    glEnable(GL_BLEND);
+    glBlendEquation(GL_FUNC_ADD);
+    glBlendFuncSeparate(GL_ONE, GL_SRC_ALPHA, GL_ZERO, GL_ONE);
+    glDrawArrays(GL_TRIANGLES, 0, 3);
+    glViewport(0, 0, f->pw, f->ph);
+    s_rs_valid = 0;
+    f->dirty = 1;
+    GLCK("effect target: resolve", NULL, f->va);
+}
+
+/* Before a draw (gl_draw): end a run this batch does not continue; begin
+ * one when it should; mark the draw as going into L (surf_bind swaps it). */
+static void fx_pre(const Nv2aSurface *s, const Nv2aBatch *b)
+{
+    Surf *f = surf_find(s->color_va);
+    int q;
+    s_fx.draw = 0;
+    q = f ? fx_qualifies(f, b) : 0;
+    if (s_fx.on && (f != s_fx.s || !q))
+        fx_resolve();
+    if (!q)
+        return;
+    s_fx.n_this++;
+    if (!s_fx.on && s_fx.n_prev >= FX_MIN && fx_scale() > 1 && (long)f->pw * f->ph >= FX_PX)
+        fx_begin(f);
+    if (s_fx.on) {
+        s_fx.draw = 1;
+        s_rs_valid = 0;
+    }
+}
+
+/* After it: the surface as it was. */
+static void fx_post(void)
+{
+    if (s_fx.swapped) {
+        Surf *f = s_fx.s;
+        f->fbo = s_fx.save_fbo;
+        f->pw = s_fx.save_pw;
+        f->ph = s_fx.save_ph;
+        f->cw = s_fx.save_cw;
+        s_fx.swapped = 0;
+    }
+    if (s_fx.draw)
+        s_rs_valid = 0;
+    s_fx.draw = 0;
+}
+
+
 /* One matching level, from field[dst ^ 1] (the level before) into
  * field[dst]. */
 static void search_pass(int coarse, float lod, int win, int range, int dst)
@@ -5124,6 +5987,7 @@ static void interp_scene_snap(const Surf *f, const Nv2aBatch *b)
         s_ip.scene_w = f->pw;
         s_ip.scene_h = f->ph;
     }
+    clear_flush((Surf *)f, GL_COLOR_BUFFER_BIT);
     glBindFramebuffer(GL_READ_FRAMEBUFFER, f->fbo);
     glBindFramebuffer(GL_DRAW_FRAMEBUFFER, s_ip.scene_fbo);
     glBlitFramebuffer(0, 0, f->pw, f->ph, 0, 0, f->pw, f->ph,
@@ -5140,11 +6004,12 @@ static int interp_make(const Surf *f, GLuint *pbos, int n)
 {
     int prev, i, layers;
     GLsizei w = f->pw, h = f->ph;
-    GLsizei gw = (f->pw + f->sc / 2) / f->sc, gh = f->ph / f->sc;
+    GLsizei gw = (GLsizei)((float)f->pw / f->sx + 0.5f), gh = f->h;
     GLuint ta, tb;                   /* what is interpolated: scene or frame */
 
     if (n < 1 || !interp_setup())
         return 0;
+    clear_flush((Surf *)f, GL_COLOR_BUFFER_BIT);
     if (w != s_ip.w || h != s_ip.h || gw != s_ip.gw || gh != s_ip.gh)
         interp_alloc(w, h, gw, gh);
 
@@ -5346,6 +6211,7 @@ static void quest_present(void)
 
     if (!f || !f->fbo)
         return;
+    clear_flush(f, GL_COLOR_BUFFER_BIT);
     /* The host blits: the scissor and colour mask apply to blits too. */
     glDisable(GL_SCISSOR_TEST);
     glColorMask(1, 1, 1, 1);
@@ -5374,6 +6240,7 @@ static void quest_present(void)
         vf.gw = f->w;
         vf.gh = f->h;
         vc3_quest_frame(f->fbo, f->pw, f->ph, f->st ? 2 : 1, lw, lh, &vf);
+        sh_reset();                     /* the host's calls, on this context */
         return;
     }
     /* One texture, reallocated only when the size or format changes, and
@@ -5432,11 +6299,73 @@ static void quest_present(void)
     glBindFramebuffer(GL_FRAMEBUFFER, fbo);
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, tex, 0);
     vc3_quest_frame(fbo, f->w, f->h, 1, f->w, f->h, NULL);
+    sh_reset();
 }
 #endif
 
+/* The next frame's scale (s_sx, s_sy, s_hud_sc), at the flip once the view
+ * is latched (on: the host has an immersive view). The game's screen is the
+ * presented surface's guest size (640x480 in VC3), a third wider at 16:9.
+ *   immersive, a fixed detail (1x-4x): that, the HUD at 1x;
+ *   immersive, native: each eye's picture (a screen-shaped surface, the
+ *     whole field of view) exactly eye_w x eye_h, every other surface at the
+ *     same scale; the HUD as fine as its panel is on the display -- a guest
+ *     pixel of it spans 1/kx of a tangent, a display pixel (tan right - tan
+ *     left) / eye_w -- in quarter steps, at most 4x;
+ *   a headset's virtual screen: the game's picture the size it is on the
+ *     display (vc3_vr_screen_px), in eighth steps, 1x-4x;
+ *   otherwise the Resolution setting. */
+static void scale_pick(int on)
+{
+    Surf *pf = surf_find(nv2a_backend_presented_va());
+    float gw = 640.0f, gh = 480.0f, lw, sx, sy;
+    int w, h;
+    if (pf && pf->w * 3 == pf->h * 4) {
+        gw = (float)pf->w;
+        gh = (float)pf->h;
+    }
+    lw = s_wide ? gw * 4.0f / 3.0f : gw;
+    s_hud_sc = 1.0f;
+    if (on && s_view.scale >= 1 && s_view.scale <= VC3_SCALE_MAX) {
+        s_sx = s_sy = (float)s_view.scale;
+        return;
+    }
+    if (on && s_view.eye_w > 0 && s_view.eye_h > 0) {
+        /* widened, the drawn width is the unwidened one's 4/3 (surf_alloc) */
+        s_sx = (s_wide ? (float)s_view.eye_w * 0.75f : (float)s_view.eye_w) / gw;
+        s_sy = (float)s_view.eye_h / gh;
+        if (s_gp_ok) {
+            VrGameProj zg = zoom_proj(&s_gp);
+            float tx = s_view.tan_fov[0][1] - s_view.tan_fov[0][0];
+            float ty = s_view.tan_fov[0][2] - s_view.tan_fov[0][3];
+            if (tx > 0.0f && ty > 0.0f && fabsf(zg.kx) > 1.0f && fabsf(zg.ky) > 1.0f) {
+                float hx = (float)s_view.eye_w / tx / fabsf(zg.kx);
+                float hy = (float)s_view.eye_h / ty / fabsf(zg.ky);
+                float hs = ceilf((hx > hy ? hx : hy) * 4.0f) / 4.0f;
+                s_hud_sc = hs < 1.0f ? 1.0f : hs > 4.0f ? 4.0f : hs;
+            }
+        }
+        return;
+    }
+    if (!on && vc3_vr_screen_px(&w, &h)) {
+        sx = ceilf((float)w / lw * 8.0f) / 8.0f;
+        sy = ceilf((float)h / gh * 8.0f) / 8.0f;
+        s_sx = sx < 1.0f ? 1.0f : sx > 4.0f ? 4.0f : sx;
+        s_sy = sy < 1.0f ? 1.0f : sy > 4.0f ? 4.0f : sy;
+        return;
+    }
+    s_sx = s_sy = (float)vc3_scale_get();
+}
+
 static void gl_flip(void)
 {
+    if (s_fx.on)                    /* the effect target's run ends with the frame */
+        fx_resolve();
+    if (genv("GL_EFFECT_LOG") && s_fx.n_this)   /* VC3_GL_EFFECT_LOG=1 */
+        fprintf(stderr, "[FX] frame %u: %u qualifying batches, %u runs so far\n", s_frame,
+                s_fx.n_this, s_fx.runs);
+    s_fx.n_prev = s_fx.n_this;
+    s_fx.n_this = 0;
     int i;
 
     if (gl_ready()) {
@@ -5494,6 +6423,7 @@ static void gl_flip(void)
             u_size = glGetUniformLocation(prog, "u_size");
         }
         if (pf && pf->st && pf->fbo) {
+            clear_flush(pf, GL_COLOR_BUFFER_BIT);
             glDisable(GL_SCISSOR_TEST);
             glColorMask(1, 1, 1, 1);
             s_rs_valid = 0;
@@ -5596,6 +6526,7 @@ static void gl_flip(void)
         s_3d_this = 0;
     }
 #if defined(VC3_GLES)
+    gt_surface(GT_PRESENT);             /* the copy to the headset, timed apart */
     quest_present();
     GLCK("flip: quest_present", NULL, 0);
 #endif
@@ -5608,7 +6539,6 @@ static void gl_flip(void)
                 (uint32_t)(pf->wide ? (pf->w * 4 / 3 + 1) & ~1 : pf->w) * (pf->st ? 2 : 1),
                 (uint32_t)pf->h);
     }
-    s_scale = vc3_scale_get();
     s_wide = vc3_wide_get();
     /* The next frame's view: immersive when the host has a pose for it and
      * this frame had 3D in it (a frame without -- a movie, a menu -- goes
@@ -5625,12 +6555,10 @@ static void gl_flip(void)
         }
 
         on = vc3_vr_view_latch(&s_view);
-        /* immersive spreads each eye over the whole field of view: its own,
-         * finer scale (the host's, from the headset's recommended size) */
-        if (on && s_view.scale >= 1 && s_view.scale <= VC3_SCALE_MAX)
-            s_scale = s_view.scale;
+        scale_pick(on);
         s_stereo = vc3_stereo_get() || on;
         s_imm = on && s_stereo && s_3d_prev > 0 && s_gp_ok;
+        fov_frame();
         if (genv("IMM_LOG")) {
             static uint32_t n;
             if (++n % 60 == 0)
@@ -5710,7 +6638,25 @@ static void gl_flip(void)
     }
 }
 
-static const Nv2aBackend s_gl_backend = { gl_clear, gl_draw, gl_flip, gl_draw_raw };
+/* Whether the flip writes nothing into guest memory for the executor's
+ * present: the Quest shows the drawn frame itself and reads nothing back
+ * (unless VC3_GL_READBACK=1 or VC3_GL_READBACK_ALL); the Mac's window shows
+ * guest memory. Then the decode thread need not wait for the flip. */
+static int gl_flip_async(void)
+{
+#if defined(VC3_GLES)
+    /* on the decode thread: ch_env, not genv (whose cache is the GL thread's) */
+    const char *rb = ch_env("GL_READBACK");
+    return !(rb && rb[0] == '1') && !ch_env("GL_READBACK_ALL");
+#else
+    /* VC3_GL_FLIP_ASYNC=1: the same on the Mac, to measure the overlap (the
+     * window then shows guest memory as the readback left it: a frame late) */
+    const char *e = ch_env("GL_FLIP_ASYNC");
+    return e && e[0] == '1';
+#endif
+}
+
+static const Nv2aBackend s_gl_backend = { gl_clear, gl_draw, gl_flip, gl_draw_raw, gl_flip_async };
 
 /* Register unless VC3_GL=0 (the executor's software rasteriser then draws). */
 void vc3_gl_backend_register(void)
@@ -5723,7 +6669,7 @@ void vc3_gl_backend_register(void)
     }
     s_st.on = genv("GL_STATS") != NULL;
     texstat_init();
-    s_scale = vc3_scale_get();
+    s_sx = s_sy = (float)vc3_scale_get();
     s_wide = vc3_wide_get();
     s_stereo = vc3_stereo_get();
     {

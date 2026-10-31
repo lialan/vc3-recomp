@@ -28,7 +28,12 @@ typedef struct {
     float fov[2][4];          /* the same as angles (radians), as OpenXR gives them */
     int scale;                /* the game's surfaces drawn at this scale while
                                  immersive (each eye spans the whole field of
-                                 view); 0: the display setting's */
+                                 view); 0: eye_w x eye_h when given (native),
+                                 else the display setting's */
+    int eye_w, eye_h;         /* native: each eye's picture this size, in
+                                 display pixels -- the game's screen-shaped
+                                 surfaces drawn exactly this big per eye,
+                                 the rest at the same (non-integer) scale */
     uint64_t id;              /* which head pose (for the log) */
 } Vc3VrView;
 
@@ -36,6 +41,12 @@ typedef struct {
  * immersive view is off (or there is no headset pose yet). Called by the
  * back end once a frame, at the flip, for the next frame. */
 int vc3_vr_view_latch(Vc3VrView *v);
+
+/* Host: the virtual screen's size on the display (pixels of one eye's
+ * picture), for drawing the game at that size when it is shown on the
+ * screen rather than immersive; 0 when there is none (no headset, or a
+ * fixed scale chosen). */
+int vc3_vr_screen_px(int *w, int *h);
 
 /* What the back end hands the host with each frame (vc3_quest_frame). */
 typedef struct {

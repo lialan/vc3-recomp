@@ -320,6 +320,11 @@ int main(int argc, char **argv)
      * composite quads) stay on the CPU, where the back end can see their
      * vertices. RECOMP_GPU_XF=ff keeps programs on the CPU, =0 everything. */
     setenv("RECOMP_GPU_XF", "all", 0);
+    /* The pushbuffer decode and the GL submission on two threads (the
+     * mission intro's executor CPU halves on the Mac); on the Quest both
+     * are reported to the headset as renderer workers (quest_host.c,
+     * perf_frame). RECOMP_PB_DECODE_THREAD=0 for one thread. */
+    setenv("RECOMP_PB_DECODE_THREAD", "1", 0);
     /* D3D's present path waits on a KEVENT it built in the device itself
      * (0x119254), set by its vblank ISR/DPC: it needs title-built events and
      * a 60 Hz vblank that honours the interrupt enables. */
