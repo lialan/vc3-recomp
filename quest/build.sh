@@ -25,10 +25,26 @@ for f in "$DEPS/sdl2-android/lib/libSDL2.so" "$DEPS/oxr/jni/arm64-v8a/libopenxr_
     [ -f "$f" ] || { echo "missing $f: build the dependencies first (see the header)"; exit 1; }
 done
 
+# The Quest's cores: the instruction set the Quest 2 / Pro (XR2: Cortex-A77)
+# and the Quest 3 / 3S (XR2 Gen 2: Cortex-A78 class) share, scheduled for the
+# A78. VC3_QUEST_CFLAGS replaces it.
+CPU_FLAGS=${VC3_QUEST_CFLAGS:--march=armv8.2-a+fp16+dotprod -mtune=cortex-a78}
+# Profile-guided optimisation, for later (not yet tried on the headset):
+#   VC3_QUEST_PGO=gen       an instrumented build; it writes .profraw files
+#                           under /sdcard/VirtuaCop3/pgo while it plays
+#   VC3_QUEST_PGO=<file>    a build optimised with that merged .profdata
+#                           (llvm-profdata merge -o vc3.profdata *.profraw)
+case "${VC3_QUEST_PGO:-}" in
+    "")  ;;
+    gen) CPU_FLAGS="$CPU_FLAGS -fprofile-generate=/sdcard/VirtuaCop3/pgo" ;;
+    *)   CPU_FLAGS="$CPU_FLAGS -fprofile-use=$VC3_QUEST_PGO -Wno-profile-instr-unprofiled" ;;
+esac
+
 B=$ROOT/build-quest
 cmake -S "$ROOT" -B "$B" -G Ninja \
     -DCMAKE_TOOLCHAIN_FILE="$NDK/build/cmake/android.toolchain.cmake" \
     -DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM=android-29 -DCMAKE_BUILD_TYPE=Release \
+    -DCMAKE_C_FLAGS="$CPU_FLAGS" \
     -DSDL2_DIR="$DEPS/sdl2-android/lib/cmake/SDL2" \
     -DOPENXR_DIR="$DEPS/oxr/prefab/modules/headers/include" \
     -DOPENXR_LIB="$DEPS/oxr/jni/arm64-v8a/libopenxr_loader.so" >/dev/null
