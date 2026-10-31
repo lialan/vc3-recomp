@@ -406,6 +406,11 @@ typedef struct {
     /* the fixed-function state last sent to this program (raw_uniforms) */
     Nv2aFixedState ff_last;
     int ff_valid;
+    /* Derived projection follows the program's ff_last cache, rather than
+     * whichever other program happened to draw immediately before it. */
+    VrGameProj ff_gp;
+    float ff_aa[2];
+    int ff_gp_ok;
     /* u_ascale as last sent (16 slots: past the uniform cache's size) */
     GLfloat ascale_last[16][4];
     int ascale_valid;
@@ -4808,6 +4813,27 @@ static void raw_uniforms_common(const Nv2aRawGeometry *g)
     cu2f(U->uvs0, g->uv_scale0[0], g->uv_scale0[1]);
 }
 
+/* Uniform and derived projection caches have the same owner. A cached
+ * program must restore its projection after another program used s_bgp. */
+static void raw_projection(const Nv2aRawGeometry *g)
+{
+    const Nv2aFixedState *ff = g->ff;
+    if (!U->ff_valid || memcmp(&U->ff_last, ff, sizeof *ff)
+        || U->ff_aa[0] != g->aa_sx || U->ff_aa[1] != g->aa_sy) {
+        U->ff_aa[0] = g->aa_sx;
+        U->ff_aa[1] = g->aa_sy;
+        U->ff_gp_ok = vr_game_proj_from(ff->composite, ff->mv[0], (int)ff->use_composite,
+                                        ff->proj, g->aa_sx, g->aa_sy, ff->c59, &U->ff_gp);
+        if (U->ff_gp_ok)
+            s_gp_good++;
+        else
+            s_gp_bad++;
+    }
+    s_bgp_ok = U->ff_gp_ok;
+    if (s_bgp_ok)
+        s_bgp = U->ff_gp;
+}
+
 static void raw_uniforms(const Nv2aRawGeometry *g)
 {
     Nv2aFixedState *lastp = &U->ff_last;
@@ -4818,21 +4844,7 @@ static void raw_uniforms(const Nv2aRawGeometry *g)
     GLuint gen[16];
 
     raw_uniforms_common(g);
-    {   /* the game's projection for this batch, when its matrices changed */
-        static float last_aa[2];
-        if (!(valid && !memcmp(&last, ff, sizeof last)) || last_aa[0] != g->aa_sx
-            || last_aa[1] != g->aa_sy) {
-            last_aa[0] = g->aa_sx;
-            last_aa[1] = g->aa_sy;
-            s_bgp_ok = vr_game_proj_from(ff->composite, ff->mv[0], (int)ff->use_composite,
-                                         ff->proj, g->aa_sx, g->aa_sy, ff->c59, &s_bgp);
-            if (s_bgp_ok) {
-                s_gp_good++;
-            } else {
-                s_gp_bad++;
-            }
-        }
-    }
+    raw_projection(g);
     if (valid && !memcmp(&last, ff, sizeof last))
         return;
     last = *ff;
