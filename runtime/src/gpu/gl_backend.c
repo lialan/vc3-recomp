@@ -1371,8 +1371,25 @@ static int prog_link(Prog *p, GLuint vs, GLuint fs, int feedback)
 #undef LOC
     {   /* a merged run's matrices (RECOMP_GL_MERGE) */
         GLuint bi = glGetUniformBlockIndex(p->prog, "FfMerge");
-        if (bi != GL_INVALID_INDEX)
+        if (bi != GL_INVALID_INDEX) {
+            static GLuint fallback;
+            static GLint fallback_bytes;
+            GLint bytes = 0;
             glUniformBlockBinding(p->prog, bi, MG_BINDING);
+            /* An active block needs storage even when u_merge is zero.
+             * ES validates all active blocks before drawing; leaving this
+             * unbound rejects ordinary fixed-function draws as well. The
+             * actual merged run replaces this binding before its draw. */
+            glGetActiveUniformBlockiv(p->prog, bi, GL_UNIFORM_BLOCK_DATA_SIZE, &bytes);
+            if (!fallback)
+                glGenBuffers(1, &fallback);
+            if (bytes > fallback_bytes) {
+                glBindBuffer(GL_UNIFORM_BUFFER, fallback);
+                glBufferData(GL_UNIFORM_BUFFER, bytes, NULL, GL_STATIC_DRAW);
+                fallback_bytes = bytes;
+            }
+            glBindBufferBase(GL_UNIFORM_BUFFER, MG_BINDING, fallback);
+        }
     }
     glUseProgram(p->prog);
     glUniform1i(glGetUniformLocation(p->prog, "u_tex"), 0);
