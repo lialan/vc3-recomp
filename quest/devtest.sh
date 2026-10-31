@@ -74,13 +74,18 @@ SCEN=(
   "immersive-1x|stereo=1;vr_screen=immersive;vr_res=1x|"
   "immersive-2x|stereo=1;vr_screen=immersive;vr_res=2x|"
   "immersive-native|stereo=1;vr_screen=immersive;vr_res=native|"
-  "immersive-native-foveation|stereo=1;vr_screen=immersive;vr_res=native|CHIHIRO_FOVEATION=1"
+  # native's levers, each turned off: foveation (on for immersive frames by
+  # default), the frame blitted straight into the swapchain, deferred clears
+  "immersive-native-nofov|stereo=1;vr_screen=immersive;vr_res=native|CHIHIRO_FOVEATION=0"
+  "immersive-native-nodirect|stereo=1;vr_screen=immersive;vr_res=native|CHIHIRO_XR_DIRECT=0"
+  "immersive-native-fovgain8|stereo=1;vr_screen=immersive;vr_res=native|CHIHIRO_FOV_GAIN=8"
   # E.S. mode (the pedal held from 64 s): the game's ~40 full-screen
   # distortion layers over the scene, combat's heaviest fill
   "immersive-2x-es|stereo=1;vr_screen=immersive;vr_res=2x|VC3_AUTOKEYS=$KEYS,$PEDAL"
   "immersive-native-es|stereo=1;vr_screen=immersive;vr_res=native|VC3_AUTOKEYS=$KEYS,$PEDAL"
-  "immersive-native-es-foveation|stereo=1;vr_screen=immersive;vr_res=native|VC3_AUTOKEYS=$KEYS,$PEDAL CHIHIRO_FOVEATION=1"
+  "immersive-native-es-nofov|stereo=1;vr_screen=immersive;vr_res=native|VC3_AUTOKEYS=$KEYS,$PEDAL CHIHIRO_FOVEATION=0"
   "immersive-2x-foveation|stereo=1;vr_screen=immersive;vr_res=2x|CHIHIRO_FOVEATION=1"
+  "immersive-2x-nofov|stereo=1;vr_screen=immersive;vr_res=2x|CHIHIRO_FOVEATION=0"
   "immersive-2x-bigcores|stereo=1;vr_screen=immersive;vr_res=2x|CHIHIRO_BIGCORES=1"
   "immersive-2x-72hz|stereo=1;vr_screen=immersive;vr_res=2x;vr_refresh=72|"
   "immersive-2x-nozoom|stereo=1;vr_screen=immersive;vr_res=2x|CHIHIRO_IMM_ZOOM=0"

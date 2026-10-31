@@ -2126,7 +2126,8 @@ static uint32_t s_va_hit, s_va_miss;     /* attribute pointers kept / set (log) 
 static int s_gt_on = -1;
 static GLuint s_gt_q[GT_RING];
 static uint32_t s_gt_va[GT_RING];
-static uint8_t s_gt_tr[GT_RING];          /* issued in a traced frame (VC3_GL_FTRACE) */
+static uint8_t s_gt_tr[GT_RING];          /* logged pass by pass ([GTSEG]) */
+static uint32_t s_gt_fr[GT_RING];         /* the frame each was issued in */
 static unsigned s_gt_head, s_gt_tail;     /* issued [tail, head) */
 static int s_gt_open;
 static uint32_t s_gt_cur_va;
@@ -2156,7 +2157,7 @@ static void gt_poll(void)
             break;
         glGetQueryObjectuiv(s_gt_q[k], GL_QUERY_RESULT, &ns);
         if (s_gt_tr[k])             /* the traced frame's passes, in order */
-            fprintf(stderr, "[GTSEG] %08X %.3f ms\n", s_gt_va[k], ns / 1e6);
+            fprintf(stderr, "[GTSEG] frame %u %08X %.3f ms\n", s_gt_fr[k], s_gt_va[k], ns / 1e6);
         s_gt_total += ns / 1e6;
         for (j = 0; j < GT_SURFS; j++)
             if (s_gt_sum[j].va == s_gt_va[k] || !s_gt_sum[j].va) {
@@ -2183,7 +2184,9 @@ static void gt_surface(uint32_t va)
     if (s_gt_head - s_gt_tail >= GT_RING - 1)
         return;                             /* all in flight: skip */
     s_gt_va[s_gt_head % GT_RING] = va;
-    s_gt_tr[s_gt_head % GT_RING] = s_ftr == 1;
+    /* VC3_GPU_TIME_SEG=1: every pass of every frame, in order ([GTSEG]) */
+    s_gt_tr[s_gt_head % GT_RING] = s_ftr == 1 || genv("GPU_TIME_SEG");
+    s_gt_fr[s_gt_head % GT_RING] = s_frame;
     if (s_ftr == 1)
         fprintf(stderr, "[GLTR] -- GPU timer: %08X\n", va);
     glBeginQuery(GL_TIME_ELAPSED, s_gt_q[s_gt_head % GT_RING]);
