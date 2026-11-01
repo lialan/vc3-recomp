@@ -1,0 +1,173 @@
+diff --git a/runtime/src/gpu/vulkan/vk_target.c b/runtime/src/gpu/vulkan/vk_target.c
+index b08a088..4501407 100644
+--- a/runtime/src/gpu/vulkan/vk_target.c
++++ b/runtime/src/gpu/vulkan/vk_target.c
+@@ -79,6 +79,8 @@ struct ChVkTarget {
+     VkImageView depth_view;
+     VkImage image;
+     VkDeviceMemory image_mem, read_mem, paired_color_mem;
++    void *read_map,*paired_color_map;
++    int read_coherent,paired_color_coherent;
+     VkBuffer paired_color;
+     VkBuffer read;
+     VkCommandPool pool;
+@@ -160,6 +162,17 @@ static int memory_type(VkPhysicalDevice gpu, uint32_t bits,
+         }
+     return 0;
+ }
++static int memory_coherent(VkPhysicalDevice gpu,uint32_t index) {
++    VkPhysicalDeviceMemoryProperties p;vkGetPhysicalDeviceMemoryProperties(gpu,&p);
++    return !!(p.memoryTypes[index].propertyFlags&VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
++}
++/* Persistent mappings do not change synchronization: callers still wait for
++ * GPU writes before invalidating/reading, and flush host writes before submit. */
++static VkResult staging_cache(ChVkTarget *t,const VkMappedMemoryRange *range,int upload) {
++    int coherent=range->memory==t->read_mem?t->read_coherent:t->paired_color_coherent;
++    if(coherent) return VK_SUCCESS;
++    return upload?vkFlushMappedMemoryRanges(t->device,1,range):vkInvalidateMappedMemoryRanges(t->device,1,range);
++}
+ static void destroy_pipeline(ChVkTarget *t,PipelineResources *p) {
+     if(p->pipeline) vkDestroyPipeline(t->device,p->pipeline,NULL);
+     if(p->descriptor_pool) vkDestroyDescriptorPool(t->device,p->descriptor_pool,NULL);
+@@ -274,9 +287,11 @@ void ch_vk_target_destroy(ChVkTarget *t) {
+     ch_vk_color_pack_destroy(t->color_pack);
+     ch_vk_color_pack_destroy(t->paired_color_pack);
+     if(t->paired_color) vkDestroyBuffer(t->device,t->paired_color,NULL);
++    if(t->paired_color_map) vkUnmapMemory(t->device,t->paired_color_mem);
+     if(t->paired_color_mem) vkFreeMemory(t->device,t->paired_color_mem,NULL);
+     ch_vk_depth_pack_destroy(t->depth_pack);
+     if(t->read) vkDestroyBuffer(t->device,t->read,NULL);
++    if(t->read_map) vkUnmapMemory(t->device,t->read_mem);
+     if(t->read_mem) vkFreeMemory(t->device,t->read_mem,NULL);
+     if(t->depth_view) vkDestroyImageView(t->device,t->depth_view,NULL);
+     if(t->depth) vkDestroyImage(t->device,t->depth,NULL);
+@@ -373,6 +388,8 @@ static VkResult create_depth(VkPhysicalDevice physical,VkDevice device,VkQueue q
+     }
+     TRY(vkAllocateMemory(device,&mem,NULL,&t->read_mem));
+     TRY(vkBindBufferMemory(device,t->read,t->read_mem,0));
++    TRY(vkMapMemory(device,t->read_mem,0,VK_WHOLE_SIZE,0,&t->read_map));
++    t->read_coherent=memory_coherent(physical,mem.memoryTypeIndex);
+     VkCommandPoolCreateInfo pool={.sType=VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
+         .flags=VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT,.queueFamilyIndex=family};
+     TRY(vkCreateCommandPool(device,&pool,NULL,&t->pool));
+@@ -453,6 +470,8 @@ static VkResult ensure_paired_color(ChVkTarget *t) {
+     }
+     TRY(vkAllocateMemory(t->device,&alloc,NULL,&memory));
+     TRY(vkBindBufferMemory(t->device,buffer,memory,0));
++    TRY(vkMapMemory(t->device,memory,0,VK_WHOLE_SIZE,0,&t->paired_color_map));
++    t->paired_color_coherent=memory_coherent(t->physical,alloc.memoryTypeIndex);
+     t->paired_color=buffer;t->paired_color_mem=memory;return VK_SUCCESS;
+ fail:
+     if(buffer) vkDestroyBuffer(t->device,buffer,NULL);
+@@ -809,12 +828,11 @@ static VkResult render_read(ChVkTarget *t, const float rgba[4], uint32_t clear_f
+     for(unsigned i=0;i<PIPELINE_SLOTS;i++) t->pipelines[i].set_used=0;
+     if(t->defer_color_readback) return VK_SUCCESS;
+     void *mapped;
+-    TRY(vkMapMemory(t->device,t->read_mem,0,VK_WHOLE_SIZE,0,&mapped));
++    mapped=t->read_map;
+     VkMappedMemoryRange invalidate={.sType=VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE,
+         .memory=t->read_mem,.offset=0,.size=VK_WHOLE_SIZE};
+-    result=vkInvalidateMappedMemoryRanges(t->device,1,&invalidate);
++    result=staging_cache(t,&invalidate,0);
+     if(result==VK_SUCCESS) memcpy(pixels,(char *)mapped+(t->color_bgra==2?t->bytes:0),(size_t)t->bytes);
+-    vkUnmapMemory(t->device,t->read_mem);
+     if(result!=VK_SUCCESS) goto fail;
+     return VK_SUCCESS;
+ fail:
+@@ -830,15 +848,10 @@ VkResult ch_vk_target_read_color(ChVkTarget *t,void *pixels,VkDeviceSize bytes)
+         if(!pixels || bytes<t->bytes) return VK_ERROR_INITIALIZATION_FAILED;
+         VkResult r=finish_batch_named(t,2,__func__);
+         if(r!=VK_SUCCESS) return r;
+-        void *mapped=NULL;
+-        r=vkMapMemory(t->device,t->read_mem,0,VK_WHOLE_SIZE,0,&mapped);
+-        if(r==VK_SUCCESS) {
+-            VkMappedMemoryRange invalidate={.sType=VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE,
+-                .memory=t->read_mem,.size=VK_WHOLE_SIZE};
+-            r=vkInvalidateMappedMemoryRanges(t->device,1,&invalidate);
+-            if(r==VK_SUCCESS) memcpy(pixels,(char *)mapped+(t->color_bgra==2?t->bytes:0),(size_t)t->bytes);
+-            vkUnmapMemory(t->device,t->read_mem);
+-        }
++        VkMappedMemoryRange invalidate={.sType=VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE,
++            .memory=t->read_mem,.size=VK_WHOLE_SIZE};
++        r=staging_cache(t,&invalidate,0);
++        if(r==VK_SUCCESS) memcpy(pixels,(char *)t->read_map+(t->color_bgra==2?t->bytes:0),(size_t)t->bytes);
+         if(r!=VK_SUCCESS) t->failed=1;
+         return r;
+     }
+@@ -1318,11 +1331,10 @@ VkResult ch_vk_target_export_image(ChVkTarget *t,VkImage destination,void *verif
+     TRY(vkWaitForFences(t->device,1,&t->fence,VK_TRUE,5000000000ULL));
+     if(verify) {
+         void *mapped;
+-        TRY(vkMapMemory(t->device,t->read_mem,0,VK_WHOLE_SIZE,0,&mapped));
++        mapped=t->read_map;
+         VkMappedMemoryRange range={.sType=VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE,.memory=t->read_mem,.size=VK_WHOLE_SIZE};
+-        result=vkInvalidateMappedMemoryRanges(t->device,1,&range);
++        result=staging_cache(t,&range,0);
+         if(result==VK_SUCCESS) memcpy(verify,mapped,(size_t)t->bytes);
+-        vkUnmapMemory(t->device,t->read_mem);
+         if(result!=VK_SUCCESS) goto fail;
+     }
+     return VK_SUCCESS;
+@@ -1361,11 +1373,10 @@ VkResult ch_vk_target_import_color(ChVkTarget *t,const void *rgba,VkDeviceSize b
+     if(!t || t->failed || !t->initialized || !rgba || bytes<t->bytes) return VK_ERROR_INITIALIZATION_FAILED;
+     VkResult result; void *mapped;
+     TRY(finish_batch_named(t,0,__func__));
+-    TRY(vkMapMemory(t->device,t->read_mem,0,VK_WHOLE_SIZE,0,&mapped));
++    mapped=t->read_map;
+     memcpy((char *)mapped+(t->color_bgra==2?t->bytes:0),rgba,(size_t)t->bytes);
+     VkMappedMemoryRange range={.sType=VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE,.memory=t->read_mem,.size=VK_WHOLE_SIZE};
+-    result=vkFlushMappedMemoryRanges(t->device,1,&range);
+-    vkUnmapMemory(t->device,t->read_mem);
++    result=staging_cache(t,&range,1);
+     if(result!=VK_SUCCESS) goto fail;
+     TRY(vkResetCommandBuffer(t->command,0)); TRY(vkResetFences(t->device,1,&t->fence));
+     VkCommandBufferBeginInfo begin={.sType=VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,.flags=VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT};
+@@ -1439,7 +1450,7 @@ static VkResult transfer_depth_stencil(ChVkTarget *t,void *depth,void *stencil,s
+ 
+     if(upload) {
+         TRY(finish_batch_named(t,0,__func__));
+-        TRY(vkMapMemory(t->device,t->read_mem,0,VK_WHOLE_SIZE,0,&mapped));
++        mapped=t->read_map;
+         if(gpu_packed) memcpy((char *)mapped+packed_offset,depth,(size_t)t->bytes);
+         else if(t->depth_format==VK_FORMAT_D24_UNORM_S8_UINT) {
+             uint32_t *z=mapped;
+@@ -1450,8 +1461,7 @@ static VkResult transfer_depth_stencil(ChVkTarget *t,void *depth,void *stencil,s
+             for(size_t i=0;i<t->bytes/4;i++) values[i]=ch_vk_depth_unpack(ch_vk_depth_pack(((const float *)depth)[i]));
+         } else memcpy(mapped,depth,(size_t)t->bytes);
+         if(!packed) memcpy((char *)mapped+t->bytes,stencil,(size_t)t->bytes/4);
+-        result=vkFlushMappedMemoryRanges(t->device,1,&range);
+-        vkUnmapMemory(t->device,t->read_mem);
++        result=staging_cache(t,&range,1);
+         if(result!=VK_SUCCESS) goto fail;
+     }
+     TRY(finish_batch_named(t,0,__func__));
+@@ -1470,8 +1480,8 @@ static VkResult transfer_depth_stencil(ChVkTarget *t,void *depth,void *stencil,s
+         t->depth_upload_wait_ns+=elapsed;t->timing_stats.depth_upload_wait_ns+=elapsed;}
+ readback:
+     if(!upload) {
+-        TRY(vkMapMemory(t->device,t->read_mem,0,VK_WHOLE_SIZE,0,&mapped));
+-        result=vkInvalidateMappedMemoryRanges(t->device,1,&range);
++        mapped=t->read_map;
++        result=staging_cache(t,&range,0);
+         if(result==VK_SUCCESS) {
+             if(gpu_packed) memcpy(depth,(char *)mapped+packed_offset,(size_t)t->bytes);
+             else if(t->depth_format==VK_FORMAT_D24_UNORM_S8_UINT) {
+@@ -1481,16 +1491,14 @@ readback:
+             } else memcpy(depth,mapped,(size_t)t->bytes);
+             if(!packed) memcpy(stencil,(char *)mapped+t->bytes,(size_t)t->bytes/4);
+         }
+-        vkUnmapMemory(t->device,t->read_mem);
+         if(result!=VK_SUCCESS) goto fail;
+     }
+     if(rgba) {
+-        TRY(vkMapMemory(t->device,t->paired_color_mem,0,VK_WHOLE_SIZE,0,&mapped));
++        mapped=t->paired_color_map;
+         VkMappedMemoryRange color_range={.sType=VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE,
+             .memory=t->paired_color_mem,.size=VK_WHOLE_SIZE};
+-        result=vkInvalidateMappedMemoryRanges(t->device,1,&color_range);
++        result=staging_cache(t,&color_range,0);
+         if(result==VK_SUCCESS) memcpy(rgba,(char *)mapped+(t->color_bgra==2?t->bytes:0),(size_t)t->bytes);
+-        vkUnmapMemory(t->device,t->paired_color_mem);
+         if(result!=VK_SUCCESS) goto fail;
+     }
+     if(upload_start) {t->depth_uploads++;t->depth_upload_ns+=time_ns()-upload_start;}
