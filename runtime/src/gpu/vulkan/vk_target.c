@@ -551,6 +551,7 @@ static VkResult record_batch(ChVkTarget *t,VkBuffer geometry,VkDeviceSize index_
     vkCmdDrawIndexed(t->command,index_count,1,0,0,0);
     if(t->quantized_depth && t->active_pipeline->key.depth.depthTestEnable &&
        t->active_pipeline->key.depth.depthWriteEnable) {
+        t->resource_stats.depth_roundtrips_by_compare[t->active_pipeline->key.depth.depthCompareOp]++;
         if(t->quantized_depth==4) {
             ch_vk_depth_quant_record_inline(t->depth_quant_inline,t->command);
         } else {

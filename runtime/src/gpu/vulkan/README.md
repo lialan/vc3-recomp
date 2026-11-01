@@ -66,3 +66,9 @@ input pass. No guest addresses, game identifiers, or scene heuristics enter
 this policy. It remains opt-in pending a demonstrated real-workload benefit.
 
 Input-attachment image usage is opt-in through `ch_vk_target_create_input_depth`; ordinary constructors preserve their original usage flags. Modes 3/4 reject ordinary targets. The backend selects this constructor only for `depth_quant_inline` on a D32 fallback.
+
+`vulkan_depth24_check` is a standalone native-depth reference fixture. The current
+D32 post-draw conversion deliberately retains the CPU-roundtrip contract, which
+can differ from native D24 visibility at rounding boundaries: repeated z=0.5
+with EQUAL passes D24 but fails that D32 path. The fixture records this distinction;
+passing the D32 oracle alone does not establish native-format comparison parity.

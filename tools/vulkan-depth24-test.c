@@ -36,6 +36,29 @@ done:
 
 /* Resident and strict round-trip paths must make the same depth decisions.
  * The main suite retains D32S8 to verify existing float-depth API clients. */
+/* Native D24 compares incoming fixed-point depth. The legacy D32 roundtrip
+ * instead compares an unrounded incoming float to a previously rounded float.
+ * Preserve a concrete counterexample before attempting a faster D24 fallback. */
+static int comparison_contracts(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,uint32_t family) {
+    ChVkTarget *targets[2]={0};unsigned char rgba[2][4];int failed=1;
+    const float black[]={0,0,0,1};const uint16_t indices[]={0,1,2};
+    ChVkColorVertex v[]={{{-1,-1,.5f,1},{1,0,0,1}},{{3,-1,.5f,1},{1,0,0,1}},{{-1,3,.5f,1},{1,0,0,1}}};
+#define CONTRACT(x) do {if(!(x)){fprintf(stderr,"depth comparison contract failed line%d\n",__LINE__);goto done;}}while(0)
+    for(unsigned path=0;path<2;path++) {
+        CONTRACT(ch_vk_target_create_depth(gpu,device,queue,family,1,1,path?VK_FORMAT_D32_SFLOAT_S8_UINT:VK_FORMAT_D24_UNORM_S8_UINT,&targets[path])==VK_SUCCESS);
+        CONTRACT(ch_vk_target_clear_read(targets[path],black,rgba[path],4)==VK_SUCCESS);
+        if(path) CONTRACT(ch_vk_target_depth_quantization(targets[path],1)==VK_SUCCESS);
+    }
+    for(unsigned draw=0;draw<2;draw++) {
+        for(unsigned i=0;i<3;i++){v[i].rgba[0]=!draw;v[i].rgba[1]=draw;}
+        Nv2aRenderState state={.color_mask=0x01010101,.depth_test_enable=1,.depth_write=1,.depth_func=draw?0x202:0x207};
+        for(unsigned path=0;path<2;path++) CONTRACT(ch_vk_target_draw_state_read(targets[path],NULL,v,3,indices,3,&state,rgba[path],4)==VK_SUCCESS);
+    }
+    CONTRACT(rgba[0][0]==0 && rgba[0][1]==255 && rgba[1][0]==255 && rgba[1][1]==0);
+    puts("PASS: contract distinction: repeated z=0.5 EQUAL passes native D24, fails legacy D32 post-draw rounding");failed=0;
+done:for(unsigned path=0;path<2;path++)ch_vk_target_destroy(targets[path]);return failed;
+#undef CONTRACT
+}
 int ch_test_depth24(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,uint32_t family) {
     enum {W=13,H=9,N=W*H};
     ChVkTarget *target[2]={0};
@@ -47,6 +70,7 @@ int ch_test_depth24(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,uint32_t 
     if(r==VK_ERROR_FORMAT_NOT_SUPPORTED) {puts("SKIP: native D24S8 attachment unsupported");return 0;}
     REQUIRE(r==VK_SUCCESS);
     REQUIRE(!packed_depth(gpu,device,queue,family));
+    REQUIRE(!comparison_contracts(gpu,device,queue,family));
     REQUIRE(ch_vk_target_create_depth(gpu,device,queue,family,W,H,VK_FORMAT_D24_UNORM_S8_UINT,&target[1])==VK_SUCCESS);
     const float black[]={0,0,0,1};
     const uint32_t values[]={0,1,2,0x123456,0x7fffff,0x800000,0xfffffe,0xffffff};

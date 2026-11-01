@@ -443,3 +443,47 @@ same scene with a different hand/animation pose. This does not prove whole-game
 parity or establish the cause of every pixel difference. Exact shared fixtures
 remain the correctness evidence. Current HEAD includes the CPU validation win;
 no game-FPS claim is made for that CPU-only change yet. All sessions terminal.
+
+## Depth comparison profile and native D24 reference (2026-11-01)
+
+A batch-local redundant-roundtrip experiment passed exact shared fixtures
+(40 draws,15 skips across EQUAL/NEVER/alphaNEVER/stencilNEVER, all4 modes), but
+/tmp/vc3-skip-unchanged-on completed2400 frames with403131 conversions and ZERO
+skips. Removed that runtime optimization and diagnostic override; its patch is
+/tmp/vc3-skip-unchanged.patch, immutable tested binary /tmp/vc3-skip-unchanged-vc3.
+Do not claim a game speedup. Retained only a useful shared profile histogram:
+ChVkTargetResourceStats.depth_roundtrips_by_compare counts batched full-surface
+conversions in VkCompareOp order; backend reports live-target totals.
+
+/tmp/vc3-depth-histogram completed1800 frames, exit0, on KosmicKrisp. Counts:
+LEQUAL256792, ALWAYS8993, others0. Thus96.6% are LEQUAL, and an ALWAYS-only
+fragment rounding optimization would address little of the main cost. Combat
+windows1321/1441/1561:21.13/24.66/24.72 FPS. This includes the previously committed
+CPU validation improvement; it is not an isolated measurement of that change.
+
+Added standalone vulkan_depth24_check using the existing depth24 fixture without
+EGL/OpenGL. KosmicKrisp skips (D24 unsupported); local lavapipe/llvmpipe passes
+65536 exact packed words plus native resident-vs-roundtrip behavior. Crucially,
+a new explicit counterexample verifies DIFFERENT semantics: writez=.5 with
+ALWAYS, then drawz=.5 withEQUAL. Native D24 passes (green); current D32 post-draw
+rounding fails (red). /tmp/vc3-depth-contract-lvp.log passes with validation and
+sync validation requested, no VUID/SYNC diagnostics. This is Vulkan native-format
+reference evidence, not console hardware proof. Do not treat the old D32 CPU
+roundtrip oracle as automatically interchangeable with native D24 comparisons.
+
+/tmp/vc3-native-d24-lvp completed1800 frames, exit0, using the same immutable
+/tmp/vc3-depth-histogram-vc3 with software Vulkan ICD
+/opt/homebrew/share/vulkan/icd.d/lvp_icd.aarch64.json. All conversion histogram
+counts are0 (native D24 path). Combat windows1321/1441/1561 are
+40.37/42.46/43.27 FPS, p95=26.81/25.17/25.14ms. Frame1680 visually shows the
+expected active combat scene; no cross-driver exact-frame parity claim. This is
+a different driver/device type, not an isolated code A/B or headset result.
+
+Mac main and Android offscreen builds pass. No headset/ADB/device activity.
+All sessions are terminal. Next: investigate an opt-in D32 fragment-depth path
+against native D24 as the reference (all8 comparisons, ties, stencil, queries,
+interpolated depths). Rounding incoming depth before the hardware comparison may
+match native fixed-point behavior and remove per-draw full-target copies, but it
+is NOT implemented and must not silently replace the legacy D32 contract. The
+semantic distinction is now executable test evidence. Goal remains open: no
+smooth60FPS/Quest acceptance claim.

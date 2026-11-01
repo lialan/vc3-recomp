@@ -9,6 +9,8 @@ static const Nv2aBackend *registered;
 void nv2a_backend_register(const Nv2aBackend *backend) {registered=backend;}
 uint32_t nv2a_backend_presented_va(void) {abort();} /* No guest flip in this fixture. */
 int ch_test_render_textures(VkPhysicalDevice,VkDevice,VkQueue,uint32_t);
+#elif defined(CH_VK_DEPTH24_TEST)
+int ch_test_depth24(VkPhysicalDevice,VkDevice,VkQueue,uint32_t);
 #elif defined(CH_VK_DEPTH_ROUNDTRIP_BENCH)
 int ch_test_depth_roundtrip(VkPhysicalDevice,VkDevice,VkQueue,uint32_t);
 #elif defined(CH_VK_BATCH_TEST)
@@ -75,6 +77,8 @@ int main(void) {
 #ifdef CH_VK_RENDER_TEXTURE_TEST
     result=ch_test_render_textures(gpu,device,queue,family);
     if(registered) {fputs("Render fixture left an attached backend\n",stderr);result=1;}
+#elif defined(CH_VK_DEPTH24_TEST)
+    result=ch_test_depth24(gpu,device,queue,family);
 #elif defined(CH_VK_DEPTH_ROUNDTRIP_BENCH)
     result=ch_test_depth_roundtrip(gpu,device,queue,family);
 #elif defined(CH_VK_BATCH_TEST)
