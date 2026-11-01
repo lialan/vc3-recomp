@@ -518,3 +518,20 @@ legacy timeout and a child-process stuck-fence watchdog. This verifies the
 wait logic/ABI, not real GPU scheduling or game correctness. A fresh mission
 replay with the strict flag and fence logging is testing the hypothesis.
 Evidence is under `validation/direct-vulkan-fence-diagnostic/`.
+
+The strict mission experiment reached at least frame 1,020 without a rejected
+draw or malformed surface state before the external 220-second runner limit.
+It did not reach the requested 1,100-frame limit, so its report correctly marks
+execution incomplete. Eight diagnostic messages confirm real waits beyond the
+legacy 250-ms threshold, followed by continued semaphore/frame progress rather
+than the watchdog. The frame-800 capture contains a visible 3D city mission
+intro. This supports the premature-reuse hypothesis, but is not yet a complete
+controlled reproduction or a combat/performance pass. A same-binary run with
+the strict flag disabled is the control.
+
+That trace also identifies texture-cache churn as a performance issue: around
+frame 1,020 it has 18,368 uploads and 18,304 evictions, with only 19.8 MiB live
+against a 64-MiB byte budget. The 64-entry limit can evict small scene textures
+while much of the byte budget remains free. GL uses 2,048 texture slots. A
+capacity experiment should retain byte/pin bounds and measure upload/eviction
+counts on the same scene, independently of strict-fence correctness.

@@ -1,0 +1,44 @@
+[Vulkan texture cache] hits=0 uploads=1 evictions=0 live=0.0MiB
+[Vulkan] completed frame 1: 640x480, guest=80408000
+[Vulkan texture cache] hits=3121 uploads=14 evictions=0 live=10.6MiB
+[Vulkan] completed frame 60: 640x480, guest=80534000
+[Vulkan texture cache] hits=6354 uploads=14 evictions=0 live=10.6MiB
+[Vulkan] completed frame 120: 640x480, guest=80660000
+[Vulkan texture cache] hits=9593 uploads=15 evictions=0 live=11.4MiB
+[Vulkan] completed frame 180: 640x480, guest=80534000
+[Vulkan texture cache] hits=12834 uploads=15 evictions=0 live=11.4MiB
+[Vulkan] completed frame 240: 640x480, guest=80408000
+[Vulkan texture cache] hits=15999 uploads=23 evictions=0 live=36.6MiB
+[Vulkan] completed frame 300: 640x480, guest=80660000
+[Vulkan texture cache] hits=17569 uploads=172 evictions=150 live=61.7MiB
+[Vulkan] completed frame 360: 640x480, guest=80660000
+[Vulkan texture cache] hits=19157 uploads=322 evictions=300 live=61.7MiB
+[Vulkan] completed frame 420: 640x480, guest=80660000
+[Vulkan texture cache] hits=20748 uploads=470 evictions=448 live=61.7MiB
+[Vulkan] completed frame 480: 640x480, guest=80660000
+[Vulkan texture cache] hits=22884 uploads=597 evictions=571 live=61.8MiB
+[Vulkan] completed frame 540: 640x480, guest=80660000
+[Vulkan texture cache] hits=25682 uploads=639 evictions=605 live=63.9MiB
+[Vulkan] completed frame 600: 640x480, guest=80660000
+[Vulkan texture cache] hits=29279 uploads=641 evictions=607 live=62.5MiB
+[Vulkan] completed frame 660: 640x480, guest=80660000
+[Vulkan texture cache] hits=33101 uploads=641 evictions=607 live=62.5MiB
+[Vulkan] completed frame 720: 640x480, guest=80534000
+[D3D] BlockOnTime(0x00000D4F) awaiting actual GPU completion beyond 250 ms: head 0x00000D55 sem 0x00000D4D
+[D3D] BlockOnTime(0x00000D57) awaiting actual GPU completion beyond 250 ms: head 0x00000D6B sem 0x00000D53
+[D3D] BlockOnTime(0x00000D61) awaiting actual GPU completion beyond 250 ms: head 0x00000D75 sem 0x00000D5B
+[D3D] BlockOnTime(0x00000D6B) awaiting actual GPU completion beyond 250 ms: head 0x00000D7F sem 0x00000D65
+[D3D] BlockOnTime(0x00000D75) awaiting actual GPU completion beyond 250 ms: head 0x00000D89 sem 0x00000D6F
+[D3D] BlockOnTime(0x00000D7F) awaiting actual GPU completion beyond 250 ms: head 0x00000D93 sem 0x00000D79
+[D3D] BlockOnTime(0x00000D89) awaiting actual GPU completion beyond 250 ms: head 0x00000D9D sem 0x00000D83
+[D3D] BlockOnTime(0x00000D93) awaiting actual GPU completion beyond 250 ms: head 0x00000DA7 sem 0x00000D8D
+[Vulkan texture cache] hits=40138 uploads=2623 evictions=2559 live=34.8MiB
+[Vulkan] completed frame 780: 640x480, guest=80534000
+[Vulkan texture cache] hits=55020 uploads=4313 evictions=4249 live=29.6MiB
+[Vulkan] completed frame 840: 640x480, guest=80534000
+[Vulkan texture cache] hits=68557 uploads=9242 evictions=9178 live=29.6MiB
+[Vulkan] completed frame 900: 640x480, guest=80534000
+[Vulkan texture cache] hits=82377 uploads=13764 evictions=13700 live=21.8MiB
+[Vulkan] completed frame 960: 640x480, guest=80534000
+[Vulkan texture cache] hits=93481 uploads=18368 evictions=18304 live=19.8MiB
+[Vulkan] completed frame 1020: 640x480, guest=80534000
