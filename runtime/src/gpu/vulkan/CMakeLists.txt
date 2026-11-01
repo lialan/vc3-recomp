@@ -154,6 +154,11 @@ find_package(Threads REQUIRED)
 target_link_libraries(chihiro_vulkan PUBLIC "${CHIHIRO_VULKAN_LIBRARY}" m Threads::Threads)
 option(CHIHIRO_VULKAN_CPU_TESTS "Build guest storage tests without a graphics context" OFF)
 if(CHIHIRO_VULKAN_CPU_TESTS)
+    add_executable(nv2a_deferred_stream_test "${CH_VK_ROOT}/tools/nv2a-deferred-stream-test.c"
+        "${XBOXRECOMP_DIR}/src/kernel/nv2a_pb_defer.c")
+    target_include_directories(nv2a_deferred_stream_test PRIVATE "${XBOXRECOMP_DIR}/src")
+    target_compile_options(nv2a_deferred_stream_test PRIVATE -Wall -Wextra -Werror)
+    target_link_libraries(nv2a_deferred_stream_test PRIVATE Threads::Threads)
     # Include the executor in this CPU fixture to compare bulk uploads with
     # its private coordinate sampler. Dead-strip unrelated runtime entrypoints.
     add_executable(nv2a_texture_decode_test "${CH_VK_ROOT}/tools/nv2a-texture-decode-test.c")
@@ -190,6 +195,7 @@ if(CHIHIRO_VULKAN_TESTS)
     target_include_directories(vulkan_defer_flush_test PRIVATE "${XBOXRECOMP_DIR}/src/kernel"
         "${XBOXRECOMP_DIR}/src" "${XBOXRECOMP_DIR}/include" "${XBOXRECOMP_DIR}/templates/runtime")
     target_link_libraries(vulkan_defer_flush_test PRIVATE Threads::Threads)
+
     add_library(chihiro_vulkan_test_executor OBJECT
         "${XBOXRECOMP_DIR}/src/kernel/nv2a_pb_exec.c"
         "${XBOXRECOMP_DIR}/src/kernel/nv2a_pb_defer.c" "${XBOXRECOMP_DIR}/src/kernel/nv2a_vsh_interp.c" "${XBOXRECOMP_DIR}/src/kernel/nv2a_flip_hold.c" "${XBOXRECOMP_DIR}/src/kernel/nv2a_pb_scan.c")
