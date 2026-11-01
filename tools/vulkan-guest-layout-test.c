@@ -128,6 +128,14 @@ int main(void)
         }
         CHECK(ch_vk_guest_depth_store(&ds,&dr,guest,sizeof guest,dz,st)==VK_SUCCESS);
         CHECK(!memcmp(guest,expected,sizeof guest));
+        float loaded[51];uint8_t loaded_stencil[51];
+        CHECK(ch_vk_guest_depth_load(&ds,&dr,guest,sizeof guest,loaded,loaded_stencil)==VK_SUCCESS);
+        for(unsigned i=0;i<51;i++) {
+            double scale=bpp==2?65535.0:16777215.0;
+            uint32_t z=(uint32_t)((double)dz[i]*scale+0.5);
+            CHECK(loaded[i]==(float)((double)z/scale));
+            CHECK(loaded_stencil[i]==(bpp==2?0:st[i]));
+        }
     }
     puts("PASS: rectangular Morton color/Z24S8/Z16, packed depth, pitched/unaligned ARGB fast-vs-scalar rows, padding, bounds, alias loads and atomic rejection");
     return 0;

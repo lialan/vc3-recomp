@@ -17,6 +17,29 @@ VkResult ch_vk_guest_depth_load(const Nv2aSurface *s,const Nv2aRenderState *rs,
     if(!depth || !stencil) return VK_ERROR_INITIALIZATION_FAILED;
     ChVkGuestLayout layout;
     VkResult r=validate(s,rs,guest,bytes,&layout); if(r!=VK_SUCCESS) return r;
+#if defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
+    if(!layout.swizzled) {
+        const uint8_t *base=(const uint8_t *)guest+rs->zeta_va;
+        for(uint32_t y=0;y<s->height;y++) {
+            const uint8_t *row=base+(size_t)y*layout.pitch;
+            size_t start=(size_t)y*s->width;
+            if(layout.bytes_per_pixel==4) {
+                for(uint32_t x=0;x<s->width;x++) {
+                    uint32_t word;memcpy(&word,row+(size_t)x*4,4);
+                    depth[start+x]=(float)((double)(word>>8)/16777215.0);
+                    stencil[start+x]=(uint8_t)word;
+                }
+            } else {
+                for(uint32_t x=0;x<s->width;x++) {
+                    uint16_t word;memcpy(&word,row+(size_t)x*2,2);
+                    depth[start+x]=(float)((double)word/65535.0);
+                    stencil[start+x]=0;
+                }
+            }
+        }
+        return VK_SUCCESS;
+    }
+#endif
     const volatile uint8_t *base=(const volatile uint8_t *)guest+rs->zeta_va;
     for(uint32_t y=0;y<s->height;y++) for(uint32_t x=0;x<s->width;x++) {
         size_t at=(size_t)ch_vk_guest_offset(&layout,x,y),i=(size_t)y*s->width+x;
