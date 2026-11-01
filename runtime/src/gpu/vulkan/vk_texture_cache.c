@@ -16,8 +16,8 @@ struct ChVkTextureCache {
     uint64_t clock;
     ChVkTextureCacheStats stats;
 };
-static VkResult storage(const Nv2aTexture *t,size_t *span,size_t *palette) {
-    if(!t || !t->width || !t->height || (uint64_t)t->width*t->height>SIZE_MAX/4)
+VkResult ch_vk_texture_storage_span(const Nv2aTexture *t,size_t *span,size_t *palette) {
+    if(!span || !palette || !t || !t->width || !t->height || (uint64_t)t->width*t->height>SIZE_MAX/4)
         return VK_ERROR_INITIALIZATION_FAILED;
     if(t->cube) return VK_NOT_READY;
     uint64_t n;
@@ -98,7 +98,7 @@ VkResult ch_vk_texture_cache_resolve(void *context,const Nv2aTexture *t,ChVkSamp
     memset(out,0,sizeof *out);
     if(!c) return VK_ERROR_INITIALIZATION_FAILED;
     size_t span,palette;
-    VkResult r=storage(t,&span,&palette);
+    VkResult r=ch_vk_texture_storage_span(t,&span,&palette);
     if(r!=VK_SUCCESS) return r;
     if(t->offset>c->config.guest_bytes || span>c->config.guest_bytes-t->offset ||
        (palette && (t->palette>c->config.guest_bytes || palette>c->config.guest_bytes-t->palette)))

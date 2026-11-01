@@ -747,6 +747,10 @@ int ch_test_guest_textures(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,ui
         extern int ch_test_texture_cache(VkPhysicalDevice,VkDevice,VkQueue,uint32_t,void *,size_t,ChVkDecodeTexture);
         failed=ch_test_texture_cache(gpu,device,queue,family,guest.bytes,sizeof guest.bytes,nv2a_backend_decode_texture);
     }
+    if(!failed) {
+        extern int ch_test_depth_resident(VkPhysicalDevice,VkDevice,VkQueue,uint32_t,void *,size_t,ChVkDecodeTexture);
+        failed=ch_test_depth_resident(gpu,device,queue,family,guest.bytes,sizeof guest.bytes,nv2a_backend_decode_texture);
+    }
     if(!failed) failed=check_simple_combiner(gpu,device,queue,family);
     if(!failed && getenv("CHIHIRO_VULKAN_BENCH")) failed=bench_guest_draws(gpu,device,queue,family);
     ch_vk_target_destroy(target);

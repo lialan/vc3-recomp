@@ -2,13 +2,14 @@
 #include "vk_depth_guest.h"
 #include "vk_guest_layout.h"
 #include "vk_texture_cache.h"
+#include "vk_depth_resident.h"
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
 #include <time.h>
 #define MAX_SURFACES 32
-struct Surface { Nv2aSurface guest; uint32_t zeta; Nv2aRenderState state; float *depth; uint8_t *stencil; ChVkTarget *target; unsigned char *rgba,*observed,*cpu,*raw; size_t raw_span; int observed_valid,resident,color_dirty; size_t bytes; };
-struct ChVkBackend { struct {int enabled;uint64_t start,n,surface,coherence,imports,draw,store;} profile; ChVkBackendConfig host; ChVkTextureCache *textures; uint64_t frames; struct Surface surfaces[MAX_SURFACES]; unsigned count; };
+struct Surface { Nv2aSurface guest; uint32_t zeta; Nv2aRenderState state; float *depth; uint8_t *stencil; ChVkTarget *target; unsigned char *rgba,*observed,*cpu,*raw; size_t raw_span; int observed_valid,resident,color_dirty,native_z24; size_t bytes; };
+struct ChVkBackend { struct {int enabled;uint64_t start,n,surface,coherence,imports,draw,store;} profile; ChVkBackendConfig host; ChVkTextureCache *textures; ChVkDepthResident *zeta; uint64_t frames; struct Surface surfaces[MAX_SURFACES]; unsigned count; };
 static ChVkBackend *active;
 static void flush_color(struct Surface *);
 static void observe_guest_colors(void);
@@ -38,6 +39,10 @@ static struct Surface *surface(const Nv2aSurface *s,const Nv2aRenderState *rs) {
     ChVkGuestLayout layout;
     VkResult layout_result=ch_vk_guest_layout(rs->surface_format,s->width,s->height,s->pitch,s->bytes_per_pixel,&layout);
     if(layout_result!=VK_SUCCESS) fatal(layout_result,"color surface layout");
+    if(active->zeta) {
+        VkResult r=ch_vk_depth_resident_check_color(active->zeta,s->color_va,(size_t)layout.span);
+        if(r!=VK_SUCCESS) fatal(r,"resident depth/color alias");
+    }
     uint64_t span=layout.span;
     if(!s->width || !s->height ||
        (s->bytes_per_pixel!=2 && s->bytes_per_pixel!=4) ||
@@ -82,7 +87,13 @@ static struct Surface *surface(const Nv2aSurface *s,const Nv2aRenderState *rs) {
         if(!f->cpu || !f->raw) fatal(VK_ERROR_OUT_OF_HOST_MEMORY,"CPU color staging");
     }
     if(!f->rgba) fatal(VK_ERROR_OUT_OF_HOST_MEMORY,"surface readback allocation");
-    VkResult r=ch_vk_target_create(active->host.physical,active->host.device,active->host.queue,
+    VkResult r=VK_ERROR_FORMAT_NOT_SUPPORTED;
+    if(active->zeta && ((rs->surface_format>>4)&15)==2) {
+        r=ch_vk_target_create_depth(active->host.physical,active->host.device,active->host.queue,
+            active->host.family,s->width,s->height,VK_FORMAT_D24_UNORM_S8_UINT,&f->target);
+        if(r==VK_SUCCESS) f->native_z24=1;
+    }
+    if(r==VK_ERROR_FORMAT_NOT_SUPPORTED) r=ch_vk_target_create(active->host.physical,active->host.device,active->host.queue,
         active->host.family,s->width,s->height,&f->target);
     if(r!=VK_SUCCESS) fatal(r,"target creation");
     if(active->host.precise_queries) {
@@ -112,6 +123,11 @@ static void store(struct Surface *f,VkResult result,const char *operation,int de
         }
     }
     if(f->state.zeta_va && depth_dirty) {
+        if(active->zeta && f->native_z24 && ((f->state.surface_format>>4)&15)==2) {
+            result=ch_vk_depth_resident_dirty(active->zeta,f->target);
+            if(result!=VK_SUCCESS) fatal(result,"resident depth ownership");
+            return;
+        }
         result=ch_vk_target_read_depth_stencil(f->target,f->depth,f->stencil,f->bytes/4);
         if(result==VK_SUCCESS) result=ch_vk_guest_depth_store(&f->guest,&f->state,active->host.guest_base,active->host.guest_bytes,f->depth,f->stencil);
         if(result!=VK_SUCCESS) fatal(result,"depth writeback");
@@ -165,12 +181,20 @@ static void observe_guest_colors(void) {
 static void flush(void) {
     observe_guest_colors();
     for(unsigned i=0;i<active->count;i++) flush_color(&active->surfaces[i]);
+    if(active->zeta) {
+        VkResult r=ch_vk_depth_resident_flush(active->zeta);
+        if(r!=VK_SUCCESS) fatal(r,"resident depth completion");
+    }
 }
 static void flush_sampled_colors(const Nv2aBatch *b) {
-    if(!active->host.resident_color) return;
+    if(!active->host.resident_color && !active->zeta) return;
     for(unsigned stage=0;stage<4;stage++) {
         const Nv2aTexture *tx=b->stage[stage]?b->stage[stage]:(stage==0?b->texture:NULL);
         if(!tx) continue;
+        if(active->zeta) {
+            VkResult r=ch_vk_depth_resident_sample(active->zeta,tx);
+            if(r!=VK_SUCCESS) fatal(r,"sampled resident depth");
+        }
         for(unsigned i=0;i<active->count;i++) {
             struct Surface *f=&active->surfaces[i];
             ChVkGuestLayout layout;
@@ -191,6 +215,31 @@ static void import_color(struct Surface *f) {
 }
 static void import_depth(struct Surface *f) {
     if(!f->state.zeta_va) return;
+    if(active->zeta) {
+        ChVkGuestLayout depth_layout;
+        uint32_t format=(f->state.surface_format>>4)&15;
+        VkResult r=ch_vk_guest_layout(f->state.surface_format,f->guest.width,f->guest.height,
+            f->state.zeta_pitch,format==1?2:4,&depth_layout);
+        if(r!=VK_SUCCESS) fatal(r,"resident depth layout");
+        /* Cross color/depth reinterpretation needs a unified image owner.
+         * Fail explicitly rather than letting either resident view go stale. */
+        for(unsigned i=0;i<active->count;i++) {
+            struct Surface *c=&active->surfaces[i];ChVkGuestLayout color_layout;
+            r=ch_vk_guest_layout(c->state.surface_format,c->guest.width,c->guest.height,
+                c->guest.pitch,c->guest.bytes_per_pixel,&color_layout);
+            if(r!=VK_SUCCESS) fatal(r,"depth alias color layout");
+            if((uint64_t)c->guest.color_va<f->state.zeta_va+depth_layout.span &&
+               (uint64_t)f->state.zeta_va<c->guest.color_va+color_layout.span)
+                fatal(VK_ERROR_FEATURE_NOT_PRESENT,"color/depth storage alias");
+        }
+        if(f->native_z24 && format==2) {
+            r=ch_vk_depth_resident_bind(active->zeta,f->target,&f->guest,&f->state);
+            if(r!=VK_SUCCESS) fatal(r,"resident depth bind");
+            return;
+        }
+        r=ch_vk_depth_resident_release(active->zeta);
+        if(r!=VK_SUCCESS) fatal(r,"resident depth strict transition");
+    }
     VkResult r=ch_vk_guest_depth_load(&f->guest,&f->state,active->host.guest_base,active->host.guest_bytes,f->depth,f->stencil);
     if(r!=VK_SUCCESS) fprintf(stderr,"[Vulkan] depth surface=%08X zeta=%08X format=%08X pitch=%u size=%ux%u\n",
         f->guest.color_va,f->state.zeta_va,f->state.surface_format,f->state.zeta_pitch,f->guest.width,f->guest.height);
@@ -248,6 +297,12 @@ static void flip(void) {
     flush();
     active->frames++;
     const char *profile=getenv("CHIHIRO_VULKAN_PROFILE");
+    if(active->zeta && active->profile.enabled && (active->frames==1 || active->frames%60==0)) {
+        ChVkDepthResidentStats stats;ch_vk_depth_resident_stats(active->zeta,&stats);
+        fprintf(stderr,"[Vulkan depth residency] binds=%llu imports=%llu writebacks=%llu CPU merges=%llu\n",
+            (unsigned long long)stats.binds,(unsigned long long)stats.imports,
+            (unsigned long long)stats.writebacks,(unsigned long long)stats.cpu_merges);
+    }
     if(active->textures && profile && atoi(profile) && (active->frames==1 || active->frames%60==0)) {
         ChVkTextureCacheStats stats;ch_vk_texture_cache_stats(active->textures,&stats);
         fprintf(stderr,"[Vulkan texture cache] hits=%llu uploads=%llu evictions=%llu live=%.1fMiB\n",
@@ -303,7 +358,7 @@ VkResult ch_vk_backend_create(const ChVkBackendConfig *config,ChVkBackend **out)
     if(!config || !config->physical || !config->device || !config->queue ||
        !config->guest_base || !config->guest_bytes || !config->decode ||
        (!!config->lock_queue != !!config->unlock_queue) ||
-       (config->resident_color && (config->render_clear || config->render_draw ||
+       ((config->resident_color || config->resident_depth) && (config->render_clear || config->render_draw ||
         config->render_flip || config->guest_color_changed)))
         return VK_ERROR_INITIALIZATION_FAILED;
     ChVkBackend *b=calloc(1,sizeof(*b));
@@ -311,27 +366,36 @@ VkResult ch_vk_backend_create(const ChVkBackendConfig *config,ChVkBackend **out)
     b->host=*config;
     const char *profile=getenv("CHIHIRO_VULKAN_PROFILE");
     b->profile.enabled=profile && atoi(profile)!=0;
+    if(config->resident_depth) {
+        VkResult r=ch_vk_depth_resident_create(config->guest_base,config->guest_bytes,&b->zeta);
+        if(r!=VK_SUCCESS) {free(b);return r;}
+    }
     if(config->cache_textures) {
         ChVkTextureCacheConfig texture_config={.physical=config->physical,.device=config->device,
             .queue=config->queue,.family=config->family,.guest_base=config->guest_base,
             .guest_bytes=config->guest_bytes,.decode=config->decode};
         VkResult r=ch_vk_texture_cache_create(&texture_config,&b->textures);
-        if(r!=VK_SUCCESS) {free(b);return r;}
+        if(r!=VK_SUCCESS) {ch_vk_depth_resident_destroy(b->zeta);free(b);return r;}
     }
     *out=b; return VK_SUCCESS;
 }
 VkResult ch_vk_backend_attach(ChVkBackend *b) {
     if(!b || active) return VK_ERROR_INITIALIZATION_FAILED;
     callbacks.draw_raw=b->host.observe_raw?locked_observe_raw:NULL;
-    callbacks.flush=b->host.resident_color?locked_flush:NULL;
+    callbacks.flush=(b->host.resident_color || b->host.resident_depth)?locked_flush:NULL;
     active=b; nv2a_backend_register(&callbacks); return VK_SUCCESS;
 }
 void ch_vk_backend_destroy(ChVkBackend *b) {
     if(!b) return;
     queue_lock(b);
+    if(b->zeta) {
+        VkResult r=ch_vk_depth_resident_release(b->zeta);
+        if(r!=VK_SUCCESS) fatal(r,"resident depth teardown");
+    }
     if(active==b) { nv2a_backend_register(NULL); active=NULL; }
     for(unsigned i=0;i<b->count;i++) { ch_vk_target_destroy(b->surfaces[i].target); free(b->surfaces[i].rgba); free(b->surfaces[i].observed); free(b->surfaces[i].cpu); free(b->surfaces[i].raw); free(b->surfaces[i].depth); free(b->surfaces[i].stencil); }
     ch_vk_texture_cache_destroy(b->textures);
+    ch_vk_depth_resident_destroy(b->zeta);
     queue_unlock(b);
     free(b);
 }

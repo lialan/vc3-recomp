@@ -284,5 +284,36 @@ passes. The Mac KosmicKrisp device reports D24S8 unsupported and the standalone
 fixture explicitly skips there; it provides no Mac D24 correctness evidence.
 See `validation/direct-vulkan-depth24/quest-renderer-checks.log`.
 
-No game depth residency has been enabled yet. Its next step must handle CPU
-edits and overlapping/shared zeta ranges before removing strict writeback.
+### Opt-in depth residency
+
+`CHIHIRO_VULKAN_RESIDENT_DEPTH=1` now selects native D24S8 residency when
+supported. The default remains the strict path while game validation continues.
+Unsupported D24 attachment formats retain strict D32 transfers; Z16 also stays
+strict. One depth owner is retained across consecutive draws. Target/zeta/layout
+changes publish the previous owner before importing the next, preserving shared
+and overlapping depth ranges. Exact raw snapshots detect CPU edits, merging
+depth and stencil separately into the GPU image. Padding does not cause a GPU
+merge. Fences, flips, texture/palette aliases and teardown publish pending depth.
+Unknown texture storage conservatively flushes. Color/depth storage aliasing
+fails explicitly until unified image ownership is implemented. Host routing
+hooks currently require both residency modes disabled.
+
+Actual Quest tests cover 100 repeated bindings with one import/no writebacks,
+depth-only and stencil-only CPU edits while the other GPU component remains
+dirty, row padding, Morton storage, shared and shifted zeta ownership, texture
+ranges starting before depth, P8 palette aliases, invalid bounds, precise depth
+visibility queries, and real executor semaphore publication. All existing
+renderer/deferred/XR factory tests also passed. See
+`validation/direct-vulkan-depth-resident/quest-renderer-checks.log`.
+
+A fresh opt-in game run of APK
+`f3f05a6f2b2ee4c91df9b5c7a76a9b76052ba2f4a8fb92e58c0ef75345ecb1ee`
+completed at least 60 startup frames. At frame 60 the depth counters recorded
+3,459 bindings, 375 imports and 387 writebacks, replacing strict per-draw
+transfers. Representative profile buckets show writeback reduced to 0.1-0.2 ms
+per second of draws. Unfocused guest frame intervals were mostly 200-215 ms,
+still far from the combat target. Color observation and synchronous draws remain
+large costs. This is a different unfocused run, not a controlled speedup claim
+or combat/correctness acceptance. The session again left running/focused state;
+the app was stopped, environment restored and automation disabled before lock
+release. Log excerpts and APK identity are preserved alongside the test log.

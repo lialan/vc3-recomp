@@ -10,6 +10,10 @@ typedef struct {
 } ChVkTextureCacheConfig;
 typedef struct { uint64_t hits,misses,uploads,evictions; size_t bytes; } ChVkTextureCacheStats;
 VkResult ch_vk_texture_cache_create(const ChVkTextureCacheConfig *,ChVkTextureCache **);
+/* Encoded level-zero byte range, with an optional 1024-byte P8 palette.
+ * Metadata only; does not dereference guest memory. VK_NOT_READY means the
+ * caller must conservatively handle aliasing or retain its decoder fallback. */
+VkResult ch_vk_texture_storage_span(const Nv2aTexture *,size_t *span,size_t *palette);
 /* Resolver for synchronous guest/host draws. Exact encoded level-zero bytes
  * and palette are checked on every acquire. Sampler metadata is part of key.
  * A hit returns an immutable pinned image; caller releases only after its GPU
