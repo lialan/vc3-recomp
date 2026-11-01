@@ -77,6 +77,7 @@ extern void vc3_quest_frame(GLuint fbo, int pw, int ph, int eyes, int lw, int lh
 #include <time.h>
 
 #include "nv2a_backend.h"
+#include "nv2a_texture_mips.h"
 #include "gl_texdec.h"
 #include "nv2a_vsh_glsl.h"
 #include "nv2a_vsh_interp.h"
@@ -3261,17 +3262,9 @@ static void mips_init(void)
 /* Whether a texture uploaded now should get a mip chain. */
 static int mips_wanted(const Nv2aTexture *t)
 {
-    uint32_t min = (t->filter >> 16) & 0xFF;
     if (s_mips < 0)
         mips_init();
-    if (!s_mips || t->cube || t->width < 4 || t->height < 4)
-        return 0;
-    if (min >= 3 && min <= 6 && t->levels > 1)
-        return 1;
-    /* "all": a power-of-two texture (not a linear image: movie frames,
-     * 640 wide) sampled with a linear min filter */
-    return s_mips == 2 && min != 1 && (t->width > 8 || t->height > 8)
-        && !(t->width & (t->width - 1)) && !(t->height & (t->height - 1));
+    return ch_nv2a_texture_mip_levels(t,s_mips)>1;
 }
 
 static void tex_sampling(GLuint tex, const Nv2aTexture *t, int mipped)

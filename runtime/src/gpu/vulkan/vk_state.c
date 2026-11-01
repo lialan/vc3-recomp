@@ -108,14 +108,18 @@ static int address_mode(uint32_t guest,VkSamplerAddressMode *out) {
 VkResult ch_vk_sampler_state(const Nv2aTexture *s,VkSamplerCreateInfo *out) {
     if(!s || !out) return VK_ERROR_INITIALIZATION_FAILED;
     uint32_t min=(s->filter>>16)&255,mag=(s->filter>>24)&15;
-    /* Multiple guest levels do not require mip sampling for NEAREST/LINEAR.
-     * As in the reference GL path, those filters use level zero only. */
-    if(s->cube || (min!=1 && min!=2) || (mag!=1 && mag!=2))
+    /* Point/linear filters use level zero. Filters 3-6 select the reference
+     * generated chain when eligible, otherwise the reference linear fallback. */
+    if(s->cube || min<1 || min>6 || (mag!=1 && mag!=2))
         return VK_ERROR_FEATURE_NOT_PRESENT;
     VkSamplerCreateInfo sampler={.sType=VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
         .magFilter=mag==1?VK_FILTER_NEAREST:VK_FILTER_LINEAR,
-        .minFilter=min==1?VK_FILTER_NEAREST:VK_FILTER_LINEAR,
+        .minFilter=min==1 || min==3 || min==5?VK_FILTER_NEAREST:VK_FILTER_LINEAR,
         .mipmapMode=VK_SAMPLER_MIPMAP_MODE_NEAREST,.addressModeW=VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE};
+    uint32_t levels=ch_nv2a_texture_mip_levels(s,1);
+    if(min>=3 && levels==1) sampler.minFilter=VK_FILTER_LINEAR;
+    sampler.mipmapMode=min>=5?VK_SAMPLER_MIPMAP_MODE_LINEAR:VK_SAMPLER_MIPMAP_MODE_NEAREST;
+    sampler.maxLod=(float)(levels-1);
     if(!address_mode(s->addr_u,&sampler.addressModeU) || !address_mode(s->addr_v,&sampler.addressModeV))
         return VK_ERROR_FEATURE_NOT_PRESENT;
     *out=sampler; return VK_SUCCESS;

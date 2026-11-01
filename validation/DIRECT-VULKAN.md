@@ -395,3 +395,38 @@ dropping filtering or assuming GL uploads the guest's stored lower levels.
 The failed extended report/excerpt is preserved here. Combat rendering and
 performance remain unverified. The newest Quest candidate builds without GL
 imports, but this latest APK has not been installed for a full game test.
+
+## Generated mipmaps
+
+OpenGL and Vulkan now share `nv2a_texture_mips.h` for chain eligibility and
+full-chain length. Vulkan uploads decoded level zero, generates the remaining
+RGBA8 levels using filtered GPU blits, transitions every level to shader-read
+layout, and supports all four guest mip filters (3-6). Point/linear requests
+still sample level zero; small/single-level textures retain GL's linear fallback
+for a mip request without an eligible chain. No stored lower guest levels are
+decoded, matching the reference upload policy. Convolution/cube sampling still
+fails explicitly. Native anisotropy and GL's streamed/render-target exceptions
+remain separate parity work; the shared predicate establishes eligibility,
+not complete texture-cache policy equivalence.
+
+The immutable cache regenerates mips when encoded level zero changes, retaining
+the preceding pinned chain. Its budget now includes estimated mip image bytes
+and the retained base staging buffer as well as encoded storage/palette.
+Quest tests cover old/new mip chains at the same guest VA and a budget that
+admits the base image but rejects the larger generated chain.
+
+Actual Adreno GLES/Vulkan comparisons produced byte-identical pixels for all
+seven levels of a 64x32 generated chain and twelve minified draws: all four
+mip filters at three scales, including fractional LOD. Nearest-sampling tests
+avoid exact texel-boundary ties without relaxing pixel tolerance. Existing
+renderer, depth, query, deferred completion, overlay and injected XR tests pass.
+Both Mac OpenGL and native Vulkan builds pass. The isolated native Quest APK
+build/import audit also passes, with no production GL imports; it has not yet
+been installed for a full game run. See `validation/direct-vulkan-mipmaps/`.
+
+The longer native Mac attract run passes the former frame-1108 mip-filter
+rejection and reaches frame 1,244 before another draw is rejected. Its sampled
+texture is ordinary 256x256 Morton ARGB, single-level linear filtering, so
+the next investigation is the rejected render state. The frame-1200 capture
+is mostly black and is not visual proof of correct 3D. Full gameplay and Quest
+combat performance remain unverified.

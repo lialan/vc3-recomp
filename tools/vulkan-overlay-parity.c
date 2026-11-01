@@ -59,6 +59,10 @@ int ch_vk_overlay_parity(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,uint
         }
     }
     if(!failed) puts("PASS: actual GLES/Vulkan overlay readbacks, 48 cases, all pixels RGBA within 3 UNORM steps");
+    if(!failed) {
+        extern int ch_test_mipmap_parity(VkPhysicalDevice,VkDevice,VkQueue,uint32_t);
+        failed=ch_test_mipmap_parity(gpu,device,queue,family);
+    }
 done:
     if(failed) fprintf(stderr,"FAIL: GLES/Vulkan overlay parity (EGL error 0x%x)\n",eglGetError());
     ch_vk_target_destroy(target);

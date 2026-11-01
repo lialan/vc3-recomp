@@ -61,6 +61,8 @@ VkResult ch_vk_target_draw_texture_read(ChVkTarget *target, const float rgba[4],
 /* CPU-decoded level-0 texture upload on this target's device/queue. */
 VkResult ch_vk_target_upload_texture(ChVkTarget *target, uint32_t width, uint32_t height,
     const uint32_t *argb, ChVkTexture **out);
+VkResult ch_vk_target_upload_texture_mips(ChVkTarget *,uint32_t width,uint32_t height,
+    const uint32_t *argb,uint32_t levels,ChVkTexture **out);
 /* Host MUST have enabled occlusionQueryPrecise on VkDevice before opting in. */
 VkResult ch_vk_target_enable_queries(ChVkTarget *target);
 /* samples is replaced only after successful completion; optional NULL. */

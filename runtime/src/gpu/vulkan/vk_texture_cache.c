@@ -120,7 +120,17 @@ VkResult ch_vk_texture_cache_resolve(void *context,const Nv2aTexture *t,ChVkSamp
         }
     }
     c->stats.misses++;
-    size_t pixels=(size_t)t->width*t->height*4;
+    size_t pixels=0;
+    uint32_t levels=ch_nv2a_texture_mip_levels(t,1),width=t->width,height=t->height;
+    for(uint32_t i=0;i<levels;i++) {
+        uint64_t size=(uint64_t)width*height*4;
+        if(size>c->config.max_bytes || pixels>c->config.max_bytes-size) return VK_NOT_READY;
+        pixels+=(size_t)size;width=width>1?width/2:1;height=height>1?height/2:1;
+    }
+    /* The immutable upload retains a base-level staging/readback buffer. */
+    size_t staging=(size_t)t->width*t->height*4;
+    if(staging>c->config.max_bytes-pixels) return VK_NOT_READY;
+    pixels+=staging;
     if(span>c->config.max_bytes || palette>c->config.max_bytes-span ||
        pixels>c->config.max_bytes-span-palette) return VK_NOT_READY;
     size_t cost=span+palette+pixels;
@@ -138,8 +148,8 @@ VkResult ch_vk_texture_cache_resolve(void *context,const Nv2aTexture *t,ChVkSamp
     struct Entry snapshot={.raw=raw,.span=span,.palette=palette};
     if(!unchanged(c,&snapshot,t)) {free(raw);free(argb);return VK_NOT_READY;}
     ChVkTexture *image=NULL;
-    r=ch_vk_texture_upload(c->config.physical,c->config.device,c->config.queue,c->config.family,
-        t->width,t->height,argb,&image);
+    r=ch_vk_texture_upload_mips(c->config.physical,c->config.device,c->config.queue,c->config.family,
+        t->width,t->height,argb,levels,&image);
     free(argb);
     if(r==VK_SUCCESS) r=ch_vk_texture_set_sampler(image,&sampler);
     if(r!=VK_SUCCESS) {ch_vk_texture_destroy(image);free(raw);return r;}

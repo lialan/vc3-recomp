@@ -365,7 +365,7 @@ int main(void) {
             unsigned char want[]={u*80,v*80,32,255};
             if(memcmp(pixels+(y*37+x)*4,want,4)) mismatch=1;
         }
-        tx.filter=0x01030000; /* Actual mip filter still needs explicit support. */
+        tx.filter=0x01070000; /* Convolution remains unsupported. */
         if(ch_vk_nv2a_draw_decoded_read(target,&s,&batch,fixture_decode,pixels,sizeof(pixels))!=VK_ERROR_FEATURE_NOT_PRESENT) mismatch=1;
     }
     if(!mismatch) mismatch=ch_test_guest_textures(gpu,device,queue,family);

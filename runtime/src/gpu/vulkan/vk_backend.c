@@ -310,6 +310,11 @@ static void draw(const Nv2aSurface *s,const Nv2aBatch *b) {
     if(result!=VK_SUCCESS) {
         fprintf(stderr,"[Vulkan] rejected draw surface=%08X size=%ux%u vertices=%u ext=%d rc=%d stages=%08X\n",
             s->color_va,s->width,s->height,b->count,b->ext!=NULL,b->rc!=NULL,b->rc?b->rc->stage_program:0);
+        const Nv2aRenderState *state=b->state;
+        fprintf(stderr,"[Vulkan] rejected state raw=%d alpha=%u/%04X blend=%u/%04X/%04X/%04X cull=%u/%04X/%04X depth=%u/%u/%04X stencil=%u/%04X/%04X/%04X/%04X\n",
+            b->raw!=NULL,state->alpha_test_enable,state->alpha_func,state->blend_enable,state->blend_src,state->blend_dst,state->blend_eq,
+            state->cull_enable,state->cull_face,state->front_face,state->depth_test_enable,state->depth_write,state->depth_func,
+            state->stencil_enable,state->stencil_func,state->stencil_fail,state->stencil_zfail,state->stencil_zpass);
         for(unsigned i=0;i<4;i++) {
             const Nv2aTexture *texture=b->stage[i]?b->stage[i]:(i==0?b->texture:NULL);
             if(texture) fprintf(stderr,"[Vulkan] texture%u address=%08X size=%ux%u format=%02X levels=%u filter=%08X address=%u/%u cube=%u\n",

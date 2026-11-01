@@ -67,14 +67,17 @@ static VkResult sample_image(ChVkTarget *target,const Nv2aTexture *tx,ChVkDecode
     if(result==VK_SUCCESS) {
         if(!image.argb || !image.width || !image.height || (uint64_t)image.width*image.height>SIZE_MAX/4)
             return VK_ERROR_INITIALIZATION_FAILED;
-        return ch_vk_target_upload_texture(target,image.width,image.height,image.argb,out);
+        Nv2aTexture actual=*tx;actual.width=image.width;actual.height=image.height;
+        return ch_vk_target_upload_texture_mips(target,image.width,image.height,image.argb,
+            ch_nv2a_texture_mip_levels(&actual,1),out);
     }
     if(result!=VK_NOT_READY) return result;
     if(!decode) return VK_ERROR_FEATURE_NOT_PRESENT;
     uint32_t *argb=malloc((size_t)tx->width*tx->height*4);
     if(!argb) return VK_ERROR_OUT_OF_HOST_MEMORY;
     if(!decode(tx,argb)) { free(argb); return VK_ERROR_FORMAT_NOT_SUPPORTED; }
-    result=ch_vk_target_upload_texture(target,tx->width,tx->height,argb,out);
+    result=ch_vk_target_upload_texture_mips(target,tx->width,tx->height,argb,
+        ch_nv2a_texture_mip_levels(tx,1),out);
     free(argb); return result;
 }
 static VkResult draw_decoded(ChVkTarget *t, const Nv2aSurface *s,

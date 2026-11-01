@@ -628,6 +628,11 @@ VkResult ch_vk_target_upload_texture(ChVkTarget *t,uint32_t width,uint32_t heigh
     if(!t || t->failed) return VK_ERROR_INITIALIZATION_FAILED;
     return ch_vk_texture_upload(t->physical,t->device,t->queue,t->family,width,height,argb,out);
 }
+VkResult ch_vk_target_upload_texture_mips(ChVkTarget *t,uint32_t width,uint32_t height,
+    const uint32_t *argb,uint32_t levels,ChVkTexture **out) {
+    if(!t || t->failed) return VK_ERROR_INITIALIZATION_FAILED;
+    return ch_vk_texture_upload_mips(t->physical,t->device,t->queue,t->family,width,height,argb,levels,out);
+}
 
 VkResult ch_vk_target_enable_queries(ChVkTarget *t) {
     if(!t || t->failed) return VK_ERROR_INITIALIZATION_FAILED;

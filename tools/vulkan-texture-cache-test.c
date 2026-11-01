@@ -12,7 +12,7 @@ static int pixel(ChVkSampleImage *image,unsigned r,unsigned g,unsigned b) {
 }
 int ch_test_texture_cache(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,uint32_t family,
     void *guest,size_t bytes,ChVkDecodeTexture decode) {
-    ChVkTextureCache *cache=NULL;
+    ChVkTextureCache *cache=NULL,*small=NULL;
     ChVkTextureCacheConfig config={.physical=gpu,.device=device,.queue=queue,.family=family,
         .guest_base=guest,.guest_bytes=bytes,.decode=decode,.max_entries=2,.max_bytes=4096};
     if(bytes<4096 || ch_vk_texture_cache_create(&config,&cache)!=VK_SUCCESS) return 1;
@@ -47,6 +47,23 @@ int ch_test_texture_cache(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,uin
     unpin(&a);unpin(&b);
     /* P8 palette edits invalidate even when all index bytes are unchanged. */
     memset(memory+768,0,16);memcpy(memory+1024,&red,4);
+    tx=(Nv2aTexture){.offset=2048,.width=4,.height=4,.pitch=16,.color=0x12,.levels=3,
+        .filter=0x02060000,.addr_u=3,.addr_v=3};
+    for(unsigned i=0;i<16;i++) memcpy(memory+2048+i*4,&red,4);
+    REQUIRE(ch_vk_texture_cache_resolve(cache,&tx,&a)==VK_SUCCESS && ch_vk_texture_levels(a.gpu)==3);
+    unsigned char last[4];
+    REQUIRE(ch_vk_texture_read_level_rgba(a.gpu,2,last,sizeof last)==VK_SUCCESS && last[0]==255 && !last[1]);
+    for(unsigned i=0;i<16;i++) memcpy(memory+2048+i*4,&green,4);
+    REQUIRE(ch_vk_texture_cache_resolve(cache,&tx,&b)==VK_SUCCESS && a.gpu!=b.gpu);
+    REQUIRE(ch_vk_texture_read_level_rgba(b.gpu,2,last,sizeof last)==VK_SUCCESS && !last[0] && last[1]==255);
+    REQUIRE(ch_vk_texture_read_level_rgba(a.gpu,2,last,sizeof last)==VK_SUCCESS && last[0]==255 && !last[1]);
+    unpin(&a);unpin(&b);
+    ChVkTextureCacheConfig limited=config;limited.max_bytes=200;
+    REQUIRE(ch_vk_texture_cache_create(&limited,&small)==VK_SUCCESS);
+    REQUIRE(ch_vk_texture_cache_resolve(small,&tx,&a)==VK_NOT_READY && !a.gpu); /* 64 encoded + 84 image + 64 staging */
+    tx.filter=0x02020000;tx.levels=1;
+    REQUIRE(ch_vk_texture_cache_resolve(small,&tx,&a)==VK_SUCCESS); /* base-only cost is 192 */
+    unpin(&a);
     tx=(Nv2aTexture){.offset=768,.width=4,.height=4,.color=0x0b,.palette=1024,
         .filter=0x01010000,.levels=1,.addr_u=3,.addr_v=3};
     REQUIRE(ch_vk_texture_cache_resolve(cache,&tx,&a)==VK_SUCCESS && pixel(&a,255,0,0));
@@ -74,7 +91,7 @@ int ch_test_texture_cache(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,uin
     ChVkTextureCacheStats stats;ch_vk_texture_cache_stats(cache,&stats);
     REQUIRE(stats.hits>=1 && stats.uploads>=7 && stats.evictions>=5 && stats.bytes<=config.max_bytes);
 done:
-    unpin(&a);unpin(&b);unpin(&c);ch_vk_texture_cache_destroy(cache);
+    unpin(&a);unpin(&b);unpin(&c);ch_vk_texture_cache_destroy(cache);ch_vk_texture_cache_destroy(small);
     if(!failed) puts("PASS: immutable texture cache hits, same-VA texel/palette edits, sampler keys, pinned eviction/budget fallback and guest bounds");
     return failed;
 #undef REQUIRE
