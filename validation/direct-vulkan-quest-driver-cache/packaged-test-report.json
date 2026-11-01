@@ -1,0 +1,192 @@
+{
+  "serial": "2G97C5ZJ0G02DQ",
+  "binary_hashes": {
+    "vc3_vulkan_offscreen": "334b5f83120e628eb4f27ca6e0937ecf5328b0c2bd16e561f22cb07ba2ce5906",
+    "libmain.so": "4017f4b6d4e02cea7a87b4454f7328efcb1269314905259cc7a907fb4f77534b",
+    "libSDL2.so": "ea883ab161a9ca9313365915f3b1df955e82487aa8a4433ee72a5ac2072e5bc0",
+    "libopenxr_loader.so": "5a6853378430b2cbb75ec34a14e7494ed49cb248e516adfa9fe6bd7032eb7750"
+  },
+  "environment": {
+    "LD_LIBRARY_PATH": "/data/local/tmp/vc3-offscreen-170a1a0ffc4d43eaadcdc1e4bfc361b7",
+    "VC3_SAVE_DIR": "/data/local/tmp/vc3-offscreen-170a1a0ffc4d43eaadcdc1e4bfc361b7/save",
+    "VC3_CONFIG_DIR": "/data/local/tmp/vc3-offscreen-170a1a0ffc4d43eaadcdc1e4bfc361b7/config",
+    "VC3_SOUND": "0",
+    "VC3_SCALE": "1",
+    "VC3_FPS": "60",
+    "VC3_ASPECT": "4:3",
+    "VC3_STEREO": "0",
+    "RECOMP_GPU_XF": "all",
+    "RECOMP_PB_DECODE_THREAD": "0",
+    "CHIHIRO_VULKAN_FRAME_LIMIT": "2100",
+    "CHIHIRO_VULKAN_RESIDENT_DEPTH": "1",
+    "CHIHIRO_VULKAN_PROFILE": "0",
+    "CHIHIRO_VULKAN_DUMP_DIR": "/data/local/tmp/vc3-offscreen-170a1a0ffc4d43eaadcdc1e4bfc361b7/frames",
+    "CHIHIRO_VULKAN_DUMP_FIRST": "1600",
+    "CHIHIRO_VULKAN_DUMP_COUNT": "3",
+    "CHIHIRO_AUTOKEYS_CLOCK": "flips",
+    "CHIHIRO_AUTOKEYS": "12:coin,13:start,15:fire,20:start,22:start,25:start,26:pedal,26.5:pedal,27:pedal,27.5:pedal,28:pedal,28.5:pedal,29:pedal,29.5:pedal,30:pedal,30.5:pedal,31:pedal,31.5:pedal,32:pedal,26.5:fire,27.5:fire,28.5:fire,29.5:fire,30.5:fire,30:reload,31:reload",
+    "CHIHIRO_AUTOAIM": "0.2,0.5",
+    "CHIHIRO_AUTOFIRE_MS": "700",
+    "CHIHIRO_VULKAN_DEPTH_GPU_COPY": "1",
+    "CHIHIRO_VULKAN_DEPTH_CLEAR_SKIP": "1",
+    "CHIHIRO_VULKAN_DEPTH_PACKED": "1",
+    "CHIHIRO_VULKAN_COLOR_FAST_IO": "1",
+    "CHIHIRO_VULKAN_TEXTURE_CACHE_MIB": "64",
+    "CHIHIRO_VULKAN_WRITE_WATCH": "1",
+    "CHIHIRO_VULKAN_NOAT": "0",
+    "CHIHIRO_VULKAN_GPU_TIMESTAMPS": "0",
+    "CHIHIRO_VULKAN_SPECIALIZE_RC": "1",
+    "CHIHIRO_VULKAN_GPU_RENDER_TEXTURES": "1",
+    "CHIHIRO_VULKAN_DUMP_EVERY": "120",
+    "RECOMP_HEADLESS": "1",
+    "RECOMP_FB_WINDOW": "0",
+    "CHIHIRO_VULKAN_FRAME_COSTS": "0",
+    "CHIHIRO_VULKAN_FRAME_PROFILE": "1",
+    "CHIHIRO_VULKAN_RENDER_QOS": "0",
+    "CHIHIRO_VULKAN_REUSE_CLEAN_DEPTH": "0",
+    "CHIHIRO_VULKAN_MULTIPLE_DEPTH": "1",
+    "CHIHIRO_VULKAN_SIZE_AWARE_EVICTION": "1",
+    "CHIHIRO_VULKAN_PIPELINE_LOG": "1",
+    "CHIHIRO_VULKAN_GPU_MORTON_DEPTH": "1",
+    "CHIHIRO_VULKAN_GPU_MORTON_COLOR": "1",
+    "CHIHIRO_VULKAN_GPU_COLOR_PACK": "1",
+    "CHIHIRO_VULKAN_GPU_TEXTURE_DECODE": "1",
+    "CHIHIRO_VULKAN_GPU_DEPTH_PACK": "1",
+    "CHIHIRO_VULKAN_DEPTH_QUANT_FRAGMENT": "1",
+    "CHIHIRO_VULKAN_DEPTH_QUANT_INLINE": "0",
+    "CHIHIRO_VULKAN_DEPTH_QUANT_DRAW": "0",
+    "CHIHIRO_VULKAN_QUANTIZED_DEPTH": "1",
+    "RECOMP_ACK_IDLE_US": "100",
+    "RECOMP_PROF": "0",
+    "RECOMP_VSH_VERTEX_CACHE": "1",
+    "RECOMP_PB_WALK": "dma",
+    "RECOMP_PB_SPLIT_LOG": "1",
+    "CHIHIRO_VULKAN_TEXTURE_WRITE_WATCH": "1",
+    "CHIHIRO_VULKAN_PIPELINE_CACHE": "/data/local/tmp/vc3-offscreen-170a1a0ffc4d43eaadcdc1e4bfc361b7/save/vulkan-pipelines.cache"
+  },
+  "requested_frames": 2100,
+  "game": "/sdcard/VirtuaCop3",
+  "scope": "Actual Quest guest/Vulkan; no XR session or VR performance acceptance",
+  "profiling": null,
+  "build_options": {
+    "CHIHIRO_GEN_OPT": "-O1",
+    "CMAKE_BUILD_TYPE": "Release",
+    "CMAKE_C_FLAGS": ""
+  },
+  "pipeline_cache_sha256": "a00b3fec4f8c0241188827f927462696132e394cb25403f3f9fadc9460b7c2b6",
+  "pipeline_cache_bytes": 1224161,
+  "pipeline_cache_messages": [
+    "[Vulkan pipeline cache] packaged_bytes=1224137 loaded_bytes=0 path=/data/local/tmp/vc3-offscreen-170a1a0ffc4d43eaadcdc1e4bfc361b7/save/vulkan-pipelines.cache",
+    "[Vulkan pipeline cache] saved_bytes=1224137",
+    "[Vulkan pipeline cache] save=ok"
+  ],
+  "frame_windows": [
+    {
+      "first": 1,
+      "last": 121,
+      "fps": 35.5,
+      "p95_ms": 30.41
+    },
+    {
+      "first": 121,
+      "last": 241,
+      "fps": 42.46,
+      "p95_ms": 29.28
+    },
+    {
+      "first": 241,
+      "last": 361,
+      "fps": 42.64,
+      "p95_ms": 29.64
+    },
+    {
+      "first": 361,
+      "last": 481,
+      "fps": 43.61,
+      "p95_ms": 31.45
+    },
+    {
+      "first": 481,
+      "last": 601,
+      "fps": 35.56,
+      "p95_ms": 38.11
+    },
+    {
+      "first": 601,
+      "last": 721,
+      "fps": 32.2,
+      "p95_ms": 39.37
+    },
+    {
+      "first": 721,
+      "last": 841,
+      "fps": 24.91,
+      "p95_ms": 56.65
+    },
+    {
+      "first": 841,
+      "last": 961,
+      "fps": 24.14,
+      "p95_ms": 58.12
+    },
+    {
+      "first": 961,
+      "last": 1081,
+      "fps": 28.76,
+      "p95_ms": 42.73
+    },
+    {
+      "first": 1081,
+      "last": 1201,
+      "fps": 15.15,
+      "p95_ms": 106.95
+    },
+    {
+      "first": 1201,
+      "last": 1321,
+      "fps": 13.84,
+      "p95_ms": 100.11
+    },
+    {
+      "first": 1321,
+      "last": 1441,
+      "fps": 13.88,
+      "p95_ms": 105.28
+    },
+    {
+      "first": 1441,
+      "last": 1561,
+      "fps": 7.94,
+      "p95_ms": 212.07
+    },
+    {
+      "first": 1561,
+      "last": 1681,
+      "fps": 12.24,
+      "p95_ms": 96.45
+    },
+    {
+      "first": 1681,
+      "last": 1801,
+      "fps": 10.47,
+      "p95_ms": 105.56
+    },
+    {
+      "first": 1801,
+      "last": 1921,
+      "fps": 10.35,
+      "p95_ms": 107.23
+    },
+    {
+      "first": 1921,
+      "last": 2041,
+      "fps": 6.52,
+      "p95_ms": 215.06
+    }
+  ],
+  "exit_code": 0,
+  "reached_frame_limit": true,
+  "elapsed_seconds": 140.5294775000075,
+  "baseline_before": "3a0660db0d8a5d8e6d95a555dc087bd8f9351f2f8df91e601599ae2789b53ad6",
+  "baseline_after": "3a0660db0d8a5d8e6d95a555dc087bd8f9351f2f8df91e601599ae2789b53ad6"
+}

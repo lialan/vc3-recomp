@@ -9,6 +9,7 @@ import hashlib
 import json
 from pathlib import Path
 import shlex
+import re
 import subprocess
 import time
 import uuid
@@ -38,7 +39,20 @@ def main():
     parser.add_argument("--specialize-combiners", action="store_true", help="Experimental: compile immutable combiner instructions as pipeline specialization constants")
     parser.add_argument("--gpu-render-textures", action="store_true", help="Experimental: cache immutable GPU snapshots of exactly matching resident color targets")
     parser.add_argument("--simpleperf", action="store_true", help="Profile only this workload with the bundled NDK tool; no system permission changes")
+    parser.add_argument("--env", action="append", default=[], metavar="NAME=VALUE",
+                        help="Explicit shared runtime overrides, recorded in report")
+    parser.add_argument("--import-pipeline-cache", type=Path,
+                        help="Optional writable cache input; omit for packaged-cache first-launch validation")
     args = parser.parse_args()
+    overrides = {}
+    for item in args.env:
+        key, sep, value = item.partition("=")
+        if not sep or not re.fullmatch(r"(?:CHIHIRO_|VC3_|RECOMP_)[A-Z0-9_]+", key):
+            parser.error("env must be a CHIHIRO_/VC3_/RECOMP_ NAME=VALUE")
+        if key.endswith(("SAVE_DIR", "CONFIG_DIR", "DUMP_DIR", "PIPELINE_CACHE", "FRAME_LIMIT")):
+            parser.error("runner owns output paths, pipeline cache and frame limit")
+        overrides[key] = value
+
     if args.frames < 1 or not 1 <= args.timeout <= 3600 or args.capture_first < 0 or args.capture_count < 0 or args.capture_every < 0:
         parser.error("invalid frame/capture/timeout range")
     if not 1 <= args.texture_cache_mib <= 1024:
@@ -86,6 +100,8 @@ def main():
     env["CHIHIRO_VULKAN_SPECIALIZE_RC"] = "1" if args.specialize_combiners else "0"
     env["CHIHIRO_VULKAN_GPU_RENDER_TEXTURES"] = "1" if args.gpu_render_textures else "0"
     env["CHIHIRO_VULKAN_DUMP_EVERY"] = str(args.capture_every)
+    env.update(overrides)
+    env["CHIHIRO_VULKAN_PIPELINE_CACHE"] = remote + "/save/vulkan-pipelines.cache"
     report = {"serial": "2G97C5ZJ0G02DQ", "binary_hashes": hashes, "environment": env,
               "requested_frames": args.frames, "game": args.game,
               "scope": "Actual Quest guest/Vulkan; no XR session or VR performance acceptance"}
@@ -96,6 +112,9 @@ def main():
     start = time.monotonic()
     try:
         run(["shell", "mkdir", "-p", remote + "/save", remote + "/config", remote + "/frames"])
+        if args.import_pipeline_cache:
+            run(["push", str(args.import_pipeline_cache.resolve()), env["CHIHIRO_VULKAN_PIPELINE_CACHE"]])
+            report["input_pipeline_cache_sha256"] = hashlib.sha256(args.import_pipeline_cache.read_bytes()).hexdigest()
         for path in files:
             run(["push", str(path), remote + "/" + path.name])
         run(["shell", "chmod", "700", executable] + ([remote + "/simpleperf"] if args.simpleperf else []))
@@ -106,10 +125,20 @@ def main():
             workload = [remote + "/simpleperf", "record", "-e", "cpu-clock:u", "-f", "199", "-g",
                         "-o", remote + "/perf.data", "--"] + workload
         command = shlex.join(["timeout", "-s", "KILL", str(args.timeout)] + workload)
-        result = subprocess.run(adb + ["shell", command], capture_output=True, timeout=args.timeout + 20)
-        text = (result.stdout + result.stderr).decode(errors="replace")
-        (output / "game.log").write_text(text)
+        with (output / "game.log").open("w") as log:
+            result = subprocess.run(adb + ["shell", command], stdout=log, stderr=subprocess.STDOUT,
+                                    timeout=args.timeout + 20)
+        text = (output / "game.log").read_text(errors="replace")
         run(["pull", remote + "/frames", str(output)])
+        cache_exists = subprocess.run(adb + ["shell", "test", "-f", env["CHIHIRO_VULKAN_PIPELINE_CACHE"]], capture_output=True, timeout=20)
+        if cache_exists.returncode == 0:
+            cache_file = output / "vulkan-pipelines.cache"
+            run(["pull", env["CHIHIRO_VULKAN_PIPELINE_CACHE"], str(cache_file)])
+            report["pipeline_cache_sha256"] = hashlib.sha256(cache_file.read_bytes()).hexdigest()
+            report["pipeline_cache_bytes"] = cache_file.stat().st_size
+        report["pipeline_cache_messages"] = [line for line in text.splitlines() if "[Vulkan pipeline cache]" in line]
+        report["frame_windows"] = [dict(first=int(m[1]), last=int(m[2]), fps=float(m[3]), p95_ms=float(m[4]))
+            for m in re.finditer(r"\[Vulkan frame intervals\] flips (\d+)\.\.(\d+): ([\d.]+) fps mean [\d.]+ms p95 ([\d.]+)ms", text)]
         if args.simpleperf and result.returncode == 0:
             profile = run(["shell", shlex.join([remote + "/simpleperf", "report", "-i", remote + "/perf.data",
                                                "--sort", "dso,symbol"])], text=True)

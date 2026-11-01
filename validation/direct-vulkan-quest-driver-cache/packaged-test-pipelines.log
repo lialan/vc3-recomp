@@ -1,0 +1,168 @@
+[Vulkan pipeline cache] packaged_bytes=1224137 loaded_bytes=0 path=/data/local/tmp/vc3-offscreen-170a1a0ffc4d43eaadcdc1e4bfc361b7/save/vulkan-pipelines.cache
+[Vulkan pipeline begin] target=640x480 shader=2 fixed=1 specialized=1 alpha=1 control=00000004
+[Vulkan pipeline end] 11.905ms
+[Vulkan pipeline begin] target=640x480 shader=2 fixed=1 specialized=1 alpha=1 control=00000004
+[Vulkan pipeline end] 8.516ms
+[Vulkan pipeline begin] target=128x128 shader=2 fixed=1 specialized=1 alpha=1 control=00000004
+[Vulkan pipeline end] 8.707ms
+[Vulkan pipeline begin] target=256x256 shader=2 fixed=1 specialized=1 alpha=1 control=00000001
+[Vulkan pipeline end] 10.032ms
+[Vulkan pipeline begin] target=640x480 shader=2 fixed=1 specialized=1 alpha=1 control=00000001
+[Vulkan pipeline end] 8.566ms
+[Vulkan pipeline begin] target=128x128 shader=2 fixed=1 specialized=1 alpha=1 control=00000004
+[Vulkan pipeline end] 8.293ms
+[Vulkan pipeline begin] target=256x256 shader=2 fixed=1 specialized=1 alpha=1 control=00000001
+[Vulkan pipeline end] 8.687ms
+[Vulkan pipeline begin] target=640x480 shader=2 fixed=1 specialized=1 alpha=1 control=00000001
+[Vulkan pipeline end] 8.600ms
+[Vulkan pipeline begin] target=640x480 shader=2 fixed=1 specialized=1 alpha=1 control=00000001
+[Vulkan pipeline end] 8.247ms
+[Vulkan pipeline begin] target=128x128 shader=2 fixed=1 specialized=1 alpha=1 control=00000004
+[Vulkan pipeline end] 9.030ms
+[Vulkan pipeline begin] target=256x256 shader=2 fixed=1 specialized=1 alpha=1 control=00000001
+[Vulkan pipeline end] 8.535ms
+[Vulkan pipeline begin] target=128x128 shader=2 fixed=1 specialized=1 alpha=1 control=00000004
+[Vulkan pipeline end] 8.080ms
+[Vulkan pipeline begin] target=256x256 shader=2 fixed=1 specialized=1 alpha=1 control=00000001
+[Vulkan pipeline end] 8.283ms
+[Vulkan frame intervals] flips 1..121: 35.50 fps mean 28.17ms p95 30.41ms p99 127.59ms max 396.72ms >20ms=78 >33ms=5 (guest completions, not XR display)
+[Vulkan frame intervals] flips 121..241: 42.46 fps mean 23.55ms p95 29.28ms p99 31.00ms max 31.24ms >20ms=73 >33ms=0 (guest completions, not XR display)
+[Vulkan frame intervals] flips 241..361: 42.64 fps mean 23.45ms p95 29.64ms p99 30.82ms max 31.04ms >20ms=77 >33ms=0 (guest completions, not XR display)
+[Vulkan frame intervals] flips 361..481: 43.61 fps mean 22.93ms p95 31.45ms p99 33.93ms max 34.50ms >20ms=84 >33ms=3 (guest completions, not XR display)
+[Vulkan pipeline begin] target=640x480 shader=2 fixed=1 specialized=1 alpha=1 control=00000004
+[Vulkan pipeline end] 12.506ms
+[Vulkan pipeline begin] target=640x480 shader=2 fixed=1 specialized=1 alpha=1 control=00000001
+[Vulkan pipeline end] 8.851ms
+[Vulkan pipeline begin] target=128x128 shader=2 fixed=1 specialized=1 alpha=1 control=00000004
+[Vulkan pipeline end] 8.650ms
+[Vulkan pipeline begin] target=256x256 shader=2 fixed=1 specialized=1 alpha=1 control=00000001
+[Vulkan pipeline end] 10.088ms
+[Vulkan pipeline begin] target=640x480 shader=2 fixed=1 specialized=1 alpha=1 control=00000001
+[Vulkan pipeline end] 8.929ms
+[Vulkan pipeline begin] target=640x480 shader=2 fixed=1 specialized=1 alpha=1 control=00000001
+[Vulkan pipeline end] 7.761ms
+[Vulkan pipeline begin] target=128x128 shader=2 fixed=1 specialized=1 alpha=1 control=00000004
+[Vulkan pipeline end] 12.029ms
+[Vulkan pipeline begin] target=256x256 shader=2 fixed=1 specialized=1 alpha=1 control=00000001
+[Vulkan pipeline end] 9.449ms
+[Vulkan pipeline begin] target=128x128 shader=2 fixed=1 specialized=1 alpha=1 control=00000004
+[Vulkan pipeline end] 11.135ms
+[Vulkan pipeline begin] target=256x256 shader=2 fixed=1 specialized=1 alpha=1 control=00000001
+[Vulkan pipeline end] 8.739ms
+[Vulkan pipeline begin] target=128x128 shader=2 fixed=1 specialized=1 alpha=1 control=00000004
+[Vulkan pipeline end] 11.902ms
+[Vulkan pipeline begin] target=256x256 shader=2 fixed=1 specialized=1 alpha=1 control=00000001
+[Vulkan pipeline end] 8.509ms
+[Vulkan frame intervals] flips 481..601: 35.56 fps mean 28.12ms p95 38.11ms p99 50.13ms max 55.60ms >20ms=114 >33ms=25 (guest completions, not XR display)
+[Vulkan frame intervals] flips 601..721: 32.20 fps mean 31.05ms p95 39.37ms p99 41.05ms max 41.26ms >20ms=119 >33ms=52 (guest completions, not XR display)
+[Vulkan pipeline begin] target=640x480 shader=2 fixed=1 specialized=1 alpha=1 control=00000001
+[Vulkan pipeline end] 11.909ms
+[Vulkan pipeline begin] target=640x480 shader=2 fixed=1 specialized=1 alpha=1 control=00011105
+[Vulkan pipeline end] 8.037ms
+[Vulkan frame intervals] flips 721..841: 24.91 fps mean 40.15ms p95 56.65ms p99 61.90ms max 63.29ms >20ms=118 >33ms=83 (guest completions, not XR display)
+[Vulkan frame intervals] flips 841..961: 24.14 fps mean 41.43ms p95 58.12ms p99 59.79ms max 59.89ms >20ms=120 >33ms=88 (guest completions, not XR display)
+[Vulkan frame intervals] flips 961..1081: 28.76 fps mean 34.78ms p95 42.73ms p99 43.92ms max 46.66ms >20ms=120 >33ms=66 (guest completions, not XR display)
+[Vulkan pipeline begin] target=512x512 shader=2 fixed=1 specialized=1 alpha=1 control=00000004
+[Vulkan pipeline end] 11.647ms
+[Vulkan pipeline begin] target=640x480 shader=2 fixed=1 specialized=1 alpha=1 control=00000004
+[Vulkan pipeline end] 2.431ms
+[Vulkan pipeline begin] target=640x480 shader=2 fixed=1 specialized=1 alpha=1 control=00000004
+[Vulkan pipeline end] 2.359ms
+[Vulkan pipeline begin] target=640x480 shader=2 fixed=1 specialized=1 alpha=1 control=00000004
+[Vulkan pipeline end] 2.017ms
+[Vulkan pipeline begin] target=640x480 shader=2 fixed=1 specialized=1 alpha=1 control=00000004
+[Vulkan pipeline end] 1.966ms
+[Vulkan pipeline begin] target=640x480 shader=2 fixed=1 specialized=1 alpha=1 control=00000004
+[Vulkan pipeline end] 1.927ms
+[Vulkan pipeline begin] target=640x480 shader=2 fixed=1 specialized=1 alpha=1 control=00000004
+[Vulkan pipeline end] 1.858ms
+[Vulkan pipeline begin] target=640x480 shader=2 fixed=1 specialized=1 alpha=1 control=00000004
+[Vulkan pipeline end] 1.764ms
+[Vulkan pipeline begin] target=640x480 shader=2 fixed=1 specialized=1 alpha=1 control=00000004
+[Vulkan pipeline end] 1.759ms
+[Vulkan pipeline begin] target=640x480 shader=2 fixed=1 specialized=1 alpha=1 control=00000004
+[Vulkan pipeline end] 1.691ms
+[Vulkan pipeline begin] target=640x480 shader=2 fixed=1 specialized=1 alpha=1 control=00000004
+[Vulkan pipeline end] 2.764ms
+[Vulkan pipeline begin] target=640x480 shader=2 fixed=1 specialized=1 alpha=1 control=00000004
+[Vulkan pipeline end] 2.937ms
+[Vulkan pipeline begin] target=640x480 shader=2 fixed=1 specialized=1 alpha=1 control=00000004
+[Vulkan pipeline end] 2.969ms
+[Vulkan pipeline begin] target=640x480 shader=2 fixed=1 specialized=1 alpha=1 control=00000004
+[Vulkan pipeline end] 2.762ms
+[Vulkan pipeline begin] target=640x480 shader=2 fixed=1 specialized=1 alpha=1 control=00000004
+[Vulkan pipeline end] 1.749ms
+[Vulkan pipeline begin] target=640x480 shader=2 fixed=1 specialized=1 alpha=1 control=00000004
+[Vulkan pipeline end] 1.708ms
+[Vulkan pipeline begin] target=640x480 shader=2 fixed=1 specialized=1 alpha=1 control=00000004
+[Vulkan pipeline end] 1.796ms
+[Vulkan pipeline begin] target=640x480 shader=2 fixed=1 specialized=1 alpha=1 control=00000004
+[Vulkan pipeline end] 1.713ms
+[Vulkan pipeline begin] target=640x480 shader=2 fixed=1 specialized=1 alpha=1 control=00000004
+[Vulkan pipeline end] 1.655ms
+[Vulkan pipeline begin] target=640x480 shader=2 fixed=1 specialized=1 alpha=1 control=00000004
+[Vulkan pipeline end] 1.698ms
+[Vulkan pipeline begin] target=640x480 shader=2 fixed=1 specialized=1 alpha=1 control=00000002
+[Vulkan pipeline end] 1.684ms
+[Vulkan pipeline begin] target=640x480 shader=2 fixed=1 specialized=1 alpha=1 control=00000004
+[Vulkan pipeline end] 1.741ms
+[Vulkan pipeline begin] target=640x480 shader=2 fixed=1 specialized=1 alpha=1 control=00000004
+[Vulkan pipeline end] 1.681ms
+[Vulkan pipeline begin] target=640x480 shader=2 fixed=1 specialized=1 alpha=1 control=00000004
+[Vulkan pipeline end] 1.791ms
+[Vulkan pipeline begin] target=640x480 shader=2 fixed=1 specialized=1 alpha=1 control=00000004
+[Vulkan pipeline end] 1.635ms
+[Vulkan pipeline begin] target=640x480 shader=2 fixed=1 specialized=1 alpha=1 control=00000004
+[Vulkan pipeline end] 3.226ms
+[Vulkan pipeline begin] target=640x480 shader=2 fixed=1 specialized=1 alpha=1 control=00000004
+[Vulkan pipeline end] 2.005ms
+[Vulkan pipeline begin] target=640x480 shader=2 fixed=1 specialized=1 alpha=1 control=00000004
+[Vulkan pipeline end] 1.751ms
+[Vulkan pipeline begin] target=640x480 shader=2 fixed=1 specialized=1 alpha=1 control=00000002
+[Vulkan pipeline end] 1.767ms
+[Vulkan pipeline begin] target=640x480 shader=2 fixed=1 specialized=1 alpha=1 control=00000004
+[Vulkan pipeline end] 3.268ms
+[Vulkan pipeline begin] target=640x480 shader=2 fixed=1 specialized=1 alpha=1 control=00000004
+[Vulkan pipeline end] 2.868ms
+[Vulkan pipeline begin] target=256x256 shader=2 fixed=1 specialized=1 alpha=1 control=00011103
+[Vulkan pipeline end] 7.119ms
+[Vulkan pipeline begin] target=640x480 shader=2 fixed=1 specialized=1 alpha=1 control=00011103
+[Vulkan pipeline end] 7.401ms
+[Vulkan pipeline begin] target=640x480 shader=2 fixed=1 specialized=1 alpha=1 control=00011103
+[Vulkan pipeline end] 7.046ms
+[Vulkan pipeline begin] target=640x480 shader=2 fixed=1 specialized=1 alpha=1 control=00011103
+[Vulkan pipeline end] 8.548ms
+[Vulkan pipeline begin] target=640x480 shader=2 fixed=1 specialized=1 alpha=1 control=00011103
+[Vulkan pipeline end] 8.573ms
+[Vulkan pipeline begin] target=640x480 shader=2 fixed=1 specialized=1 alpha=1 control=00011103
+[Vulkan pipeline end] 13.435ms
+[Vulkan pipeline begin] target=640x480 shader=2 fixed=1 specialized=1 alpha=1 control=00011103
+[Vulkan pipeline end] 10.178ms
+[Vulkan frame intervals] flips 1081..1201: 15.15 fps mean 66.01ms p95 106.95ms p99 138.66ms max 285.82ms >20ms=114 >33ms=78 (guest completions, not XR display)
+[Vulkan pipeline begin] target=640x480 shader=2 fixed=1 specialized=1 alpha=1 control=00011103
+[Vulkan pipeline end] 13.795ms
+[Vulkan pipeline begin] target=640x480 shader=2 fixed=1 specialized=1 alpha=1 control=00000001
+[Vulkan pipeline end] 10.724ms
+[Vulkan pipeline begin] target=640x480 shader=2 fixed=1 specialized=1 alpha=1 control=00000004
+[Vulkan pipeline end] 2.158ms
+[Vulkan pipeline begin] target=640x480 shader=2 fixed=1 specialized=1 alpha=1 control=00011103
+[Vulkan pipeline end] 11.717ms
+[Vulkan pipeline begin] target=640x480 shader=2 fixed=1 specialized=1 alpha=1 control=00000004
+[Vulkan pipeline end] 2.164ms
+[Vulkan pipeline begin] target=640x480 shader=2 fixed=1 specialized=1 alpha=1 control=00011103
+[Vulkan pipeline end] 11.832ms
+[Vulkan pipeline begin] target=640x480 shader=2 fixed=1 specialized=1 alpha=1 control=00000004
+[Vulkan pipeline end] 2.527ms
+[Vulkan frame intervals] flips 1201..1321: 13.84 fps mean 72.25ms p95 100.11ms p99 146.50ms max 175.01ms >20ms=120 >33ms=120 (guest completions, not XR display)
+[Vulkan frame intervals] flips 1321..1441: 13.88 fps mean 72.05ms p95 105.28ms p99 117.97ms max 127.81ms >20ms=120 >33ms=120 (guest completions, not XR display)
+[Vulkan pipeline begin] target=256x256 shader=2 fixed=1 specialized=1 alpha=1 control=00000001
+[Vulkan pipeline end] 15.568ms
+[Vulkan frame intervals] flips 1441..1561: 7.94 fps mean 125.89ms p95 212.07ms p99 228.65ms max 232.33ms >20ms=120 >33ms=120 (guest completions, not XR display)
+[Vulkan frame intervals] flips 1561..1681: 12.24 fps mean 81.67ms p95 96.45ms p99 100.13ms max 107.43ms >20ms=120 >33ms=120 (guest completions, not XR display)
+[Vulkan pipeline begin] target=640x480 shader=2 fixed=1 specialized=1 alpha=1 control=00000004
+[Vulkan pipeline end] 4.730ms
+[Vulkan frame intervals] flips 1681..1801: 10.47 fps mean 95.49ms p95 105.56ms p99 108.08ms max 110.66ms >20ms=120 >33ms=120 (guest completions, not XR display)
+[Vulkan frame intervals] flips 1801..1921: 10.35 fps mean 96.62ms p95 107.23ms p99 111.02ms max 114.48ms >20ms=120 >33ms=120 (guest completions, not XR display)
+[Vulkan frame intervals] flips 1921..2041: 6.52 fps mean 153.47ms p95 215.06ms p99 258.73ms max 266.13ms >20ms=120 >33ms=120 (guest completions, not XR display)
+[Vulkan pipeline cache] saved_bytes=1224137
+[Vulkan pipeline cache] save=ok

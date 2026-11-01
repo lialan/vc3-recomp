@@ -1,0 +1,17 @@
+[Vulkan] Android offscreen diagnostic: no XR session or VR performance acceptance
+[Vulkan] exact write tracking: 2 contiguous backing view(s), unsupported pages compare exactly
+[Vulkan] texture cache budget: 64MiB
+[Vulkan] D24/D32 guest depth GPU conversion: enabled
+[Vulkan] raw fixed/program GPU transforms: enabled
+[Vulkan] resident command batches: enabled
+[Vulkan] command batch draw limit: 256
+[Vulkan] resident color targets: enabled
+[Vulkan] immutable GPU render-target sampling: enabled
+[Vulkan] exact quantized D32 depth residency: native-style fragment rounding
+[Vulkan] resident D24 depth targets: enabled
+[Vulkan pipeline cache] packaged_bytes=0 loaded_bytes=0 path=/data/local/tmp/vc3-offscreen-38aa587d5c4d43c78521e1dadeaeb508/save/vulkan-pipelines.cache
+[Vulkan] direct NV2A backend on Adreno (TM) 740; OpenGL excluded from this build
+[Vulkan color transfer] 640x480 bpp=4 Morton=0 GPU conversion=1
+[Vulkan texture miss] 256x16 format=0f target=0 reuse=0 room_ms=0.000 snapshot_ms=0.002 upload_ms=30.963 watch_ms=0.007
+[D3D] BlockOnTime(0x00000009) awaiting actual GPU completion beyond 250 ms: head 0x0000000B sem 0x00000003
+[D3D] BlockOnTime(0x00000009) timed out: head 0x0000000B sem 0x00000003

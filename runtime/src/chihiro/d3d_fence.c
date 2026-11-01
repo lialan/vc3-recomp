@@ -89,7 +89,16 @@ void vc3_d3d_block_on_time(void)
     /* Done once the fence is no newer than the GPU's progress, in ring order
      * relative to the newest time (the original's unsigned comparison). */
     start = xbox_HostNowNs();
-    deadline = start + (strict ? STRICT_WAIT_BOUND_NS : WAIT_BOUND_NS);
+    uint64_t strict_bound = STRICT_WAIT_BOUND_NS;
+    /* Explicit offline cache training may spend minutes in driver compilation.
+     * Extend only the watchdog, never acknowledge an incomplete GPU fence. */
+    const char *training_ms = ch_env("GPU_FENCE_TIMEOUT_MS");
+    if (strict && training_ms && *training_ms) {
+        char *end = NULL;unsigned long ms = strtoul(training_ms, &end, 10);
+        if (end && !*end && ms >= 30000 && ms <= 600000)
+            strict_bound = (uint64_t)ms * 1000000ull;
+    }
+    deadline = start + (strict ? strict_bound : WAIT_BOUND_NS);
     for (;;) {
         head = MEM32(dev + DEV_WRITE_TIME);
         if (head - time >= head - MEM32(sem))

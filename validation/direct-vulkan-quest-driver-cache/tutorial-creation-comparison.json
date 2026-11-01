@@ -1,0 +1,20 @@
+{
+  "driver-cache-training-long": {
+    "pipeline_creations": 74,
+    "first_ms": 36948.179,
+    "total_ms": 44607.490999999995,
+    "max_ms": 36948.179,
+    "p95_ms": 312.569,
+    "over_20ms": 27,
+    "over_100ms": 27
+  },
+  "packaged-cache-test": {
+    "pipeline_creations": 74,
+    "first_ms": 11.905,
+    "total_ms": 466.077,
+    "max_ms": 15.568,
+    "p95_ms": 12.506,
+    "over_20ms": 0,
+    "over_100ms": 0
+  }
+}

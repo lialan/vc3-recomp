@@ -57,6 +57,14 @@ esac
 PIPELINE_ARGS=("-DCHIHIRO_VULKAN_PIPELINE_CACHE_VENDOR=0x5143")
 if [ "${CHIHIRO_VULKAN_PIPELINE_CACHE_SEEDS+x}" = x ]; then
     PIPELINE_ARGS+=("-DCHIHIRO_VULKAN_PIPELINE_CACHE_SEEDS=$CHIHIRO_VULKAN_PIPELINE_CACHE_SEEDS")
+else
+    # Per-game Quest3 training artifacts; multiple driver UUIDs may coexist.
+    PACKAGED_SEEDS=""
+    for seed in "$ROOT/games/$GAME/pipeline-cache/quest3/"*.cache; do
+        [ -f "$seed" ] || continue
+        PACKAGED_SEEDS="${PACKAGED_SEEDS:+$PACKAGED_SEEDS;}$seed"
+    done
+    PIPELINE_ARGS+=("-DCHIHIRO_VULKAN_PIPELINE_CACHE_SEEDS=$PACKAGED_SEEDS")
 fi
 # Vulkan release packages require a seed; OFF is an explicit training build.
 PIPELINE_ARGS+=("-DCHIHIRO_VULKAN_REQUIRE_PIPELINE_CACHE_SEEDS=${CHIHIRO_VULKAN_REQUIRE_PIPELINE_CACHE_SEEDS:-ON}")

@@ -1,0 +1,13 @@
+{
+  "schema": 1,
+  "seeds": [
+    {
+      "vendor_id": 20803,
+      "device_id": 1124403968,
+      "pipeline_cache_uuid": "6cc61008435100000000000b05430000",
+      "bytes": 1224161,
+      "compressed_bytes": 1215895,
+      "sha256": "a00b3fec4f8c0241188827f927462696132e394cb25403f3f9fadc9460b7c2b6"
+    }
+  ]
+}
