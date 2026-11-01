@@ -4,6 +4,12 @@
 typedef struct ChVkBackend ChVkBackend;
 typedef struct {
     VkPhysicalDevice physical; VkDevice device; VkQueue queue; uint32_t family;
+    /* Optional paired host queue lock. Covers each complete callback, including
+     * rendering hooks, and destruction. Hooks must not acquire it again.
+     * Use when presentation and guest rendering share a VkQueue. */
+    void (*lock_queue)(void *);
+    void (*unlock_queue)(void *);
+    void *queue_context;
     void *guest_base; size_t guest_bytes;
     ChVkDecodeTexture decode;
     /* Set only when host enabled VkPhysicalDeviceFeatures.occlusionQueryPrecise. */

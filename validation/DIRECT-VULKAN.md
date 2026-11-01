@@ -13,7 +13,16 @@ texture decoder and toolkit host D3D/OpenGL layer. The actual executable's
 imports and library list contain no GL/EGL/CGL/SDL_GL entries, OpenGL framework
 or libepoxy. The guest uses the shared CPU vertex transforms and texture decoder;
 Vulkan rasterizes its decoded batches. SDL scanout selects Metal on macOS.
-Only headless game execution has been verified so far.
+Quest now also builds a native Vulkan game APK through the shared Quest host.
+Input/actions, menu painter and hit testing, tracking/view publication, refresh
+selection, frame lifecycle and guest startup remain common with OpenGL. Native
+presentation lives in `quest_vulkan.inc`; it creates the runtime-selected Vulkan
+device through `XR_KHR_vulkan_enable2`, hands that borrowed device to the guest
+renderer, serializes the shared queue, and copies owned CPU frame packets into
+opaque XR screen quads. Gun/effect overlays use the shared geometry/math and
+native Vulkan passes; the CPU-painted menu uses its own Vulkan quad. Headset
+input/overlay/menu interaction acceptance is still pending. No GLES context or
+GL fallback is created in the Vulkan host.
 
 A real VC3 boot completed four native Vulkan frames. A longer bounded run reached
 at least frame 32, captured the SEGA logo/credits, then timed out before its
@@ -59,19 +68,61 @@ comparison against GLES; rectangular Morton and pitched storage; injected-XR
 ownership/device contracts with real Vulkan transfers; and all 256 GPU combiner
 cases against the shared CPU evaluator. The initial combiner invocation omitted
 its expected shader path; a corrected explicit private shader path passed.
-Temporary test files were removed. No game APK was installed or replaced.
+Temporary test files were removed. These were standalone tests; subsequent
+native game integration evidence is described below.
+
+The native candidate `org.vc3recomp.vulkan.direct` (label `VC3 Vulkan Direct`)
+created a real Vulkan OpenXR session on Quest 3, submitted layers successfully,
+and displayed the startup text and SEGA screen in both eyes. The user confirmed
+the screen was visible but very slow. Current startup logs show roughly 1-2
+completed guest frames/s; this is not playable or performance acceptance.
+`validation/direct-vulkan-quest/` records the native APK/import audit, actual
+headset captures/log, and fresh offscreen/injected-XR checks. Tracking initially
+blocked capture and the user restored it. The first capture-directory attempt
+failed due to shell-owned directory permissions; writing directly into the
+app-owned external files directory fixed it. The next run found an uninitialized
+presentation target, now cleared before import. Both failures stopped execution.
+
+A packaging error initially installed the candidate under the original ID:
+the module's ext.appId overrode Gradle's project property. It was caught before
+launch and the exact preserved working APK was reinstalled. Gradle now reads
+CLI IDs through providers.gradleProperty, and the build helper checks the APK's
+actual manifest ID and native contents before producing it. The original APK's
+on-device hash matches the preserved baseline after testing. Its settings were
+not changed. Subsequent candidates use the separate package and per-app env.txt.
+All bounded test runs were stopped and the temporary proximity override disabled.
+
+Pipeline compilation results now persist in a VkPipelineCache. Consecutive draws
+also reuse a pipeline when immutable blend/depth/stencil/cull/shader state matches;
+texture descriptors, combiner uniforms, alpha-test push constants and effect data
+still update per draw. Fresh Quest offscreen checks pass, including texture/state
+changes, exact guest CPU edits, queries, and all 48 GLES/Vulkan overlay comparisons.
+This does not remove per-draw surface/depth imports, readback, guest writeback,
+texture upload, allocations or queue waits. Unlike the reference Quest GL path,
+which keeps targets on the GPU and skips routine guest readback, this remains a
+synchronous correctness path. GPU batching/residency is the next performance task.
+
+Build the isolated APK with `rtk proxy python3 tools/build-vulkan-quest.py`.
+The helper performs no installation/device access. Its output is
+`build-quest-vulkan-direct/VC3-Vulkan-Direct.apk` and `apk-report.json`.
+It keeps default OpenGL native staging separate. Per-app diagnostic overrides
+can be placed in `/sdcard/Android/data/org.vc3recomp.vulkan.direct/files/env.txt`;
+they load after the shared game env.txt, before private env.txt. Use `VC3_SOUND=0`
+for muted testing. Avoid shell-owned capture subdirectories.
 
 ## Still required
 
-- Port the shared Quest host to native Vulkan device/session/swapchain handling
-  and complete game renderer attachment. Android Vulkan game configuration
-  currently fails explicitly rather than silently executing GL.
-- Reuse shared input/session/menu/overlay logic; complete immersive world/HUD,
-  screen transitions, gun/menu rendering and rendered-pose ownership.
+- Replace per-draw synchronization/transfers with GPU-resident rendering and
+  batching, using the OpenGL implementation's completion/readback behavior as
+  reference. Preserve explicit guest queries/fences and CPU edit coherence.
+- Complete native immersive world/HUD and screen transitions, rendered-pose
+  ownership, and input/gun/menu acceptance. The current game host presents flat
+  packets; shared settings still expose options whose native attachment is
+  pending. Do not treat the screen candidate as immersive parity.
 - Finish missing sampler/mipmap/cube/effect and surface alias semantics against
   real game evidence as execution reaches them. Preserve guest fence semantics.
 - Establish scene-matched intro/combat/E.S./zoom/head-motion/menu/restart parity
-  with OpenGL and obtain user acceptance. Then optimize the synchronous path.
+  with OpenGL and obtain user acceptance. The severe lag is unresolved.
 
 Preserve `validation/baseline/VirtuaCop3VR-working.apk` (local, ignored), SHA256
 3a0660db0d8a5d8e6d95a555dc087bd8f9351f2f8df91e601599ae2789b53ad6, and the

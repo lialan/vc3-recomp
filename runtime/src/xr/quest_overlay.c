@@ -29,7 +29,9 @@
 #include <stdio.h>
 #include <string.h>
 
+#ifndef CHIHIRO_RENDERER_VULKAN
 #include <GLES3/gl3.h>
+#endif
 
 #include "quest_overlay.h"
 #include "chihiro/chihiro_profile.h"
@@ -57,6 +59,7 @@ void qo_muzzle(float out[3])
 
 /* ── GL ───────────────────────────────────────────────────────────────── */
 
+#ifndef CHIHIRO_RENDERER_VULKAN
 static GLuint prog_gun, prog_spot, prog_panel, vao_gun, vbo_gun, vao_spot, vbo_spot,
               vao_quad, vbo_quad, panel_tex;
 static GLuint prog_ret;                  /* the sight's glass with its reticle */
@@ -368,4 +371,5 @@ void qo_draw_panel(const float mvp[16])
     glDisable(GL_BLEND);
 }
 
+#endif /* OpenGL renderer */
 #endif /* __ANDROID__ */

@@ -5,6 +5,14 @@
 #include <stddef.h>
 #include <math.h>
 #include "color_spv.h"
+typedef struct {
+    VkPipelineColorBlendAttachmentState blend;
+    float constants[4];
+    VkPipelineDepthStencilStateCreateInfo depth;
+    VkCullModeFlags cull;
+    VkFrontFace front;
+    unsigned shader;
+} PipelineKey;
 struct ChVkTarget {
     uint32_t family;
     VkPhysicalDevice physical;
@@ -21,6 +29,9 @@ struct ChVkTarget {
     int textured;
     VkPipelineLayout pipeline_layout;
     VkPipeline pipeline;
+    VkPipelineCache pipeline_cache;
+    PipelineKey pipeline_key;
+    int pipeline_key_valid;
     VkDevice device;
     VkQueue queue;
     VkImage depth;
@@ -59,6 +70,7 @@ void ch_vk_target_destroy(ChVkTarget *t) {
     /* Also covers an error after submission: never free pending resources. */
     if(t->failed) vkQueueWaitIdle(t->queue);
     if(t->pipeline) vkDestroyPipeline(t->device,t->pipeline,NULL);
+    if(t->pipeline_cache) vkDestroyPipelineCache(t->device,t->pipeline_cache,NULL);
     if(t->descriptor_pool) vkDestroyDescriptorPool(t->device,t->descriptor_pool,NULL);
     if(t->descriptor_layout) vkDestroyDescriptorSetLayout(t->device,t->descriptor_layout,NULL);
     if(t->pipeline_layout) vkDestroyPipelineLayout(t->device,t->pipeline_layout,NULL);
@@ -352,17 +364,6 @@ static VkResult create_pipeline(ChVkTarget *t, const VkPipelineColorBlendAttachm
         VkDescriptorSetAllocateInfo alloc={.sType=VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
             .descriptorPool=t->descriptor_pool,.descriptorSetCount=1,.pSetLayouts=&t->descriptor_layout};
         TRY(vkAllocateDescriptorSets(t->device,&alloc,&t->descriptor_set));
-        VkDescriptorImageInfo image=ch_vk_texture_descriptor(texture);
-        VkWriteDescriptorSet write={.sType=VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-            .dstSet=t->descriptor_set,.dstBinding=0,.descriptorCount=1,
-            .descriptorType=VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,.pImageInfo=&image};
-        if(t->rc) {
-            VkDescriptorImageInfo images[4];
-            for(unsigned i=0;i<4;i++) images[i]=ch_vk_texture_descriptor(
-                t->stage_images && t->stage_images[i]?t->stage_images[i]:t->dummy);
-            write.descriptorCount=4; write.pImageInfo=images;
-            vkUpdateDescriptorSets(t->device,1,&write,0,NULL);
-        } else if(texture) vkUpdateDescriptorSets(t->device,1,&write,0,NULL);
         layout.setLayoutCount=1; layout.pSetLayouts=&t->descriptor_layout;
     }
     TRY(vkCreatePipelineLayout(t->device,&layout,NULL,&t->pipeline_layout));
@@ -370,12 +371,31 @@ static VkResult create_pipeline(ChVkTarget *t, const VkPipelineColorBlendAttachm
         .stageCount=2,.pStages=stages,.pVertexInputState=&input,.pInputAssemblyState=&assembly,
         .pViewportState=&vp,.pRasterizationState=&raster,.pMultisampleState=&ms,
         .pDepthStencilState=depth_state,.pColorBlendState=&cb,.layout=t->pipeline_layout,.renderPass=t->pass};
-    TRY(vkCreateGraphicsPipelines(t->device,VK_NULL_HANDLE,1,&pipeline,NULL,&t->pipeline));
+    /* Retain driver compilation results across synchronous pipeline changes.
+     * This does not reuse a VkPipeline with a different render state. */
+    if(!t->pipeline_cache) {
+        VkPipelineCacheCreateInfo cache={.sType=VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO};
+        TRY(vkCreatePipelineCache(t->device,&cache,NULL,&t->pipeline_cache));
+    }
+    TRY(vkCreateGraphicsPipelines(t->device,t->pipeline_cache,1,&pipeline,NULL,&t->pipeline));
 fail:
     if(vert) vkDestroyShaderModule(t->device,vert,NULL);
     if(frag) vkDestroyShaderModule(t->device,frag,NULL);
     if(result!=VK_SUCCESS) t->failed=1;
     return result;
+}
+static void update_images(ChVkTarget *t,const ChVkTexture *texture)
+{
+    if(!texture && !t->rc) return;
+    VkDescriptorImageInfo images[4];
+    unsigned count=t->rc?4:1;
+    for(unsigned i=0;i<count;i++)
+        images[i]=ch_vk_texture_descriptor(t->rc?
+            (t->stage_images && t->stage_images[i]?t->stage_images[i]:t->dummy):texture);
+    VkWriteDescriptorSet write={.sType=VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+        .dstSet=t->descriptor_set,.dstBinding=0,.descriptorCount=count,
+        .descriptorType=VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,.pImageInfo=images};
+    vkUpdateDescriptorSets(t->device,1,&write,0,NULL);
 }
 static VkResult draw_full(ChVkTarget *t, const float rgba[4],
     const ChVkColorVertex *vertices, uint32_t vertex_count,
@@ -440,20 +460,29 @@ static VkResult draw_full(ChVkTarget *t, const float rgba[4],
         blend.srcAlphaBlendFactor=VK_BLEND_FACTOR_ONE;
         blend.dstAlphaBlendFactor=VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
     }
-    /* Correctness stage: calls complete synchronously, so pipeline replacement
-     * needs no deferred destruction. Cache pipelines after parity is established. */
-    if(t->pipeline) vkDestroyPipeline(t->device,t->pipeline,NULL);
-    if(t->descriptor_pool) vkDestroyDescriptorPool(t->device,t->descriptor_pool,NULL);
-    if(t->descriptor_layout) vkDestroyDescriptorSetLayout(t->device,t->descriptor_layout,NULL);
-    if(t->pipeline_layout) vkDestroyPipelineLayout(t->device,t->pipeline_layout,NULL);
-    if(t->framebuffer) vkDestroyFramebuffer(t->device,t->framebuffer,NULL);
-    if(t->view) vkDestroyImageView(t->device,t->view,NULL);
-    if(t->pass) vkDestroyRenderPass(t->device,t->pass,NULL);
-    t->descriptor_pool=VK_NULL_HANDLE; t->descriptor_layout=VK_NULL_HANDLE;
-    t->pipeline=VK_NULL_HANDLE; t->pipeline_layout=VK_NULL_HANDLE;
-    t->framebuffer=VK_NULL_HANDLE; t->view=VK_NULL_HANDLE; t->pass=VK_NULL_HANDLE;
-    result=create_pipeline(t,&blend,constants,&depth_state,cull,front,texture);
-    if(result!=VK_SUCCESS) return result;
+    /* Reuse a consecutive draw's immutable state. Texture handles, combiner
+     * program/buffer, alpha test and effects remain draw data and are updated
+     * below even on a hit. Target extent/render pass format are fixed here. */
+    PipelineKey key={0};
+    key.blend=blend; memcpy(key.constants,constants,sizeof constants);
+    key.depth=depth_state; key.cull=cull; key.front=front;
+    key.shader=effect?3:rc?2:texture?1:0;
+    if(!t->pipeline_key_valid || memcmp(&key,&t->pipeline_key,sizeof key)) {
+        if(t->pipeline) vkDestroyPipeline(t->device,t->pipeline,NULL);
+        if(t->descriptor_pool) vkDestroyDescriptorPool(t->device,t->descriptor_pool,NULL);
+        if(t->descriptor_layout) vkDestroyDescriptorSetLayout(t->device,t->descriptor_layout,NULL);
+        if(t->pipeline_layout) vkDestroyPipelineLayout(t->device,t->pipeline_layout,NULL);
+        if(t->framebuffer) vkDestroyFramebuffer(t->device,t->framebuffer,NULL);
+        if(t->view) vkDestroyImageView(t->device,t->view,NULL);
+        if(t->pass) vkDestroyRenderPass(t->device,t->pass,NULL);
+        t->descriptor_pool=VK_NULL_HANDLE; t->descriptor_layout=VK_NULL_HANDLE;
+        t->pipeline=VK_NULL_HANDLE; t->pipeline_layout=VK_NULL_HANDLE;
+        t->framebuffer=VK_NULL_HANDLE; t->view=VK_NULL_HANDLE; t->pass=VK_NULL_HANDLE;
+        result=create_pipeline(t,&blend,constants,&depth_state,cull,front,texture);
+        if(result!=VK_SUCCESS) return result;
+        t->pipeline_key=key; t->pipeline_key_valid=1;
+    }
+    update_images(t,texture);
     VkDeviceSize offset=t->vertex_offset+(VkDeviceSize)vertex_count*sizeof(*vertices);
     VkDeviceSize size=offset+(VkDeviceSize)index_count*sizeof(*indices);
     if(size>SIZE_MAX) return VK_ERROR_OUT_OF_HOST_MEMORY;

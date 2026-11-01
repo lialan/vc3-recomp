@@ -55,15 +55,25 @@
 #include <time.h>
 #include <unistd.h>
 
+#ifndef CHIHIRO_RENDERER_VULKAN
 #include <EGL/egl.h>
 #include <GLES3/gl32.h>
 #include <GLES2/gl2ext.h>
+#endif
 #include <jni.h>
 #include <sys/system_properties.h>
 #include <SDL.h>
 
 #define XR_USE_PLATFORM_ANDROID
+#ifdef CHIHIRO_RENDERER_VULKAN
+#include "gpu/vulkan/vk_runtime.h"
+#include "gpu/vulkan/vk_frame_mailbox.h"
+#include "gpu/vulkan/vk_xr_quad.h"
+#include "gpu/vulkan/vk_overlay.h"
+#define XR_USE_GRAPHICS_API_VULKAN
+#else
 #define XR_USE_GRAPHICS_API_OPENGL_ES
+#endif
 #include <openxr/openxr.h>
 #include <openxr/openxr_platform.h>
 
@@ -88,10 +98,13 @@ uint64_t xbox_HostNowNs(void);
 /* ── EGL: the host's context and the back end's ───────────────────────── */
 
 static SDL_Window *s_win;
+#ifndef CHIHIRO_RENDERER_VULKAN
 static EGLDisplay s_dpy = EGL_NO_DISPLAY;
 static EGLContext s_ctx = EGL_NO_CONTEXT;
 static EGLConfig  s_cfg;
 static int s_es_minor = 2;          /* 3.2 on the Quest; 3.0 in the emulator */
+#endif
+
 /* The threads the headset is told about (perf_frame): the loop's, the GL
  * back end's, the push-buffer decode's (the toolkit's "nv2a exec": the GL
  * thread itself unless RECOMP_PB_DECODE_THREAD splits them), the game's;
@@ -106,6 +119,7 @@ static void thread_named(const char *name)
 }
 static volatile int s_quit;
 
+#ifndef CHIHIRO_RENDERER_VULKAN
 /* Called once on the executor thread by gl_backend.c's gl_ready: a context
  * sharing the host's objects, current on that thread from here on. */
 int vc3_quest_gl_context(void)
@@ -141,8 +155,11 @@ int vc3_quest_gl_context(void)
     return 1;
 }
 
+#endif
+
 /* ── Frames from the back end: three shared textures ──────────────────── */
 
+#ifndef CHIHIRO_RENDERER_VULKAN
 typedef struct {
     GLuint tex;
     GLsizei w, h;            /* as drawn: both eyes, side by side, in stereo */
@@ -163,7 +180,22 @@ static Frame s_frame[3];
 static int s_back = 0, s_ready = 1, s_front = 2;
 static uint64_t s_ready_seq, s_shown_seq;
 static pthread_mutex_t s_lock = PTHREAD_MUTEX_INITIALIZER;
-static uint64_t s_frames_in;   /* for the log */
+
+#endif
+
+#ifdef CHIHIRO_RENDERER_VULKAN
+typedef struct {
+    int w,h,eyes,lw,lh;
+    Vc3VrFrame vr;
+    ChVkCpuFrame cpu;
+} Frame;
+static ChVkXrDevice s_vk;
+static ChVkFrameMailbox *s_vk_frames;
+static pthread_mutex_t s_vk_queue = PTHREAD_MUTEX_INITIALIZER;
+static int vk_host_init(void);
+static void vk_menu_upload(const void *);
+#endif
+static uint64_t s_frames_in;   /* display thread's consumed sequence */
 
 /* VC3_PACE_LOG=1: once a second, the spread of the times between game
  * frames (back end thread) and how many headset frames showed each (host). */
@@ -209,6 +241,7 @@ static void pace_game_frame(void)
     }
 }
 
+#ifndef CHIHIRO_RENDERER_VULKAN
 static int direct_acquire(int w, int h, GLuint *fbo, XrSwapchain *chain);   /* below */
 static void direct_release(void);
 static pthread_mutex_t s_submit = PTHREAD_MUTEX_INITIALIZER;
@@ -395,10 +428,34 @@ static Frame *take_frame(int *is_new, int allow)
 
 /* ── Settings: the screen, the gun ────────────────────────────────────── */
 
+#endif
+
+#ifdef CHIHIRO_RENDERER_VULKAN
+static Frame *take_frame(int *is_new,int allow)
+{
+    static Frame frame;
+    ChVkCpuFrame next={0};
+    *is_new=0;
+    if(allow && ch_vk_frame_mailbox_take(s_vk_frames,&next)==VK_SUCCESS) {
+        ch_vk_cpu_frame_release(&frame.cpu);
+        frame.cpu=next;
+        frame.w=frame.lw=(int)next.surface.width;
+        frame.h=frame.lh=(int)next.surface.height;
+        frame.eyes=1;
+        s_frames_in=next.sequence;
+        *is_new=1;
+    }
+    return frame.cpu.rgba?&frame:NULL;
+}
+#endif
+
 static float s_dist = 2.6f, s_height = 1.9f;    /* metres */
 #define EYE_DISTANCE 0.064f                       /* metres */
 
+#ifndef CHIHIRO_RENDERER_VULKAN
 void vc3_gl_stereo_separation(float ndc);         /* gl_backend.c */
+
+#endif
 
 enum { LASER_ON, LASER_DOT, LASER_OFF };
 static const char *const SIGHT_KEY[QO_SIGHT_COUNT] = { "iron", "reddot", "holo" };
@@ -504,6 +561,7 @@ static PFN_xrSetAndroidApplicationThreadKHR s_set_thread;
 static float s_rates[8];
 static int s_nrates;
 
+#ifndef CHIHIRO_RENDERER_VULKAN
 static XrSwapchain s_chain;
 static uint32_t s_chain_gen;          /* bumped at every (re)creation */
 static uint32_t s_chain_n, s_chain_w, s_chain_h;
@@ -511,6 +569,8 @@ static XrSwapchainImageOpenGLESKHR s_chain_img[8];
 static GLuint s_chain_fbo[8], s_read_fbo;
 static int64_t s_chain_fmt;
 static int s_srgb_control;
+
+#endif
 
 static XrActionSet s_set;
 static XrAction a_aim, a_trigger, a_grip, a_lower, a_upper, a_stick_xy, a_stick_click,
@@ -671,7 +731,11 @@ static int xr_init(void)
     PFN_xrInitializeLoaderKHR init = NULL;
     XrLoaderInitInfoAndroidKHR li = { XR_TYPE_LOADER_INIT_INFO_ANDROID_KHR };
     const char *ext[8] = { XR_KHR_ANDROID_CREATE_INSTANCE_EXTENSION_NAME,
+#ifdef CHIHIRO_RENDERER_VULKAN
+                           XR_KHR_VULKAN_ENABLE2_EXTENSION_NAME };
+#else
                            XR_KHR_OPENGL_ES_ENABLE_EXTENSION_NAME };
+#endif
     int have_perf = 0, have_threads = 0;
     uint32_t next = 2, n = 0, i;
     XrExtensionProperties *props;
@@ -679,12 +743,17 @@ static int xr_init(void)
     XrInstanceCreateInfoAndroidKHR ai = { XR_TYPE_INSTANCE_CREATE_INFO_ANDROID_KHR };
     XrInstanceCreateInfo ic = { XR_TYPE_INSTANCE_CREATE_INFO };
     XrSystemGetInfo sgi = { XR_TYPE_SYSTEM_GET_INFO };
+#ifndef CHIHIRO_RENDERER_VULKAN
     PFN_xrGetOpenGLESGraphicsRequirementsKHR req_fn = NULL;
     XrGraphicsRequirementsOpenGLESKHR req = { XR_TYPE_GRAPHICS_REQUIREMENTS_OPENGL_ES_KHR };
     XrGraphicsBindingOpenGLESAndroidKHR gb = { XR_TYPE_GRAPHICS_BINDING_OPENGL_ES_ANDROID_KHR };
+#endif
+
     XrSessionCreateInfo sc = { XR_TYPE_SESSION_CREATE_INFO };
     XrReferenceSpaceCreateInfo rc = { XR_TYPE_REFERENCE_SPACE_CREATE_INFO };
+#ifndef CHIHIRO_RENDERER_VULKAN
     const char *exts;
+#endif
 
     if (!env || !activity)
         return 0;
@@ -747,6 +816,15 @@ static int xr_init(void)
 
     sgi.formFactor = XR_FORM_FACTOR_HEAD_MOUNTED_DISPLAY;
     XRCHECK(xrGetSystem(s_inst, &sgi, &s_sys));
+#ifdef CHIHIRO_RENDERER_VULKAN
+    VkResult vk_result=VK_SUCCESS;
+    XrResult device_result=ch_vk_xr_device_create(s_inst,s_sys,xrGetInstanceProcAddr,&s_vk,&vk_result);
+    if(XR_FAILED(device_result) || vk_result!=VK_SUCCESS) {
+        fprintf(stderr,"[xr] Vulkan device failed: XrResult=%d VkResult=%d\n",device_result,vk_result);
+        return 0;
+    }
+    sc.next=&s_vk.binding;
+#else
     XRCHECK(xrGetInstanceProcAddr(s_inst, "xrGetOpenGLESGraphicsRequirementsKHR",
                                   (PFN_xrVoidFunction *)&req_fn));
     XRCHECK(req_fn(s_inst, s_sys, &req));
@@ -755,6 +833,7 @@ static int xr_init(void)
     gb.config = s_cfg;
     gb.context = s_ctx;
     sc.next = &gb;
+#endif
     sc.systemId = s_sys;
     XRCHECK(xrCreateSession(s_inst, &sc, &s_sess));
     native_init();
@@ -765,6 +844,10 @@ static int xr_init(void)
     if (!xr_input_init())
         return 0;
 
+#ifdef CHIHIRO_RENDERER_VULKAN
+    if(!vk_host_init()) return 0;
+    fprintf(stderr,"[xr] native Vulkan session up\n");
+#else
     /* The game's colours are already sRGB: an sRGB swapchain written raw
      * (sRGB write conversion off), else plain RGBA8. */
     {
@@ -791,9 +874,11 @@ static int xr_init(void)
     }
     fprintf(stderr, "[xr] session up (%s swapchain)\n",
             s_chain_fmt == GL_SRGB8_ALPHA8 ? "sRGB" : "RGBA8");
+#endif
     return 1;
 }
 
+#ifndef CHIHIRO_RENDERER_VULKAN
 /* A swapchain the size of the frames (they change with the resolution and
  * aspect settings). */
 static int chain_fit(uint32_t w, uint32_t h)
@@ -967,6 +1052,12 @@ static void direct_retire_done(XrSwapchain chain)
 /* The display rate (the panel's Refresh, vr_refresh=): 120 by default --
  * the game's 60 frames shown exactly twice each, with the cadence lock in
  * xr_frame -- or 90 / 72 when asked; only rates the headset offers. */
+#endif
+
+#ifdef CHIHIRO_RENDERER_VULKAN
+static int s_overlay_ok = -1;
+#endif
+
 static void rate_apply(void)
 {
     int i, best = -1;
@@ -1362,6 +1453,7 @@ static int hud_panel(const Frame *f, float c[3], float *w, float *h)
     return 1;
 }
 
+#ifndef CHIHIRO_RENDERER_VULKAN
 /* The overlay's layer: one swapchain per eye, multisampled where the GPU
  * resolves it on chip (EXT_multisampled_render_to_texture, free on Adreno). */
 typedef struct {
@@ -1450,6 +1542,8 @@ static int overlay_init(void)
     return 1;
 }
 
+#endif
+
 /* ── The settings panel ───────────────────────────────────────────────────
  * The left controller's menu button opens it to the player's left, turned
  * towards them, the game's screen still in view (as in The House of the
@@ -1516,7 +1610,11 @@ static void menu_paint(void)
     menu_items(it);
     xm_paint(img, chihiro_profile()->vr.panel_title, it, M_COUNT, s_menu.hover,
              "Point, pull the trigger. Menu button: close");
+#ifdef CHIHIRO_RENDERER_VULKAN
+    vk_menu_upload(img);
+#else
     qo_panel_upload(img, XM_W, XM_H);
+#endif
     s_menu.dirty = 0;
 }
 
@@ -1896,13 +1994,17 @@ static void gun_frame(XrTime t, const Frame *f)
             screen_save();
         }
     }
+#ifndef CHIHIRO_RENDERER_VULKAN
     /* Infinity one eye distance apart on the screen: 2 * eye / width in NDC. */
     if (f)
         vc3_gl_stereo_separation(2.0f * EYE_DISTANCE
                                  / (s_height * (float)f->lw / (float)f->lh));
+#endif
+
     memcpy(was, now, sizeof was);
 }
 
+#ifndef CHIHIRO_RENDERER_VULKAN
 /* The frame -- whole, or with eyes side by side as they are -- into the
  * swapchain image, upright (the surfaces hold the picture top row first,
  * GL's bottom); with dot, the aim dot in each eye's half (on the screen's
@@ -1933,6 +2035,8 @@ static void draw_frame(GLuint dst_fbo, const Frame *f, GLsizei w, GLsizei h, int
     }
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
 }
+
+#endif
 
 static void mat4_mul(float *o, const float *a, const float *b)
 {
@@ -1977,6 +2081,7 @@ static void eye_viewproj(const XrView *v, float vp[16])
     mat4_mul(vp, proj, view);
 }
 
+#ifndef CHIHIRO_RENDERER_VULKAN
 /* The gun, the laser and the panel into each eye's overlay image. */
 static int draw_overlay(XrCompositionLayerProjectionView pv[2])
 {
@@ -2219,16 +2324,24 @@ static void xrgt_end(void)
     }
 }
 
+#endif
+
+#ifdef CHIHIRO_RENDERER_VULKAN
+#include "quest_vulkan.inc"
+#endif
+
 static void xr_frame(void)
 {
     XrFrameWaitInfo wi = { XR_TYPE_FRAME_WAIT_INFO };
     XrFrameState fs = { XR_TYPE_FRAME_STATE };
     XrFrameBeginInfo bi = { XR_TYPE_FRAME_BEGIN_INFO };
     XrFrameEndInfo ei = { XR_TYPE_FRAME_END_INFO };
+#ifndef CHIHIRO_RENDERER_VULKAN
     XrCompositionLayerQuad quad[2], hudq;
     XrCompositionLayerProjection proj = { XR_TYPE_COMPOSITION_LAYER_PROJECTION };
     XrCompositionLayerProjection world = { XR_TYPE_COMPOSITION_LAYER_PROJECTION };
     XrCompositionLayerProjectionView pv[2], wv[2];
+#endif
     const XrCompositionLayerBaseHeader *layers[4];
     uint32_t nl = 0;
     Frame *f;
@@ -2258,8 +2371,10 @@ static void xr_frame(void)
         if (locked && allow)
             xbox_VblankAlign(xbox_HostNowNs());
     }
+#ifndef CHIHIRO_RENDERER_VULKAN
     pthread_mutex_lock(&s_submit);     /* to xrEndFrame: see vc3_quest_frame */
     xrgt_begin();
+#endif
     f = take_frame(&is_new, allow);
     if (s_pace > 0) {   /* how many headset frames each game frame showed for */
         static int shown, hist[5], xr_n;
@@ -2298,7 +2413,11 @@ static void xr_frame(void)
     }
     perf_frame();
     if (s_overlay_ok < 0) {
+#ifdef CHIHIRO_RENDERER_VULKAN
+        s_overlay_ok = vk_overlay_init();
+#else
         s_overlay_ok = overlay_init();
+#endif
         if (!s_overlay_ok)
             fprintf(stderr, "[xr] no overlay: the aim dot is drawn into the picture\n");
     }
@@ -2309,6 +2428,10 @@ static void xr_frame(void)
 
     ei.displayTime = fs.predictedDisplayTime;
     ei.environmentBlendMode = XR_ENVIRONMENT_BLEND_MODE_OPAQUE;
+#ifdef CHIHIRO_RENDERER_VULKAN
+    pthread_mutex_lock(&s_vk_queue);
+    if(fs.shouldRender) nl=vk_present(f,layers);
+#else
     if (fs.shouldRender && f && (f->direct || chain_fit((uint32_t)f->w, (uint32_t)f->h))) {
         XrSwapchainImageAcquireInfo ai = { XR_TYPE_SWAPCHAIN_IMAGE_ACQUIRE_INFO };
         XrSwapchainImageWaitInfo wti = { XR_TYPE_SWAPCHAIN_IMAGE_WAIT_INFO };
@@ -2425,17 +2548,36 @@ static void xr_frame(void)
             layers[nl++] = (const XrCompositionLayerBaseHeader *)&proj;
         }
     }
+#endif
     ei.layerCount = nl;
     ei.layers = layers;
+#ifndef CHIHIRO_RENDERER_VULKAN
     xrgt_end();
+#endif
+#ifdef CHIHIRO_RENDERER_VULKAN
+    vk_xr_check(xrEndFrame(s_sess, &ei),"end frame");
+    static int first_layer;
+    if(nl && !first_layer) {
+        fprintf(stderr,"[xr] native Vulkan first layer submitted: %u layers, guest sequence %llu\n",
+            nl,(unsigned long long)s_frames_in);
+        first_layer=1;
+    }
+#else
     xrEndFrame(s_sess, &ei);
+#endif
+#ifdef CHIHIRO_RENDERER_VULKAN
+    pthread_mutex_unlock(&s_vk_queue);
+#endif
+#ifndef CHIHIRO_RENDERER_VULKAN
     pthread_mutex_unlock(&s_submit);
     if (f && f->direct)
         direct_retire_done(f->dchain);
+#endif
 }
 
 /* ── Without a headset: the SDL window ────────────────────────────────── */
 
+#ifndef CHIHIRO_RENDERER_VULKAN
 static void flat_frame(void)
 {
     int is_new, ww = 0, wh = 0;
@@ -2470,6 +2612,8 @@ static void flat_frame(void)
 }
 
 /* ── The guest thread, and the loop ───────────────────────────────────── */
+
+#endif
 
 static int (*s_guest_main)(void);
 static volatile int s_guest_rc, s_guest_done;
@@ -2514,6 +2658,10 @@ int vc3_quest_run(int (*guest_main)(void))
         fprintf(stderr, "[quest] SDL: %s\n", SDL_GetError());
         return 1;
     }
+#ifdef CHIHIRO_RENDERER_VULKAN
+    s_win=SDL_CreateWindow(chihiro_profile()->title,0,0,1280,720,SDL_WINDOW_FULLSCREEN);
+    if(!s_win) {fprintf(stderr,"[quest] SDL window: %s\n",SDL_GetError());return 1;}
+#else
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_ES);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 2);
@@ -2550,13 +2698,21 @@ int vc3_quest_run(int (*guest_main)(void))
     fprintf(stderr, "[quest] %s, %s\n", glGetString(GL_RENDERER), glGetString(GL_VERSION));
     glGenFramebuffers(1, &s_read_fbo);  /* the game's frames are read through it */
 
+#endif
+
     screen_load();
     if (ch_env("NO_XR") && *ch_env("NO_XR") == '1')
         fprintf(stderr, "[quest] VC3_NO_XR=1: the window, not the headset\n");
     else
         xr = xr_init();
-    if (!xr)
+    if (!xr) {
+#ifdef CHIHIRO_RENDERER_VULKAN
+        fprintf(stderr,"[quest] native Vulkan requires OpenXR; guest not started\n");
+        return 1;
+#else
         fprintf(stderr, "[quest] no OpenXR headset: showing the game in the window\n");
+#endif
+    }
 
     /* The guest on a thread of its own, with a big stack: lifted code
      * recurses on the native stack. */
@@ -2582,7 +2738,9 @@ int vc3_quest_run(int (*guest_main)(void))
             else
                 SDL_Delay(10);
         } else {
+#ifndef CHIHIRO_RENDERER_VULKAN
             flat_frame();
+#endif
         }
         /* Once a second for the first minute: frames in from the game. */
         {

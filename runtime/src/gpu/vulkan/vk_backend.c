@@ -166,13 +166,32 @@ static int observe_raw(const Nv2aSurface *s,const Nv2aBatch *b) {
     if(r!=VK_SUCCESS) fatal(r,"raw metadata observation");
     return 0; /* Retain the executor's reference CPU transform path. */
 }
-static Nv2aBackend callbacks={.clear=clear,.draw=draw,.flip=flip};
+static void queue_lock(ChVkBackend *b) {
+    if(b && b->host.lock_queue) b->host.lock_queue(b->host.queue_context);
+}
+static void queue_unlock(ChVkBackend *b) {
+    if(b && b->host.unlock_queue) b->host.unlock_queue(b->host.queue_context);
+}
+static void locked_clear(const Nv2aSurface *s,const Nv2aRenderState *rs,uint32_t flags,uint32_t argb,uint32_t zs) {
+    queue_lock(active); clear(s,rs,flags,argb,zs); queue_unlock(active);
+}
+static void locked_draw(const Nv2aSurface *s,const Nv2aBatch *b) {
+    queue_lock(active); draw(s,b); queue_unlock(active);
+}
+static void locked_flip(void) {
+    queue_lock(active); flip(); queue_unlock(active);
+}
+static int locked_observe_raw(const Nv2aSurface *s,const Nv2aBatch *b) {
+    queue_lock(active); int result=observe_raw(s,b); queue_unlock(active); return result;
+}
+static Nv2aBackend callbacks={.clear=locked_clear,.draw=locked_draw,.flip=locked_flip};
 const Nv2aBackend *ch_vk_backend_callbacks(void) { return &callbacks; }
 VkResult ch_vk_backend_create(const ChVkBackendConfig *config,ChVkBackend **out) {
     if(!out) return VK_ERROR_INITIALIZATION_FAILED;
     *out=NULL;
     if(!config || !config->physical || !config->device || !config->queue ||
-       !config->guest_base || !config->guest_bytes || !config->decode)
+       !config->guest_base || !config->guest_bytes || !config->decode ||
+       (!!config->lock_queue != !!config->unlock_queue))
         return VK_ERROR_INITIALIZATION_FAILED;
     ChVkBackend *b=calloc(1,sizeof(*b));
     if(!b) return VK_ERROR_OUT_OF_HOST_MEMORY;
@@ -180,12 +199,14 @@ VkResult ch_vk_backend_create(const ChVkBackendConfig *config,ChVkBackend **out)
 }
 VkResult ch_vk_backend_attach(ChVkBackend *b) {
     if(!b || active) return VK_ERROR_INITIALIZATION_FAILED;
-    callbacks.draw_raw=b->host.observe_raw?observe_raw:NULL;
+    callbacks.draw_raw=b->host.observe_raw?locked_observe_raw:NULL;
     active=b; nv2a_backend_register(&callbacks); return VK_SUCCESS;
 }
 void ch_vk_backend_destroy(ChVkBackend *b) {
     if(!b) return;
+    queue_lock(b);
     if(active==b) { nv2a_backend_register(NULL); active=NULL; }
     for(unsigned i=0;i<b->count;i++) { ch_vk_target_destroy(b->surfaces[i].target); free(b->surfaces[i].rgba); free(b->surfaces[i].observed); free(b->surfaces[i].depth); free(b->surfaces[i].stencil); }
+    queue_unlock(b);
     free(b);
 }

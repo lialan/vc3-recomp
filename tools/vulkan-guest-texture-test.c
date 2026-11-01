@@ -11,6 +11,17 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <time.h>
+struct QueueLockProbe { unsigned locks,unlocks; int held; };
+static void probe_lock(void *context) {
+    struct QueueLockProbe *probe=context;
+    if(probe->held) abort();
+    probe->held=1;probe->locks++;
+}
+static void probe_unlock(void *context) {
+    struct QueueLockProbe *probe=context;
+    if(!probe->held) abort();
+    probe->held=0;probe->unlocks++;
+}
 static int ring_mode;
 static volatile uint32_t dma_get;
 /* Link-only dependencies for disabled deferred/present paths. Abort rather
@@ -219,8 +230,12 @@ int ch_test_guest_textures(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,ui
     }
     if(!failed) {
         ChVkBackend *backend=NULL;
+        struct QueueLockProbe probe={0};
         ChVkBackendConfig config={.physical=gpu,.device=device,.queue=queue,.family=family,
-            .guest_base=guest.bytes,.guest_bytes=sizeof(guest.bytes),.decode=nv2a_backend_decode_texture,.precise_queries=1};
+            .guest_base=guest.bytes,.guest_bytes=sizeof(guest.bytes),.decode=nv2a_backend_decode_texture,.precise_queries=1,
+            .lock_queue=probe_lock,.queue_context=&probe};
+        if(ch_vk_backend_create(&config,&backend)!=VK_ERROR_INITIALIZATION_FAILED || backend) failed=1;
+        config.unlock_queue=probe_unlock;
         if(ch_vk_backend_create(&config,&backend)!=VK_SUCCESS || ch_vk_backend_attach(backend)!=VK_SUCCESS) failed=1;
         else {
             const Nv2aBackend *cb=ch_vk_backend_callbacks();
@@ -313,7 +328,10 @@ int ch_test_guest_textures(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,ui
             if(cb->draw_raw || cb->flip_async) failed=1;
             if(!failed) puts("PASS: real executor methods -> Vulkan pixels, precise GET_REPORT=16, ordered semaphore release");
         }
+        unsigned calls=probe.locks;
         ch_vk_backend_destroy(backend);
+        if(calls<8 || probe.locks!=calls+1 || probe.held || probe.locks!=probe.unlocks) failed=1;
+        if(!failed) puts("PASS: guest callbacks and destruction serialize the shared host queue; unpaired hooks rejected");
     }
     if(!failed) {
         const uint32_t colors[]={0x80204080,0x4080c040};

@@ -112,7 +112,15 @@ int SDL_main(int argc, char **argv)
     s_log = fopen(path, "w");
     snprintf(path, sizeof path, "%s/env.txt", game);
     load_env(path);
+    if (own && strcmp(own, game)) {
+        snprintf(path, sizeof path, "%s/env.txt", own);
+        load_env(path);
+    }
     if (priv) {
+        /* Per-app diagnostic overrides keep candidates isolated from the
+         * working app's shared env.txt and saved settings. */
+        snprintf(path, sizeof path, "%s/env.txt", priv);
+        load_env(path);
         snprintf(path, sizeof path, "%s/save", priv);
         ch_setenv("SAVE_DIR", path, 0);
         ch_setenv("CONFIG_DIR", priv, 0);

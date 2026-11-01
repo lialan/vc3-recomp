@@ -7,11 +7,13 @@
 apply plugin: 'com.android.application'
 
 android {
-    namespace(project.findProperty("appNamespace") ?: project.ext.appNamespace)
+    namespace(providers.gradleProperty("appNamespace").getOrElse(project.ext.appNamespace))
     compileSdkVersion 35
 
     defaultConfig {
-        applicationId(project.findProperty("appId") ?: project.ext.appId)
+        applicationId(providers.gradleProperty("appId").getOrElse(project.ext.appId))
+        manifestPlaceholders = [appLabel: project.findProperty("appLabel") ?: "@string/app_name",
+                                requireGles: project.findProperty("requireGles") ?: "true"]
         minSdkVersion 29
         targetSdkVersion 32
         versionCode((project.findProperty("appVersionCode") ?: "1") as int)
@@ -28,7 +30,7 @@ android {
 
     sourceSets.main {
         jni.srcDirs = []
-        jniLibs.srcDir 'src/main/libs'
+        jniLibs.srcDirs = [project.findProperty('nativeLibsDir') ?: 'src/main/libs']
     }
 
     packaging {

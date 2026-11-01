@@ -3,10 +3,13 @@
 #include "chihiro/ch_env.h"
 #include "xbox_memory_layout.h"
 #include <stdio.h>
+#include <errno.h>
 #include <stdlib.h>
 #include <string.h>
 
 extern void xbox_FramebufferWindowPresentFrames(const void *const *,int,uint32_t,uint32_t,uint32_t,uint32_t);
+static ChVkBackendConfig host_config;
+static int has_host_config;
 static struct {
     VkInstance instance;
     VkDevice device;
@@ -29,17 +32,23 @@ static VkResult present(void *unused,const Nv2aSurface *surface,const void *rgba
     (void)unused;
     size_t count=(size_t)surface->width*surface->height;
     if(bytes!=count*4) return VK_ERROR_INITIALIZATION_FAILED;
-    if(bytes>runtime.capacity) {
-        void *p=realloc(runtime.argb,bytes);
-        if(!p) return VK_ERROR_OUT_OF_HOST_MEMORY;
-        runtime.argb=p;runtime.capacity=bytes;
+    if(!has_host_config) {
+        if(bytes>runtime.capacity) {
+            void *p=realloc(runtime.argb,bytes);
+            if(!p) return VK_ERROR_OUT_OF_HOST_MEMORY;
+            runtime.argb=p;runtime.capacity=bytes;
+        }
+        const unsigned char *src=rgba;
+        for(size_t i=0;i<count;i++)
+            runtime.argb[i]=((uint32_t)src[4*i+3]<<24)|((uint32_t)src[4*i]<<16)
+                |((uint32_t)src[4*i+1]<<8)|src[4*i+2];
+        const void *planes[]={runtime.argb};
+        xbox_FramebufferWindowPresentFrames(planes,1,surface->width,surface->height,surface->width*4,4);
+    } else if(host_config.present_rgba) {
+        VkResult result=host_config.present_rgba(host_config.render_context,surface,rgba,bytes);
+        if(result!=VK_SUCCESS) return result;
     }
     const unsigned char *src=rgba;
-    for(size_t i=0;i<count;i++)
-        runtime.argb[i]=((uint32_t)src[4*i+3]<<24)|((uint32_t)src[4*i]<<16)
-            |((uint32_t)src[4*i+1]<<8)|src[4*i+2];
-    const void *planes[]={runtime.argb};
-    xbox_FramebufferWindowPresentFrames(planes,1,surface->width,surface->height,surface->width*4,4);
     const char *dir=ch_env("VULKAN_DUMP_DIR"),*first=ch_env("VULKAN_DUMP_FIRST"),*n=ch_env("VULKAN_DUMP_COUNT");
     uint64_t start=first?strtoull(first,NULL,10):0,number=n?strtoull(n,NULL,10):1;
     if(dir && runtime.frames>=start && runtime.frames-start<number) {
@@ -47,7 +56,10 @@ static VkResult present(void *unused,const Nv2aSurface *surface,const void *rgba
         if(snprintf(path,sizeof path,"%s/frame-%06llu.ppm",dir,(unsigned long long)runtime.frames)>=(int)sizeof path)
             return VK_ERROR_INITIALIZATION_FAILED;
         FILE *file=fopen(path,"wb");
-        if(!file) return VK_ERROR_INITIALIZATION_FAILED;
+        if(!file) {
+            fprintf(stderr,"[Vulkan] capture %s: %s\n",path,strerror(errno));
+            return VK_ERROR_INITIALIZATION_FAILED;
+        }
         fprintf(file,"P6\n%u %u\n255\n",surface->width,surface->height);
         int failed=0;
         for(size_t i=0;i<count;i++) if(fwrite(src+4*i,1,3,file)!=3) {failed=1;break;}
@@ -68,12 +80,47 @@ static VkResult present(void *unused,const Nv2aSurface *surface,const void *rgba
     return VK_SUCCESS;
 }
 
+int ch_vk_runtime_configure(const ChVkBackendConfig *config)
+{
+    if(runtime.backend || runtime.instance || runtime.device) return 0;
+    if(config && (!config->physical || !config->device || !config->queue ||
+       (!!config->lock_queue != !!config->unlock_queue))) return 0;
+    if(config) host_config=*config;
+    else memset(&host_config,0,sizeof host_config);
+    has_host_config=config!=NULL;
+    return 1;
+}
+
+static VkResult attach(ChVkBackendConfig config)
+{
+    config.guest_base=(void *)xbox_GetMemoryOffset();
+    config.guest_bytes=(size_t)0x80000000u+g_xbox_total_ram;
+    config.decode=nv2a_backend_decode_texture;
+    config.present_rgba=present;
+    if(!config.fatal) config.fatal=fatal;
+    VkResult result=ch_vk_backend_create(&config,&runtime.backend);
+    if(result==VK_SUCCESS) result=ch_vk_backend_attach(runtime.backend);
+    return result;
+}
+
 int ch_vk_runtime_start(void)
 {
+    if(runtime.backend || runtime.instance || runtime.device) return 0;
+    VkResult result;
+    if(has_host_config) {
+        result=attach(host_config);
+        if(result!=VK_SUCCESS) goto fail;
+        fprintf(stderr,"[Vulkan] direct NV2A backend on host-selected Vulkan device; OpenGL excluded from this build\n");
+        return 1;
+    }
+#ifdef __ANDROID__
+    result=VK_ERROR_INITIALIZATION_FAILED;
+    goto fail; /* Quest must use the OpenXR runtime-selected device. */
+#endif
     VkApplicationInfo app={.sType=VK_STRUCTURE_TYPE_APPLICATION_INFO,
         .pApplicationName="Chihiro direct Vulkan",.apiVersion=VK_API_VERSION_1_0};
     VkInstanceCreateInfo info={.sType=VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,.pApplicationInfo=&app};
-    VkResult result=vkCreateInstance(&info,NULL,&runtime.instance);
+    result=vkCreateInstance(&info,NULL,&runtime.instance);
     if(result!=VK_SUCCESS) goto fail;
     uint32_t count=0;
     result=vkEnumeratePhysicalDevices(runtime.instance,&count,NULL);
@@ -115,8 +162,7 @@ int ch_vk_runtime_start(void)
         .guest_base=(void *)xbox_GetMemoryOffset(),.guest_bytes=(size_t)0x80000000u+g_xbox_total_ram,
         .decode=nv2a_backend_decode_texture,.precise_queries=enabled.occlusionQueryPrecise,
         .present_rgba=present,.fatal=fatal};
-    result=ch_vk_backend_create(&config,&runtime.backend);
-    if(result==VK_SUCCESS) result=ch_vk_backend_attach(runtime.backend);
+    result=attach(config);
     if(result!=VK_SUCCESS) goto fail;
     fprintf(stderr,"[Vulkan] direct NV2A backend on %s; OpenGL excluded from this build\n",properties.deviceName);
     return 1;
