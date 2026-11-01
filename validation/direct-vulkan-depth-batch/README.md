@@ -909,3 +909,43 @@ including eviction, aliases, target reuse, CPU edits and guest completion.
 
 Diagnostic render-texture/coherence fixture passed:
 `/tmp/vc3-depth-switch-fixture.log`; Mac main build passed. No headset/device use.
+
+## Bounded depth-owner cache experiment (not retained)
+
+A shared cache of up to eight disjoint depth owners (64 MiB inactive CPU
+staging budget) reduced imports and writebacks, but did not improve local
+E.S. throughput. Conflicting guest ranges and physical image reuse published
+and invalidated saved owners; guest completion published all owners.
+
+2100-frame KosmicKrisp runs, 60 FPS cap, sound off, fragment depth rounding:
+
+| Variant | Activation FPS | Held FPS (1681..1801 / 1801..1921) | Held p95 ms | Activation max ms |
+| --- | ---: | --- | --- | ---: |
+| Single owner | 34.75 | 42.38 / 46.08 | 29.34 / 24.32 | 132.44 |
+| Eight owners, cross-image reuse | 32.55 | 41.60 / 44.98 | 30.76 / 25.73 | 134.41 |
+| Eight owners, same-image reuse | 34.47 | 42.78 / 45.76 | 27.73 / 25.10 | 129.85 |
+
+All completed with exit 0 and no runner failure diagnostics. These are local
+guest-completion rates, not headset or visual correctness acceptance.
+Single-owner and cross-image runs used identical immutable binary
+`/tmp/vc3-depth-cache-vc3`; cache entries were explicitly set to 1 and 8.
+The runner inherited that variable but its report whitelist omitted it;
+zero versus 5174 final cache hits in game.log confirms the effective modes.
+The same-image run explicitly records entries=8 in report.json.
+
+At frame 2100, single owner recorded 5314 imports and 13310 writebacks;
+cross-image cache recorded 2169 imports, 10793 writebacks, and 2098 GPU
+copies. Each copy currently finishes source/destination work and submits a
+synchronous copy. Fewer CPU transfers alone therefore did not yield a gain.
+Same-image caching avoided those new copies but had mixed throughput/pacing.
+No cache implementation or API is retained. Existing coherence fixtures passed
+the first variant, but cache-specific eviction/alias validation was not
+completed; rejected experimental patches are not correctness-qualified.
+
+Evidence: `/tmp/vc3-depth-cache-{control,es,same-image}/report.json` and
+corresponding game.log. Experimental patches:
+`/tmp/vc3-depth-cache-all-targets.patch` and
+`/tmp/vc3-depth-cache-same-image-rejected.patch`.
+Next refresh CPU profiles of the retained backend separately during activation
+and held E.S.; do not assume the older bulk-decoder profile still describes
+the current paired-readback bottleneck. No headset/device activity.
