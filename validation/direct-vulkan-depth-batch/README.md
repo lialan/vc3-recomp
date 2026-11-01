@@ -436,3 +436,10 @@ backend full-memory tests pass with validation/sync validation requested
 builds. Remaining performance work still includes frame pacing and larger GPU
 submission/roundtrip cost; current local evidence does not justify a smooth60FPS
 claim or Quest acceptance.
+
+Final pair details: compute late windows are32.98/33.05/32.80 FPS. All three
+captured frames(1200/1680/2160) differ in this pair; frame1200 visually shows the
+same scene with a different hand/animation pose. This does not prove whole-game
+parity or establish the cause of every pixel difference. Exact shared fixtures
+remain the correctness evidence. Current HEAD includes the CPU validation win;
+no game-FPS claim is made for that CPU-only change yet. All sessions terminal.
