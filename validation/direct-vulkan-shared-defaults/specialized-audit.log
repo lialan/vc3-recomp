@@ -1,0 +1,187 @@
+[Vulkan] exact write tracking: 2 contiguous backing view(s), unsupported pages compare exactly
+[Vulkan] resident command batches: enabled
+[Vulkan] resident color targets: enabled
+[Vulkan] immutable GPU render-target sampling: enabled
+[Vulkan] exact quantized D32 depth residency: native-style fragment rounding
+[Vulkan] resident D24 depth targets: enabled
+[Vulkan] retained dirty depth owners: enabled
+[Vulkan pipeline cache] packaged_bytes=68774076 loaded_bytes=68774076 path=/tmp/vc3-shared-defaults-specialized.cache
+[Vulkan depth residency] binds=3 imports=0 writebacks=2 CPU merges=0 GPU copies=0 clear skips=2 clean reuses=0 queued readbacks=2
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan depth residency] binds=3282 imports=60 writebacks=262 CPU merges=0 GPU copies=58 clear skips=293 clean reuses=0 queued readbacks=199
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=32768 texture_ms=0.066 color_pixels=0 color_ms=0.000 (cumulative)
+[Vulkan depth residency] binds=6663 imports=118 writebacks=527 CPU merges=0 GPU copies=118 clear skips=588 clean reuses=0 queued readbacks=411
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=32768 texture_ms=0.066 color_pixels=0 color_ms=0.000 (cumulative)
+[Vulkan depth residency] binds=10050 imports=176 writebacks=795 CPU merges=0 GPU copies=179 clear skips=886 clean reuses=0 queued readbacks=624
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=32768 texture_ms=0.066 color_pixels=0 color_ms=0.000 (cumulative)
+[Vulkan depth residency] binds=13438 imports=236 writebacks=1065 CPU merges=0 GPU copies=239 clear skips=1184 clean reuses=0 queued readbacks=840
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=32768 texture_ms=0.066 color_pixels=0 color_ms=0.000 (cumulative)
+[Vulkan depth residency] binds=16819 imports=296 writebacks=1336 CPU merges=0 GPU copies=299 clear skips=1484 clean reuses=0 queued readbacks=1057
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=32768 texture_ms=0.066 color_pixels=0 color_ms=0.000 (cumulative)
+[Vulkan depth residency] binds=20200 imports=356 writebacks=1607 CPU merges=0 GPU copies=359 clear skips=1784 clean reuses=0 queued readbacks=1272
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=32768 texture_ms=0.066 color_pixels=0 color_ms=0.000 (cumulative)
+[Vulkan depth residency] binds=22165 imports=416 writebacks=1868 CPU merges=0 GPU copies=419 clear skips=2084 clean reuses=0 queued readbacks=1465
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=294912 texture_ms=0.498 color_pixels=0 color_ms=0.000 (cumulative)
+[Vulkan depth residency] binds=24106 imports=476 writebacks=2133 CPU merges=0 GPU copies=479 clear skips=2384 clean reuses=0 queued readbacks=1665
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=294912 texture_ms=0.498 color_pixels=0 color_ms=0.000 (cumulative)
+[Vulkan depth residency] binds=26052 imports=536 writebacks=2395 CPU merges=0 GPU copies=538 clear skips=2683 clean reuses=0 queued readbacks=1861
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=294912 texture_ms=0.498 color_pixels=0 color_ms=0.000 (cumulative)
+[Vulkan depth residency] binds=28372 imports=596 writebacks=2658 CPU merges=0 GPU copies=598 clear skips=2983 clean reuses=0 queued readbacks=2052
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=294912 texture_ms=0.498 color_pixels=0 color_ms=0.000 (cumulative)
+[Vulkan depth residency] binds=30825 imports=656 writebacks=2918 CPU merges=0 GPU copies=657 clear skips=3281 clean reuses=0 queued readbacks=2241
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=294912 texture_ms=0.498 color_pixels=0 color_ms=0.000 (cumulative)
+[Vulkan depth residency] binds=34326 imports=714 writebacks=3187 CPU merges=0 GPU copies=717 clear skips=3581 clean reuses=0 queued readbacks=2459
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=294912 texture_ms=0.498 color_pixels=0 color_ms=0.000 (cumulative)
+[Vulkan depth residency] binds=38341 imports=774 writebacks=3462 CPU merges=0 GPU copies=777 clear skips=3881 clean reuses=0 queued readbacks=2678
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=294912 texture_ms=0.498 color_pixels=0 color_ms=0.000 (cumulative)
+[Vulkan depth residency] binds=40213 imports=835 writebacks=3722 CPU merges=0 GPU copies=836 clear skips=4181 clean reuses=0 queued readbacks=2873
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=294912 texture_ms=0.498 color_pixels=0 color_ms=0.000 (cumulative)
+[Vulkan depth residency] binds=42096 imports=895 writebacks=3986 CPU merges=0 GPU copies=896 clear skips=4481 clean reuses=0 queued readbacks=3069
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=294912 texture_ms=0.498 color_pixels=0 color_ms=0.000 (cumulative)
+[Vulkan depth residency] binds=45130 imports=953 writebacks=4253 CPU merges=0 GPU copies=956 clear skips=4781 clean reuses=0 queued readbacks=3271
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=294912 texture_ms=0.498 color_pixels=0 color_ms=0.000 (cumulative)
+[Vulkan depth residency] binds=48483 imports=1013 writebacks=4527 CPU merges=0 GPU copies=1016 clear skips=5081 clean reuses=0 queued readbacks=3475
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=294912 texture_ms=0.498 color_pixels=0 color_ms=0.000 (cumulative)
+[Vulkan depth residency] binds=52264 imports=1073 writebacks=4803 CPU merges=0 GPU copies=1076 clear skips=5381 clean reuses=0 queued readbacks=3701
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=557056 texture_ms=0.900 color_pixels=0 color_ms=0.000 (cumulative)
+[Vulkan depth residency] binds=57995 imports=1135 writebacks=5094 CPU merges=0 GPU copies=1136 clear skips=5681 clean reuses=0 queued readbacks=3938
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=845824 texture_ms=4.337 color_pixels=0 color_ms=0.000 (cumulative)
+[Vulkan depth residency] binds=129734 imports=1255 writebacks=5807 CPU merges=0 GPU copies=1196 clear skips=5981 clean reuses=0 queued readbacks=4533
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=901120 texture_ms=4.982 color_pixels=0 color_ms=0.000 (cumulative)
+[Vulkan depth residency] binds=148726 imports=1321 writebacks=6182 CPU merges=0 GPU copies=1256 clear skips=6281 clean reuses=0 queued readbacks=4857
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=1030144 texture_ms=6.424 color_pixels=0 color_ms=0.000 (cumulative)
+[Vulkan depth residency] binds=166420 imports=1381 writebacks=6543 CPU merges=0 GPU copies=1316 clear skips=6581 clean reuses=0 queued readbacks=5176
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=1030144 texture_ms=6.424 color_pixels=0 color_ms=0.000 (cumulative)
+[Vulkan depth residency] binds=188367 imports=1441 writebacks=6926 CPU merges=0 GPU copies=1376 clear skips=6881 clean reuses=0 queued readbacks=5519
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=1030144 texture_ms=6.424 color_pixels=0 color_ms=0.000 (cumulative)
+[Vulkan depth residency] binds=208844 imports=1501 writebacks=7307 CPU merges=0 GPU copies=1436 clear skips=7181 clean reuses=0 queued readbacks=5860
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=1030144 texture_ms=6.424 color_pixels=0 color_ms=0.000 (cumulative)
+[Vulkan depth residency] binds=226305 imports=1560 writebacks=7660 CPU merges=0 GPU copies=1496 clear skips=7480 clean reuses=0 queued readbacks=6174
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=1030144 texture_ms=6.424 color_pixels=0 color_ms=0.000 (cumulative)
+[Vulkan depth residency] binds=243685 imports=1620 writebacks=8018 CPU merges=0 GPU copies=1556 clear skips=7780 clean reuses=0 queued readbacks=6494
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=1030144 texture_ms=6.424 color_pixels=0 color_ms=0.000 (cumulative)
+[Vulkan depth residency] binds=265318 imports=1680 writebacks=8391 CPU merges=0 GPU copies=1616 clear skips=8080 clean reuses=0 queued readbacks=6836
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=1030144 texture_ms=6.424 color_pixels=0 color_ms=0.000 (cumulative)
+[Vulkan depth residency] binds=288016 imports=1740 writebacks=8784 CPU merges=0 GPU copies=1676 clear skips=8380 clean reuses=0 queued readbacks=7188
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=1030144 texture_ms=6.424 color_pixels=0 color_ms=0.000 (cumulative)
+[Vulkan depth residency] binds=310388 imports=1800 writebacks=9158 CPU merges=0 GPU copies=1736 clear skips=8680 clean reuses=0 queued readbacks=7531
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=1030144 texture_ms=6.424 color_pixels=0 color_ms=0.000 (cumulative)
+[Vulkan depth residency] binds=332796 imports=1860 writebacks=9538 CPU merges=0 GPU copies=1796 clear skips=8980 clean reuses=0 queued readbacks=7879
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=1030144 texture_ms=6.424 color_pixels=0 color_ms=0.000 (cumulative)
+[Vulkan depth residency] binds=355585 imports=1920 writebacks=9916 CPU merges=0 GPU copies=1856 clear skips=9280 clean reuses=0 queued readbacks=8226
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=1030144 texture_ms=6.424 color_pixels=0 color_ms=0.000 (cumulative)
+[Vulkan depth residency] binds=378443 imports=1980 writebacks=10288 CPU merges=0 GPU copies=1916 clear skips=9580 clean reuses=0 queued readbacks=8566
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=1030144 texture_ms=6.424 color_pixels=0 color_ms=0.000 (cumulative)
+[Vulkan depth residency] binds=399521 imports=2040 writebacks=10658 CPU merges=0 GPU copies=1976 clear skips=9880 clean reuses=0 queued readbacks=8904
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=1030144 texture_ms=6.424 color_pixels=0 color_ms=0.000 (cumulative)
+[Vulkan depth residency] binds=418570 imports=2100 writebacks=11029 CPU merges=0 GPU copies=2036 clear skips=10180 clean reuses=0 queued readbacks=9233
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=1030144 texture_ms=6.424 color_pixels=0 color_ms=0.000 (cumulative)
+[Vulkan depth residency] binds=435855 imports=2160 writebacks=11393 CPU merges=0 GPU copies=2096 clear skips=10480 clean reuses=0 queued readbacks=9555
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=1030144 texture_ms=6.424 color_pixels=0 color_ms=0.000 (cumulative)
+[Vulkan pipeline cache] saved_bytes=70015500
+[Vulkan pipeline cache] save=ok

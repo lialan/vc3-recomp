@@ -353,7 +353,7 @@ static VkResult create_depth(VkPhysicalDevice physical,VkDevice device,VkQueue q
      * benefit. A discard-free module is not automatically faster. */
     t->split_alpha=split && atoi(split);
     const char *specialize=getenv("CHIHIRO_VULKAN_SPECIALIZE_RC");
-    t->specialize_rc=specialize && atoi(specialize);
+    t->specialize_rc=!specialize || atoi(specialize);
     t->depth_format=depth_format;t->input_depth=input_depth;
     t->bytes=(VkDeviceSize)width*height*4;
     VkResult result;

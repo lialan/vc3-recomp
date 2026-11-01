@@ -149,6 +149,11 @@ static VkResult attach(ChVkBackendConfig config)
     config.guest_bytes=(size_t)0x80000000u+g_xbox_total_ram;
     config.decode=nv2a_backend_decode_texture;
     const char *tracking=ch_env("VULKAN_WRITE_WATCH");
+#if !defined(_WIN32)
+    /* Use exact dirty tracking in ordinary builds as well as benchmarks.
+     * The legacy diagnostic watch owns the same fault path; keep it explicit. */
+    if(!tracking && !getenv("RECOMP_WATCH")) tracking="1";
+#endif
     if(tracking && strcmp(tracking,"0")) {
         if(strcmp(tracking,"1") || getenv("RECOMP_WATCH")) return VK_ERROR_INITIALIZATION_FAILED;
 #if !defined(_WIN32)
@@ -173,7 +178,8 @@ static VkResult attach(ChVkBackendConfig config)
     const char *cache=ch_env("VULKAN_TEXTURE_CACHE");
     config.cache_textures=!cache || strcmp(cache,"0");
     const char *gpu_render_textures=ch_env("VULKAN_GPU_RENDER_TEXTURES");
-    config.sample_render_targets=gpu_render_textures && atoi(gpu_render_textures);
+    config.sample_render_targets=gpu_render_textures?atoi(gpu_render_textures)!=0:
+        config.resident_color && config.cache_textures;
     const char *entries=ch_env("VULKAN_TEXTURE_CACHE_ENTRIES");
     if(entries) {
         char *end;errno=0;unsigned long value=strtoul(entries,&end,10);
@@ -226,29 +232,33 @@ static VkResult attach(ChVkBackendConfig config)
     }
     fprintf(stderr,"[Vulkan] command batch draw limit: %u\n",config.batch_draw_limit?config.batch_draw_limit:CH_VK_MAX_BATCH_DRAWS);
     const char *depth=ch_env("VULKAN_RESIDENT_DEPTH");
-    config.resident_depth=depth && !strcmp(depth,"1");
+    config.resident_depth=depth?!strcmp(depth,"1"):config.gpu_depth_pack;
     const char *depth_copy=ch_env("VULKAN_DEPTH_GPU_COPY");
     config.strict_depth_switches=depth_copy && !strcmp(depth_copy,"0");
     const char *clean_depth=ch_env("VULKAN_REUSE_CLEAN_DEPTH");
     config.reuse_clean_depth=clean_depth && atoi(clean_depth)!=0;
     const char *multiple_depth=ch_env("VULKAN_MULTIPLE_DEPTH");
-    config.multiple_depth=multiple_depth && atoi(multiple_depth)!=0;
+    config.multiple_depth=multiple_depth?atoi(multiple_depth)!=0:
+        config.resident_depth && !config.reuse_clean_depth;
     const char *clear_skip=ch_env("VULKAN_DEPTH_CLEAR_SKIP");
     config.strict_depth_clears=clear_skip && !strcmp(clear_skip,"0");
     const char *quant=ch_env("VULKAN_QUANTIZED_DEPTH");
-    config.quantized_depth=quant && !strcmp(quant,"1");
+    config.quantized_depth=quant?!strcmp(quant,"1"):config.resident_depth;
     const char *quant_draw=ch_env("VULKAN_DEPTH_QUANT_DRAW");
     config.depth_quant_draw=quant_draw && !strcmp(quant_draw,"1");
     const char *quant_fragment=ch_env("VULKAN_DEPTH_QUANT_FRAGMENT");
     config.depth_quant_fragment=quant_fragment && !strcmp(quant_fragment,"1");
     const char *quant_inline=ch_env("VULKAN_DEPTH_QUANT_INLINE");
     config.depth_quant_inline=quant_inline && !strcmp(quant_inline,"1");
+    if(!quant_fragment && !quant_inline && !quant_draw)
+        config.depth_quant_fragment=config.quantized_depth;
     const char *packed=ch_env("VULKAN_DEPTH_PACKED");
     config.depth_float_transfers=packed && !strcmp(packed,"0");
     fprintf(stderr,"[Vulkan] resident color targets: %s\n",config.resident_color?"enabled":"disabled");
     fprintf(stderr,"[Vulkan] immutable GPU render-target sampling: %s\n",config.sample_render_targets?"enabled":"disabled");
     fprintf(stderr,"[Vulkan] exact quantized D32 depth residency: %s\n",config.quantized_depth?(config.depth_quant_fragment?"native-style fragment rounding":config.depth_quant_inline?"same-subpass input draw":config.depth_quant_draw?"depth-only draw":"compute"):"disabled");
     fprintf(stderr,"[Vulkan] resident D24 depth targets: %s\n",config.resident_depth?"enabled":"disabled");
+    fprintf(stderr,"[Vulkan] retained dirty depth owners: %s\n",config.multiple_depth?"enabled":"disabled");
     const char *texture_watch=ch_env("VULKAN_TEXTURE_WRITE_WATCH");
     config.strict_texture_checks=texture_watch && !strcmp(texture_watch,"0");
     config.present_rgba=present;

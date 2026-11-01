@@ -29,7 +29,7 @@ XR scene routing and lifted-code hooks remain host/profile responsibilities.
 | Exact D32 fallback for guest Z24 | Opt-in `quantized_depth` requires resident depth. GPU round-trips preserve the shared CPU pack/unpack semantics; stencil is retained. Native D24 remains native, Z16 stays strict. Optional `depth_quant_draw` / `CHIHIRO_VULKAN_DEPTH_QUANT_DRAW=1` uses a depth-only draw instead of compute; it requires `quantized_depth`. It regressed the measured VC3/KosmicKrisp run and remains experimental; compute is the default. |
 | Guest write tracking | Optional `guest_write_watch` supplied by host after installing mapping/fault hooks. Unsupported pages use exact byte comparison. No guessed game addresses or skipped CPU edits. |
 | Render-target texture snapshots | Opt-in `sample_render_targets` requires resident color and texture cache. Immutable versioned images, sampler keys, pins and byte budgets preserve pending draw lifetimes. |
-| Pipeline reuse | Device/backend-owned pipeline cache survives target resize. Pipeline objects remain target-owned; blend constants are dynamic. Opt-in `CHIHIRO_VULKAN_SPECIALIZE_RC` specializes instruction words, retaining dynamic factors/fog/textures. |
+| Pipeline reuse | Device/backend-owned pipeline cache survives target resize. Pipeline objects remain target-owned; blend constants are dynamic. Instruction-word specialization is enabled by default, retaining dynamic factors/fog/textures; `CHIHIRO_VULKAN_SPECIALIZE_RC=0` selects the generic diagnostic path. |
 
 Batch size is a resource/throughput choice, not a rendering approximation. Smaller
 limits reserve fewer descriptors and retain fewer samples. Geometry arena capacity
@@ -83,3 +83,9 @@ canonicalizes existing storage once when enabled and uploads/clears at their
 existing boundaries; shader output then supplies canonical depth directly.
 Ordinary pipelines use separate unchanged fragment modules. The mode is opt-in;
 see the depth-batch validation notes for correctness coverage and local performance.
+
+## Shared runtime performance defaults
+
+Ordinary runtime startup enables GPU render-target snapshots when resident color and texture caching are enabled. Compute-capable queues default to resident packed depth, bounded disjoint dirty-depth owners, and fragment-rounded quantized D32 fallback (native D24 where supported). Completion queues retained owners before waiting, preserving guest publication fences. Explicit clean-depth reuse selects the single-owner policy unless dirty pooling is explicitly requested.
+
+On supported non-Windows hosts, exact guest-write tracking defaults on; the legacy `RECOMP_WATCH` diagnostic retains its own fault path. `CHIHIRO_VULKAN_WRITE_WATCH=0` selects exact comparison fallback. Existing explicit depth/residency/sampling/specialization overrides remain available for diagnosis. No benchmark environment is required to enable these defaults, and neither the guest vblank clock nor simulation speed is changed.
