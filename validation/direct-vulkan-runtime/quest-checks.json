@@ -1,0 +1,32 @@
+{
+  "scope": "Quest standalone native Vulkan and CPU storage checks; offscreen test uses GLES for reference overlay comparison; no game or OpenXR session",
+  "results": [
+    {
+      "program": "vulkan_guest_layout_test",
+      "sha256": "d687538137ce27cb6dadf90734bdea7c5119a28ee78f722653f100dbba809886",
+      "exit_code": 0
+    },
+    {
+      "program": "vulkan_offscreen_test",
+      "sha256": "86cc6952a1c0709f74f4051fd81444b26675a3db488b4f3fbd642bb4e25d6a7b",
+      "exit_code": 0
+    },
+    {
+      "program": "vulkan_combiner_check",
+      "sha256": "64e789fb1bc2695cf62673aa9cae011bc4c27c5dae5c113767c06d49c3ee4eec",
+      "exit_code": 1
+    },
+    {
+      "program": "vulkan_xr_device_test",
+      "sha256": "aab725ebef3e9b2e6b8d44d3e69234bc198e87361fa5915e6b2544a9806a4b35",
+      "exit_code": 0
+    }
+  ],
+  "combiner_retry": {
+    "exit_code": 0,
+    "reason": "Initial invocation omitted the shader at the legacy path; corrected run supplies explicit private shader path",
+    "binary_sha256": "ed3b1afb5c6eca4f863f24be72469353bfbcfcc6b9a7d5c83c91dc650ee78e8d"
+  },
+  "working_apk_sha256_after": "3a0660db0d8a5d8e6d95a555dc087bd8f9351f2f8df91e601599ae2789b53ad6",
+  "game_apk_installed_or_replaced": false
+}

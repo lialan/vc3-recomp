@@ -41,6 +41,9 @@ extern void xbe_entry_point(void);
 extern void xbox_path_init(const char *game_dir, const char *save_dir);
 extern void chihiro_init(const char *save_dir);
 extern void vc3_gl_backend_register(void);   /* src/gpu/gl_backend.c */
+#if defined(CHIHIRO_RENDERER_VULKAN)
+#include "gpu/vulkan/vk_runtime.h"
+#endif
 
 typedef struct MCPXAPUState MCPXAPUState;
 extern MCPXAPUState *mcpx_apu_init_standalone(uint8_t *ram_ptr);
@@ -245,7 +248,12 @@ static int guest_main(void)
     xbox_path_init(s_game_dir, s_save_dir);
     xbox_kernel_bridge_init();
     chihiro_init(s_save_dir);
+#if defined(CHIHIRO_RENDERER_VULKAN)
+    if (!ch_vk_runtime_start())
+        return 1; /* No guest execution and no fallback after Vulkan failure. */
+#else
     vc3_gl_backend_register();   /* before the title submits any work */
+#endif
 
     g_esp = XBOX_STACK_TOP;
     if (!recomp_dispatch_init())
@@ -258,6 +266,9 @@ static int guest_main(void)
 
     printf("game returned\n");
     xbox_kernel_shutdown();
+#if defined(CHIHIRO_RENDERER_VULKAN)
+    ch_vk_runtime_stop();
+#endif
     xbox_MemoryLayoutShutdown();
     return 0;
 }
@@ -320,6 +331,17 @@ int main(int argc, char **argv)
      * composite quads) stay on the CPU, where the back end can see their
      * vertices. RECOMP_GPU_XF=ff keeps programs on the CPU, =0 everything. */
     setenv("RECOMP_GPU_XF", "all", 0);
+#if defined(CHIHIRO_RENDERER_VULKAN)
+    /* The executor's shared CPU transforms feed decoded batches to Vulkan.
+     * GPU transforms can be ported after this reference path reaches parity. */
+    setenv("RECOMP_GPU_XF", "0", 1);
+#if defined(__APPLE__)
+    /* SDL's scanout window uses Metal, never an implicit OpenGL renderer. */
+    setenv("SDL_RENDER_DRIVER", "metal", 1);
+#else
+    setenv("SDL_RENDER_DRIVER", "software", 1);
+#endif
+#endif
     /* The pushbuffer decode and the GL submission on two threads (the
      * mission intro's executor CPU halves on the Mac); on the Quest both
      * are reported to the headset as renderer workers (quest_host.c,

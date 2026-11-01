@@ -1,0 +1,78 @@
+#!/usr/bin/env python3
+"""Bounded real-game Vulkan run with isolated settings and inspectable evidence.
+
+Uses a local executable only. Does not connect to or install on any device.
+"""
+import argparse
+import hashlib
+import json
+import os
+from pathlib import Path
+import re
+import subprocess
+import sys
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--executable", type=Path, required=True)
+    parser.add_argument("--game", type=Path, required=True)
+    parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--icd", type=Path)
+    parser.add_argument("--frames", type=int, default=60)
+    parser.add_argument("--timeout", type=int, default=60)
+    parser.add_argument("--capture-first", type=int, default=0)
+    parser.add_argument("--capture-count", type=int, default=3)
+    args = parser.parse_args()
+    if args.frames < 1 or args.timeout < 1 or args.capture_first < 0 or args.capture_count < 0:
+        parser.error("invalid frame/capture/timeout range")
+    executable, game, output = (p.resolve() for p in (args.executable, args.game, args.output))
+    if output.exists() and any(output.iterdir()):
+        parser.error("output must be a fresh directory so stale captures cannot be reused")
+    output.mkdir(parents=True, exist_ok=True)
+    for subdir in ("frames", "save", "config"):
+        (output / subdir).mkdir(exist_ok=True)
+    env = dict(RECOMP_HEADLESS="1", RECOMP_FB_WINDOW="0", VC3_SOUND="0",
+               VC3_SCALE="1", VC3_ASPECT="4:3", VC3_STEREO="0", VC3_FPS="60",
+               VC3_SAVE_DIR=str(output / "save"), VC3_CONFIG_DIR=str(output / "config"),
+               VC3_VULKAN_DUMP_DIR=str(output / "frames"),
+               VC3_VULKAN_DUMP_FIRST=str(args.capture_first),
+               VC3_VULKAN_DUMP_COUNT=str(args.capture_count), VC3_VULKAN_FRAME_LIMIT=str(args.frames))
+    if args.icd:
+        env["VK_ICD_FILENAMES"] = str(args.icd.resolve())
+    for key in ("VK_INSTANCE_LAYERS", "VK_LAYER_PATH", "VK_LOADER_DEBUG"):
+        if key in os.environ:
+            env[key] = os.environ[key]
+    report = dict(binary=str(executable), binary_sha256=hashlib.sha256(executable.read_bytes()).hexdigest(),
+                  game=str(game), environment=env, requested_frames=args.frames,
+                  scope="Local VC3 guest execution; no Quest or VR acceptance")
+    if sys.platform == "darwin":
+        libraries = subprocess.check_output(["otool", "-L", str(executable)], text=True)
+        symbols = subprocess.check_output(["nm", "-u", str(executable)], text=True)
+        (output / "libraries.txt").write_text(libraries)
+        (output / "imports.txt").write_text(symbols)
+        bad = [line for line in symbols.splitlines() if re.search(r"_(?:gl[A-Z]|egl[A-Z]|CGL|SDL_GL_)", line)]
+        bad += [line for line in libraries.splitlines() if re.search(r"OpenGL|GLES|epoxy", line)]
+        report["opengl_imports"] = bad
+        if bad:
+            raise SystemExit("FAIL: executable still imports OpenGL: " + repr(bad))
+    with (output / "game.log").open("w") as log:
+        try:
+            process = subprocess.run([str(executable), str(game)], env={**os.environ, **env},
+                                     stdout=log, stderr=subprocess.STDOUT, timeout=args.timeout)
+            report["exit_code"] = process.returncode
+        except subprocess.TimeoutExpired:
+            report["exit_code"] = "timeout"
+    text = (output / "game.log").read_text(errors="replace")
+    report["reached_frame_limit"] = f"diagnostic frame limit reached: {args.frames}" in text
+    report["captures"] = {p.name: hashlib.sha256(p.read_bytes()).hexdigest()
+                          for p in sorted((output / "frames").glob("*.ppm"))}
+    report["passed_execution"] = report["exit_code"] == 0 and report["reached_frame_limit"]
+    (output / "report.json").write_text(json.dumps(report, indent=2) + "\n")
+    print("\n".join(text.splitlines()[-30:]))
+    print(f"Execution passed={report['passed_execution']}; evidence={output}")
+    return 0 if report["passed_execution"] else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

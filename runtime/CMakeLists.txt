@@ -19,8 +19,16 @@ set(rt_sources
     src/chihiro/d3d_fence.c
     src/host/host_input.c
     src/host/display_settings.c
-    src/gpu/gl_backend.c
-    src/gpu/gl_texdec.c)
+    )
+if(CHIHIRO_RENDERER STREQUAL "vulkan")
+    if(ANDROID)
+        message(FATAL_ERROR "Direct Vulkan Quest host integration is not available yet")
+    endif()
+    list(APPEND rt_sources src/gpu/vulkan/vk_runtime.c)
+    set(CHIHIRO_BUILD_VULKAN ON CACHE BOOL "Build experimental Vulkan backend library" FORCE)
+else()
+    list(APPEND rt_sources src/gpu/gl_backend.c src/gpu/gl_texdec.c)
+endif()
 if(ANDROID)
     # Meta Quest (quest/build.sh): the headset, its controllers and the
     # window; the GL back end built for GLES 3.2 on EGL.
@@ -51,6 +59,9 @@ if(ANDROID)
     target_compile_definitions(chihiro_rt PUBLIC VC3_GLES=1)
     target_include_directories(chihiro_rt PUBLIC ${OPENXR_DIR})
     target_link_libraries(chihiro_rt PUBLIC SDL2::SDL2 ${OPENXR_LIB} EGL GLESv3 android log m)
+elseif(CHIHIRO_RENDERER STREQUAL "vulkan")
+    target_compile_definitions(chihiro_rt PUBLIC CHIHIRO_RENDERER_VULKAN=1)
+    target_link_libraries(chihiro_rt PUBLIC chihiro_vulkan)
 else()
     target_link_libraries(chihiro_rt PUBLIC "-framework OpenGL")
 endif()

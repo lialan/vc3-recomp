@@ -27,6 +27,12 @@ VkResult ch_vk_nv2a_store_color(const Nv2aSurface *surface,
     const void *rgba, VkDeviceSize rgba_bytes, void *guest_base, size_t guest_bytes);
 VkResult ch_vk_nv2a_load_color(const Nv2aSurface *surface, void *rgba,
     VkDeviceSize rgba_bytes, const void *guest_base, size_t guest_bytes);
+/* State-aware color transfers honor pitched and Morton render-target layouts.
+ * The legacy functions above retain their explicit linear contract. */
+VkResult ch_vk_nv2a_store_color_state(const Nv2aSurface *,const Nv2aRenderState *,
+    const void *,VkDeviceSize,void *,size_t);
+VkResult ch_vk_nv2a_load_color_state(const Nv2aSurface *,const Nv2aRenderState *,
+    void *,VkDeviceSize,const void *,size_t);
 /* State-aware clear: inclusive rectangle bounds, clipped to target extent.
  * Rectangle draws ignore guest blend/alpha/cull tests, preserve outside pixels.
  * Initialized target required for a preserving clear; backend imports guest data. */

@@ -1,0 +1,11 @@
+{
+  "scope": "Static SEGA logo fade phase comparison, CPU transforms on both backends; reference phase selected from surrounding captures, not synchronized gameplay parity",
+  "native_frame": 30,
+  "reference_capture": 37,
+  "width": 640,
+  "height": 480,
+  "max_rgb_delta": 1,
+  "channels_over3": 0,
+  "native_rgb_sha256": "6c48d6fa1304e09bdf5506eacdb91d89b44a765d99c0b13f60186e7e1ac53147",
+  "reference_rgb_sha256": "8093a0d60a15877bca57477a53a8f281c9375555d2ed88b2537d2663c0a93ce9"
+}

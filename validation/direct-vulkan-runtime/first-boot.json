@@ -1,0 +1,15 @@
+{
+  "binary_sha256": "d61516b214126c84239b96c4bd1a650b71e5b877875c65c0de852595bbfd250b",
+  "environment": {
+    "VK_ICD_FILENAMES": "/opt/homebrew/share/vulkan/icd.d/kosmickrisp_mesa_icd.aarch64.json",
+    "RECOMP_HEADLESS": "1",
+    "RECOMP_FB_WINDOW": "0",
+    "VC3_SAVE_DIR": "/tmp/vc3-direct-runtime/save",
+    "VC3_CONFIG_DIR": "/tmp/vc3-direct-runtime/config",
+    "VC3_SOUND": "0",
+    "VC3_VULKAN_DUMP_DIR": "/Users/lialan/Downloads/VR/vc3-vulkan/validation/direct-vulkan-runtime",
+    "VC3_VULKAN_DUMP_COUNT": "4",
+    "VC3_VULKAN_FRAME_LIMIT": "4"
+  },
+  "exit": -6
+}

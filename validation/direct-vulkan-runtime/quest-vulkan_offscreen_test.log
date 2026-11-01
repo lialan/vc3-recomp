@@ -1,0 +1,65 @@
+device=Adreno (TM) 740 vendor=5143 deviceID=43050b00 api=1.3.295
+PASS: real executor methods -> Vulkan pixels, precise GET_REPORT=16, ordered semaphore release
+PASS: real DMA ring CALL/RETURN/JUMP, increment/nonincrement packets -> Vulkan pixels/report/semaphore/GET
+PASS: exact guest color coherence, ARGB/RGB565 CPU edits before sampling/flip, no false edits from quantized GPU writes or padding
+PASS: backend flip -> owned host frame -> Vulkan upload includes CPU writes and retains prior frame ownership
+PASS: registered backend synchronous clear/draw/flip host hooks -> distinct stereo eye targets
+PASS: reference CPU menu painter -> Vulkan target, every RGBA byte including alpha, hover/repaint
+PASS: complete shared overlay geometry: sights, shifted eye, beam/dot/flash, premultiplied alpha
+PASS: shared gun mesh, three sight housings, recoil changes and invalid-pose visibility on Vulkan
+overlay reference GL=OpenGL ES 3.2 V@0837.0.9 (GIT@810c66ceb7, Idb4ff819d7, 1782305085) (Date:06/24/26) renderer=Adreno (TM) 740
+overlay parity sight=0 mode=0 eye=0 recoil=0 covered=4659 bad=0 max=0
+overlay parity sight=0 mode=0 eye=0 recoil=1 covered=5184 bad=0 max=0
+overlay parity sight=0 mode=0 eye=1 recoil=0 covered=5245 bad=0 max=0
+overlay parity sight=0 mode=0 eye=1 recoil=1 covered=5785 bad=0 max=0
+overlay parity sight=0 mode=1 eye=0 recoil=0 covered=4919 bad=0 max=1
+overlay parity sight=0 mode=1 eye=0 recoil=1 covered=5495 bad=0 max=1
+overlay parity sight=0 mode=1 eye=1 recoil=0 covered=5544 bad=0 max=1
+overlay parity sight=0 mode=1 eye=1 recoil=1 covered=6126 bad=0 max=1
+overlay parity sight=0 mode=2 eye=0 recoil=0 covered=853 bad=0 max=1
+overlay parity sight=0 mode=2 eye=0 recoil=1 covered=916 bad=0 max=1
+overlay parity sight=0 mode=2 eye=1 recoil=0 covered=851 bad=0 max=1
+overlay parity sight=0 mode=2 eye=1 recoil=1 covered=915 bad=0 max=1
+overlay parity sight=0 mode=3 eye=0 recoil=0 covered=81920 bad=0 max=0
+overlay parity sight=0 mode=3 eye=0 recoil=1 covered=81920 bad=0 max=0
+overlay parity sight=0 mode=3 eye=1 recoil=0 covered=81920 bad=0 max=0
+overlay parity sight=0 mode=3 eye=1 recoil=1 covered=81920 bad=0 max=0
+overlay parity sight=1 mode=0 eye=0 recoil=0 covered=4935 bad=0 max=0
+overlay parity sight=1 mode=0 eye=0 recoil=1 covered=5547 bad=0 max=0
+overlay parity sight=1 mode=0 eye=1 recoil=0 covered=5565 bad=0 max=0
+overlay parity sight=1 mode=0 eye=1 recoil=1 covered=6182 bad=0 max=0
+overlay parity sight=1 mode=1 eye=0 recoil=0 covered=5194 bad=0 max=1
+overlay parity sight=1 mode=1 eye=0 recoil=1 covered=5837 bad=0 max=1
+overlay parity sight=1 mode=1 eye=1 recoil=0 covered=5857 bad=0 max=1
+overlay parity sight=1 mode=1 eye=1 recoil=1 covered=6516 bad=0 max=1
+overlay parity sight=1 mode=2 eye=0 recoil=0 covered=853 bad=0 max=1
+overlay parity sight=1 mode=2 eye=0 recoil=1 covered=916 bad=0 max=1
+overlay parity sight=1 mode=2 eye=1 recoil=0 covered=851 bad=0 max=1
+overlay parity sight=1 mode=2 eye=1 recoil=1 covered=915 bad=0 max=1
+overlay parity sight=1 mode=3 eye=0 recoil=0 covered=81920 bad=0 max=0
+overlay parity sight=1 mode=3 eye=0 recoil=1 covered=81920 bad=0 max=0
+overlay parity sight=1 mode=3 eye=1 recoil=0 covered=81920 bad=0 max=0
+overlay parity sight=1 mode=3 eye=1 recoil=1 covered=81920 bad=0 max=0
+overlay parity sight=2 mode=0 eye=0 recoil=0 covered=5527 bad=0 max=0
+overlay parity sight=2 mode=0 eye=0 recoil=1 covered=6308 bad=0 max=0
+overlay parity sight=2 mode=0 eye=1 recoil=0 covered=6239 bad=0 max=0
+overlay parity sight=2 mode=0 eye=1 recoil=1 covered=7011 bad=0 max=0
+overlay parity sight=2 mode=1 eye=0 recoil=0 covered=5779 bad=0 max=1
+overlay parity sight=2 mode=1 eye=0 recoil=1 covered=6582 bad=0 max=1
+overlay parity sight=2 mode=1 eye=1 recoil=0 covered=6511 bad=0 max=1
+overlay parity sight=2 mode=1 eye=1 recoil=1 covered=7319 bad=0 max=1
+overlay parity sight=2 mode=2 eye=0 recoil=0 covered=853 bad=0 max=1
+overlay parity sight=2 mode=2 eye=0 recoil=1 covered=916 bad=0 max=1
+overlay parity sight=2 mode=2 eye=1 recoil=0 covered=851 bad=0 max=1
+overlay parity sight=2 mode=2 eye=1 recoil=1 covered=915 bad=0 max=1
+overlay parity sight=2 mode=3 eye=0 recoil=0 covered=81920 bad=0 max=0
+overlay parity sight=2 mode=3 eye=0 recoil=1 covered=81920 bad=0 max=0
+overlay parity sight=2 mode=3 eye=1 recoil=0 covered=81920 bad=0 max=0
+overlay parity sight=2 mode=3 eye=1 recoil=1 covered=81920 bad=0 max=0
+PASS: actual GLES/Vulkan overlay readbacks, 48 cases, all pixels RGBA within 3 UNORM steps
+PASS: concurrent atomic flat/stereo/HUD/pose frame mailbox, 218/1000 latest frames consumed, owned snapshots survive producer reuse/teardown
+PASS: scene routing/projection, native per-eye RT copy, multi-stage combiner sampling, self-feedback snapshots, CPU-owned source decoding/presentation/recovery, scaled HUD coverage and transitions
+PASS: registered submission pipeline -> atomic flat/stereo/HUD/render-pose packet, next-frame latch, CPU edits and retained ownership through teardown
+PASS: real executor decoder + Vulkan sampled draws: padded linear ARGB, Morton ARGB, DXT1/3/5, repeat/mirror/clamp, bilinear, guest ARGB8888/RGB565 render-to-texture
+PASS: RGBA8 clears, indexed quad coverage, interpolated triangle, post-draw clear, blend equations/factors/color masks, depth/stencil, persistent batches and selective clears, decoded NV2A adapter, alpha comparisons, face culling, ARGB texture upload/readback and sampled modulation, decoded textured batches, partial-channel clears, precise visibility queries, fragment combiners, guest CPU color imports, depth/stencil transfers, rectangular clears, per-eye projection, overlay effect shading (synthetic fixtures)
+[overlay] handgun: 372 triangles

@@ -39,6 +39,13 @@ endif()
 
 set(XBOXRECOMP_DIR "${CMAKE_CURRENT_SOURCE_DIR}/external/xboxrecomp" CACHE PATH
     "Path to the xboxrecomp toolkit root directory")
+set(CHIHIRO_RENDERER "opengl" CACHE STRING "Game renderer: opengl or vulkan")
+set_property(CACHE CHIHIRO_RENDERER PROPERTY STRINGS opengl vulkan)
+if(CHIHIRO_RENDERER STREQUAL "vulkan")
+    set(XBOXRECOMP_NO_HOST_D3D8 ON CACHE BOOL "Guest renders through NV2A" FORCE)
+elseif(NOT CHIHIRO_RENDERER STREQUAL "opengl")
+    message(FATAL_ERROR "Unsupported CHIHIRO_RENDERER=${CHIHIRO_RENDERER}")
+endif()
 add_subdirectory(${XBOXRECOMP_DIR} ${CMAKE_BINARY_DIR}/xboxrecomp)
 add_subdirectory(runtime)
 

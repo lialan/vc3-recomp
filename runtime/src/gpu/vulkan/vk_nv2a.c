@@ -1,4 +1,5 @@
 #include "vk_nv2a.h"
+#include "vk_guest_layout.h"
 #include <math.h>
 #include <stdlib.h>
 #include "../d3d/d3d8_swizzle.h"
@@ -62,7 +63,9 @@ static VkResult draw_decoded(ChVkTarget *t, const Nv2aSurface *s,
         return VK_ERROR_FEATURE_NOT_PRESENT;
     for(unsigned i=0;i<4;i++) if(!b->rc && b->stage[i] && (i!=0 || b->stage[i]!=b->texture)) return VK_ERROR_FEATURE_NOT_PRESENT;
     if(b->rc) {
-        if(b->texture && b->texture!=b->stage[0]) return VK_ERROR_FEATURE_NOT_PRESENT;
+        /* The executor supplies separate descriptors for texture and stage[0].
+         * Deferred submission also deep-copies them independently. Combiner
+         * draws use stage[], irrespective of convenience-descriptor identity. */
         for(unsigned i=0;i<4;i++) {
             uint32_t mode=(b->rc->stage_program>>(i*5))&31;
             if(mode>4) return VK_ERROR_FEATURE_NOT_PRESENT;
@@ -165,15 +168,16 @@ VkResult ch_vk_nv2a_draw_read(ChVkTarget *t, const Nv2aSurface *s,
     return ch_vk_nv2a_draw_decoded_read(t,s,b,NULL,pixels,bytes);
 }
 
-VkResult ch_vk_nv2a_store_color(const Nv2aSurface *s,const void *rgba,
+VkResult ch_vk_nv2a_store_color_state(const Nv2aSurface *s,const Nv2aRenderState *rs,const void *rgba,
     VkDeviceSize rgba_bytes,void *guest_base,size_t guest_bytes) {
     if(!s || !rgba || !guest_base || !s->width || !s->height)
         return VK_ERROR_INITIALIZATION_FAILED;
     if(s->bytes_per_pixel!=2 && s->bytes_per_pixel!=4) return VK_ERROR_FORMAT_NOT_SUPPORTED;
-    uint64_t row=(uint64_t)s->width*s->bytes_per_pixel;
-    uint64_t span=(uint64_t)(s->height-1)*s->pitch+row;
-    if(row>s->pitch || (uint64_t)s->width*s->height>rgba_bytes/4 ||
-       s->color_va>guest_bytes || span>guest_bytes-s->color_va)
+    ChVkGuestLayout layout;
+    VkResult result=ch_vk_guest_layout(rs?rs->surface_format:0,s->width,s->height,s->pitch,s->bytes_per_pixel,&layout);
+    if(result!=VK_SUCCESS) return result;
+    if((uint64_t)s->width*s->height>rgba_bytes/4 ||
+       s->color_va>guest_bytes || layout.span>guest_bytes-s->color_va)
         return VK_ERROR_INITIALIZATION_FAILED;
     const unsigned char *src=rgba;
     volatile unsigned char *dst=(volatile unsigned char *)guest_base+s->color_va;
@@ -183,29 +187,39 @@ VkResult ch_vk_nv2a_store_color(const Nv2aSurface *s,const void *rgba,
             ((uint32_t)p[3]<<24)|((uint32_t)p[0]<<16)|((uint32_t)p[1]<<8)|p[2]:
             ((uint32_t)(p[0]>>3)<<11)|((uint32_t)(p[1]>>2)<<5)|(p[2]>>3);
         for(uint32_t b=0;b<s->bytes_per_pixel;b++)
-            dst[(size_t)y*s->pitch+(size_t)x*s->bytes_per_pixel+b]=(unsigned char)(pixel>>(b*8));
+            dst[(size_t)ch_vk_guest_offset(&layout,x,y)+b]=(unsigned char)(pixel>>(b*8));
     }
     return VK_SUCCESS;
 }
 
-VkResult ch_vk_nv2a_load_color(const Nv2aSurface *s,void *rgba,
+VkResult ch_vk_nv2a_load_color_state(const Nv2aSurface *s,const Nv2aRenderState *rs,void *rgba,
     VkDeviceSize rgba_bytes,const void *guest_base,size_t guest_bytes) {
     if(!s || !rgba || !guest_base || !s->width || !s->height) return VK_ERROR_INITIALIZATION_FAILED;
     if(s->bytes_per_pixel!=2 && s->bytes_per_pixel!=4) return VK_ERROR_FORMAT_NOT_SUPPORTED;
-    uint64_t row=(uint64_t)s->width*s->bytes_per_pixel;
-    uint64_t span=(uint64_t)(s->height-1)*s->pitch+row;
-    if(row>s->pitch || (uint64_t)s->width*s->height>rgba_bytes/4 ||
-       s->color_va>guest_bytes || span>guest_bytes-s->color_va) return VK_ERROR_INITIALIZATION_FAILED;
+    ChVkGuestLayout layout;
+    VkResult result=ch_vk_guest_layout(rs?rs->surface_format:0,s->width,s->height,s->pitch,s->bytes_per_pixel,&layout);
+    if(result!=VK_SUCCESS) return result;
+    if((uint64_t)s->width*s->height>rgba_bytes/4 ||
+       s->color_va>guest_bytes || layout.span>guest_bytes-s->color_va) return VK_ERROR_INITIALIZATION_FAILED;
     const volatile unsigned char *src=(const volatile unsigned char *)guest_base+s->color_va;
     unsigned char *out=rgba;
     for(uint32_t y=0;y<s->height;y++) for(uint32_t x=0;x<s->width;x++) {
         uint32_t pixel=0;
-        for(uint32_t b=0;b<s->bytes_per_pixel;b++) pixel|=(uint32_t)src[(size_t)y*s->pitch+(size_t)x*s->bytes_per_pixel+b]<<(b*8);
+        for(uint32_t b=0;b<s->bytes_per_pixel;b++) pixel|=(uint32_t)src[(size_t)ch_vk_guest_offset(&layout,x,y)+b]<<(b*8);
         unsigned char *p=out+((size_t)y*s->width+x)*4;
         if(s->bytes_per_pixel==4) { p[0]=pixel>>16; p[1]=pixel>>8; p[2]=pixel; p[3]=pixel>>24; }
         else { p[0]=((pixel>>11)&31)*255/31; p[1]=((pixel>>5)&63)*255/63; p[2]=(pixel&31)*255/31; p[3]=255; }
     }
     return VK_SUCCESS;
+}
+
+VkResult ch_vk_nv2a_store_color(const Nv2aSurface *s,const void *rgba,
+    VkDeviceSize bytes,void *guest,size_t guest_bytes) {
+    return ch_vk_nv2a_store_color_state(s,NULL,rgba,bytes,guest,guest_bytes);
+}
+VkResult ch_vk_nv2a_load_color(const Nv2aSurface *s,void *rgba,
+    VkDeviceSize bytes,const void *guest,size_t guest_bytes) {
+    return ch_vk_nv2a_load_color_state(s,NULL,rgba,bytes,guest,guest_bytes);
 }
 
 static VkResult clear_state(ChVkTarget *t,const Nv2aSurface *s,

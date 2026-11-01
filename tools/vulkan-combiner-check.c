@@ -44,7 +44,9 @@ int combiner_check(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,VkCommandP
     TRY(vkMapMemory(device,memory,0,VK_WHOLE_SIZE,0,&mapped)); memcpy(mapped,cases,N*sizeof(*cases));
     VkMappedMemoryRange range={.sType=VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE,.memory=memory,.size=VK_WHOLE_SIZE};
     TRY(vkFlushMappedMemoryRanges(device,1,&range));
-    file=fopen("/data/local/tmp/vc3-combiner-test.spv","rb"); if(!file) goto done;
+    const char *shader_path=getenv("CHIHIRO_COMBINER_SHADER");
+    if(!shader_path) shader_path="/data/local/tmp/vc3-combiner-test.spv";
+    file=fopen(shader_path,"rb"); if(!file) {perror(shader_path);goto done;}
     fseek(file,0,SEEK_END); long size=ftell(file); rewind(file);
     if(size<=0 || size%4) goto done;
     code=malloc((size_t)size); if(!code || fread(code,1,(size_t)size,file)!=(size_t)size) goto done;

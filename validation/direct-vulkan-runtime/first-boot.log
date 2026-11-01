@@ -1,0 +1,578 @@
+=== Virtua Cop 3 (recomp) ===
+game: /Users/lialan/Downloads/VR/VC3/extracted
+save: /tmp/vc3-direct-runtime/save
+[VC3] display 60 fps (game 60), 640x480 internal, 4:3
+xbox_MemoryLayoutInit: mapped 131072 KB at 0x0x7000000000 (offset +481036337152 from Xbox base)
+  XBE header: 2584 bytes at 0x7000010000 (Xbox VA 0x00010000)
+  XBE sections: 13 (headers at file offset 0x0000036C)
+  [ 0] .text        VA=0x00011000 vsize=1004560  raw=0x00001000 rsize=1004560 
+  [ 1] D3D          VA=0x00106420 vsize=80516    raw=0x000F7000 rsize=66584    (BSS)
+  [ 2] D3DX         VA=0x00119EC0 vsize=49669    raw=0x00108000 rsize=49668    (BSS)
+  [ 3] XGRPH        VA=0x001260E0 vsize=4708     raw=0x00115000 rsize=4708    
+  [ 4] DSOUND       VA=0x00127360 vsize=40084    raw=0x00117000 rsize=39500    (BSS)
+  [ 5] PSGSFD00     VA=0x00131000 vsize=13072    raw=0x00121000 rsize=13072   
+  [ 6] PSGSFD_I     VA=0x00134320 vsize=976      raw=0x00125000 rsize=976     
+  [ 7] PSGSFD_B     VA=0x00134700 vsize=2256     raw=0x00126000 rsize=2256    
+  [ 8] PSGSFD_P     VA=0x00134FE0 vsize=1616     raw=0x00127000 rsize=1616    
+  [ 9] XPP          VA=0x00135640 vsize=43945    raw=0x00128000 rsize=43944    (BSS)
+  [10] .rdata       VA=0x00140200 vsize=73901    raw=0x00133000 rsize=73900    (BSS)
+  [11] .data        VA=0x001522C0 vsize=4007344  raw=0x00146000 rsize=806004   (BSS)
+  [12] DOLBY        VA=0x00524880 vsize=29056    raw=0x0020B000 rsize=29036    (BSS)
+  Loaded 13/13 sections (2135824 bytes total)
+  Toolkit region: 0x00700000 (image ends 0x0052BA00)
+  Kernel thunks: 110 entries at Xbox VA 0x00140200
+  Stack: 8192 KB at Xbox VA 0x00780000 (ESP = 0x00F7FFF0)
+  TLS: 20-byte block at 0x00770000, fs:[4] = 0x00770014 (index will be -5)
+  TIB: fake TIB at VA 0x4000, TLS at 0x00760000, RW data at 0x00700000
+  Contiguous window: 128 MB at Xbox VA 0x80000000
+  NV2A register aperture: 16 MB at Xbox VA 0xFD000000 (zeroed, no register semantics)
+  APU: 0xFE800000..0xFE830000 trapped for MMIO (GP/EP DSP memory left as RAM)
+  AC97: bus-master writes trapped at 0xFEC00000 (POSIX; channel reset completes on write)
+  AC97: codec reported ready at 0xFEC00130 (DirectSound will initialise)
+  MCPX device aperture: 8 MB at Xbox VA 0xFE800000 (APU/AC97/USB/NIC, zeroed)
+  Flash ROM aperture: 1 MB at Xbox VA 0xFF000000 (zeroed, not a real BIOS image)
+  NV2A busy-bit ack: 6 register(s) acknowledged
+  Kernel: fake PE header at Xbox VA 0x80010000 (native 0x7080010000)
+  Heap: 112 MB at Xbox VA 0x00F80000-0x08000000
+  Mirror 16: skipped, overlaps the contiguous window at 0x80000000
+  RAM mirror: 27/28 views mapped (covers 3584 MB)
+  Tiled aperture alias verified (tiled 0xF0000000 == contiguous 0x80000000)
+  Tiled aperture: 128 MB at Xbox VA 0xF0000000 (aliases the contiguous window)
+xbox_MemoryLayoutInit: complete
+[APU] DSP GP/EP initialized (STUBBED - passthrough mode)
+  [NV2A] PCRTC_START = 0x00000000
+[SDL2] audio initialized: driver dummy (48000 Hz stereo 16-bit, 4 x 512-sample buffers, 42.7 ms queued max) [silent: no device output]
+[APU] Using SDL2 audio backend (pacing: 1024..2048 samples queued)
+[APU] MCPX APU initialized (standalone)
+[APU]   RAM pointer: 0x7000000000
+[APU]   MMIO base: 0xFE800000 (512KB)
+[APU]   VP: 256 max voices, 32 samples/frame
+[BOOT] emulated APU up
+  Kernel thunk bridge: resolving 110 entries at 0x00140200
+  Kernel data exports: initialized at Xbox VA 0x00740000
+  Kernel thunk bridge: 110/110 resolved (110 bridged, 0 stub)
+  Synthetic VA range: 0xFE000000-0xFE0001B4
+[CHIHIRO] HLE init, save dir /tmp/vc3-direct-runtime/save
+[DEFER] push-buffer decode and GL submission on two threads (RECOMP_PB_DECODE_THREAD=1)
+[Vulkan] direct NV2A backend on Apple M4 Pro; OpenGL excluded from this build
+entry 0x000B6407, esp 0x00F7FFF0
+  [KERNEL] #1: ordinal 255 (slot 30) esp=0x00F7FF9C ret=0x000B608E
+  [KERNEL] PsCreateSystemThreadEx #1: routine=0x000B5FB7 ctx1=0x000B6393 ctx2=0x00000000
+  [HEAP] #1: size=32 align=16 → 0x00F80000..0x00F80020 (used 32/117964800)
+  [KERNEL] PsCreateSystemThreadEx: 20-byte TLS at 0x00F80000, fs:[4] = 0x00F80014
+  [KERNEL] #2: ordinal 277 (slot 1) esp=0x00F7FF40 ret=0x000B5D0A
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #3: ordinal 294 (slot 0) esp=0x00F7FF40 ret=0x000B5D2D
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #4: ordinal 47 (slot 59) esp=0x00F7FF00 ret=0x000B6D7A
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #5: ordinal 107 (slot 48) esp=0x00F7FEE8 ret=0x000B70A5
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #6: ordinal 113 (slot 42) esp=0x00F7FEEC ret=0x000B70B2
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #7: ordinal 24 (slot 17) esp=0x00F7FEC4 ret=0x000B5C7F
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #8: ordinal 301 (slot 16) esp=0x00F7FED4 ret=0x000B5C86
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #9: ordinal 149 (slot 44) esp=0x00F7FEE0 ret=0x000B707A
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #10: ordinal 184 (slot 12) esp=0x00F7FE50 ret=0x000B8770
+  [KERNEL] NtAllocateVirtualMemory: base=0x00000000 size=1048576 type=0x2000 prot=0x4
+  [HEAP] #2: size=1048576 align=4096 → 0x00F81000..0x01081000 (used 1052672/117964800)
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #11: ordinal 184 (slot 12) esp=0x00F7FE50 ret=0x000B87A9
+  [KERNEL] NtAllocateVirtualMemory: base=0x00F81000 size=4096 type=0x1000 prot=0x4
+  [KERNEL] → MEM_COMMIT on existing region 0x00F81000, no-op
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #12: ordinal 291 (slot 2) esp=0x00F7FE60 ret=0x000B88B1
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #13: ordinal 202 (slot 52) esp=0x00F7FEA8 ret=0x000B6757
+  [HEAP] #3: size=160 align=16 → 0x01081000..0x010810A0 (used 1052832/117964800)
+  [PATH] \Device\Harddisk0\partition1\ -> partition image
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #14: ordinal 218 (slot 51) esp=0x00F7FEAC ret=0x000B6772
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #15: ordinal 187 (slot 38) esp=0x00F7FEBC ret=0x000B677D
+  [KERNEL] NtClose: handle=0x48000001
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #16: ordinal 67 (slot 56) esp=0x00F7FF00 ret=0x000B6E08
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #17: ordinal 190 (slot 55) esp=0x00F7FC18 ret=0x000B68C5
+  [FILE] \Device\Harddisk0\partition1\TDATA (disp 3 opts 0x4021 from 0x000B68C5) -> 0x00000000
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #18: ordinal 187 (slot 38) esp=0x00F7FC38 ret=0x000B68D5
+  [KERNEL] NtClose: handle=0x48000001
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #19: ordinal 289 (slot 5) esp=0x00F7FC34 ret=0x000B6945
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #20: ordinal 190 (slot 55) esp=0x00F7FC18 ret=0x000B6982
+  [FILE] \Device\Harddisk0\partition1\TDATA\00000000 (disp 3 opts 0x4021 from 0x000B6982) -> 0x00000000
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #21: ordinal 187 (slot 38) esp=0x00F7FC38 ret=0x000B6B95
+  [KERNEL] NtClose: handle=0x48000001
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #22: ordinal 67 (slot 56) esp=0x00F7FC34 ret=0x000B6BA7
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #23: ordinal 190 (slot 55) esp=0x00F7FC18 ret=0x000B68C5
+  [FILE] \Device\Harddisk0\partition1\UDATA (disp 3 opts 0x4021 from 0x000B68C5) -> 0x00000000
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #24: ordinal 187 (slot 38) esp=0x00F7FC38 ret=0x000B68D5
+  [KERNEL] NtClose: handle=0x48000001
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #25: ordinal 289 (slot 5) esp=0x00F7FC34 ret=0x000B6945
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #26: ordinal 190 (slot 55) esp=0x00F7FC18 ret=0x000B6982
+  [FILE] \Device\Harddisk0\partition1\UDATA\00000000 (disp 3 opts 0x4021 from 0x000B6982) -> 0x00000000
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #27: ordinal 289 (slot 5) esp=0x00F7FC0C ret=0x000B72A2
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #28: ordinal 289 (slot 5) esp=0x00F7FC0C ret=0x000B72BE
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #29: ordinal 279 (slot 70) esp=0x00F7FC08 ret=0x000B72CE
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #30: ordinal 289 (slot 5) esp=0x00F7FC0C ret=0x000B72BE
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #31: ordinal 279 (slot 70) esp=0x00F7FC08 ret=0x000B72CE
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #32: ordinal 289 (slot 5) esp=0x00F7FC0C ret=0x000B72BE
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #33: ordinal 279 (slot 70) esp=0x00F7FC08 ret=0x000B72CE
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #34: ordinal 289 (slot 5) esp=0x00F7FC0C ret=0x000B72BE
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #35: ordinal 279 (slot 70) esp=0x00F7FC08 ret=0x000B72CE
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #36: ordinal 289 (slot 5) esp=0x00F7FC0C ret=0x000B72BE
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #37: ordinal 279 (slot 70) esp=0x00F7FC08 ret=0x000B72CE
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #38: ordinal 289 (slot 5) esp=0x00F7FC0C ret=0x000B72BE
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #39: ordinal 279 (slot 70) esp=0x00F7FC08 ret=0x000B72CE
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #40: ordinal 289 (slot 5) esp=0x00F7FC0C ret=0x000B72BE
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #41: ordinal 279 (slot 70) esp=0x00F7FC08 ret=0x000B72CE
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #42: ordinal 289 (slot 5) esp=0x00F7FC0C ret=0x000B72BE
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #43: ordinal 279 (slot 70) esp=0x00F7FC08 ret=0x000B72CE
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #44: ordinal 289 (slot 5) esp=0x00F7FC0C ret=0x000B72BE
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #45: ordinal 279 (slot 70) esp=0x00F7FC08 ret=0x000B72CE
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #46: ordinal 289 (slot 5) esp=0x00F7FC0C ret=0x000B72BE
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #47: ordinal 279 (slot 70) esp=0x00F7FC08 ret=0x000B72CE
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #48: ordinal 289 (slot 5) esp=0x00F7FC0C ret=0x000B72BE
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #49: ordinal 279 (slot 70) esp=0x00F7FC08 ret=0x000B72CE
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #50: ordinal 289 (slot 5) esp=0x00F7FC0C ret=0x000B72BE
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #51: ordinal 279 (slot 70) esp=0x00F7FC08 ret=0x000B72CE
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #52: ordinal 289 (slot 5) esp=0x00F7FC0C ret=0x000B72BE
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #53: ordinal 279 (slot 70) esp=0x00F7FC08 ret=0x000B72CE
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #54: ordinal 289 (slot 5) esp=0x00F7FC0C ret=0x000B72A2
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #55: ordinal 289 (slot 5) esp=0x00F7FC0C ret=0x000B72BE
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #56: ordinal 279 (slot 70) esp=0x00F7FC08 ret=0x000B72CE
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #57: ordinal 289 (slot 5) esp=0x00F7FC0C ret=0x000B72BE
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #58: ordinal 279 (slot 70) esp=0x00F7FC08 ret=0x000B72CE
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #59: ordinal 289 (slot 5) esp=0x00F7FC0C ret=0x000B72BE
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #60: ordinal 279 (slot 70) esp=0x00F7FC08 ret=0x000B72CE
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #61: ordinal 289 (slot 5) esp=0x00F7FC0C ret=0x000B72BE
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #62: ordinal 279 (slot 70) esp=0x00F7FC08 ret=0x000B72CE
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #63: ordinal 289 (slot 5) esp=0x00F7FC0C ret=0x000B72BE
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #64: ordinal 279 (slot 70) esp=0x00F7FC08 ret=0x000B72CE
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #65: ordinal 289 (slot 5) esp=0x00F7FC0C ret=0x000B72BE
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #66: ordinal 279 (slot 70) esp=0x00F7FC08 ret=0x000B72CE
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #67: ordinal 289 (slot 5) esp=0x00F7FC0C ret=0x000B72BE
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #68: ordinal 279 (slot 70) esp=0x00F7FC08 ret=0x000B72CE
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #69: ordinal 289 (slot 5) esp=0x00F7FC0C ret=0x000B72BE
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #70: ordinal 279 (slot 70) esp=0x00F7FC08 ret=0x000B72CE
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #71: ordinal 289 (slot 5) esp=0x00F7FC0C ret=0x000B72BE
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #72: ordinal 279 (slot 70) esp=0x00F7FC08 ret=0x000B72CE
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #73: ordinal 289 (slot 5) esp=0x00F7FC0C ret=0x000B72BE
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #74: ordinal 279 (slot 70) esp=0x00F7FC08 ret=0x000B72CE
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #75: ordinal 289 (slot 5) esp=0x00F7FC0C ret=0x000B72BE
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #76: ordinal 279 (slot 70) esp=0x00F7FC08 ret=0x000B72CE
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #77: ordinal 289 (slot 5) esp=0x00F7FC0C ret=0x000B72BE
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #78: ordinal 279 (slot 70) esp=0x00F7FC08 ret=0x000B72CE
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #79: ordinal 289 (slot 5) esp=0x00F7FC0C ret=0x000B72BE
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #80: ordinal 279 (slot 70) esp=0x00F7FC08 ret=0x000B72CE
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #81: ordinal 289 (slot 5) esp=0x00F7FC0C ret=0x000B72A2
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #82: ordinal 289 (slot 5) esp=0x00F7FC0C ret=0x000B72BE
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #83: ordinal 279 (slot 70) esp=0x00F7FC08 ret=0x000B72CE
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #84: ordinal 289 (slot 5) esp=0x00F7FC0C ret=0x000B72BE
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #85: ordinal 279 (slot 70) esp=0x00F7FC08 ret=0x000B72CE
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #86: ordinal 289 (slot 5) esp=0x00F7FC0C ret=0x000B72BE
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #87: ordinal 279 (slot 70) esp=0x00F7FC08 ret=0x000B72CE
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #88: ordinal 289 (slot 5) esp=0x00F7FC0C ret=0x000B72BE
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #89: ordinal 279 (slot 70) esp=0x00F7FC08 ret=0x000B72CE
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #90: ordinal 289 (slot 5) esp=0x00F7FC0C ret=0x000B72BE
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #91: ordinal 279 (slot 70) esp=0x00F7FC08 ret=0x000B72CE
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #92: ordinal 289 (slot 5) esp=0x00F7FC0C ret=0x000B72BE
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #93: ordinal 279 (slot 70) esp=0x00F7FC08 ret=0x000B72CE
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #94: ordinal 289 (slot 5) esp=0x00F7FC0C ret=0x000B72BE
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #95: ordinal 279 (slot 70) esp=0x00F7FC08 ret=0x000B72CE
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #96: ordinal 289 (slot 5) esp=0x00F7FC0C ret=0x000B72BE
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #97: ordinal 279 (slot 70) esp=0x00F7FC08 ret=0x000B72CE
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #98: ordinal 289 (slot 5) esp=0x00F7FC0C ret=0x000B72BE
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #99: ordinal 279 (slot 70) esp=0x00F7FC08 ret=0x000B72CE
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #100: ordinal 289 (slot 5) esp=0x00F7FC0C ret=0x000B72BE
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #101: ordinal 279 (slot 70) esp=0x00F7FC08 ret=0x000B72CE
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #102: ordinal 289 (slot 5) esp=0x00F7FC0C ret=0x000B72BE
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #103: ordinal 279 (slot 70) esp=0x00F7FC08 ret=0x000B72CE
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #104: ordinal 289 (slot 5) esp=0x00F7FC0C ret=0x000B72BE
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #105: ordinal 279 (slot 70) esp=0x00F7FC08 ret=0x000B72CE
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #106: ordinal 289 (slot 5) esp=0x00F7FC0C ret=0x000B72BE
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #107: ordinal 279 (slot 70) esp=0x00F7FC08 ret=0x000B72CE
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #108: ordinal 289 (slot 5) esp=0x00F7FC34 ret=0x000B6A3B
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #109: ordinal 190 (slot 55) esp=0x00F7FC18 ret=0x000B6A6B
+  [FILE] \Device\Harddisk0\partition1\UDATA\00000000\TitleMeta.xbx (disp 3 opts 0x22 from 0x000B6A6B) -> 0x00000000
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #110: ordinal 211 (slot 54) esp=0x00F7FC28 ret=0x000B6A8D
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #111: ordinal 236 (slot 53) esp=0x00F7FC1C ret=0x000B6B2E
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #112: ordinal 187 (slot 38) esp=0x00F7FC38 ret=0x000B6B3A
+  [KERNEL] NtClose: handle=0x48000002
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #113: ordinal 187 (slot 38) esp=0x00F7FC38 ret=0x000B6B95
+  [KERNEL] NtClose: handle=0x48000001
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #114: ordinal 67 (slot 56) esp=0x00F7FC34 ret=0x000B6BA7
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #115: ordinal 202 (slot 52) esp=0x00F7FB80 ret=0x000B7471
+  [PATH] \Device\Harddisk0\partition0 -> partition image
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #116: ordinal 219 (slot 74) esp=0x00F7FB78 ret=0x000B74A6
+  [READ] from=0x000B74A6 ev=00000000 apc=00000000 @2048 want=512 got=512 st=0x00000000  2A 2A 2A 2A
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #117: ordinal 236 (slot 53) esp=0x00F7FB70 ret=0x000B7646
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #118: ordinal 187 (slot 38) esp=0x00F7FB94 ret=0x000B7651
+  [KERNEL] NtClose: handle=0x48000001
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #119: ordinal 289 (slot 5) esp=0x00F7FDD4 ret=0x000B76D2
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #120: ordinal 289 (slot 5) esp=0x00F7FDD4 ret=0x000B76DF
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #121: ordinal 202 (slot 52) esp=0x00F7FD40 ret=0x000B938B
+  [PATH] \Device\Harddisk0\Partition5 -> partition image
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #122: ordinal 196 (slot 58) esp=0x00F7FD28 ret=0x000B93BD
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #123: ordinal 196 (slot 58) esp=0x00F7FD28 ret=0x000B93F9
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #124: ordinal 277 (slot 1) esp=0x00F7FB8C ret=0x000B89A5
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #125: ordinal 184 (slot 12) esp=0x00F7FB24 ret=0x000B7A6C
+  [KERNEL] NtAllocateVirtualMemory: base=0x00F82000 size=8192 type=0x1000 prot=0x4
+  [KERNEL] → MEM_COMMIT on existing region 0x00F82000, no-op
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #126: ordinal 294 (slot 0) esp=0x00F7FB8C ret=0x000B8F55
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #127: ordinal 128 (slot 57) esp=0x00F7FD4C ret=0x000B950F
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #128: ordinal 236 (slot 53) esp=0x00F7FD30 ret=0x000B9537
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #129: ordinal 236 (slot 53) esp=0x00F7FD30 ret=0x000B95C7
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #130: ordinal 236 (slot 53) esp=0x00F7FD30 ret=0x000B95C7
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #131: ordinal 236 (slot 53) esp=0x00F7FD30 ret=0x000B95C7
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #132: ordinal 236 (slot 53) esp=0x00F7FD30 ret=0x000B95C7
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #133: ordinal 236 (slot 53) esp=0x00F7FD30 ret=0x000B95C7
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #134: ordinal 236 (slot 53) esp=0x00F7FD30 ret=0x000B95C7
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #135: ordinal 236 (slot 53) esp=0x00F7FD30 ret=0x000B95C7
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #136: ordinal 236 (slot 53) esp=0x00F7FD30 ret=0x000B95C7
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #137: ordinal 236 (slot 53) esp=0x00F7FD30 ret=0x000B95C7
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #138: ordinal 236 (slot 53) esp=0x00F7FD30 ret=0x000B95C7
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #139: ordinal 236 (slot 53) esp=0x00F7FD30 ret=0x000B95C7
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #140: ordinal 236 (slot 53) esp=0x00F7FD30 ret=0x000B95C7
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #141: ordinal 236 (slot 53) esp=0x00F7FD30 ret=0x000B95C7
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #142: ordinal 236 (slot 53) esp=0x00F7FD30 ret=0x000B95C7
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #143: ordinal 236 (slot 53) esp=0x00F7FD30 ret=0x000B95C7
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #144: ordinal 236 (slot 53) esp=0x00F7FD30 ret=0x000B95C7
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #145: ordinal 236 (slot 53) esp=0x00F7FD30 ret=0x000B95C7
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #146: ordinal 236 (slot 53) esp=0x00F7FD30 ret=0x000B95C7
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #147: ordinal 236 (slot 53) esp=0x00F7FD30 ret=0x000B95C7
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #148: ordinal 236 (slot 53) esp=0x00F7FD30 ret=0x000B95C7
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #149: ordinal 236 (slot 53) esp=0x00F7FD30 ret=0x000B95C7
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #150: ordinal 236 (slot 53) esp=0x00F7FD30 ret=0x000B95C7
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #151: ordinal 236 (slot 53) esp=0x00F7FD30 ret=0x000B95C7
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #152: ordinal 236 (slot 53) esp=0x00F7FD30 ret=0x000B95C7
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #153: ordinal 236 (slot 53) esp=0x00F7FD30 ret=0x000B9615
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #154: ordinal 236 (slot 53) esp=0x00F7FD30 ret=0x000B9615
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #155: ordinal 236 (slot 53) esp=0x00F7FD30 ret=0x000B9615
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #156: ordinal 236 (slot 53) esp=0x00F7FD30 ret=0x000B9615
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #157: ordinal 277 (slot 1) esp=0x00F7FCB8 ret=0x000B9175
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #158: ordinal 294 (slot 0) esp=0x00F7FCB4 ret=0x000B92FD
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #159: ordinal 200 (slot 75) esp=0x00F7FD28 ret=0x000B964A
+  [FILE] NtFsControlFile(0x90020) - stub
+  [KERNEL] → returned 0xC00000BB
+  [KERNEL] #160: ordinal 187 (slot 38) esp=0x00F7FD4C ret=0x000B9653
+  [KERNEL] NtClose: handle=0x48000001
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #161: ordinal 202 (slot 52) esp=0x00F7FD84 ret=0x000B6757
+  [PATH] \Device\Harddisk0\Partition5\ -> partition image
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #162: ordinal 218 (slot 51) esp=0x00F7FD88 ret=0x000B6772
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #163: ordinal 187 (slot 38) esp=0x00F7FD98 ret=0x000B677D
+  [KERNEL] NtClose: handle=0x48000001
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #164: ordinal 67 (slot 56) esp=0x00F7FDD4 ret=0x000B773B
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #165: ordinal 24 (slot 17) esp=0x00F7FEE4 ret=0x000B5CEE
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #166: ordinal 291 (slot 2) esp=0x00F7FEE8 ret=0x0010010F
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #167: ordinal 291 (slot 2) esp=0x00F7FEE8 ret=0x0010010F
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #168: ordinal 291 (slot 2) esp=0x00F7FEE8 ret=0x0010010F
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #169: ordinal 291 (slot 2) esp=0x00F7FEE8 ret=0x0010010F
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #170: ordinal 291 (slot 2) esp=0x00F7FEE8 ret=0x0010010F
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #171: ordinal 291 (slot 2) esp=0x00F7FEE8 ret=0x0010010F
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #172: ordinal 291 (slot 2) esp=0x00F7FEE8 ret=0x0010010F
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #173: ordinal 291 (slot 2) esp=0x00F7FEE8 ret=0x0010010F
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #174: ordinal 291 (slot 2) esp=0x00F7FEE8 ret=0x0010010F
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #175: ordinal 291 (slot 2) esp=0x00F7FEE8 ret=0x0010010F
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #176: ordinal 291 (slot 2) esp=0x00F7FEE8 ret=0x0010010F
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #177: ordinal 291 (slot 2) esp=0x00F7FEE8 ret=0x0010010F
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #178: ordinal 291 (slot 2) esp=0x00F7FEE8 ret=0x0010010F
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #179: ordinal 291 (slot 2) esp=0x00F7FEE8 ret=0x0010010F
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #180: ordinal 277 (slot 1) esp=0x00F7FD74 ret=0x000B89A5
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #181: ordinal 294 (slot 0) esp=0x00F7FD74 ret=0x000B8F55
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #182: ordinal 277 (slot 1) esp=0x00F7FF28 ret=0x000B5F3F
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #183: ordinal 294 (slot 0) esp=0x00F7FF28 ret=0x000B5F77
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #184: ordinal 277 (slot 1) esp=0x00F7FD6C ret=0x000B89A5
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #185: ordinal 294 (slot 0) esp=0x00F7FD6C ret=0x000B8F55
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #186: ordinal 277 (slot 1) esp=0x00F7FD74 ret=0x000B89A5
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #187: ordinal 294 (slot 0) esp=0x00F7FD74 ret=0x000B8F55
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #188: ordinal 277 (slot 1) esp=0x00F7FEF4 ret=0x000FBD34
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #189: ordinal 277 (slot 1) esp=0x00F7FD30 ret=0x000B89A5
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #190: ordinal 294 (slot 0) esp=0x00F7FD30 ret=0x000B8F55
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #191: ordinal 294 (slot 0) esp=0x00F7FEF4 ret=0x000FBC8B
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #192: ordinal 166 (slot 84) esp=0x00F7FF0C ret=0x0010B19C
+  [CONTIG] t=0.0s alloc 0x81000000 24576 KB: in use 24576 KB, peak 24576 KB, high-water 40960 KB (allocs=1 frees=0)
+  [KERNEL] → returned 0x81000000
+  [KERNEL] #193: ordinal 14 (slot 43) esp=0x00F7FED0 ret=0x00135A57
+  [HEAP] #4: size=192 align=16 → 0x010810A0..0x01081160 (used 1053024/117964800)
+  [KERNEL] ExAllocatePool: size=180 → Xbox VA 0x010810A0
+  [KERNEL] → returned 0x010810A0
+  [KERNEL] #194: ordinal 108 (slot 109) esp=0x00F7FEB4 ret=0x0013E97A
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #195: ordinal 108 (slot 109) esp=0x00F7FEB4 ret=0x0013E97A
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #196: ordinal 108 (slot 109) esp=0x00F7FEB4 ret=0x0013E97A
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #197: ordinal 108 (slot 109) esp=0x00F7FEB4 ret=0x0013E97A
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #198: ordinal 108 (slot 109) esp=0x00F7FEB0 ret=0x0013B86F
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #199: ordinal 291 (slot 2) esp=0x00F7FEB8 ret=0x0013B872
+  [KERNEL] → returned 0x00000000
+  [KERNEL] #200: ordinal 108 (slot 109) esp=0x00F7FEB0 ret=0x0013B86F
+  [KERNEL] → returned 0x00000000
+  [HEAP] #5: size=784 align=16 → 0x01081160..0x01081470 (used 1053808/117964800)
+  [HEAP] #6: size=384 align=16 → 0x01081470..0x010815F0 (used 1054192/117964800)
+  [CONTIG] t=0.0s alloc 0x80001000 8 KB: in use 24584 KB, peak 24584 KB, high-water 40960 KB (allocs=2 frees=0)
+  [HEAP] #7: size=608 align=16 → 0x010815F0..0x01081850 (used 1054800/117964800)
+  [HEAP] free #1 va=0x010810A0 blocks=7
+  [HEAP] #8: size=1280 align=16 → 0x01081850..0x01081D50 (used 1056080/117964800)
+  [KERNEL] KeConnectInterrupt: vector 1 -> routine 0x0013A3F4 context 0x01081868
+[CHIHIRO] eeprom.bin: none yet, starting blank
+[CHIHIRO] EEPROM_Read off=0x0000 size=0x4 buf=0x00F7FE6C flags=0
+[CHIHIRO] backup.bin: none yet, starting blank
+[CHIHIRO] BACKUP_Read off=0x0000 size=0x4 buf=0x00F7FE6C flags=0
+[CHIHIRO] EEPROM_Read off=0x0000 size=0x4 buf=0x00F7FE7C flags=0
+[CHIHIRO] BACKUP_Read off=0x0000 size=0x4 buf=0x00F7FE7C flags=0
+[CHIHIRO] BACKUP_Read off=0x0000 size=0x400 buf=0x004DB7B0 flags=1
+[CHIHIRO] EEPROM_Read off=0x0000 size=0x80 buf=0x004DB7B0 flags=1
+[CHIHIRO] BACKUP_Write off=0x0000 size=0x400 buf=0x004DB7B0 flags=1
+[CHIHIRO] EEPROM_Write off=0x0000 size=0x80 buf=0x004DB7B0 flags=1
+  [PORT] outw 0x4026 = 0x102 (ignored)
+  [PORT] outb 0x40E0 = 0x5 (ignored)
+  [KERNEL] KeConnectInterrupt: vector 10 -> routine 0x00106338 context 0x0051FB20
+  [PORT] outw 0x408E = 0x1A8 (ignored)
+  [PORT] outb 0x40E2 = 0x0 (ignored)
+  [PORT] outw 0x4080 = 0x0 (ignored)
+  [PORT] outb 0x40E1 = 0x0 (ignored)
+  [PORT] inw 0x40F0 -> 0 (not modelled)
+  [KERNEL] PsCreateSystemThreadEx #2: routine=0x000B5FB7 ctx1=0x000F4570 ctx2=0x004E9284
+  [HEAP] #9: size=524288 align=4096 → 0x01082000..0x01102000 (used 1581056/117964800)
+  [CONTIG] t=0.0s alloc 0x80003000 4 KB: in use 24588 KB, peak 24588 KB, high-water 40960 KB (allocs=3 frees=0)
+  [KERNEL] PsCreateSystemThreadEx: spawned worker 0x000B5FB7 (ctx=0x000F4570, stack top 0x01101FF0)
+  [KERNEL] PsCreateSystemThreadEx #3: routine=0x000B5FB7 ctx1=0x000F45A0 ctx2=0x004E9304
+  [HEAP] #10: size=524288 align=4096 → 0x01102000..0x01182000 (used 2105344/117964800)
+  [KERNEL] NtWaitForSingleObjectEx: token=0x48000001 handle=0x7c070de080 timeout=INFINITE
+  [KERNEL] PsCreateSystemThreadEx: spawned worker 0x000B5FB7 (ctx=0x000F45A0, stack top 0x01181FF0)
+  [HEAP] #11: size=160 align=16 → 0x01182000..0x011820A0 (used 2105504/117964800)
+  [KERNEL] NtWaitForSingleObjectEx: token=0x48000005 handle=0x7c070dea80 timeout=INFINITE
+[CHIHIRO] EEPROM_Read off=0x0000 size=0x4 buf=0x00F7FE80 flags=0
+[CHIHIRO] BACKUP_Read off=0x0000 size=0x4 buf=0x00F7FE80 flags=0
+[CHIHIRO] RTC_Read size=0x10 -> 26-10-31 21:52:03
+  [KERNEL] PsCreateSystemThreadEx #4: routine=0x000B5FB7 ctx1=0x000F30A0 ctx2=0x004E8FC4
+  [HEAP] #12: size=524288 align=4096 → 0x01183000..0x01203000 (used 2633728/117964800)
+  [KERNEL] PsCreateSystemThreadEx: spawned worker 0x000B5FB7 (ctx=0x000F30A0, stack top 0x01202FF0)
+  [HEAP] #13: size=160 align=16 → 0x01203000..0x012030A0 (used 2633888/117964800)
+[GUEST] acThread_Update begins.
+[CHIHIRO] BACKUP_Read off=0x0400 size=0x2DC buf=0x004DB7B0 flags=1
+[CHIHIRO] BACKUP_Write off=0x0400 size=0x2DC buf=0x004DB7B0 flags=1
+  [PORT] inw 0x401E -> 0 (not modelled)
+  [PORT] inw 0x4020 -> 0 (not modelled)
+  [PORT] inw 0x4022 -> 0 (not modelled)
+  [PORT] inw 0x4024 -> 0 (not modelled)
+  [PORT] outw 0x4024 = 0x0 (ignored)
+  [PORT] outw 0x4022 = 0x0 (ignored)
+  [PORT] outw 0x4020 = 0x0 (ignored)
+  [PORT] outw 0x401E = 0x2 (ignored)
+  [KERNEL] summary: 1811 total calls, latest ordinal 277 (slot 1) esp=0x01202F38
+  [KERNEL]   ordinal 294 x715
+  [KERNEL]   ordinal 277 x710
+  [KERNEL]   ordinal  99 x135
+  [KERNEL]   ordinal 289 x47
+  [KERNEL]   ordinal 279 x39
+  [KERNEL]   ordinal 236 x31
+[CHIHIRO] DIP switches 0x00000002 (display index 10)
+  [CONTIG] t=2.3s alloc 0x80004000 4 KB: in use 24592 KB, peak 24592 KB, high-water 40960 KB (allocs=4 frees=0)
+  [CONTIG] t=2.3s alloc 0x80005000 4096 KB: in use 28688 KB, peak 28688 KB, high-water 40960 KB (allocs=5 frees=0)
+  [KERNEL] KeConnectInterrupt: vector 3 -> routine 0x0010F670 context 0x001190C0
+  [PORT] outb 0x80C0 = 0x1 (ignored)
+[UNIMPL] untranslated instruction REACHED: `wbinvd` at 0x0010F000 (a no-op; set RECOMP_UNIMPL_TRAP=1 to stop here)
+  [CONTIG] t=2.3s alloc 0x80408000 3600 KB: in use 32288 KB, peak 32288 KB, high-water 40960 KB (allocs=6 frees=0)
+  [CONTIG] t=2.3s alloc 0x8078C000 1200 KB: in use 33488 KB, peak 33488 KB, high-water 40960 KB (allocs=7 frees=0)
+[HAL] AV pack 5 (RECOMP_AV_PACK)
+  [CONTIG] t=2.3s alloc 0x80405000 4 KB: in use 33492 KB, peak 33492 KB, high-water 40960 KB (allocs=8 frees=0)
+  [NV2A] vblank -> ISR claimed it
+  [KERNEL] event 0x00119254 built by the title: host event created (notification)
+  [NV2A] vblank -> ISR claimed it
+  [NV2A] vblank -> ISR claimed it
+  [CONTIG] t=2.4s alloc 0x808B8000 96 KB: in use 33588 KB, peak 33588 KB, high-water 40960 KB (allocs=9 frees=0)
+  [CONTIG] t=2.4s alloc 0x808D0000 1200 KB: in use 34788 KB, peak 34788 KB, high-water 40960 KB (allocs=10 frees=0)
+  [CONTIG] t=2.4s alloc 0x809FC000 1200 KB: in use 35988 KB, peak 35988 KB, high-water 40960 KB (allocs=11 frees=0)
+  [CONTIG] t=2.4s alloc 0x80B28000 1024 KB: in use 37012 KB, peak 37012 KB, high-water 40960 KB (allocs=12 frees=0)
+  [CONTIG] t=2.4s alloc 0x80C28000 1200 KB: in use 38212 KB, peak 38212 KB, high-water 40960 KB (allocs=13 frees=0)
+  [CONTIG] t=2.4s alloc 0x80D54000 256 KB: in use 38468 KB, peak 38468 KB, high-water 40960 KB (allocs=14 frees=0)
+  [CONTIG] t=2.4s alloc 0x80D94000 64 KB: in use 38532 KB, peak 38532 KB, high-water 40960 KB (allocs=15 frees=0)
+  [CONTIG] t=2.4s alloc 0x80DA4000 64 KB: in use 38596 KB, peak 38596 KB, high-water 40960 KB (allocs=16 frees=0)
+  [FILE] D:\media\startup.xpr (disp 1 opts 0x60 from 0x00102042) -> 0x00000000
+  [FILE] D:\media\startup.xpr (disp 1 opts 0x60 from 0x00102042) -> 0x00000000
+  [READ] from=0x00101AC2 @seq buf=0x00F83A30 want=4096 got=4096 st=0x00000000  58 50 52 30
+  [READ] from=0x00101AC2 @seq buf=0x00F85240 want=4096 got=2048 st=0x00000000  00 50 00 00
+[D3D] GPU semaphore at 0x80004000
+[Vulkan] fatal draw: VkResult=-8, frame=0
