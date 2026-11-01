@@ -96,3 +96,16 @@ recording work. No matched repeat/Quest measurement is claimed.
 selected residency mode at startup. Focused tests/validation and both builds
 pass; it is NOT in the immutable first quantized run. Combined-readback control
 was stopped by SIGTERM after multiple mission windows (report exit -15).
+
+The first quantized guest run completed all 2160 frames successfully (exit 0),
+with frame-window data in its report.json. Final measured windows were 18.05
+and 17.79 FPS. The follow-up /tmp/vc3-quantized-writeonly-off uses immutable
+/tmp/vc3-quantized-writeonly-vc3, changing only the non-depth-writing skip;
+it remains running. No clear intro speedup from that skip is established.
+The CPU sample attributes the largest memcmp callchains to depth observation
+and resident color observation. Evaluate write-watch with this same binary.
+
+Frame 1200 is the attract/mission intro and displays zero credits. The existing
+2160-frame captures do not establish playable combat. Extend future runs with
+late coin/start inputs and periodic captures while retaining the original
+input prefix for comparable early windows. Do not call intro FPS combat FPS.
