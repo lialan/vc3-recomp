@@ -1,0 +1,13 @@
+{
+  "scope": "Reports emitted between completed1680 and1920; per-target report periods straddle markers. These are not exact frame slices. GPU time excludes standalone texture/depth transfers. GPU and host fence wait overlap; do not add them.",
+  "totals": {
+    "draws": 91166.0,
+    "submissions": 3785.0,
+    "gpu_ms": 836.54,
+    "record_ms": 118.86999999999999,
+    "finish_ms": 1607.29,
+    "submit_ms": 19.95,
+    "wait_ms": 1516.6399999999999,
+    "retire_ms": 6.89
+  }
+}

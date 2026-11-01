@@ -1,0 +1,153 @@
+[Vulkan frame intervals] flips 1561..1681: 57.12 fps mean 17.51ms p95 22.91ms p99 37.42ms max 40.42ms >20ms=18 >33ms=2 (guest completions, not XR display)
+[Vulkan GPU] 640x480 47 synchronous submissions (excludes command batches): GPU 0.00ms host record/submit/wait 12.57ms
+[Vulkan GPU] 640x480 20 synchronous submissions (excludes command batches): GPU 0.00ms host record/submit/wait 4.33ms
+[Vulkan batch GPU] 128x128 draws=16 submissions=16 GPU 1.34ms host record 0.27ms finish 4.58ms (submit 0.08ms wait 4.19ms retire 0.00ms)
+[Vulkan depth uploads] 128x128 count=0 inclusive 0.00ms own_fence_wait 0.00ms
+[Vulkan batch GPU] 256x256 draws=16 submissions=16 GPU 2.63ms host record 0.26ms finish 5.82ms (submit 0.08ms wait 5.49ms retire 0.01ms)
+[Vulkan depth uploads] 256x256 count=8 inclusive 1.30ms own_fence_wait 1.15ms
+[Vulkan GPU] 256x256 8 synchronous submissions (excludes command batches): GPU 0.00ms host record/submit/wait 1.77ms
+[Vulkan backend] 21213 batches: surface 20.4ms CPU edits 28.8ms imports 263.1ms draw 184.2ms writeback 0.5ms (color disabled=784)
+[Vulkan batch GPU] 128x128 draws=16 submissions=16 GPU 1.43ms host record 0.25ms finish 4.74ms (submit 0.09ms wait 4.34ms retire 0.00ms)
+[Vulkan depth uploads] 128x128 count=0 inclusive 0.00ms own_fence_wait 0.00ms
+[Vulkan batch GPU] 256x256 draws=16 submissions=16 GPU 1.71ms host record 0.29ms finish 4.74ms (submit 0.08ms wait 4.41ms retire 0.00ms)
+[Vulkan depth uploads] 256x256 count=8 inclusive 1.37ms own_fence_wait 1.20ms
+[Vulkan batch GPU] 640x480 draws=17618 submissions=371 GPU 143.24ms host record 17.31ms finish 227.36ms (submit 2.14ms wait 217.45ms retire 1.59ms)
+[Vulkan depth uploads] 640x480 count=0 inclusive 0.00ms own_fence_wait 0.00ms
+[Vulkan GPU] 256x256 8 synchronous submissions (excludes command batches): GPU 0.00ms host record/submit/wait 1.80ms
+[Vulkan batch GPU] 128x128 draws=16 submissions=16 GPU 2.02ms host record 0.28ms finish 5.78ms (submit 0.10ms wait 5.36ms retire 0.00ms)
+[Vulkan depth uploads] 128x128 count=0 inclusive 0.00ms own_fence_wait 0.00ms
+[Vulkan batch GPU] 256x256 draws=16 submissions=16 GPU 2.25ms host record 0.28ms finish 5.27ms (submit 0.09ms wait 4.91ms retire 0.00ms)
+[Vulkan depth uploads] 256x256 count=8 inclusive 1.42ms own_fence_wait 1.23ms
+[Vulkan GPU] 256x256 8 synchronous submissions (excludes command batches): GPU 0.00ms host record/submit/wait 2.71ms
+[Vulkan batch GPU] 128x128 draws=16 submissions=16 GPU 2.13ms host record 0.26ms finish 5.39ms (submit 0.08ms wait 4.97ms retire 0.00ms)
+[Vulkan depth uploads] 128x128 count=0 inclusive 0.00ms own_fence_wait 0.00ms
+[Vulkan batch GPU] 256x256 draws=16 submissions=16 GPU 2.26ms host record 0.26ms finish 5.31ms (submit 0.06ms wait 4.98ms retire 0.00ms)
+[Vulkan depth uploads] 256x256 count=8 inclusive 1.18ms own_fence_wait 1.01ms
+[Vulkan GPU] 256x256 8 synchronous submissions (excludes command batches): GPU 0.00ms host record/submit/wait 2.77ms
+[Vulkan batch GPU] 640x480 draws=342 submissions=115 GPU 23.34ms host record 2.53ms finish 47.84ms (submit 0.51ms wait 45.03ms retire 0.02ms)
+[Vulkan depth uploads] 640x480 count=0 inclusive 0.00ms own_fence_wait 0.00ms
+[Vulkan GPU] 256x256 56 synchronous submissions (excludes command batches): GPU 0.00ms host record/submit/wait 12.46ms
+[Vulkan batch GPU] 256x256 draws=57 submissions=57 GPU 6.39ms host record 1.21ms finish 17.63ms (submit 0.33ms wait 16.17ms retire 0.00ms)
+[Vulkan depth uploads] 256x256 count=0 inclusive 0.00ms own_fence_wait 0.00ms
+[Vulkan batch GPU] 640x480 draws=1186 submissions=83 GPU 17.25ms host record 2.14ms finish 35.12ms (submit 0.43ms wait 33.28ms retire 0.02ms)
+[Vulkan depth uploads] 640x480 count=39 inclusive 18.09ms own_fence_wait 9.85ms
+[Vulkan batch GPU] 640x480 draws=1180 submissions=78 GPU 12.40ms host record 2.14ms finish 27.75ms (submit 0.43ms wait 25.94ms retire 0.02ms)
+[Vulkan depth uploads] 640x480 count=38 inclusive 12.67ms own_fence_wait 5.82ms
+[Vulkan batch GPU] 640x480 draws=1180 submissions=80 GPU 19.62ms host record 2.10ms finish 34.03ms (submit 0.42ms wait 32.26ms retire 0.02ms)
+[Vulkan depth uploads] 640x480 count=38 inclusive 17.63ms own_fence_wait 8.14ms
+[Vulkan GPU] 640x480 19 synchronous submissions (excludes command batches): GPU 0.00ms host record/submit/wait 5.44ms
+[Vulkan GPU] 640x480 19 synchronous submissions (excludes command batches): GPU 0.00ms host record/submit/wait 4.43ms
+[Vulkan GPU] 640x480 28 synchronous submissions (excludes command batches): GPU 0.00ms host record/submit/wait 6.81ms
+[Vulkan GPU] 640x480 19 synchronous submissions (excludes command batches): GPU 0.00ms host record/submit/wait 5.44ms
+[Vulkan backend] 21686 batches: surface 22.8ms CPU edits 29.8ms imports 254.0ms draw 156.6ms writeback 0.5ms (color disabled=918)
+[Vulkan batch GPU] 128x128 draws=16 submissions=16 GPU 1.42ms host record 0.27ms finish 4.74ms (submit 0.09ms wait 4.34ms retire 0.00ms)
+[Vulkan depth uploads] 128x128 count=0 inclusive 0.00ms own_fence_wait 0.00ms
+[Vulkan batch GPU] 256x256 draws=16 submissions=16 GPU 2.50ms host record 0.26ms finish 5.60ms (submit 0.09ms wait 5.27ms retire 0.00ms)
+[Vulkan depth uploads] 256x256 count=8 inclusive 1.40ms own_fence_wait 1.23ms
+[Vulkan GPU] 256x256 8 synchronous submissions (excludes command batches): GPU 0.00ms host record/submit/wait 1.88ms
+[Vulkan batch GPU] 128x128 draws=16 submissions=16 GPU 2.46ms host record 0.26ms finish 6.40ms (submit 0.09ms wait 5.96ms retire 0.00ms)
+[Vulkan depth uploads] 128x128 count=0 inclusive 0.00ms own_fence_wait 0.00ms
+[Vulkan batch GPU] 256x256 draws=16 submissions=16 GPU 1.96ms host record 0.26ms finish 5.30ms (submit 0.10ms wait 4.94ms retire 0.00ms)
+[Vulkan depth uploads] 256x256 count=8 inclusive 1.20ms own_fence_wait 1.03ms
+[Vulkan batch GPU] 640x480 draws=18630 submissions=394 GPU 124.26ms host record 18.15ms finish 212.28ms (submit 2.21ms wait 201.98ms retire 1.65ms)
+[Vulkan depth uploads] 640x480 count=0 inclusive 0.00ms own_fence_wait 0.00ms
+[Vulkan GPU] 256x256 8 synchronous submissions (excludes command batches): GPU 0.00ms host record/submit/wait 3.85ms
+[Vulkan batch GPU] 640x480 draws=360 submissions=120 GPU 24.14ms host record 2.64ms finish 47.68ms (submit 0.53ms wait 44.76ms retire 0.02ms)
+[Vulkan depth uploads] 640x480 count=0 inclusive 0.00ms own_fence_wait 0.00ms
+[Vulkan batch GPU] 128x128 draws=16 submissions=16 GPU 2.74ms host record 0.25ms finish 6.65ms (submit 0.10ms wait 6.24ms retire 0.00ms)
+[Vulkan depth uploads] 128x128 count=0 inclusive 0.00ms own_fence_wait 0.00ms
+[Vulkan batch GPU] 256x256 draws=16 submissions=16 GPU 3.63ms host record 0.27ms finish 7.14ms (submit 0.10ms wait 6.76ms retire 0.00ms)
+[Vulkan depth uploads] 256x256 count=8 inclusive 1.81ms own_fence_wait 1.64ms
+[Vulkan GPU] 256x256 8 synchronous submissions (excludes command batches): GPU 0.00ms host record/submit/wait 1.85ms
+[Vulkan GPU] 256x256 53 synchronous submissions (excludes command batches): GPU 0.00ms host record/submit/wait 13.12ms
+[Vulkan batch GPU] 128x128 draws=16 submissions=16 GPU 1.31ms host record 0.25ms finish 4.54ms (submit 0.09ms wait 4.18ms retire 0.00ms)
+[Vulkan depth uploads] 128x128 count=0 inclusive 0.00ms own_fence_wait 0.00ms
+[Vulkan batch GPU] 256x256 draws=16 submissions=16 GPU 2.28ms host record 0.28ms finish 6.21ms (submit 0.09ms wait 5.79ms retire 0.00ms)
+[Vulkan depth uploads] 256x256 count=8 inclusive 1.69ms own_fence_wait 1.53ms
+[Vulkan GPU] 256x256 8 synchronous submissions (excludes command batches): GPU 0.00ms host record/submit/wait 1.72ms
+[Vulkan batch GPU] 256x256 draws=60 submissions=60 GPU 6.43ms host record 1.21ms finish 18.00ms (submit 0.38ms wait 16.48ms retire 0.00ms)
+[Vulkan depth uploads] 256x256 count=0 inclusive 0.00ms own_fence_wait 0.00ms
+[Vulkan batch GPU] 640x480 draws=1137 submissions=81 GPU 14.69ms host record 2.06ms finish 30.00ms (submit 0.46ms wait 28.15ms retire 0.02ms)
+[Vulkan depth uploads] 640x480 count=40 inclusive 16.35ms own_fence_wait 8.02ms
+[Vulkan batch GPU] 640x480 draws=1137 submissions=81 GPU 14.98ms host record 2.05ms finish 29.67ms (submit 0.46ms wait 27.82ms retire 0.02ms)
+[Vulkan depth uploads] 640x480 count=40 inclusive 14.45ms own_fence_wait 8.36ms
+[Vulkan batch GPU] 640x480 draws=1136 submissions=82 GPU 16.03ms host record 2.00ms finish 30.55ms (submit 0.47ms wait 28.71ms retire 0.02ms)
+[Vulkan depth uploads] 640x480 count=40 inclusive 16.25ms own_fence_wait 7.50ms
+[Vulkan GPU] 640x480 21 synchronous submissions (excludes command batches): GPU 0.00ms host record/submit/wait 4.93ms
+[Vulkan GPU] 640x480 21 synchronous submissions (excludes command batches): GPU 0.00ms host record/submit/wait 4.49ms
+[Vulkan frame intervals] flips 1681..1801: 58.79 fps mean 17.01ms p95 21.17ms p99 26.03ms max 26.13ms >20ms=12 >33ms=0 (guest completions, not XR display)
+[Vulkan GPU] 640x480 32 synchronous submissions (excludes command batches): GPU 0.00ms host record/submit/wait 9.77ms
+[Vulkan GPU] 640x480 21 synchronous submissions (excludes command batches): GPU 0.00ms host record/submit/wait 5.82ms
+[Vulkan backend] 22934 batches: surface 25.1ms CPU edits 30.3ms imports 246.5ms draw 156.5ms writeback 0.6ms (color disabled=978)
+[Vulkan batch GPU] 128x128 draws=16 submissions=16 GPU 1.48ms host record 0.24ms finish 4.87ms (submit 0.07ms wait 4.51ms retire 0.00ms)
+[Vulkan depth uploads] 128x128 count=0 inclusive 0.00ms own_fence_wait 0.00ms
+[Vulkan batch GPU] 256x256 draws=16 submissions=16 GPU 1.49ms host record 0.24ms finish 4.39ms (submit 0.09ms wait 4.06ms retire 0.00ms)
+[Vulkan depth uploads] 256x256 count=8 inclusive 1.35ms own_fence_wait 1.19ms
+[Vulkan GPU] 256x256 8 synchronous submissions (excludes command batches): GPU 0.00ms host record/submit/wait 1.81ms
+[Vulkan batch GPU] 640x480 draws=19206 submissions=398 GPU 103.52ms host record 17.75ms finish 188.06ms (submit 1.93ms wait 178.16ms retire 1.68ms)
+[Vulkan depth uploads] 640x480 count=0 inclusive 0.00ms own_fence_wait 0.00ms
+[Vulkan batch GPU] 128x128 draws=16 submissions=16 GPU 1.41ms host record 0.25ms finish 4.78ms (submit 0.07ms wait 4.42ms retire 0.01ms)
+[Vulkan depth uploads] 128x128 count=0 inclusive 0.00ms own_fence_wait 0.00ms
+[Vulkan batch GPU] 256x256 draws=16 submissions=16 GPU 2.33ms host record 0.26ms finish 5.60ms (submit 0.09ms wait 5.27ms retire 0.00ms)
+[Vulkan depth uploads] 256x256 count=8 inclusive 1.53ms own_fence_wait 1.36ms
+[Vulkan batch GPU] 640x480 draws=366 submissions=125 GPU 21.84ms host record 2.42ms finish 44.25ms (submit 0.49ms wait 41.57ms retire 0.02ms)
+[Vulkan depth uploads] 640x480 count=0 inclusive 0.00ms own_fence_wait 0.00ms
+[Vulkan GPU] 256x256 60 synchronous submissions (excludes command batches): GPU 0.00ms host record/submit/wait 13.77ms
+[Vulkan GPU] 256x256 8 synchronous submissions (excludes command batches): GPU 0.00ms host record/submit/wait 1.62ms
+[Vulkan batch GPU] 128x128 draws=16 submissions=16 GPU 1.38ms host record 0.26ms finish 5.63ms (submit 0.08ms wait 5.25ms retire 0.00ms)
+[Vulkan depth uploads] 128x128 count=0 inclusive 0.00ms own_fence_wait 0.00ms
+[Vulkan batch GPU] 256x256 draws=16 submissions=16 GPU 1.39ms host record 0.25ms finish 4.55ms (submit 0.09ms wait 4.22ms retire 0.00ms)
+[Vulkan depth uploads] 256x256 count=8 inclusive 1.20ms own_fence_wait 1.05ms
+[Vulkan batch GPU] 256x256 draws=61 submissions=61 GPU 6.30ms host record 1.17ms finish 17.81ms (submit 0.31ms wait 16.38ms retire 0.00ms)
+[Vulkan depth uploads] 256x256 count=0 inclusive 0.00ms own_fence_wait 0.00ms
+[Vulkan GPU] 256x256 8 synchronous submissions (excludes command batches): GPU 0.00ms host record/submit/wait 2.88ms
+[Vulkan batch GPU] 640x480 draws=1236 submissions=86 GPU 17.18ms host record 2.04ms finish 32.89ms (submit 0.43ms wait 31.09ms retire 0.02ms)
+[Vulkan depth uploads] 640x480 count=41 inclusive 14.52ms own_fence_wait 6.85ms
+[Vulkan batch GPU] 128x128 draws=16 submissions=16 GPU 1.66ms host record 0.27ms finish 5.04ms (submit 0.07ms wait 4.71ms retire 0.00ms)
+[Vulkan depth uploads] 128x128 count=0 inclusive 0.00ms own_fence_wait 0.00ms
+[Vulkan batch GPU] 256x256 draws=16 submissions=16 GPU 1.53ms host record 0.27ms finish 4.46ms (submit 0.09ms wait 4.11ms retire 0.00ms)
+[Vulkan depth uploads] 256x256 count=8 inclusive 1.12ms own_fence_wait 0.96ms
+[Vulkan batch GPU] 640x480 draws=1246 submissions=84 GPU 18.23ms host record 2.05ms finish 33.67ms (submit 0.39ms wait 31.94ms retire 0.02ms)
+[Vulkan depth uploads] 640x480 count=41 inclusive 16.59ms own_fence_wait 8.80ms
+[Vulkan GPU] 256x256 8 synchronous submissions (excludes command batches): GPU 0.00ms host record/submit/wait 1.83ms
+[Vulkan batch GPU] 640x480 draws=1295 submissions=89 GPU 16.22ms host record 2.15ms finish 32.85ms (submit 0.45ms wait 30.96ms retire 0.02ms)
+[Vulkan depth uploads] 640x480 count=41 inclusive 15.71ms own_fence_wait 7.28ms
+[Vulkan GPU] 640x480 21 synchronous submissions (excludes command batches): GPU 0.00ms host record/submit/wait 4.64ms
+[Vulkan GPU] 640x480 21 synchronous submissions (excludes command batches): GPU 0.00ms host record/submit/wait 4.31ms
+[Vulkan GPU] 640x480 26 synchronous submissions (excludes command batches): GPU 0.00ms host record/submit/wait 6.09ms
+[Vulkan GPU] 640x480 21 synchronous submissions (excludes command batches): GPU 0.00ms host record/submit/wait 4.92ms
+[Vulkan backend] 22784 batches: surface 20.6ms CPU edits 27.8ms imports 229.4ms draw 147.3ms writeback 0.5ms (color disabled=960)
+[Vulkan batch GPU] 128x128 draws=16 submissions=16 GPU 1.68ms host record 0.24ms finish 4.99ms (submit 0.09ms wait 4.60ms retire 0.00ms)
+[Vulkan depth uploads] 128x128 count=0 inclusive 0.00ms own_fence_wait 0.00ms
+[Vulkan batch GPU] 256x256 draws=16 submissions=16 GPU 1.45ms host record 0.24ms finish 4.35ms (submit 0.09ms wait 4.03ms retire 0.00ms)
+[Vulkan depth uploads] 256x256 count=8 inclusive 1.12ms own_fence_wait 0.98ms
+[Vulkan GPU] 256x256 8 synchronous submissions (excludes command batches): GPU 0.00ms host record/submit/wait 2.03ms
+[Vulkan batch GPU] 640x480 draws=18853 submissions=393 GPU 94.10ms host record 17.20ms finish 175.25ms (submit 1.99ms wait 165.72ms retire 1.64ms)
+[Vulkan depth uploads] 640x480 count=0 inclusive 0.00ms own_fence_wait 0.00ms
+[Vulkan batch GPU] 128x128 draws=16 submissions=16 GPU 1.42ms host record 0.31ms finish 4.52ms (submit 0.09ms wait 4.14ms retire 0.00ms)
+[Vulkan depth uploads] 128x128 count=0 inclusive 0.00ms own_fence_wait 0.00ms
+[Vulkan batch GPU] 256x256 draws=16 submissions=16 GPU 1.45ms host record 0.25ms finish 4.45ms (submit 0.09ms wait 4.12ms retire 0.00ms)
+[Vulkan depth uploads] 256x256 count=8 inclusive 1.19ms own_fence_wait 1.03ms
+[Vulkan batch GPU] 640x480 draws=360 submissions=121 GPU 23.73ms host record 2.55ms finish 46.90ms (submit 0.54ms wait 44.05ms retire 0.02ms)
+[Vulkan depth uploads] 640x480 count=0 inclusive 0.00ms own_fence_wait 0.00ms
+[Vulkan GPU] 256x256 61 synchronous submissions (excludes command batches): GPU 0.00ms host record/submit/wait 14.56ms
+[Vulkan batch GPU] 256x256 draws=61 submissions=61 GPU 5.82ms host record 1.19ms finish 19.07ms (submit 0.36ms wait 17.58ms retire 0.00ms)
+[Vulkan depth uploads] 256x256 count=0 inclusive 0.00ms own_fence_wait 0.00ms
+[Vulkan batch GPU] 640x480 draws=1317 submissions=83 GPU 15.71ms host record 2.08ms finish 30.47ms (submit 0.49ms wait 28.59ms retire 0.02ms)
+[Vulkan depth uploads] 640x480 count=40 inclusive 14.65ms own_fence_wait 6.62ms
+[Vulkan batch GPU] 640x480 draws=1320 submissions=86 GPU 17.32ms host record 2.24ms finish 32.66ms (submit 0.52ms wait 30.65ms retire 0.02ms)
+[Vulkan depth uploads] 640x480 count=40 inclusive 14.25ms own_fence_wait 6.55ms
+[Vulkan GPU] 256x256 7 synchronous submissions (excludes command batches): GPU 0.00ms host record/submit/wait 1.87ms
+[Vulkan batch GPU] 640x480 draws=1310 submissions=84 GPU 14.79ms host record 2.16ms finish 30.00ms (submit 0.51ms wait 28.08ms retire 0.01ms)
+[Vulkan depth uploads] 640x480 count=40 inclusive 14.60ms own_fence_wait 6.83ms
+[Vulkan batch GPU] 128x128 draws=16 submissions=16 GPU 1.59ms host record 0.29ms finish 5.15ms (submit 0.09ms wait 4.76ms retire 0.00ms)
+[Vulkan depth uploads] 128x128 count=0 inclusive 0.00ms own_fence_wait 0.00ms
+[Vulkan batch GPU] 256x256 draws=16 submissions=16 GPU 1.66ms host record 0.23ms finish 4.52ms (submit 0.09ms wait 4.20ms retire 0.00ms)
+[Vulkan depth uploads] 256x256 count=8 inclusive 1.22ms own_fence_wait 1.06ms
+[Vulkan GPU] 256x256 7 synchronous submissions (excludes command batches): GPU 0.00ms host record/submit/wait 1.77ms
+[Vulkan batch GPU] 128x128 draws=16 submissions=16 GPU 1.57ms host record 0.24ms finish 5.42ms (submit 0.09ms wait 5.06ms retire 0.00ms)
+[Vulkan depth uploads] 128x128 count=0 inclusive 0.00ms own_fence_wait 0.00ms
+[Vulkan batch GPU] 256x256 draws=16 submissions=16 GPU 1.45ms host record 0.24ms finish 4.57ms (submit 0.08ms wait 4.25ms retire 0.00ms)
+[Vulkan depth uploads] 256x256 count=8 inclusive 1.15ms own_fence_wait 1.01ms
+[Vulkan GPU] 256x256 7 synchronous submissions (excludes command batches): GPU 0.00ms host record/submit/wait 1.95ms
+[Vulkan GPU] 640x480 20 synchronous submissions (excludes command batches): GPU 0.00ms host record/submit/wait 5.67ms
