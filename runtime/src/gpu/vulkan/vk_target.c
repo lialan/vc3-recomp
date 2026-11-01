@@ -1,4 +1,5 @@
 #include "vk_target.h"
+#include "vk_depth_quant.h"
 #include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
@@ -62,6 +63,7 @@ struct ChVkTarget {
     VkQueue queue;
     VkImage depth;
     VkFormat depth_format;
+    ChVkDepthQuant *depth_quant;
     VkDeviceMemory depth_mem;
     VkImageView depth_view;
     VkImage image;
@@ -235,6 +237,7 @@ void ch_vk_target_destroy(ChVkTarget *t) {
     if(t->timing) vkDestroyQueryPool(t->device,t->timing,NULL);
     if(t->fence) vkDestroyFence(t->device,t->fence,NULL);
     if(t->pool) vkDestroyCommandPool(t->device,t->pool,NULL);
+    ch_vk_depth_quant_destroy(t->depth_quant);
     if(t->read) vkDestroyBuffer(t->device,t->read,NULL);
     if(t->read_mem) vkFreeMemory(t->device,t->read_mem,NULL);
     if(t->depth_view) vkDestroyImageView(t->device,t->depth_view,NULL);
@@ -310,7 +313,7 @@ VkResult ch_vk_target_create_depth(VkPhysicalDevice physical, VkDevice device,
         .subresourceRange={VK_IMAGE_ASPECT_DEPTH_BIT|VK_IMAGE_ASPECT_STENCIL_BIT,0,1,0,1}};
     TRY(vkCreateImageView(device,&depth_view,NULL,&t->depth_view));
     VkBufferCreateInfo buffer={.sType=VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
-        .size=t->bytes+t->bytes/4,.usage=VK_BUFFER_USAGE_TRANSFER_DST_BIT|VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+        .size=t->bytes+t->bytes/4,.usage=VK_BUFFER_USAGE_TRANSFER_DST_BIT|VK_BUFFER_USAGE_TRANSFER_SRC_BIT|VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
         .sharingMode=VK_SHARING_MODE_EXCLUSIVE};
     TRY(vkCreateBuffer(device,&buffer,NULL,&t->read));
     vkGetBufferMemoryRequirements(device,t->read,&req);
@@ -421,6 +424,34 @@ fail:
     retire_samples(t);return result;
 }
 VkResult ch_vk_target_finish(ChVkTarget *t) {return finish_batch(t,0);}
+VkResult ch_vk_target_quantize_depth(ChVkTarget *t) {
+    if(!t || t->failed || !t->initialized || t->depth_format!=VK_FORMAT_D32_SFLOAT_S8_UINT)
+        return VK_ERROR_FORMAT_NOT_SUPPORTED;
+    VkPhysicalDeviceProperties props;vkGetPhysicalDeviceProperties(t->physical,&props);
+    if(t->bytes>props.limits.maxStorageBufferRange || t->bytes/4>UINT32_MAX-63 ||
+       (t->bytes/4+63)/64>props.limits.maxComputeWorkGroupCount[0] ||
+       props.limits.maxComputeWorkGroupInvocations<64 || props.limits.maxComputeWorkGroupSize[0]<64)
+        return VK_ERROR_FEATURE_NOT_PRESENT;
+    uint32_t n=0;vkGetPhysicalDeviceQueueFamilyProperties(t->physical,&n,NULL);
+    VkQueueFamilyProperties *families=calloc(n,sizeof *families);
+    if(!families)return VK_ERROR_OUT_OF_HOST_MEMORY;
+    vkGetPhysicalDeviceQueueFamilyProperties(t->physical,&n,families);
+    int compute=t->family<n && (families[t->family].queueFlags&VK_QUEUE_COMPUTE_BIT);free(families);
+    if(!compute)return VK_ERROR_FEATURE_NOT_PRESENT;
+    VkResult result;
+    TRY(ch_vk_target_finish(t));
+    if(!t->depth_quant) TRY(ch_vk_depth_quant_create(t->device,t->read,t->bytes,&t->depth_quant));
+    TRY(vkResetCommandBuffer(t->command,0));TRY(vkResetFences(t->device,1,&t->fence));
+    VkCommandBufferBeginInfo begin={.sType=VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,.flags=VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT};
+    TRY(vkBeginCommandBuffer(t->command,&begin));
+    ch_vk_depth_quant_record(t->depth_quant,t->command,t->depth,t->width,t->height);
+    TRY(vkEndCommandBuffer(t->command));
+    VkSubmitInfo submit={.sType=VK_STRUCTURE_TYPE_SUBMIT_INFO,.commandBufferCount=1,.pCommandBuffers=&t->command};
+    TRY(vkQueueSubmit(t->queue,1,&submit,t->fence));
+    TRY(vkWaitForFences(t->device,1,&t->fence,VK_TRUE,5000000000ULL));
+    return VK_SUCCESS;
+fail:t->failed=1;return result;
+}
 static VkResult record_batch(ChVkTarget *t,VkBuffer geometry,VkDeviceSize index_offset,uint32_t index_count) {
     VkResult result;
     uint64_t record_start=t->timing?time_ns():0;

@@ -163,6 +163,22 @@ int ch_test_specialized_combiners(VkPhysicalDevice gpu,VkDevice device,VkQueue q
     for(unsigned i=0;i<16;i++) REQUIRE(stencil[1][i]==0xab && fabsf(depth[1][i]-.25f)<1e-6f);
     ch_vk_target_resource_stats(t[1],&after);
     REQUIRE(after.combined_depth_readbacks-stats.combined_depth_readbacks==1 && after.batch_submissions-stats.batch_submissions==1);
+    /* Exercise actual image -> compute buffer -> image barriers repeatedly. */
+    for(unsigned round=0;round<128;round++) {
+        for(unsigned i=0;i<16;i++) {
+            uint32_t bits=random_word(&seed)%0x3f800001u;
+            if(round==0) bits=i==0?0:i==1?0x3f800000u:0x3f000000u+i-8;
+            memcpy(&depth[0][i],&bits,4);stencil[0][i]=(uint8_t)(round+i*17);
+        }
+        REQUIRE(ch_vk_target_write_depth_stencil(t[0],depth[0],stencil[0],16)==VK_SUCCESS);
+        REQUIRE(ch_vk_target_quantize_depth(t[0])==VK_SUCCESS);
+        REQUIRE(ch_vk_target_read_depth_stencil(t[0],depth[1],stencil[1],16)==VK_SUCCESS);
+        for(unsigned i=0;i<16;i++) {
+            uint32_t q=(uint32_t)((double)depth[0][i]*16777215.0+0.5);
+            float expected=(float)((double)q/16777215.0);
+            REQUIRE(depth[1][i]==expected && stencil[1][i]==stencil[0][i]);
+        }
+    }
     puts("PASS: 32 specialized combiner cases match interpreter/CPU across 0..8 stages, dynamic factors/fog, fetch modes/cube/missing samplers and exact alpha/depth/stencil; inactive edits reuse pipelines, NOAT retains projective q, 140 pending factor updates survive bounded LRU eviction and three batches");failed=0;
 done:
     for(unsigned i=0;i<2;i++) ch_vk_target_destroy(t[i]);

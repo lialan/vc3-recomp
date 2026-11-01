@@ -8,6 +8,9 @@
 #include "vk_texture.h"
 #include "vk_fixed.h"
 typedef struct ChVkTarget ChVkTarget;
+/* Exact D32 -> guest Z24 -> D32 GPU round-trip, preserving stencil.
+ * Synchronous validation entry point; does not enable resident rendering. */
+VkResult ch_vk_target_quantize_depth(ChVkTarget *);
 /* Before the first pipeline creation, borrow a same-device driver cache.
  * Caller serializes ALL accesses to it and retains it until targets die. */
 VkResult ch_vk_target_pipeline_cache(ChVkTarget *,VkPipelineCache);

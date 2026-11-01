@@ -46,3 +46,19 @@ The DMA baseline ended at its 480-second timeout after at least 2041 frames,
 without the prior invalid-state abort. Later windows were 2.56-2.92 FPS.
 The combined-readback comparison is /tmp/vc3-combined-depth-profile using
 immutable /tmp/vc3-combined-depth-vc3; inspect its report when terminal.
+
+## Image round-trip recorder
+
+vk_depth_quant now records D32 depth image -> storage buffer -> compute ->
+depth image, restoring the combined depth/stencil attachment layout without
+copying stencil. ch_vk_target_quantize_depth is a synchronous validation API,
+with queue/dispatch/storage limits checked before allocation. It does not
+enable resident depth or alter normal draws. Scratch buffer/resources live
+until target teardown after completion.
+
+The specialized fixture performs 128 repeated 4x4 uploads, quantizations and
+readbacks, with random/boundary depths and varying stencil bytes. Depth is
+exact against the CPU oracle; stencil is unchanged. The fixture passes with
+VK_LAYER_KHRONOS_validation and synchronization validation requested, with no
+VUID/SYNC diagnostics in /tmp/vc3-depth-roundtrip-validation.log. Android
+offscreen build passes. Renderer residency integration remains to be done.
