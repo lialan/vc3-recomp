@@ -79,3 +79,20 @@ writes, CPU component edits, target switching, resize/full clears and flush.
 Both fixtures pass with validation and synchronization validation requested;
 logs /tmp/vc3-quantized-{draw,backend}-validation.log have no VUID/SYNC errors.
 Mac main and Android offscreen builds pass. No guest performance claim yet.
+
+## First guest evidence (still running at checkpoint)
+
+/tmp/vc3-quantized-depth-profile uses immutable /tmp/vc3-quantized-depth-vc3,
+quantized residency enabled, DMA walker, write-watch disabled. Loading window
+121..241 reached 56.73 FPS. Mission-intro window 1201..1321 reached 15.57 FPS
+vs about 2.9 FPS in strict-depth controls. Frame-1200 PPM pixel payloads match
+/tmp/vc3-dma-walk-profile exactly: zero differing pixels, maximum channel
+error zero. This single capture is not full-game correctness or combat proof.
+Later 1561..1681 was 16.37 FPS and 1681..1801 11.94 FPS; pacing remains poor.
+CPU sample cpu-intro.txt shows substantial remaining memcmp plus command
+recording work. No matched repeat/Quest measurement is claimed.
+
+1be418d skips quantization when draws cannot write depth, and prints the
+selected residency mode at startup. Focused tests/validation and both builds
+pass; it is NOT in the immutable first quantized run. Combined-readback control
+was stopped by SIGTERM after multiple mission windows (report exit -15).
