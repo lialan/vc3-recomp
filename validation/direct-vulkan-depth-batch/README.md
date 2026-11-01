@@ -211,7 +211,8 @@ later in gameplay cannot alone attribute differences to an optimization.
 
 Combined-readback guest measurement: /tmp/vc3-combined-flush-profile completed
 2400 frames (exit 0, no failure diagnostics), using immutable
-/tmp/vc3-combined-flush-vc3. Frame 1200 matches the preceding repeat exactly.
+/tmp/vc3-combined-flush-vc3. Frame 1200 differs from the preceding repeat;
+this comparison does not establish exact guest capture parity.
 Windows 2041..2161 and 2161..2281 reached 32.77/32.59 FPS versus 26.27/25.29
 in /tmp/vc3-batch256-repeat; >33ms counts fell from 119/119 to 15/10. Earlier
 batch256 controls varied, so these are individual measurements, not a confidence
