@@ -949,3 +949,37 @@ corresponding game.log. Experimental patches:
 Next refresh CPU profiles of the retained backend separately during activation
 and held E.S.; do not assume the older bulk-decoder profile still describes
 the current paired-readback bottleneck. No headset/device activity.
+
+## Retained-backend activation and held E.S. CPU profiles
+
+`/tmp/vc3-retained-es-cpu-profile-v2` completed 2100 frames, exit 0, no
+runner failure diagnostics. Immutable binary `/tmp/vc3-retained-profile-vc3`,
+SHA256 `ac40ac2bb9818b8cdac4e27e86fc6b33fadca98fceec99930c1562b95ac91590`. macOS sample collected two-second
+profiles starting after completed frames 1560 (activation) and 1740 (held),
+at 1 ms sampling intervals. Profiling perturbs execution: do not use these
+frame rates for A/B performance acceptance. No headset/device use.
+
+Activation profile has 781 samples under the main executing nv2a_ack_thread
+branch, including 88 in create_pipeline and 68 in nv2a_vsh_run. Held profile
+has 813 samples under that branch, no create_pipeline frames, and 134 in
+nv2a_vsh_run. Held top-of-stack totals also include 59 ch_vk_guest_depth_store,
+27 swap_color_rows, and 15 decode_texel samples. GPU fence waits remain
+visible throughout depth/color publication paths. These are sampled stack
+counts, not precise exclusive wall-time percentages or GPU timings.
+
+The unsampled single-owner control independently logs 11 pipeline creations
+between completed frames 1560 and 1680, totaling 188.259 ms. Individual
+expensive calls are 30.986, 32.013, 44.164, 21.651, and 35.756 ms. This supports
+addressing compilation during activation separately from steady-state work.
+The shared backend already shares a VkPipelineCache between targets, but
+creates it empty and destroys it at shutdown; it does not yet persist driver
+cache data. A reusable, validated cache-data import/export path is the next
+candidate for reducing repeated-run activation stalls. It cannot by itself
+solve cold-first-run compilation or sustained E.S. throughput. Any persistence
+experiment needs cold/warm identical-scene measurements and exact rendering
+checks, plus malformed/incompatible data fallback and driver/device identity.
+
+The initial `/tmp/vc3-retained-es-cpu-profile` attempt stopped at activation
+because its process lookup compared /tmp against the resolved /private/tmp
+path. Its process is gone and it has no report; it is not a completed run.
+The v2 script resolves paths and waits for the runner even on sampling failure.
