@@ -1,0 +1,4 @@
+device=Apple M4 Pro vendor=106b deviceID=0064 api=1.4.354
+PASS: disjoint dirty depth owners defer switches but preserve CPU component edits, all-owner completion, inactive texture consumers and alias publication
+PASS: bounded clean depth reuse preserves publication, dormant CPU edits, GPU copy invalidation and partial overlap for D32/D24 linear/Morton images
+PASS: GPU linear/Morton RGBA/BGRA byte roundtrip and D32/D24 linear/Morton Z24S8 exact roundtrip, owner CPU component edits/GPU copies/layout changes, float packing, stencil, odd sizes, repeated staging reuse, combined pending depth/color readback

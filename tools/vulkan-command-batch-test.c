@@ -111,6 +111,27 @@ int ch_test_command_batches(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,u
         REQUIRE(ch_vk_target_draw_state_read(t,NULL,v,4,indices,6,&opaque,pixels,sizeof pixels)==VK_SUCCESS);
         REQUIRE(ch_vk_target_read_depth_stencil(t,depth,stencil,256)==VK_SUCCESS && !ch_vk_target_pending(t));
         for(unsigned i=0;i<256;i++) REQUIRE(depth[i]==0 && stencil[i]==(unsigned char)i);
+        /* Clear-only batches and partial clears must preserve draw ordering,
+         * untouched aspects and the completion-fence ownership contract. */
+        ChVkTargetResourceStats clear_before;ch_vk_target_resource_stats(t,&clear_before);
+        const float red[]={1,0,0,1};memset(pixels,0xa5,sizeof pixels);
+        REQUIRE(ch_vk_target_clear_aspects_read(t,1,red,0,0,pixels,sizeof pixels)==VK_SUCCESS);
+        REQUIRE(ch_vk_target_pending(t)>0 && ch_vk_target_completion_fence(t)==VK_NULL_HANDLE);
+        REQUIRE(ch_vk_target_clear_aspects_read(t,2,NULL,.75f,0,pixels,sizeof pixels)==VK_SUCCESS);
+        REQUIRE(ch_vk_target_clear_aspects_read(t,4,NULL,0,42,pixels,sizeof pixels)==VK_SUCCESS);
+        for(unsigned i=0;i<sizeof pixels;i++) REQUIRE(pixels[i]==0xa5);
+        for(unsigned k=0;k<4;k++) {v[k].rgba[0]=v[k].rgba[2]=v[k].rgba[3]=0;v[k].rgba[1]=1;}
+        REQUIRE(ch_vk_target_draw_state_read(t,NULL,v,4,indices,6,&add,pixels,sizeof pixels)==VK_SUCCESS);
+        REQUIRE(ch_vk_target_read_depth_color(t,depth,stencil,256,0,pixels,sizeof pixels)==VK_SUCCESS);
+        for(unsigned i=0;i<256;i++) {
+            REQUIRE(depth[i]==.75f && stencil[i]==42);
+            REQUIRE(pixels[i*4]==255 && pixels[i*4+1]==255 && pixels[i*4+2]==0 && pixels[i*4+3]==255);
+        }
+        ch_vk_target_resource_stats(t,&stats);
+        REQUIRE(stats.batch_clears-clear_before.batch_clears==3);
+        REQUIRE(stats.batch_submissions-clear_before.batch_submissions==(limit==1?4u:1u));
+        REQUIRE(!ch_vk_target_pending(t) && vkGetFenceStatus(device,ch_vk_target_completion_fence(t))==VK_SUCCESS);
+        puts("PASS: partial resident clears share bounded draw batches with exact color/depth/stencil and completion ownership");
         ch_vk_target_destroy(t);t=NULL;
     }
     /* Cache entries stay pinned while descriptors are pending. Slot pressure

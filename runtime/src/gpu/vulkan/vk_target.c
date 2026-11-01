@@ -101,7 +101,7 @@ struct ChVkTarget {
     int defer_color_readback;
     int batch_enabled;
     uint32_t batch_limit;
-    uint32_t pending,retired_count;
+    uint32_t pending,pending_clears,retired_count;
     VkDeviceSize geometry_used;
     struct {ChVkTexture *image;void (*release)(void *,ChVkTexture *);void *context;int owned;} retired[BATCH_DRAWS*5];
     int initialized;
@@ -514,7 +514,7 @@ static VkResult finish_batch_named(ChVkTarget *t,int readback,const char *caller
         t->timing_stats.batch_wait_ns+=time_ns()-wait_start;
         uint64_t elapsed;TRY(timestamp_elapsed(t,&elapsed));
         t->timing_stats.batch_gpu_ns+=elapsed;
-        t->timing_stats.batch_draws+=t->pending;t->timing_stats.batch_submissions++;
+        t->timing_stats.batch_draws+=t->pending-t->pending_clears;t->timing_stats.batch_submissions++;
         for(unsigned i=0;i<32;i++) {
             if(!t->finish_reasons[i].caller ||
                (t->finish_reasons[i].readback==readback && !strcmp(t->finish_reasons[i].caller,caller))) {
@@ -526,7 +526,7 @@ static VkResult finish_batch_named(ChVkTarget *t,int readback,const char *caller
     t->layout=VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;t->resource_stats.batch_submissions++;
     if(readback==1 || readback==3) t->resource_stats.combined_depth_readbacks++;
     if(readback==2 || readback==3) t->resource_stats.combined_color_readbacks++;
-    t->pending=0;t->geometry_used=0;
+    t->pending=t->pending_clears=0;t->geometry_used=0;
     for(unsigned i=0;i<PIPELINE_SLOTS;i++) {t->pipelines[i].set_used=0;t->pipelines[i].pending=0;}
     uint64_t retire_start=t->timing?time_ns():0;
     retire_samples(t);
@@ -536,7 +536,7 @@ static VkResult finish_batch_named(ChVkTarget *t,int readback,const char *caller
     }
     return VK_SUCCESS;
 fail:
-    t->failed=1;vkQueueWaitIdle(t->queue);t->pending=0;
+    t->failed=1;vkQueueWaitIdle(t->queue);t->pending=t->pending_clears=0;
     retire_samples(t);return result;
 }
 VkResult ch_vk_target_finish(ChVkTarget *t) {return finish_batch_named(t,0,"external_completion");}
@@ -599,9 +599,8 @@ fail:t->failed=1;return result;
 VkResult ch_vk_target_quantize_depth(ChVkTarget *t) {return quantize_depth(t,1);}
 VkResult ch_vk_target_quantize_depth_draw(ChVkTarget *t) {return quantize_depth(t,2);}
 VkResult ch_vk_target_quantize_depth_input(ChVkTarget *t) {return quantize_depth(t,3);}
-static VkResult record_batch(ChVkTarget *t,VkBuffer geometry,VkDeviceSize index_offset,uint32_t index_count) {
+static VkResult begin_batch(ChVkTarget *t) {
     VkResult result;
-    uint64_t record_start=t->timing?time_ns():0;
     if(!t->pending) {
         TRY(vkResetCommandBuffer(t->command,0));TRY(vkResetFences(t->device,1,&t->fence));
         VkCommandBufferBeginInfo begin={.sType=VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,.flags=VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT};
@@ -630,6 +629,13 @@ static VkResult record_batch(ChVkTarget *t,VkBuffer geometry,VkDeviceSize index_
             .framebuffer=t->framebuffer,.renderArea={{0,0},{t->width,t->height}}};
         vkCmdBeginRenderPass(t->command,&pass,VK_SUBPASS_CONTENTS_INLINE);
     }
+    return VK_SUCCESS;
+fail:t->failed=1;return result;
+}
+static VkResult record_batch(ChVkTarget *t,VkBuffer geometry,VkDeviceSize index_offset,uint32_t index_count) {
+    VkResult result;
+    uint64_t record_start=t->timing?time_ns():0;
+    TRY(begin_batch(t));
     vkCmdBindPipeline(t->command,VK_PIPELINE_BIND_POINT_GRAPHICS,t->active_pipeline->pipeline);
     vkCmdSetBlendConstants(t->command,t->blend_constants);
     if(t->active_pipeline->has_descriptors) vkCmdBindDescriptorSets(t->command,VK_PIPELINE_BIND_POINT_GRAPHICS,
@@ -1223,7 +1229,32 @@ VkResult ch_vk_target_draw_read(ChVkTarget *t, const float rgba[4],
 
 VkResult ch_vk_target_clear_aspects_read(ChVkTarget *t, uint32_t flags,
     const float rgba[4], float depth, uint32_t stencil, void *pixels, VkDeviceSize bytes) {
-    return render_read(t,rgba,flags,depth,stencil,VK_NULL_HANDLE,0,0,pixels,bytes);
+    /* Resident clears can share the open render pass with draws. Keep the
+     * synchronous path for first use and modes needing a quantization pass. */
+    if(!t || t->failed || !pixels || bytes<t->bytes || (flags&~7u) ||
+       ((flags&1) && !rgba) || (t->quantized_depth==5 && (flags&2) &&
+       (!isfinite(depth) || depth<0 || depth>1))) return VK_ERROR_INITIALIZATION_FAILED;
+    if(!flags || !t->initialized || !t->pass || !t->batch_enabled || !t->defer_color_readback ||
+       (t->quantized_depth && t->quantized_depth!=5))
+        return render_read(t,rgba,flags,depth,stencil,VK_NULL_HANDLE,0,0,pixels,bytes);
+    VkResult result;
+    if(t->pending==t->batch_limit) TRY(finish_batch_named(t,0,__func__));
+    TRY(begin_batch(t));
+    VkClearAttachment attachments[2]={0};uint32_t count=0;
+    if(flags&1) {
+        attachments[count].aspectMask=VK_IMAGE_ASPECT_COLOR_BIT;
+        memcpy(attachments[count++].clearValue.color.float32,rgba,4*sizeof(float));
+    }
+    if(flags&6) {
+        attachments[count].aspectMask=((flags&2)?VK_IMAGE_ASPECT_DEPTH_BIT:0)|((flags&4)?VK_IMAGE_ASPECT_STENCIL_BIT:0);
+        attachments[count++].clearValue.depthStencil=(VkClearDepthStencilValue){
+            t->quantized_depth==5 && (flags&2)?ch_vk_depth_unpack(ch_vk_depth_pack_attachment(depth)):depth,stencil};
+    }
+    VkClearRect rect={.rect={{0,0},{t->width,t->height}},.layerCount=1};
+    vkCmdClearAttachments(t->command,count,attachments,1,&rect);
+    t->pending++;t->pending_clears++;t->resource_stats.batch_clears++;
+    return VK_SUCCESS;
+fail:t->failed=1;return result;
 }
 
 void ch_vk_target_size(const ChVkTarget *t, uint32_t *width, uint32_t *height) {

@@ -28,7 +28,7 @@ VkResult ch_vk_target_depth_quantization(ChVkTarget *,int mode);
 VkResult ch_vk_target_pipeline_cache(ChVkTarget *,VkPipelineCache);
 typedef struct {
     uint64_t pipeline_builds,pipeline_hits,pipeline_evictions,geometry_allocations;
-    uint64_t batch_draws,batch_submissions,combined_depth_readbacks,combined_color_readbacks;
+    uint64_t batch_draws,batch_clears,batch_submissions,combined_depth_readbacks,combined_color_readbacks;
     uint64_t depth_roundtrips_by_compare[8]; /* Batched full-surface conversions, VkCompareOp order. */
     uint64_t no_alpha_pipeline_builds,no_alpha_pipeline_hits;
     uint64_t specialized_pipeline_builds,specialized_pipeline_hits;
@@ -117,6 +117,8 @@ VkResult ch_vk_target_draw_state_read(ChVkTarget *target, const float rgba[4],
 /* Full-surface clears: flags color=1, depth=2, stencil=4; flags=0 only reads.
  * The first operation must clear all three. Unselected aspects are preserved.
  * These are host flags, not NV2A CLEAR_SURFACE channel bits. */
+/* With batching and deferred readback, eligible clears remain pending until
+ * the usual finish/read/query boundary, just like resident draws. */
 VkResult ch_vk_target_clear_aspects_read(ChVkTarget *target, uint32_t flags,
     const float rgba[4], float depth, uint32_t stencil, void *pixels, VkDeviceSize bytes);
 void ch_vk_target_size(const ChVkTarget *target, uint32_t *width, uint32_t *height);
