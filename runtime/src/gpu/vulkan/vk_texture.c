@@ -7,7 +7,7 @@ struct ChVkTexture {
     VkPhysicalDevice physical; VkDevice device; VkQueue queue;
     VkImage image; VkDeviceMemory image_memory;
     VkImageView view; VkSampler sampler;
-    VkBuffer staging; VkDeviceMemory staging_memory;
+    VkBuffer staging; VkDeviceMemory staging_memory; void *staging_map;
     VkCommandPool pool; VkCommandBuffer command; VkFence fence;
     uint32_t width,height,levels,layers; VkDeviceSize bytes;
     int failed, pending, deferred_upload,raw_decode;
@@ -43,12 +43,13 @@ void ch_vk_texture_destroy(ChVkTexture *t) {
     if(t->image_memory) vkFreeMemory(t->device,t->image_memory,NULL);
     ch_vk_texture_decode_destroy(t->decoder);
     if(t->staging) vkDestroyBuffer(t->device,t->staging,NULL);
+    if(t->staging_map) vkUnmapMemory(t->device,t->staging_memory);
     if(t->staging_memory) vkFreeMemory(t->device,t->staging_memory,NULL);
     free(t);
 }
 static VkResult ensure_staging_size(ChVkTexture *t,VkDeviceSize bytes) {
     if(t->staging && t->staging_bytes>=bytes) return VK_SUCCESS;
-    VkResult result;VkBuffer buffer=VK_NULL_HANDLE;VkDeviceMemory memory=VK_NULL_HANDLE;
+    VkResult result;VkBuffer buffer=VK_NULL_HANDLE;VkDeviceMemory memory=VK_NULL_HANDLE;void *mapped=NULL;
     VkBufferCreateInfo info={.sType=VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,.size=bytes,
         .usage=VK_BUFFER_USAGE_TRANSFER_SRC_BIT|VK_BUFFER_USAGE_TRANSFER_DST_BIT|VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,.sharingMode=VK_SHARING_MODE_EXCLUSIVE};
     TRY(vkCreateBuffer(t->device,&info,NULL,&buffer));
@@ -59,11 +60,16 @@ static VkResult ensure_staging_size(ChVkTexture *t,VkDeviceSize bytes) {
     }
     TRY(vkAllocateMemory(t->device,&alloc,NULL,&memory));
     TRY(vkBindBufferMemory(t->device,buffer,memory,0));
+    /* Upload/readback reuse retains the mapping; fences and explicit cache
+     * maintenance still guard every CPU/GPU handoff. */
+    TRY(vkMapMemory(t->device,memory,0,VK_WHOLE_SIZE,0,&mapped));
     ch_vk_texture_decode_destroy(t->decoder);t->decoder=NULL;
     if(t->staging) vkDestroyBuffer(t->device,t->staging,NULL);
+    if(t->staging_map) vkUnmapMemory(t->device,t->staging_memory);
     if(t->staging_memory) vkFreeMemory(t->device,t->staging_memory,NULL);
-    t->staging=buffer;t->staging_memory=memory;t->staging_bytes=bytes;return VK_SUCCESS;
+    t->staging=buffer;t->staging_memory=memory;t->staging_bytes=bytes;t->staging_map=mapped;return VK_SUCCESS;
 fail:
+    if(mapped) vkUnmapMemory(t->device,memory);
     if(buffer) vkDestroyBuffer(t->device,buffer,NULL);
     if(memory) vkFreeMemory(t->device,memory,NULL);
     return result;
@@ -248,8 +254,7 @@ VkResult ch_vk_texture_replace_argb(ChVkTexture *t,const uint32_t *argb,size_t p
      * still own staging even if no draw ever sampled this image. */
     TRY(wait_transfer(t));
     TRY(ensure_staging(t));
-    void *mapped;
-    TRY(vkMapMemory(t->device,t->staging_memory,0,VK_WHOLE_SIZE,0,&mapped));
+    void *mapped=t->staging_map;
     unsigned char *bytes=mapped;
     for(size_t i=0;i<t->bytes/4;i++) {
         bytes[i*4]=(argb[i]>>16)&255;bytes[i*4+1]=(argb[i]>>8)&255;
@@ -257,7 +262,6 @@ VkResult ch_vk_texture_replace_argb(ChVkTexture *t,const uint32_t *argb,size_t p
     }
     VkMappedMemoryRange flush={.sType=VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE,.memory=t->staging_memory,.size=VK_WHOLE_SIZE};
     result=vkFlushMappedMemoryRanges(t->device,1,&flush);
-    vkUnmapMemory(t->device,t->staging_memory);
     if(result!=VK_SUCCESS) goto fail;
     t->deferred_upload=!!queued;
     TRY(transfer(t,1,0));return VK_SUCCESS;
@@ -338,13 +342,10 @@ VkResult ch_vk_texture_read_level_rgba(ChVkTexture *t,uint32_t level,void *rgba,
     if(result!=VK_SUCCESS) return result;
     result=transfer(t,0,level);
     if(result!=VK_SUCCESS) return result;
-    void *mapped;
-    TRY(vkMapMemory(t->device,t->staging_memory,0,VK_WHOLE_SIZE,0,&mapped));
+    void *mapped=t->staging_map;
     VkMappedMemoryRange inv={.sType=VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE,.memory=t->staging_memory,.size=VK_WHOLE_SIZE};
     result=vkInvalidateMappedMemoryRanges(t->device,1,&inv);
     if(result==VK_SUCCESS) memcpy(rgba,mapped,(size_t)used);
-    vkUnmapMemory(t->device,t->staging_memory);
-fail:
     return result;
 }
 
@@ -383,10 +384,10 @@ VkResult ch_vk_texture_replace_encoded(ChVkTexture *t,VkPipelineCache cache,cons
        (s->height+7u)/8u>t->decode_max_groups[1]) return VK_ERROR_FEATURE_NOT_PRESENT;
     VkResult result;TRY(wait_transfer(t));TRY(ensure_staging_size(t,t->bytes+span));
     if(!t->decoder) TRY(ch_vk_texture_decode_create(t->device,cache,t->staging,t->staging_bytes,&t->decoder));
-    void *mapped;TRY(vkMapMemory(t->device,t->staging_memory,0,VK_WHOLE_SIZE,0,&mapped));
+    void *mapped=t->staging_map;
     memcpy((char *)mapped+t->bytes,raw,(size_t)span);
     VkMappedMemoryRange flush={.sType=VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE,.memory=t->staging_memory,.size=VK_WHOLE_SIZE};
-    result=vkFlushMappedMemoryRanges(t->device,1,&flush);vkUnmapMemory(t->device,t->staging_memory);if(result!=VK_SUCCESS) goto fail;
+    result=vkFlushMappedMemoryRanges(t->device,1,&flush);if(result!=VK_SUCCESS) goto fail;
     t->decode_pitch=s->pitch/4;t->decode_flags=swizzled|((s->color==7 || s->color==0x1e)?2:0);
     /* Modes 1..3 normalize the alternate channel orders to ARGB. */
     if(s->color>=0x3a && s->color<=0x3c) t->decode_flags|=(s->color-0x39)<<2;

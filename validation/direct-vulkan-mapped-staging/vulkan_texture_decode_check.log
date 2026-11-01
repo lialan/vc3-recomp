@@ -1,0 +1,3 @@
+device=Apple M4 Pro vendor=106b deviceID=0064 api=1.4.354
+PASS: 108 GPU DXT1/3/5 cases against CPU decoder, exact mips and partial blocks
+PASS: 240 GPU texture decode cases, all ten supported 32-bit formats, rectangular Morton/pitched/odd sizes, exact mips, queued replacement and bounds
