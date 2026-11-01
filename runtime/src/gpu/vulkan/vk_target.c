@@ -113,6 +113,7 @@ struct ChVkTarget {
     struct { const char *caller; int readback; uint64_t count; } finish_reasons[32];
 };
 static VkResult finish_batch_named(ChVkTarget *,int,const char *);
+static void record_depth_copy(VkCommandBuffer,ChVkTarget *,ChVkTarget *);
 #define TRY(expr) do { result=(expr); if(result!=VK_SUCCESS) goto fail; } while(0)
 static uint64_t time_ns(void) {
     struct timespec t;clock_gettime(CLOCK_MONOTONIC,&t);
@@ -481,7 +482,7 @@ static void color_staging_reuse(ChVkTarget *t) {
         .dstAccessMask=VK_ACCESS_TRANSFER_READ_BIT|VK_ACCESS_TRANSFER_WRITE_BIT};
     vkCmdPipelineBarrier(t->command,VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,VK_PIPELINE_STAGE_TRANSFER_BIT,0,1,&b,0,NULL,0,NULL);
 }
-static VkResult finish_batch_named(ChVkTarget *t,int readback,const char *caller) {
+static VkResult finish_batch_with_copy(ChVkTarget *t,int readback,const char *caller,ChVkTarget *depth_destination) {
     if(!t || t->failed) return VK_ERROR_INITIALIZATION_FAILED;
     if(!t->pending) return VK_SUCCESS;
     VkResult result;
@@ -506,6 +507,7 @@ static VkResult finish_batch_named(ChVkTarget *t,int readback,const char *caller
             .buffer=t->read,.size=VK_WHOLE_SIZE};
         vkCmdPipelineBarrier(t->command,VK_PIPELINE_STAGE_TRANSFER_BIT,VK_PIPELINE_STAGE_HOST_BIT,0,0,NULL,1,&host,0,NULL);
     }
+    if(depth_destination) record_depth_copy(t->command,t,depth_destination);
     if(t->timing) vkCmdWriteTimestamp(t->command,VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,t->timing,1);
     TRY(vkEndCommandBuffer(t->command));
     VkSubmitInfo submit={.sType=VK_STRUCTURE_TYPE_SUBMIT_INFO,.commandBufferCount=1,.pCommandBuffers=&t->command};
@@ -528,6 +530,7 @@ static VkResult finish_batch_named(ChVkTarget *t,int readback,const char *caller
         }
     }
     t->layout=VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;t->resource_stats.batch_submissions++;
+    t->resource_stats.combined_depth_copies+=depth_destination!=NULL;
     if(readback==1 || readback==3) t->resource_stats.combined_depth_readbacks++;
     if(readback==2 || readback==3) t->resource_stats.combined_color_readbacks++;
     t->pending=t->pending_clears=0;t->geometry_used=0;
@@ -542,6 +545,9 @@ static VkResult finish_batch_named(ChVkTarget *t,int readback,const char *caller
 fail:
     t->failed=1;vkQueueWaitIdle(t->queue);t->pending=t->pending_clears=0;
     retire_samples(t);return result;
+}
+static VkResult finish_batch_named(ChVkTarget *t,int readback,const char *caller) {
+    return finish_batch_with_copy(t,readback,caller,NULL);
 }
 VkResult ch_vk_target_finish(ChVkTarget *t) {return finish_batch_named(t,0,"external_completion");}
 static VkResult quantize_depth(ChVkTarget *,int);
@@ -1570,21 +1576,7 @@ VkResult ch_vk_target_write_z24s8(ChVkTarget *t,const uint32_t *words,size_t pix
     return transfer_depth_stencil(t,(void *)words,NULL,pixels,1,1,NULL,0);
 }
 
-VkResult ch_vk_target_copy_depth_stencil(ChVkTarget *source,ChVkTarget *destination) {
-    ChVkTarget *s=source,*t=destination;
-    if(!s || !t || s->failed || t->failed || !s->initialized || !t->initialized ||
-       s->device!=t->device || s->queue!=t->queue || s->family!=t->family ||
-       s->width!=t->width || s->height!=t->height || s->depth_format!=t->depth_format)
-        return VK_ERROR_INITIALIZATION_FAILED;
-    VkResult result;
-    TRY(finish_batch_named(s,0,__func__));
-    if(s==t) return VK_SUCCESS;
-    TRY(finish_batch_named(t,0,__func__));
-    TRY(vkResetCommandBuffer(t->command,0));TRY(vkResetFences(t->device,1,&t->fence));
-    VkCommandBufferBeginInfo begin={.sType=VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
-        .flags=VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT};
-    TRY(vkBeginCommandBuffer(t->command,&begin));
-    color_staging_reuse(t);
+static void record_depth_copy(VkCommandBuffer command,ChVkTarget *s,ChVkTarget *t) {
     VkImageMemoryBarrier barriers[2];
     for(unsigned i=0;i<2;i++) barriers[i]=(VkImageMemoryBarrier){
         .sType=VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
@@ -1595,20 +1587,46 @@ VkResult ch_vk_target_copy_depth_stencil(ChVkTarget *source,ChVkTarget *destinat
         .srcQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED,.dstQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED,
         .image=i?t->depth:s->depth,.subresourceRange={VK_IMAGE_ASPECT_DEPTH_BIT|VK_IMAGE_ASPECT_STENCIL_BIT,0,1,0,1}};
     VkPipelineStageFlags depth_stages=VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT|VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
-    vkCmdPipelineBarrier(t->command,depth_stages,VK_PIPELINE_STAGE_TRANSFER_BIT,0,0,NULL,0,NULL,2,barriers);
+    vkCmdPipelineBarrier(command,depth_stages,VK_PIPELINE_STAGE_TRANSFER_BIT,0,0,NULL,0,NULL,2,barriers);
     VkImageCopy regions[2];
     for(unsigned i=0;i<2;i++) regions[i]=(VkImageCopy){
         .srcSubresource={i?VK_IMAGE_ASPECT_STENCIL_BIT:VK_IMAGE_ASPECT_DEPTH_BIT,0,0,1},
         .dstSubresource={i?VK_IMAGE_ASPECT_STENCIL_BIT:VK_IMAGE_ASPECT_DEPTH_BIT,0,0,1},
         .extent={t->width,t->height,1}};
-    vkCmdCopyImage(t->command,s->depth,barriers[0].newLayout,t->depth,barriers[1].newLayout,2,regions);
+    vkCmdCopyImage(command,s->depth,barriers[0].newLayout,t->depth,barriers[1].newLayout,2,regions);
     for(unsigned i=0;i<2;i++) {
         barriers[i].srcAccessMask=barriers[i].dstAccessMask;
         barriers[i].dstAccessMask=VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT|VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
         barriers[i].oldLayout=barriers[i].newLayout;
         barriers[i].newLayout=VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
     }
-    vkCmdPipelineBarrier(t->command,VK_PIPELINE_STAGE_TRANSFER_BIT,depth_stages,0,0,NULL,0,NULL,2,barriers);
+    vkCmdPipelineBarrier(command,VK_PIPELINE_STAGE_TRANSFER_BIT,depth_stages,0,0,NULL,0,NULL,2,barriers);
+}
+
+VkResult ch_vk_target_copy_depth_stencil(ChVkTarget *source,ChVkTarget *destination) {
+    ChVkTarget *s=source,*t=destination;
+    if(!s || !t || s->failed || t->failed || !s->initialized || !t->initialized ||
+       s->device!=t->device || s->queue!=t->queue || s->family!=t->family ||
+       s->width!=t->width || s->height!=t->height || s->depth_format!=t->depth_format)
+        return VK_ERROR_INITIALIZATION_FAILED;
+    VkResult result;
+    /* Append the copy before submitting the source batch. The idle destination
+     * has no unsubmitted accesses; both images remain alive until this call's
+     * source fence completes. Busy destinations keep the established ordering. */
+    if(s!=t && s->pending && !t->pending) {
+        result=finish_batch_with_copy(s,0,__func__,t);
+        if(result!=VK_SUCCESS) goto fail;
+        return VK_SUCCESS;
+    }
+    TRY(finish_batch_named(s,0,__func__));
+    if(s==t) return VK_SUCCESS;
+    TRY(finish_batch_named(t,0,__func__));
+    TRY(vkResetCommandBuffer(t->command,0));TRY(vkResetFences(t->device,1,&t->fence));
+    VkCommandBufferBeginInfo begin={.sType=VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+        .flags=VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT};
+    TRY(vkBeginCommandBuffer(t->command,&begin));
+    color_staging_reuse(t);
+    record_depth_copy(t->command,s,t);
     TRY(vkEndCommandBuffer(t->command));
     VkSubmitInfo submit={.sType=VK_STRUCTURE_TYPE_SUBMIT_INFO,.commandBufferCount=1,.pCommandBuffers=&t->command};
     TRY(vkQueueSubmit(t->queue,1,&submit,t->fence));

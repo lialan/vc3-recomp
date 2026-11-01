@@ -166,7 +166,7 @@ if(CHIHIRO_VULKAN_TESTS)
         COMMAND "${Python3_EXECUTABLE}" "${CH_VK_ROOT}/tools/generate-fixed-gl-reference.py"
             "${CH_VK_ROOT}/runtime/src/gpu/gl_backend.c" "${fixed_reference}"
         DEPENDS "${CH_VK_ROOT}/tools/generate-fixed-gl-reference.py" "${CH_VK_ROOT}/runtime/src/gpu/gl_backend.c" VERBATIM)
-    add_executable(vulkan_offscreen_test "${fixed_reference}" "${CH_VK_ROOT}/tools/vulkan-fixed-parity.c" "${CH_VK_ROOT}/tools/vulkan-offscreen-test.c" "${CH_VK_ROOT}/tools/vulkan-depth24-test.c" "${CH_VK_ROOT}/tools/vulkan-depth-resident-test.c"
+    add_executable(vulkan_offscreen_test "${fixed_reference}" "${CH_VK_ROOT}/tools/vulkan-fixed-parity.c" "${CH_VK_ROOT}/tools/vulkan-offscreen-test.c" "${CH_VK_ROOT}/tools/vulkan-depth24-test.c" "${CH_VK_ROOT}/tools/vulkan-depth-resident-test.c" "${CH_VK_ROOT}/tools/vulkan-depth-copy-test.c"
         "${CH_VK_ROOT}/tools/vulkan-guest-texture-test.c" "${CH_VK_ROOT}/tools/vulkan-texture-cache-test.c" "${CH_VK_ROOT}/tools/vulkan-resource-reuse-test.c" "${CH_VK_ROOT}/tools/vulkan-command-batch-test.c" "${CH_VK_ROOT}/tools/vulkan-overlay-parity.c" "${CH_VK_ROOT}/tools/vulkan-mipmap-parity.c" "${CH_VK_ROOT}/tools/vulkan-cube-parity.c" "${CH_VK_ROOT}/tools/vulkan-cube-cache-test.c" "${CH_VK_ROOT}/tools/vulkan-frame-mailbox-test.c" "${CH_VK_ROOT}/tools/vulkan-scene-test.c" "${CH_VK_ROOT}/tools/vulkan-submission-test.c" "${CH_VK_ROOT}/runtime/src/xr/quest_overlay.c" "${CH_VK_ROOT}/runtime/src/xr/quest_menu.c" "${XBOXRECOMP_DIR}/src/kernel/nv2a_combiner.c" $<TARGET_OBJECTS:chihiro_vulkan_test_executor>)
     target_compile_options(vulkan_offscreen_test PRIVATE -Wall -Wextra -Werror)
     target_sources(vulkan_offscreen_test PRIVATE "${CH_VK_ROOT}/tools/vulkan-write-watch-test.c")
@@ -204,6 +204,10 @@ if(CHIHIRO_VULKAN_TESTS OR CHIHIRO_VULKAN_SHADER_TESTS)
     target_compile_definitions(vulkan_depth_roundtrip_bench PRIVATE CH_VK_DEPTH_ROUNDTRIP_BENCH=1)
     target_compile_options(vulkan_depth_roundtrip_bench PRIVATE -Wall -Wextra -Werror)
     target_link_libraries(vulkan_depth_roundtrip_bench PRIVATE chihiro_vulkan)
+    add_executable(vulkan_depth_copy_check "${CH_VK_ROOT}/tools/vulkan-combiner-driver.c" "${CH_VK_ROOT}/tools/vulkan-depth-copy-test.c")
+    target_compile_definitions(vulkan_depth_copy_check PRIVATE CH_VK_BATCH_TEST=1 ch_test_command_batches=ch_test_depth_copy)
+    target_compile_options(vulkan_depth_copy_check PRIVATE -Wall -Wextra -Werror)
+    target_link_libraries(vulkan_depth_copy_check PRIVATE chihiro_vulkan)
     add_executable(vulkan_command_batch_check "${CH_VK_ROOT}/tools/vulkan-combiner-driver.c" "${CH_VK_ROOT}/tools/vulkan-command-batch-test.c")
     target_compile_definitions(vulkan_command_batch_check PRIVATE CH_VK_BATCH_TEST=1)
     target_compile_options(vulkan_command_batch_check PRIVATE -Wall -Wextra -Werror)
