@@ -8,6 +8,9 @@
 #include "vk_texture.h"
 #include "vk_fixed.h"
 typedef struct ChVkTarget ChVkTarget;
+/* Before the first pipeline creation, borrow a same-device driver cache.
+ * Caller serializes ALL accesses to it and retains it until targets die. */
+VkResult ch_vk_target_pipeline_cache(ChVkTarget *,VkPipelineCache);
 typedef struct {
     uint64_t pipeline_builds,pipeline_hits,pipeline_evictions,geometry_allocations;
     uint64_t batch_draws,batch_submissions;

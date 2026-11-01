@@ -12,6 +12,7 @@ int ch_test_specialized_combiners(VkPhysicalDevice gpu,VkDevice device,VkQueue q
     const char *old=getenv("CHIHIRO_VULKAN_SPECIALIZE_RC"),*old_alpha=getenv("CHIHIRO_VULKAN_NOAT");
     char *saved=old?strdup(old):NULL,*saved_alpha=old_alpha?strdup(old_alpha):NULL;
     if((old && !saved) || (old_alpha && !saved_alpha)) {free(saved);free(saved_alpha);return 1;}
+    VkPipelineCache cache=VK_NULL_HANDLE;
     ChVkTarget *t[2]={0};ChVkTexture *textures[4]={0};int failed=1;
     unsigned char rgba[2][64],stencil[2][16];float depth[2][16];
     uint32_t pixels[]={0x80cc6633,0xc033cc66,0x604499dd,0xffcc8833},seed=1729;
@@ -21,10 +22,14 @@ int ch_test_specialized_combiners(VkPhysicalDevice gpu,VkDevice device,VkQueue q
         .stencil_enable=1,.stencil_func=0x207,.stencil_ref=7,.stencil_func_mask=255,.stencil_write_mask=255,
         .stencil_fail=0x1e00,.stencil_zfail=0x1e00,.stencil_zpass=0x1e01};
 #define REQUIRE(x) do {if(!(x)) {fprintf(stderr,"specialized combiner failure line%d: %s\n",__LINE__,#x);goto done;}}while(0)
+    VkPipelineCacheCreateInfo cache_info={.sType=VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO};
+    REQUIRE(vkCreatePipelineCache(device,&cache_info,NULL,&cache)==VK_SUCCESS);
     setenv("CHIHIRO_VULKAN_NOAT","0",1);
     for(unsigned mode=0;mode<2;mode++) {
         setenv("CHIHIRO_VULKAN_SPECIALIZE_RC",mode?"1":"0",1);
         REQUIRE(ch_vk_target_create(gpu,device,queue,family,4,4,&t[mode])==VK_SUCCESS);
+        REQUIRE(ch_vk_target_pipeline_cache(t[mode],cache)==VK_SUCCESS);
+        REQUIRE(ch_vk_target_pipeline_cache(t[mode],cache)==VK_ERROR_INITIALIZATION_FAILED);
         REQUIRE(ch_vk_target_enable_queries(t[mode])==VK_SUCCESS);
     }
     for(unsigned i=0;i<4;i++) {
@@ -84,6 +89,8 @@ int ch_test_specialized_combiners(VkPhysicalDevice gpu,VkDevice device,VkQueue q
         ch_vk_target_destroy(t[mode]);t[mode]=NULL;
         setenv("CHIHIRO_VULKAN_SPECIALIZE_RC",mode?"1":"0",1);
         REQUIRE(ch_vk_target_create(gpu,device,queue,family,4,4,&t[mode])==VK_SUCCESS);
+        REQUIRE(ch_vk_target_pipeline_cache(t[mode],cache)==VK_SUCCESS);
+        REQUIRE(ch_vk_target_pipeline_cache(t[mode],cache)==VK_ERROR_INITIALIZATION_FAILED);
         if(mode) REQUIRE(ch_vk_target_batching(t[mode],1)==VK_SUCCESS);
     }
     ch_vk_texture_destroy(textures[3]);textures[3]=NULL;
@@ -147,6 +154,7 @@ int ch_test_specialized_combiners(VkPhysicalDevice gpu,VkDevice device,VkQueue q
 done:
     for(unsigned i=0;i<2;i++) ch_vk_target_destroy(t[i]);
     for(unsigned i=0;i<4;i++) ch_vk_texture_destroy(textures[i]);
+    if(cache) vkDestroyPipelineCache(device,cache,NULL);
     if(saved) {setenv("CHIHIRO_VULKAN_SPECIALIZE_RC",saved,1);free(saved);} else unsetenv("CHIHIRO_VULKAN_SPECIALIZE_RC");
     if(saved_alpha) {setenv("CHIHIRO_VULKAN_NOAT",saved_alpha,1);free(saved_alpha);} else unsetenv("CHIHIRO_VULKAN_NOAT");
     return failed;

@@ -9,7 +9,7 @@
 #include <time.h>
 #define MAX_SURFACES 32
 struct Surface { Nv2aSurface guest; uint32_t zeta; Nv2aRenderState state; float *depth; uint8_t *stencil; ChVkTarget *target; unsigned char *rgba,*observed,*cpu,*raw; ChGuestWriteRange *write_range; size_t raw_span; int observed_valid,resident,color_dirty,native_z24; size_t bytes; uint64_t color_serial; };
-struct ChVkBackend { struct {int enabled;uint64_t start,n,surface,coherence,imports,draw,store,no_color;} profile; struct {uint64_t previous,us[120];unsigned count;} frame_profile; ChVkBackendConfig host; ChVkTextureCache *textures; ChVkDepthResident *zeta; uint64_t frames,raw_draws,raw_declined,color_clock; struct Surface surfaces[MAX_SURFACES]; unsigned count; };
+struct ChVkBackend { VkPipelineCache pipeline_cache; struct {int enabled;uint64_t start,n,surface,coherence,imports,draw,store,no_color;} profile; struct {uint64_t previous,us[120];unsigned count;} frame_profile; ChVkBackendConfig host; ChVkTextureCache *textures; ChVkDepthResident *zeta; uint64_t frames,raw_draws,raw_declined,color_clock; struct Surface surfaces[MAX_SURFACES]; unsigned count; };
 static ChVkBackend *active;
 static void flush_color(struct Surface *);
 static void observe_guest_colors(void);
@@ -147,6 +147,16 @@ static struct Surface *surface(const Nv2aSurface *s,const Nv2aRenderState *rs) {
     if(r==VK_ERROR_FORMAT_NOT_SUPPORTED) r=ch_vk_target_create(active->host.physical,active->host.device,active->host.queue,
         active->host.family,s->width,s->height,&f->target);
     if(r!=VK_SUCCESS) fatal(r,"target creation");
+    /* Surface creation/draw/destruction already hold the backend queue lock.
+     * Retain compiler data across targets and resizes without sharing mutable
+     * descriptor pools or pending pipeline objects. */
+    if(!active->pipeline_cache) {
+        VkPipelineCacheCreateInfo info={.sType=VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO};
+        r=vkCreatePipelineCache(active->host.device,&info,NULL,&active->pipeline_cache);
+        if(r!=VK_SUCCESS) fatal(r,"shared pipeline cache creation");
+    }
+    r=ch_vk_target_pipeline_cache(f->target,active->pipeline_cache);
+    if(r!=VK_SUCCESS) fatal(r,"shared pipeline cache binding");
     if(f->resident && active->host.batch_draws) {
         r=ch_vk_target_batching(f->target,1);
         if(r!=VK_SUCCESS) fatal(r,"resident command batch setup");
@@ -564,6 +574,7 @@ void ch_vk_backend_destroy(ChVkBackend *b) {
     }
     if(active==b) { nv2a_backend_register(NULL); active=NULL; }
     for(unsigned i=0;i<b->count;i++) release_surface(&b->surfaces[i]);
+    if(b->pipeline_cache) vkDestroyPipelineCache(b->host.device,b->pipeline_cache,NULL);
     ch_vk_texture_cache_destroy(b->textures);
     ch_vk_depth_resident_destroy(b->zeta);
     queue_unlock(b);

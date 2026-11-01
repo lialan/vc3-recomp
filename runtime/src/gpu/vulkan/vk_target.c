@@ -46,6 +46,7 @@ struct ChVkTarget {
     VkDeviceSize vertex_offset;
     PipelineResources pipelines[PIPELINE_SLOTS], *active_pipeline;
     VkPipelineCache pipeline_cache;
+    int borrowed_pipeline_cache;
     float blend_constants[4];
     uint64_t pipeline_clock;
     int reuse_resources;
@@ -211,6 +212,11 @@ VkResult ch_vk_target_retire_sample(ChVkTarget *t,ChVkTexture *image,
     }
     return r;
 }
+VkResult ch_vk_target_pipeline_cache(ChVkTarget *t,VkPipelineCache cache) {
+    if(!t || !cache || t->pipeline_cache) return VK_ERROR_INITIALIZATION_FAILED;
+    t->pipeline_cache=cache;t->borrowed_pipeline_cache=1;
+    return VK_SUCCESS;
+}
 void ch_vk_target_destroy(ChVkTarget *t) {
     if(!t) return;
     /* Finish deferred work before destroying anything it references. */
@@ -218,7 +224,7 @@ void ch_vk_target_destroy(ChVkTarget *t) {
     if(t->failed) vkQueueWaitIdle(t->queue);
     retire_samples(t);
     for(unsigned i=0;i<PIPELINE_SLOTS;i++) destroy_pipeline(t,&t->pipelines[i]);
-    if(t->pipeline_cache) vkDestroyPipelineCache(t->device,t->pipeline_cache,NULL);
+    if(t->pipeline_cache && !t->borrowed_pipeline_cache) vkDestroyPipelineCache(t->device,t->pipeline_cache,NULL);
     destroy_geometry(t);
     if(t->framebuffer) vkDestroyFramebuffer(t->device,t->framebuffer,NULL);
     if(t->view) vkDestroyImageView(t->device,t->view,NULL);
