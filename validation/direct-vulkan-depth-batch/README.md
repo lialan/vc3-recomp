@@ -984,7 +984,7 @@ because its process lookup compared /tmp against the resolved /private/tmp
 path. Its process is gone and it has no report; it is not a completed run.
 The v2 script resolves paths and waits for the runner even on sampling failure.
 
-## Combined render-target snapshot experiment (rejected)
+## Combined render-target snapshot experiment (rejected after repeat)
 
 Appended snapshot image copy/mip generation to the pending source-draw batch,
 so source rendering and snapshot completed in one submission/wait. Kept the
@@ -1000,14 +1000,24 @@ Same immutable binary `/tmp/vc3-batched-snapshot-vc3`, warm pipeline cache,
 2100-frame controls via CHIHIRO_VULKAN_BATCH_SNAPSHOTS=0/1:
 `/tmp/vc3-batched-snapshot-control` and `-combined`. Both exit 0 with no runner
 failure diagnostics. Held E.S. control49.33/51.31FPS, combined49.53/51.71FPS;
-activation40.91/40.68FPS. Crucially, combined copies stayed at362 from completed
-frame1560 through1920. This experiment does not remove any E.S. submissions: the
-source is already completed when those snapshots are requested. Small FPS
-differences are not evidence of a gain from this mechanism.
+activation40.91/40.68FPS. Corrected counter reading: combined copies rise from
+134 at completed1560 to259 at1620,337 at1680 and362 at1740; they stay362 through
+2100. Thus228 submissions are combined during activation/early E.S., with no
+later held-window opportunities. The prior statement that the counter was flat
+throughout E.S. was incorrect: it mistook the final log tail for the full window.
+The first throughput difference is under1%. Reverse-order repeat
+`/tmp/vc3-snapshot-repeat-combined` / `-control` both completed2100frames, exit0,
+no failure diagnostics. Control held50.60/52.58FPS, combined50.22/51.81FPS;
+activation41.47/40.79FPS. Repeat does not support a throughput gain. The small
+first-pair benefit and repeat regression do not justify retaining the change.
 
 Removed all runtime/API/test changes. Patch with implementation and fixtures:
 `/tmp/vc3-batched-snapshot-rejected.patch`. No Android build or headset run
-was attempted for this rejected change. No pending benchmark processes.
+was attempted for this rejected experiment. The repeat used the same immutable
+candidate binary. Its flag was inherited by the runner but omitted from the
+restored runner report whitelist; game.log confirms zero combined copies for
+control and362 for combined. Initial-pair reports explicitly record the flag.
+No active benchmark processes remain; shared runtime changes are removed.
 
 Next inspect ordinary texture-cache comparison cost: encoded bytes and palettes
 are currently memcmp'd on every matching acquire, even when CPU storage is
