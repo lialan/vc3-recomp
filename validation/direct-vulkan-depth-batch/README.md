@@ -570,3 +570,47 @@ cases against the CPU incoming-depth oracle, specialized/no-alpha variants,
 64draws/onebatch, exact stencil/query behavior and no post-draw conversions.
 Native lavapipe384 diverse-gradient/constant cases remain passed. Whole-game
 pixel equality and hardware acceptance are not established by these fixtures.
+
+## Verified E.S. slow-motion baseline (local simulator)
+
+The 2400-frame run `/tmp/vc3-fragment-depth-slowmotion` completed with exit 0
+and no failure diagnostics, using the same immutable fragment-depth binary
+SHA256 `f35ba6227abdc20e978b3f1f43fdc51155a1ecd2fd1e541321c0775dc7cb3b8e`.
+KosmicKrisp, 640x480, timestamps disabled; no headset was used.
+Captures 1620 and 1740 visibly show the E.S. mode HUD, bullet trails and
+its draining meter. This is a confirmed slow-motion case, unlike the earlier
+intro/video window.
+
+| Guest flips | Scene | FPS | p95 ms | Maximum ms |
+|---|---|---:|---:|---:|
+| 1321..1441 | Combat before pedal | 57.26 | 21.05 | 25.52 |
+| 1441..1561 | Combat before activation | 58.22 | 20.27 | 44.76 |
+| 1561..1681 | E.S. activation | 25.08 | 40.76 | 421.44 |
+| 1681..1801 | E.S. held | 33.83 | 35.51 | 136.24 |
+| 1801..1921 | E.S. held | 36.53 | 30.78 | 32.38 |
+| 1921..2041 | Pedal release/recovery | 48.69 | 29.83 | 36.91 |
+
+Rates measure guest frame completions, not display refresh or simulated game
+time. Slow-motion throughput and activation hitch remain open performance work.
+The script uses `CHIHIRO_AUTOKEYS_CLOCK=flips` and the following input sequence:
+
+```text
+12:coin,13:start,15:fire,20:start,22:start,25:start,26:pedal,26.5:pedal,27:pedal,27.5:pedal,28:pedal,28.5:pedal,29:pedal,29.5:pedal,30:pedal,30.5:pedal,31:pedal,31.5:pedal,32:pedal,26.5:fire,27.5:fire,28.5:fire,29.5:fire,30.5:fire,30:reload,31:reload
+```
+
+E.S. CPU sampling follow-up: `/tmp/vc3-es-cpu-profile/run` completed2100
+frames, exit0. `/tmp/vc3-es-cpu-profile/cpu-es.txt` is a three-second sample
+started after completed frame1620 on the verified game child process. Sampling
+perturbs throughput, so its FPS is excluded from the table above. The executor
+has1108 samples under nv2a_ack_thread;167 are in nv2a_backend_decode_texture
+through sample_tex (about15%). Another102 are texture uploads. The decoder
+repeats memory-base lookup, format/layout checks and coordinate addressing per
+texel. This is a concrete candidate for a shared bulk texture decoder; preserve
+all supported formats, mip dimensions, rectangular Morton layout and exact
+output, and compare against the existing sampler before benchmarking E.S. again.
+No decoder change has been made yet. CPU vertex-program execution is also
+visible (87 top-of-stack samples), so decoding is not the only remaining cost.
+
+The earlier intro/video profile completed5400 frames at
+`/tmp/vc3-fragment-depth-profile`; cpu-4080.txt and cpu-4440.txt contain its
+separate samples. Their FPS is likewise unsuitable as a benchmark.
