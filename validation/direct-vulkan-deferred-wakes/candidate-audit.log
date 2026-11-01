@@ -1,0 +1,255 @@
+[THREADS] per-thread CPU and wait time, once a second (RECOMP_THREAD_LOG=1)
+[Vulkan pipeline cache] packaged_bytes=68774076 loaded_bytes=70015500 path=/tmp/vc3-deferred-wakes-candidate.cache
+[THREADS] ms/s: | nv2a flush ack cpu 28 obj 0 sleep 999 | nv2a exec cpu 16 obj 0 sleep 999 | guest main cpu 383 obj 0 sleep 626 | kick-off acks 0, waited <= 0.0 ms
+[THREADS] ms/s: | nv2a flush ack cpu 28 obj 0 sleep 999 | nv2a exec cpu 16 obj 0 sleep 999 | guest main cpu 0 obj 0 sleep 747 | guest sub_000B5FB7 cpu 1 obj 0 sleep 289 | kick-off acks 0, waited <= 0.0 ms
+[Vulkan raw vertices] GPU fixed batches=0 program batches=1 program vertices=4 CPU declined batches=0
+[Vulkan raw snapshots] compact_batches=1 snapshot_bytes=372 expanded_bytes=1024
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[THREADS] ms/s: | nv2a flush ack cpu 28 obj 0 sleep 999 | nv2a exec cpu 16 obj 0 sleep 848 | guest main cpu 87 obj 154 sleep 1000 | nv2a submit cpu 75 obj 0 sleep 0 | guest sub_000B5FB7 cpu 1 obj 0 sleep 995 | thread 7 cpu 0 obj 266 sleep 0 | thread 8 cpu 3 obj 2991 sleep 0 | guest sub_000B5FB7 cpu 2 obj 234 sleep 0 | guest sub_000B5FB7 cpu 1 obj 0 sleep 234 | guest sub_000B5FB7 cpu 0 obj 221 sleep 0 | guest sub_000B5FB7 cpu 0 obj 209 sleep 0 | kick-off acks 33, waited <= 1.8 ms
+[Vulkan raw vertices] GPU fixed batches=0 program batches=3135 program vertices=12540 CPU declined batches=0
+[Vulkan raw snapshots] compact_batches=3135 snapshot_bytes=1166220 expanded_bytes=3210240
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=32768 texture_ms=0.051 color_pixels=0 color_ms=0.000 (cumulative)
+[THREADS] ms/s: | nv2a flush ack cpu 30 obj 0 sleep 999 | nv2a exec cpu 25 obj 0 sleep 574 | guest main cpu 16 obj 994 sleep 0 | nv2a submit cpu 144 obj 0 sleep 0 | guest sub_000B5FB7 cpu 1 obj 0 sleep 1002 | thread 7 cpu 0 obj 1010 sleep 0 | thread 8 cpu 9 obj 991 sleep 5 | guest sub_000B5FB7 cpu 3 obj 999 sleep 0 | guest sub_000B5FB7 cpu 2 obj 0 sleep 1000 | guest sub_000B5FB7 cpu 1 obj 1010 sleep 0 | guest sub_000B5FB7 cpu 1 obj 1010 sleep 0 | kick-off acks 152, waited <= 9.2 ms
+[Vulkan raw vertices] GPU fixed batches=0 program batches=6368 program vertices=25472 CPU declined batches=0
+[Vulkan raw snapshots] compact_batches=6368 snapshot_bytes=2368896 expanded_bytes=6520832
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=32768 texture_ms=0.051 color_pixels=0 color_ms=0.000 (cumulative)
+[THREADS] ms/s: | nv2a flush ack cpu 31 obj 0 sleep 999 | nv2a exec cpu 25 obj 0 sleep 553 | guest main cpu 15 obj 978 sleep 0 | nv2a submit cpu 153 obj 0 sleep 0 | guest sub_000B5FB7 cpu 1 obj 0 sleep 989 | thread 7 cpu 0 obj 993 sleep 0 | thread 8 cpu 9 obj 988 sleep 1 | guest sub_000B5FB7 cpu 3 obj 1000 sleep 0 | guest sub_000B5FB7 cpu 2 obj 0 sleep 999 | guest sub_000B5FB7 cpu 0 obj 992 sleep 0 | guest sub_000B5FB7 cpu 0 obj 992 sleep 0 | kick-off acks 151, waited <= 9.0 ms
+[Vulkan raw vertices] GPU fixed batches=0 program batches=9605 program vertices=38420 CPU declined batches=0
+[Vulkan raw snapshots] compact_batches=9605 snapshot_bytes=3573060 expanded_bytes=9835520
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=32768 texture_ms=0.051 color_pixels=0 color_ms=0.000 (cumulative)
+[THREADS] ms/s: | nv2a flush ack cpu 30 obj 0 sleep 999 | nv2a exec cpu 25 obj 0 sleep 573 | guest main cpu 15 obj 992 sleep 0 | nv2a submit cpu 142 obj 0 sleep 0 | guest sub_000B5FB7 cpu 1 obj 0 sleep 1006 | thread 7 cpu 0 obj 1007 sleep 0 | thread 8 cpu 9 obj 992 sleep 1 | guest sub_000B5FB7 cpu 3 obj 1000 sleep 0 | guest sub_000B5FB7 cpu 2 obj 0 sleep 1001 | guest sub_000B5FB7 cpu 0 obj 1007 sleep 0 | guest sub_000B5FB7 cpu 0 obj 1007 sleep 0 | kick-off acks 152, waited <= 9.3 ms
+[Vulkan raw vertices] GPU fixed batches=0 program batches=12844 program vertices=51376 CPU declined batches=0
+[Vulkan raw snapshots] compact_batches=12844 snapshot_bytes=4777968 expanded_bytes=13152256
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=32768 texture_ms=0.051 color_pixels=0 color_ms=0.000 (cumulative)
+[THREADS] ms/s: | nv2a flush ack cpu 31 obj 0 sleep 999 | nv2a exec cpu 25 obj 0 sleep 567 | guest main cpu 15 obj 983 sleep 0 | nv2a submit cpu 151 obj 0 sleep 0 | guest sub_000B5FB7 cpu 1 obj 0 sleep 995 | thread 7 cpu 0 obj 998 sleep 0 | thread 8 cpu 9 obj 988 sleep 1 | guest sub_000B5FB7 cpu 3 obj 998 sleep 0 | guest sub_000B5FB7 cpu 2 obj 0 sleep 1000 | guest sub_000B5FB7 cpu 1 obj 998 sleep 0 | guest sub_000B5FB7 cpu 0 obj 998 sleep 0 | kick-off acks 152, waited <= 9.4 ms
+[Vulkan raw vertices] GPU fixed batches=0 program batches=16075 program vertices=64300 CPU declined batches=0
+[Vulkan raw snapshots] compact_batches=16075 snapshot_bytes=5979900 expanded_bytes=16460800
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=32768 texture_ms=0.051 color_pixels=0 color_ms=0.000 (cumulative)
+[THREADS] ms/s: | nv2a flush ack cpu 31 obj 0 sleep 999 | nv2a exec cpu 24 obj 0 sleep 528 | guest main cpu 16 obj 978 sleep 0 | nv2a submit cpu 157 obj 0 sleep 0 | guest sub_000B5FB7 cpu 2 obj 0 sleep 1003 | thread 7 cpu 0 obj 994 sleep 0 | thread 8 cpu 10 obj 991 sleep 1 | guest sub_000B5FB7 cpu 4 obj 999 sleep 0 | guest sub_000B5FB7 cpu 2 obj 0 sleep 1001 | guest sub_000B5FB7 cpu 1 obj 993 sleep 0 | guest sub_000B5FB7 cpu 1 obj 993 sleep 0 | kick-off acks 149, waited <= 9.0 ms
+[Vulkan raw vertices] GPU fixed batches=0 program batches=19306 program vertices=77224 CPU declined batches=0
+[Vulkan raw snapshots] compact_batches=19306 snapshot_bytes=7181832 expanded_bytes=19769344
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=32768 texture_ms=0.051 color_pixels=0 color_ms=0.000 (cumulative)
+[THREADS] ms/s: | nv2a flush ack cpu 29 obj 0 sleep 999 | nv2a exec cpu 24 obj 0 sleep 574 | guest main cpu 14 obj 986 sleep 0 | nv2a submit cpu 140 obj 0 sleep 0 | guest sub_000B5FB7 cpu 1 obj 0 sleep 1002 | thread 7 cpu 0 obj 1000 sleep 0 | thread 8 cpu 8 obj 997 sleep 1 | guest sub_000B5FB7 cpu 3 obj 998 sleep 0 | guest sub_000B5FB7 cpu 2 obj 0 sleep 1000 | guest sub_000B5FB7 cpu 0 obj 999 sleep 0 | guest sub_000B5FB7 cpu 0 obj 1000 sleep 0 | kick-off acks 147, waited <= 9.0 ms
+[Vulkan raw vertices] GPU fixed batches=0 program batches=21121 program vertices=84484 CPU declined batches=0
+[Vulkan raw snapshots] compact_batches=21121 snapshot_bytes=7857012 expanded_bytes=21627904
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=294912 texture_ms=0.456 color_pixels=0 color_ms=0.000 (cumulative)
+[THREADS] ms/s: | nv2a flush ack cpu 29 obj 0 sleep 999 | nv2a exec cpu 22 obj 0 sleep 602 | guest main cpu 12 obj 998 sleep 0 | nv2a submit cpu 128 obj 0 sleep 0 | guest sub_000B5FB7 cpu 1 obj 0 sleep 997 | thread 7 cpu 0 obj 1010 sleep 0 | thread 8 cpu 8 obj 988 sleep 1 | guest sub_000B5FB7 cpu 3 obj 1000 sleep 0 | guest sub_000B5FB7 cpu 2 obj 0 sleep 1000 | guest sub_000B5FB7 cpu 0 obj 1010 sleep 0 | guest sub_000B5FB7 cpu 0 obj 1010 sleep 0 | kick-off acks 145, waited <= 9.0 ms
+[Vulkan raw vertices] GPU fixed batches=0 program batches=22912 program vertices=91648 CPU declined batches=0
+[Vulkan raw snapshots] compact_batches=22912 snapshot_bytes=8523264 expanded_bytes=23461888
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=294912 texture_ms=0.456 color_pixels=0 color_ms=0.000 (cumulative)
+[THREADS] ms/s: | nv2a flush ack cpu 29 obj 0 sleep 999 | nv2a exec cpu 22 obj 0 sleep 592 | guest main cpu 13 obj 981 sleep 0 | nv2a submit cpu 133 obj 0 sleep 0 | guest sub_000B5FB7 cpu 1 obj 0 sleep 1004 | thread 7 cpu 0 obj 994 sleep 0 | thread 8 cpu 8 obj 995 sleep 1 | guest sub_000B5FB7 cpu 3 obj 999 sleep 0 | guest sub_000B5FB7 cpu 2 obj 0 sleep 999 | guest sub_000B5FB7 cpu 0 obj 993 sleep 0 | guest sub_000B5FB7 cpu 0 obj 994 sleep 0 | kick-off acks 140, waited <= 9.7 ms
+[Vulkan raw vertices] GPU fixed batches=0 program batches=24709 program vertices=98836 CPU declined batches=0
+[Vulkan raw snapshots] compact_batches=24709 snapshot_bytes=9191748 expanded_bytes=25302016
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=294912 texture_ms=0.456 color_pixels=0 color_ms=0.000 (cumulative)
+[THREADS] ms/s: | nv2a flush ack cpu 30 obj 0 sleep 999 | nv2a exec cpu 22 obj 0 sleep 565 | guest main cpu 17 obj 991 sleep 0 | nv2a submit cpu 153 obj 0 sleep 0 | guest sub_000B5FB7 cpu 1 obj 0 sleep 998 | thread 7 cpu 0 obj 1008 sleep 0 | thread 8 cpu 9 obj 993 sleep 1 | guest sub_000B5FB7 cpu 4 obj 999 sleep 0 | guest sub_000B5FB7 cpu 2 obj 0 sleep 1001 | guest sub_000B5FB7 cpu 1 obj 1007 sleep 0 | guest sub_000B5FB7 cpu 0 obj 1007 sleep 0 | kick-off acks 146, waited <= 9.5 ms
+[Vulkan raw vertices] GPU fixed batches=0 program batches=26879 program vertices=107516 CPU declined batches=0
+[Vulkan raw snapshots] compact_batches=26879 snapshot_bytes=9998988 expanded_bytes=27524096
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=294912 texture_ms=0.456 color_pixels=0 color_ms=0.000 (cumulative)
+[THREADS] ms/s: | nv2a flush ack cpu 30 obj 0 sleep 999 | nv2a exec cpu 23 obj 0 sleep 580 | guest main cpu 16 obj 978 sleep 0 | nv2a submit cpu 140 obj 0 sleep 0 | guest sub_000B5FB7 cpu 1 obj 0 sleep 987 | thread 7 cpu 0 obj 993 sleep 0 | thread 8 cpu 10 obj 989 sleep 1 | guest sub_000B5FB7 cpu 5 obj 998 sleep 0 | guest sub_000B5FB7 cpu 2 obj 0 sleep 999 | guest sub_000B5FB7 cpu 0 obj 993 sleep 0 | guest sub_000B5FB7 cpu 0 obj 993 sleep 0 | kick-off acks 143, waited <= 8.7 ms
+[Vulkan raw vertices] GPU fixed batches=0 program batches=29184 program vertices=116736 CPU declined batches=0
+[Vulkan raw snapshots] compact_batches=29184 snapshot_bytes=10856448 expanded_bytes=29884416
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=294912 texture_ms=0.456 color_pixels=0 color_ms=0.000 (cumulative)
+[THREADS] ms/s: | nv2a flush ack cpu 30 obj 0 sleep 999 | nv2a exec cpu 23 obj 0 sleep 588 | guest main cpu 15 obj 978 sleep 0 | nv2a submit cpu 135 obj 0 sleep 0 | guest sub_000B5FB7 cpu 1 obj 0 sleep 999 | thread 7 cpu 0 obj 993 sleep 0 | thread 8 cpu 11 obj 990 sleep 1 | guest sub_000B5FB7 cpu 8 obj 993 sleep 0 | guest sub_000B5FB7 cpu 2 obj 0 sleep 1001 | guest sub_000B5FB7 cpu 0 obj 993 sleep 0 | guest sub_000B5FB7 cpu 0 obj 993 sleep 0 | kick-off acks 146, waited <= 9.4 ms
+[Vulkan raw vertices] GPU fixed batches=0 program batches=32535 program vertices=130140 CPU declined batches=0
+[Vulkan raw snapshots] compact_batches=32535 snapshot_bytes=12103020 expanded_bytes=33315840
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=294912 texture_ms=0.456 color_pixels=0 color_ms=0.000 (cumulative)
+[THREADS] ms/s: | nv2a flush ack cpu 30 obj 0 sleep 999 | nv2a exec cpu 25 obj 0 sleep 568 | guest main cpu 16 obj 999 sleep 0 | nv2a submit cpu 147 obj 0 sleep 0 | guest sub_000B5FB7 cpu 1 obj 0 sleep 1003 | thread 7 cpu 0 obj 1015 sleep 0 | thread 8 cpu 10 obj 987 sleep 1 | guest sub_000B5FB7 cpu 4 obj 998 sleep 0 | guest sub_000B5FB7 cpu 2 obj 0 sleep 1001 | guest sub_000B5FB7 cpu 0 obj 1015 sleep 0 | guest sub_000B5FB7 cpu 0 obj 1015 sleep 0 | kick-off acks 154, waited <= 9.7 ms
+[Vulkan raw vertices] GPU fixed batches=0 program batches=36400 program vertices=145600 CPU declined batches=0
+[Vulkan raw snapshots] compact_batches=36400 snapshot_bytes=13540800 expanded_bytes=37273600
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=294912 texture_ms=0.456 color_pixels=0 color_ms=0.000 (cumulative)
+[THREADS] ms/s: | nv2a flush ack cpu 31 obj 0 sleep 999 | nv2a exec cpu 25 obj 0 sleep 537 | guest main cpu 52 obj 938 sleep 7 | nv2a submit cpu 165 obj 0 sleep 0 | guest sub_000B5FB7 cpu 2 obj 0 sleep 1005 | thread 7 cpu 0 obj 991 sleep 0 | thread 8 cpu 11 obj 991 sleep 1 | guest sub_000B5FB7 cpu 4 obj 998 sleep 0 | guest sub_000B5FB7 cpu 2 obj 0 sleep 999 | guest sub_000B5FB7 cpu 1 obj 990 sleep 0 | guest sub_000B5FB7 cpu 25 obj 0 sleep 0 | guest sub_000B5FB7 cpu 1 obj 991 sleep 0 | kick-off acks 156, waited <= 9.8 ms
+[Vulkan raw vertices] GPU fixed batches=0 program batches=38122 program vertices=152488 CPU declined batches=0
+[Vulkan raw snapshots] compact_batches=38122 snapshot_bytes=14181384 expanded_bytes=39036928
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=294912 texture_ms=0.456 color_pixels=0 color_ms=0.000 (cumulative)
+[THREADS] ms/s: | nv2a flush ack cpu 32 obj 0 sleep 999 | nv2a exec cpu 21 obj 0 sleep 548 | guest main cpu 170 obj 819 sleep 0 | nv2a submit cpu 157 obj 0 sleep 0 | guest sub_000B5FB7 cpu 2 obj 0 sleep 1001 | thread 7 cpu 0 obj 994 sleep 0 | thread 8 cpu 12 obj 992 sleep 1 | guest sub_000B5FB7 cpu 4 obj 1000 sleep 0 | guest sub_000B5FB7 cpu 2 obj 0 sleep 1000 | guest sub_000B5FB7 cpu 3 obj 991 sleep 0 | guest sub_000B5FB7 cpu 83 obj 0 sleep 0 | guest sub_000B5FB7 cpu 1 obj 993 sleep 0 | kick-off acks 142, waited <= 10.7 ms
+[Vulkan raw vertices] GPU fixed batches=0 program batches=39855 program vertices=159420 CPU declined batches=0
+[Vulkan raw snapshots] compact_batches=39855 snapshot_bytes=14826060 expanded_bytes=40811520
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=294912 texture_ms=0.456 color_pixels=0 color_ms=0.000 (cumulative)
+[THREADS] ms/s: | nv2a flush ack cpu 31 obj 0 sleep 999 | nv2a exec cpu 22 obj 0 sleep 547 | guest main cpu 128 obj 879 sleep 0 | nv2a submit cpu 158 obj 0 sleep 0 | guest sub_000B5FB7 cpu 1 obj 0 sleep 989 | thread 7 cpu 0 obj 1008 sleep 0 | thread 8 cpu 11 obj 987 sleep 1 | guest sub_000B5FB7 cpu 4 obj 998 sleep 0 | guest sub_000B5FB7 cpu 2 obj 0 sleep 1000 | guest sub_000B5FB7 cpu 3 obj 1005 sleep 0 | guest sub_000B5FB7 cpu 60 obj 0 sleep 0 | guest sub_000B5FB7 cpu 1 obj 1007 sleep 0 | kick-off acks 150, waited <= 12.0 ms
+[Vulkan raw vertices] GPU fixed batches=0 program batches=42738 program vertices=170952 CPU declined batches=0
+[Vulkan raw snapshots] compact_batches=42738 snapshot_bytes=15898536 expanded_bytes=43763712
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=294912 texture_ms=0.456 color_pixels=0 color_ms=0.000 (cumulative)
+[THREADS] ms/s: | nv2a flush ack cpu 30 obj 0 sleep 999 | nv2a exec cpu 23 obj 0 sleep 574 | guest main cpu 18 obj 989 sleep 0 | nv2a submit cpu 141 obj 0 sleep 0 | guest sub_000B5FB7 cpu 1 obj 0 sleep 1008 | thread 7 cpu 0 obj 1007 sleep 0 | thread 8 cpu 14 obj 990 sleep 1 | guest sub_000B5FB7 cpu 8 obj 996 sleep 0 | guest sub_000B5FB7 cpu 2 obj 0 sleep 1000 | guest sub_000B5FB7 cpu 3 obj 1004 sleep 0 | guest sub_000B5FB7 cpu 0 obj 1007 sleep 0 | kick-off acks 151, waited <= 10.8 ms
+[Vulkan raw vertices] GPU fixed batches=0 program batches=45941 program vertices=183764 CPU declined batches=0
+[Vulkan raw snapshots] compact_batches=45941 snapshot_bytes=17090052 expanded_bytes=47043584
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=294912 texture_ms=0.456 color_pixels=0 color_ms=0.000 (cumulative)
+[THREADS] ms/s: | nv2a flush ack cpu 31 obj 0 sleep 999 | nv2a exec cpu 25 obj 0 sleep 544 | guest main cpu 17 obj 976 sleep 0 | nv2a submit cpu 154 obj 0 sleep 0 | guest sub_000B5FB7 cpu 1 obj 0 sleep 992 | thread 7 cpu 0 obj 993 sleep 0 | thread 8 cpu 12 obj 986 sleep 1 | guest sub_000B5FB7 cpu 5 obj 997 sleep 0 | guest sub_000B5FB7 cpu 2 obj 0 sleep 999 | guest sub_000B5FB7 cpu 3 obj 990 sleep 0 | guest sub_000B5FB7 cpu 1 obj 992 sleep 0 | kick-off acks 153, waited <= 9.7 ms
+[Vulkan raw vertices] GPU fixed batches=0 program batches=49572 program vertices=198288 CPU declined batches=0
+[Vulkan raw snapshots] compact_batches=49572 snapshot_bytes=18440784 expanded_bytes=50761728
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=557056 texture_ms=0.885 color_pixels=0 color_ms=0.000 (cumulative)
+[THREADS] ms/s: | nv2a flush ack cpu 30 obj 0 sleep 999 | nv2a exec cpu 25 obj 0 sleep 549 | guest main cpu 18 obj 981 sleep 0 | nv2a submit cpu 152 obj 0 sleep 0 | guest sub_000B5FB7 cpu 1 obj 0 sleep 998 | thread 7 cpu 0 obj 998 sleep 0 | thread 8 cpu 12 obj 989 sleep 1 | guest sub_000B5FB7 cpu 3 obj 1000 sleep 0 | guest sub_000B5FB7 cpu 2 obj 0 sleep 1000 | guest sub_000B5FB7 cpu 3 obj 995 sleep 0 | guest sub_000B5FB7 cpu 1 obj 998 sleep 0 | kick-off acks 157, waited <= 10.1 ms
+[Vulkan raw vertices] GPU fixed batches=2963 program batches=52195 program vertices=209296 CPU declined batches=0
+[Vulkan raw snapshots] compact_batches=55158 snapshot_bytes=26337992 expanded_bytes=86850048
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=845824 texture_ms=4.505 color_pixels=0 color_ms=0.000 (cumulative)
+[THREADS] ms/s: | nv2a flush ack cpu 32 obj 0 sleep 999 | nv2a exec cpu 30 obj 0 sleep 424 | guest main cpu 88 obj 648 sleep 283 | nv2a submit cpu 315 obj 0 sleep 0 | guest sub_000B5FB7 cpu 2 obj 0 sleep 995 | thread 7 cpu 0 obj 1008 sleep 0 | thread 8 cpu 13 obj 990 sleep 1 | guest sub_000B5FB7 cpu 5 obj 998 sleep 0 | guest sub_000B5FB7 cpu 2 obj 0 sleep 1001 | guest sub_000B5FB7 cpu 3 obj 1005 sleep 0 | guest sub_000B5FB7 cpu 1 obj 1008 sleep 0 | kick-off acks 201, waited <= 12.5 ms
+[THREADS] ms/s: | nv2a flush ack cpu 32 obj 0 sleep 999 | nv2a exec cpu 95 obj 0 sleep 0 | guest main cpu 219 obj 531 sleep 253 | nv2a submit cpu 503 obj 0 sleep 0 | guest sub_000B5FB7 cpu 2 obj 0 sleep 1002 | thread 7 cpu 0 obj 991 sleep 0 | thread 8 cpu 14 obj 986 sleep 1 | guest sub_000B5FB7 cpu 4 obj 998 sleep 0 | guest sub_000B5FB7 cpu 2 obj 0 sleep 1000 | guest sub_000B5FB7 cpu 3 obj 988 sleep 0 | guest sub_000B5FB7 cpu 1 obj 991 sleep 0 | kick-off acks 748, waited <= 37.4 ms
+[Vulkan raw vertices] GPU fixed batches=66563 program batches=60290 program vertices=251996 CPU declined batches=0
+[Vulkan raw snapshots] compact_batches=126853 snapshot_bytes=174880244 expanded_bytes=799253120
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=901120 texture_ms=5.118 color_pixels=0 color_ms=0.000 (cumulative)
+[THREADS] ms/s: | nv2a flush ack cpu 31 obj 0 sleep 999 | nv2a exec cpu 38 obj 0 sleep 206 | guest main cpu 77 obj 601 sleep 323 | nv2a submit cpu 471 obj 0 sleep 0 | guest sub_000B5FB7 cpu 2 obj 0 sleep 1000 | thread 7 cpu 0 obj 993 sleep 0 | thread 8 cpu 13 obj 985 sleep 1 | guest sub_000B5FB7 cpu 4 obj 998 sleep 0 | guest sub_000B5FB7 cpu 2 obj 0 sleep 999 | guest sub_000B5FB7 cpu 3 obj 990 sleep 0 | guest sub_000B5FB7 cpu 1 obj 992 sleep 0 | kick-off acks 264, waited <= 17.9 ms
+[Vulkan raw vertices] GPU fixed batches=81657 program batches=64050 program vertices=277356 CPU declined batches=0
+[Vulkan raw snapshots] compact_batches=145707 snapshot_bytes=225793460 expanded_bytes=1036980352
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=1030144 texture_ms=6.554 color_pixels=0 color_ms=0.000 (cumulative)
+[THREADS] ms/s: | nv2a flush ack cpu 30 obj 0 sleep 999 | nv2a exec cpu 44 obj 0 sleep 443 | guest main cpu 68 obj 948 sleep 0 | nv2a submit cpu 243 obj 0 sleep 0 | guest sub_000B5FB7 cpu 2 obj 0 sleep 1000 | thread 7 cpu 0 obj 1015 sleep 0 | thread 8 cpu 11 obj 992 sleep 1 | guest sub_000B5FB7 cpu 3 obj 999 sleep 0 | guest sub_000B5FB7 cpu 2 obj 0 sleep 1001 | guest sub_000B5FB7 cpu 3 obj 1012 sleep 0 | guest sub_000B5FB7 cpu 1 obj 1015 sleep 0 | kick-off acks 272, waited <= 22.4 ms
+[Vulkan raw vertices] GPU fixed batches=95858 program batches=67393 program vertices=301048 CPU declined batches=0
+[Vulkan raw snapshots] compact_batches=163251 snapshot_bytes=274020596 expanded_bytes=1263274496
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=1030144 texture_ms=6.554 color_pixels=0 color_ms=0.000 (cumulative)
+[THREADS] ms/s: | nv2a flush ack cpu 30 obj 0 sleep 999 | nv2a exec cpu 52 obj 0 sleep 398 | guest main cpu 86 obj 908 sleep 0 | nv2a submit cpu 269 obj 0 sleep 0 | guest sub_000B5FB7 cpu 2 obj 0 sleep 1000 | thread 7 cpu 0 obj 994 sleep 0 | thread 8 cpu 12 obj 989 sleep 1 | guest sub_000B5FB7 cpu 4 obj 998 sleep 0 | guest sub_000B5FB7 cpu 2 obj 0 sleep 1000 | guest sub_000B5FB7 cpu 3 obj 991 sleep 0 | guest sub_000B5FB7 cpu 1 obj 993 sleep 0 | kick-off acks 322, waited <= 44.2 ms
+[Vulkan raw vertices] GPU fixed batches=114303 program batches=70745 program vertices=323400 CPU declined batches=0
+[Vulkan raw snapshots] compact_batches=185048 snapshot_bytes=326682092 expanded_bytes=1510992128
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=1030144 texture_ms=6.554 color_pixels=0 color_ms=0.000 (cumulative)
+[THREADS] ms/s: | nv2a flush ack cpu 30 obj 0 sleep 999 | nv2a exec cpu 51 obj 0 sleep 367 | guest main cpu 87 obj 913 sleep 0 | nv2a submit cpu 293 obj 0 sleep 0 | guest sub_000B5FB7 cpu 2 obj 0 sleep 1004 | thread 7 cpu 0 obj 999 sleep 0 | thread 8 cpu 15 obj 985 sleep 1 | guest sub_000B5FB7 cpu 5 obj 997 sleep 0 | guest sub_000B5FB7 cpu 2 obj 0 sleep 999 | guest sub_000B5FB7 cpu 3 obj 997 sleep 0 | guest sub_000B5FB7 cpu 1 obj 999 sleep 0 | kick-off acks 313, waited <= 27.0 ms
+[Vulkan raw vertices] GPU fixed batches=131330 program batches=74045 program vertices=336600 CPU declined batches=0
+[Vulkan raw snapshots] compact_batches=205375 snapshot_bytes=374665720 expanded_bytes=1735287168
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=1030144 texture_ms=6.554 color_pixels=0 color_ms=0.000 (cumulative)
+[THREADS] ms/s: | nv2a flush ack cpu 30 obj 0 sleep 999 | nv2a exec cpu 47 obj 0 sleep 387 | guest main cpu 78 obj 919 sleep 0 | nv2a submit cpu 276 obj 0 sleep 0 | guest sub_000B5FB7 cpu 2 obj 0 sleep 999 | thread 7 cpu 0 obj 997 sleep 0 | thread 8 cpu 16 obj 983 sleep 1 | guest sub_000B5FB7 cpu 5 obj 997 sleep 0 | guest sub_000B5FB7 cpu 2 obj 0 sleep 1001 | guest sub_000B5FB7 cpu 3 obj 995 sleep 0 | guest sub_000B5FB7 cpu 1 obj 997 sleep 0 | kick-off acks 286, waited <= 24.9 ms
+[Vulkan raw vertices] GPU fixed batches=145278 program batches=77409 program vertices=362297 CPU declined batches=0
+[Vulkan raw snapshots] compact_batches=222687 snapshot_bytes=417677560 expanded_bytes=1935875072
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=1030144 texture_ms=6.554 color_pixels=0 color_ms=0.000 (cumulative)
+[THREADS] ms/s: | nv2a flush ack cpu 31 obj 0 sleep 999 | nv2a exec cpu 45 obj 0 sleep 391 | guest main cpu 79 obj 928 sleep 0 | nv2a submit cpu 272 obj 0 sleep 0 | guest sub_000B5FB7 cpu 2 obj 0 sleep 990 | thread 7 cpu 0 obj 1007 sleep 0 | thread 8 cpu 17 obj 986 sleep 1 | guest sub_000B5FB7 cpu 5 obj 997 sleep 0 | guest sub_000B5FB7 cpu 2 obj 0 sleep 999 | guest sub_000B5FB7 cpu 3 obj 1004 sleep 0 | guest sub_000B5FB7 cpu 1 obj 1006 sleep 0 | kick-off acks 286, waited <= 24.3 ms
+[Vulkan raw vertices] GPU fixed batches=159208 program batches=80709 program vertices=375497 CPU declined batches=0
+[Vulkan raw snapshots] compact_batches=239917 snapshot_bytes=460235200 expanded_bytes=2132777472
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=1030144 texture_ms=6.554 color_pixels=0 color_ms=0.000 (cumulative)
+[THREADS] ms/s: | nv2a flush ack cpu 32 obj 0 sleep 999 | nv2a exec cpu 45 obj 0 sleep 220 | guest main cpu 89 obj 907 sleep 0 | nv2a submit cpu 372 obj 0 sleep 0 | guest sub_000B5FB7 cpu 2 obj 0 sleep 1003 | thread 7 cpu 0 obj 996 sleep 0 | thread 8 cpu 18 obj 979 sleep 1 | guest sub_000B5FB7 cpu 6 obj 996 sleep 0 | guest sub_000B5FB7 cpu 2 obj 0 sleep 1000 | guest sub_000B5FB7 cpu 3 obj 993 sleep 0 | guest sub_000B5FB7 cpu 1 obj 996 sleep 0 | kick-off acks 341, waited <= 43.9 ms
+[Vulkan raw vertices] GPU fixed batches=173916 program batches=87652 program vertices=1639329 CPU declined batches=0
+[Vulkan raw snapshots] compact_batches=261568 snapshot_bytes=534850532 expanded_bytes=2656339584
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=1030144 texture_ms=6.554 color_pixels=0 color_ms=0.000 (cumulative)
+[THREADS] ms/s: | nv2a flush ack cpu 32 obj 0 sleep 999 | nv2a exec cpu 53 obj 0 sleep 194 | guest main cpu 96 obj 902 sleep 0 | nv2a submit cpu 394 obj 0 sleep 0 | guest sub_000B5FB7 cpu 2 obj 0 sleep 995 | thread 7 cpu 0 obj 998 sleep 0 | thread 8 cpu 16 obj 989 sleep 1 | guest sub_000B5FB7 cpu 5 obj 997 sleep 0 | guest sub_000B5FB7 cpu 2 obj 0 sleep 1000 | guest sub_000B5FB7 cpu 3 obj 995 sleep 0 | guest sub_000B5FB7 cpu 1 obj 998 sleep 0 | kick-off acks 378, waited <= 47.0 ms
+[Vulkan raw vertices] GPU fixed batches=189104 program batches=95060 program vertices=3108341 CPU declined batches=0
+[Vulkan raw snapshots] compact_batches=284164 snapshot_bytes=614999476 expanded_bytes=3234814592
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=1030144 texture_ms=6.554 color_pixels=0 color_ms=0.000 (cumulative)
+[THREADS] ms/s: | nv2a flush ack cpu 32 obj 0 sleep 999 | nv2a exec cpu 90 obj 0 sleep 187 | guest main cpu 97 obj 897 sleep 0 | nv2a submit cpu 388 obj 0 sleep 0 | guest sub_000B5FB7 cpu 2 obj 0 sleep 997 | thread 7 cpu 0 obj 993 sleep 0 | thread 8 cpu 16 obj 983 sleep 1 | guest sub_000B5FB7 cpu 4 obj 998 sleep 0 | guest sub_000B5FB7 cpu 2 obj 0 sleep 1000 | guest sub_000B5FB7 cpu 3 obj 990 sleep 0 | guest sub_000B5FB7 cpu 1 obj 993 sleep 0 | kick-off acks 378, waited <= 45.1 ms
+[Vulkan raw vertices] GPU fixed batches=204275 program batches=102178 program vertices=4525585 CPU declined batches=0
+[Vulkan raw snapshots] compact_batches=306453 snapshot_bytes=693565608 expanded_bytes=3798860928
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=1030144 texture_ms=6.554 color_pixels=0 color_ms=0.000 (cumulative)
+[THREADS] ms/s: | nv2a flush ack cpu 33 obj 0 sleep 999 | nv2a exec cpu 160 obj 0 sleep 176 | guest main cpu 99 obj 908 sleep 0 | nv2a submit cpu 389 obj 0 sleep 0 | guest sub_000B5FB7 cpu 2 obj 0 sleep 1001 | thread 7 cpu 0 obj 1007 sleep 0 | thread 8 cpu 15 obj 984 sleep 2 | guest sub_000B5FB7 cpu 5 obj 998 sleep 0 | guest sub_000B5FB7 cpu 2 obj 0 sleep 1000 | guest sub_000B5FB7 cpu 3 obj 1003 sleep 0 | guest sub_000B5FB7 cpu 1 obj 1006 sleep 0 | kick-off acks 386, waited <= 32.1 ms
+[Vulkan raw vertices] GPU fixed batches=219603 program batches=109168 program vertices=5980873 CPU declined batches=0
+[Vulkan raw snapshots] compact_batches=328771 snapshot_bytes=773075728 expanded_bytes=4372993664
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=1030144 texture_ms=6.554 color_pixels=0 color_ms=0.000 (cumulative)
+[THREADS] ms/s: | nv2a flush ack cpu 33 obj 0 sleep 999 | nv2a exec cpu 158 obj 0 sleep 204 | guest main cpu 99 obj 895 sleep 0 | nv2a submit cpu 380 obj 0 sleep 0 | guest sub_000B5FB7 cpu 2 obj 0 sleep 1004 | thread 7 cpu 0 obj 1010 sleep 0 | thread 8 cpu 14 obj 987 sleep 1 | guest sub_000B5FB7 cpu 4 obj 999 sleep 0 | guest sub_000B5FB7 cpu 2 obj 0 sleep 999 | guest sub_000B5FB7 cpu 3 obj 1007 sleep 0 | guest sub_000B5FB7 cpu 1 obj 1010 sleep 0 | kick-off acks 383, waited <= 48.6 ms
+[Vulkan raw vertices] GPU fixed batches=234915 program batches=116553 program vertices=7437741 CPU declined batches=0
+[Vulkan raw snapshots] compact_batches=351468 snapshot_bytes=852742996 expanded_bytes=4947587968
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=1030144 texture_ms=6.554 color_pixels=0 color_ms=0.000 (cumulative)
+[THREADS] ms/s: | nv2a flush ack cpu 32 obj 0 sleep 999 | nv2a exec cpu 106 obj 0 sleep 105 | guest main cpu 78 obj 599 sleep 349 | nv2a submit cpu 411 obj 0 sleep 0 | guest sub_000B5FB7 cpu 2 obj 0 sleep 999 | thread 7 cpu 0 obj 1000 sleep 0 | thread 8 cpu 13 obj 990 sleep 1 | guest sub_000B5FB7 cpu 4 obj 998 sleep 0 | guest sub_000B5FB7 cpu 2 obj 0 sleep 1001 | guest sub_000B5FB7 cpu 3 obj 997 sleep 0 | guest sub_000B5FB7 cpu 1 obj 999 sleep 0 | kick-off acks 254, waited <= 20.1 ms
+[Vulkan raw vertices] GPU fixed batches=250163 program batches=124089 program vertices=8895213 CPU declined batches=0
+[Vulkan raw snapshots] compact_batches=374252 snapshot_bytes=932415140 expanded_bytes=5522076032
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=1030144 texture_ms=6.554 color_pixels=0 color_ms=0.000 (cumulative)
+[THREADS] ms/s: | nv2a flush ack cpu 33 obj 0 sleep 999 | nv2a exec cpu 159 obj 0 sleep 194 | guest main cpu 99 obj 894 sleep 0 | nv2a submit cpu 386 obj 0 sleep 0 | guest sub_000B5FB7 cpu 2 obj 0 sleep 995 | thread 7 cpu 0 obj 992 sleep 0 | thread 8 cpu 13 obj 984 sleep 1 | guest sub_000B5FB7 cpu 4 obj 999 sleep 0 | guest sub_000B5FB7 cpu 2 obj 0 sleep 1000 | guest sub_000B5FB7 cpu 3 obj 989 sleep 0 | guest sub_000B5FB7 cpu 1 obj 991 sleep 0 | kick-off acks 386, waited <= 33.1 ms
+[Vulkan raw vertices] GPU fixed batches=265592 program batches=129685 program vertices=9738613 CPU declined batches=0
+[Vulkan raw snapshots] compact_batches=395277 snapshot_bytes=997043584 expanded_bytes=5940044928
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=1030144 texture_ms=6.554 color_pixels=0 color_ms=0.000 (cumulative)
+[THREADS] ms/s: | nv2a flush ack cpu 32 obj 0 sleep 999 | nv2a exec cpu 63 obj 0 sleep 354 | guest main cpu 87 obj 906 sleep 0 | nv2a submit cpu 299 obj 0 sleep 0 | guest sub_000B5FB7 cpu 2 obj 0 sleep 997 | thread 7 cpu 0 obj 993 sleep 0 | thread 8 cpu 14 obj 988 sleep 1 | guest sub_000B5FB7 cpu 5 obj 997 sleep 0 | guest sub_000B5FB7 cpu 2 obj 0 sleep 999 | guest sub_000B5FB7 cpu 3 obj 990 sleep 0 | guest sub_000B5FB7 cpu 1 obj 993 sleep 0 | kick-off acks 311, waited <= 26.5 ms
+[Vulkan raw vertices] GPU fixed batches=281131 program batches=133036 program vertices=9752017 CPU declined batches=0
+[Vulkan raw snapshots] compact_batches=414167 snapshot_bytes=1041197432 expanded_bytes=6145178880
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=1030144 texture_ms=6.554 color_pixels=0 color_ms=0.000 (cumulative)
+[THREADS] ms/s: | nv2a flush ack cpu 32 obj 0 sleep 999 | nv2a exec cpu 46 obj 0 sleep 382 | guest main cpu 84 obj 930 sleep 0 | nv2a submit cpu 280 obj 0 sleep 0 | guest sub_000B5FB7 cpu 2 obj 0 sleep 998 | thread 7 cpu 0 obj 1014 sleep 0 | thread 8 cpu 14 obj 988 sleep 1 | guest sub_000B5FB7 cpu 5 obj 997 sleep 0 | guest sub_000B5FB7 cpu 2 obj 0 sleep 1000 | guest sub_000B5FB7 cpu 3 obj 1011 sleep 0 | guest sub_000B5FB7 cpu 1 obj 1014 sleep 0 | kick-off acks 291, waited <= 25.1 ms
+[Vulkan raw vertices] GPU fixed batches=294885 program batches=136396 program vertices=9765457 CPU declined batches=0
+[Vulkan raw snapshots] compact_batches=431281 snapshot_bytes=1083071788 expanded_bytes=6338681856
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=1030144 texture_ms=6.554 color_pixels=0 color_ms=0.000 (cumulative)
+[Vulkan pipeline cache] saved_bytes=70343412
+[Vulkan pipeline cache] save=ok

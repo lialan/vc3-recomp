@@ -36,7 +36,9 @@ static int draw(const Nv2aSurface *s,const Nv2aBatch *b) {
  draws++;return 1;
 }
 static void flush(void) {flushes++;}
-int main(void) {
+int main(int argc,char **argv) {
+ unsigned batch_size=argc>1?(unsigned)strtoul(argv[1],NULL,10):8;
+ if(!batch_size || batch_size>128)return 2;
  setenv("RECOMP_PB_DECODE_THREAD","1",1);
  const Nv2aBackend real={.clear=clear,.draw_raw=draw,.flush=flush};
  const Nv2aBackend *proxy=nv2a_defer_wrap(&real);
@@ -54,13 +56,13 @@ int main(void) {
   for(unsigned i=0;i<256;i++)stream[i]=pattern(round,i);
   for(unsigned i=0;i<32;i++)separate[i]=(uint8_t)(round+i);
   surface.color_va=round;
-  for(unsigned i=0;i<8;i++)if(!proxy->draw_raw(&surface,&batch))return 1;
+  for(unsigned i=0;i<batch_size;i++)if(!proxy->draw_raw(&surface,&batch))return 1;
   memset(stream,0xee,sizeof stream);memset(separate,0xdd,sizeof separate);
   if(!round) {pthread_mutex_lock(&mutex);release_consumer=1;pthread_cond_signal(&cv);pthread_mutex_unlock(&mutex);}
   if(!nv2a_defer_write(&sem,round+1))return 1;
   nv2a_defer_drain();
-  if(sem!=round+1 || draws!=(round+1)*8 || flushes!=round+1 || failed)return 1;
+  if(sem!=round+1 || draws!=(round+1)*batch_size || flushes!=round+1 || failed)return 1;
  }
- puts("PASS: 8000 deferred draws preserve overlapping inline streams, source mutation isolation, guest pointers, ring reuse and ordered semaphore publication");
+ printf("PASS: %u deferred draws preserve overlapping inline streams, source mutation isolation, guest pointers, ring reuse and ordered semaphore publication\n",1000*batch_size);
  return 0;
 }

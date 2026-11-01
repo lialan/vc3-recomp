@@ -1,0 +1,232 @@
+{
+  "control": {
+    "combat": {
+      "frames": 234,
+      "draw_cpu_ms": 2.156,
+      "completion_cpu_ms": 1.857,
+      "completion_ms": 5.251,
+      "other_ms": 6.146,
+      "interval_ms": 16.69
+    },
+    "activation": {
+      "frames": 115,
+      "draw_cpu_ms": 3.571,
+      "completion_cpu_ms": 2.061,
+      "completion_ms": 5.351,
+      "other_ms": 2.845,
+      "interval_ms": 16.534
+    },
+    "held": {
+      "frames": 239,
+      "draw_cpu_ms": 3.404,
+      "completion_cpu_ms": 2.06,
+      "completion_ms": 5.636,
+      "other_ms": 3.154,
+      "interval_ms": 16.647
+    },
+    "windows": [
+      [
+        1321,
+        60.05,
+        21.36
+      ],
+      [
+        1441,
+        59.97,
+        22.1
+      ],
+      [
+        1561,
+        59.95,
+        22.06
+      ],
+      [
+        1681,
+        59.87,
+        22.01
+      ],
+      [
+        1801,
+        60.1,
+        22.44
+      ]
+    ],
+    "thread_samples": [
+      {
+        "frame": 1337.0,
+        "nv2a exec": 75.0,
+        "guest main": 77.0,
+        "nv2a submit": 284.0
+      },
+      {
+        "frame": 1397.0,
+        "nv2a exec": 83.0,
+        "guest main": 88.0,
+        "nv2a submit": 320.0
+      },
+      {
+        "frame": 1458.0,
+        "nv2a exec": 76.0,
+        "guest main": 84.0,
+        "nv2a submit": 313.0
+      },
+      {
+        "frame": 1518.0,
+        "nv2a exec": 72.0,
+        "guest main": 80.0,
+        "nv2a submit": 302.0
+      },
+      {
+        "frame": 1578.0,
+        "nv2a exec": 73.0,
+        "guest main": 83.0,
+        "nv2a submit": 340.0
+      },
+      {
+        "frame": 1639.0,
+        "nv2a exec": 85.0,
+        "guest main": 97.0,
+        "nv2a submit": 426.0
+      },
+      {
+        "frame": 1699.0,
+        "nv2a exec": 91.0,
+        "guest main": 99.0,
+        "nv2a submit": 415.0
+      },
+      {
+        "frame": 1759.0,
+        "nv2a exec": 178.0,
+        "guest main": 99.0,
+        "nv2a submit": 404.0
+      },
+      {
+        "frame": 1819.0,
+        "nv2a exec": 183.0,
+        "guest main": 101.0,
+        "nv2a submit": 409.0
+      },
+      {
+        "frame": 1880.0,
+        "nv2a exec": 180.0,
+        "guest main": 100.0,
+        "nv2a submit": 403.0
+      }
+    ]
+  },
+  "candidate": {
+    "combat": {
+      "frames": 233,
+      "draw_cpu_ms": 2.026,
+      "completion_cpu_ms": 1.74,
+      "completion_ms": 5.163,
+      "other_ms": 6.37,
+      "interval_ms": 16.573
+    },
+    "activation": {
+      "frames": 115,
+      "draw_cpu_ms": 3.46,
+      "completion_cpu_ms": 2.024,
+      "completion_ms": 5.345,
+      "other_ms": 3.08,
+      "interval_ms": 16.621
+    },
+    "held": {
+      "frames": 238,
+      "draw_cpu_ms": 3.313,
+      "completion_cpu_ms": 2.05,
+      "completion_ms": 5.621,
+      "other_ms": 3.17,
+      "interval_ms": 16.564
+    },
+    "windows": [
+      [
+        1321,
+        59.92,
+        21.86
+      ],
+      [
+        1441,
+        60.04,
+        21.91
+      ],
+      [
+        1561,
+        59.67,
+        23.36
+      ],
+      [
+        1681,
+        60.23,
+        22.36
+      ],
+      [
+        1801,
+        51.41,
+        22.75
+      ]
+    ],
+    "thread_samples": [
+      {
+        "frame": 1362.0,
+        "nv2a exec": 52.0,
+        "guest main": 86.0,
+        "nv2a submit": 269.0
+      },
+      {
+        "frame": 1422.0,
+        "nv2a exec": 51.0,
+        "guest main": 87.0,
+        "nv2a submit": 293.0
+      },
+      {
+        "frame": 1483.0,
+        "nv2a exec": 47.0,
+        "guest main": 78.0,
+        "nv2a submit": 276.0
+      },
+      {
+        "frame": 1543.0,
+        "nv2a exec": 45.0,
+        "guest main": 79.0,
+        "nv2a submit": 272.0
+      },
+      {
+        "frame": 1603.0,
+        "nv2a exec": 45.0,
+        "guest main": 89.0,
+        "nv2a submit": 372.0
+      },
+      {
+        "frame": 1663.0,
+        "nv2a exec": 53.0,
+        "guest main": 96.0,
+        "nv2a submit": 394.0
+      },
+      {
+        "frame": 1724.0,
+        "nv2a exec": 90.0,
+        "guest main": 97.0,
+        "nv2a submit": 388.0
+      },
+      {
+        "frame": 1784.0,
+        "nv2a exec": 160.0,
+        "guest main": 99.0,
+        "nv2a submit": 389.0
+      },
+      {
+        "frame": 1845.0,
+        "nv2a exec": 158.0,
+        "guest main": 99.0,
+        "nv2a submit": 380.0
+      },
+      {
+        "frame": 1885.0,
+        "nv2a exec": 106.0,
+        "guest main": 78.0,
+        "nv2a submit": 411.0
+      }
+    ]
+  }
+}
