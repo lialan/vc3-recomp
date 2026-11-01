@@ -498,6 +498,43 @@ int ch_test_guest_textures(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,ui
             for(unsigned i=0;i<6;i++) quad[i].diffuse=0xffffffff;
             cb->draw(&b,&draw);cb->flush();
             for(unsigned i=0;i<16;i++) {uint32_t actual;memcpy(&actual,guest.bytes+2304+i*4,4);if(actual!=0xff0000ff) failed=1;}
+            /* Clip dimensions can shrink/grow at the same storage address.
+             * CPU edits and GPU pixels outside the small clip must survive. */
+            cb->clear(&a,&rs,0xf0,0xff00ffff,0);
+            uint32_t cpu_green=0xff00ff00;memcpy(guest.bytes+2048+12,&cpu_green,4);
+            Nv2aSurface small=a;small.width=small.height=2;
+            Nv2aRenderState red_only=rs;red_only.color_mask=0x10000;
+            Nv2aBatch patch={.vertices=quad,.count=6,.state=&red_only};
+            for(unsigned i=0;i<6;i++) quad[i].diffuse=0xffff0000;
+            cb->draw(&small,&patch);cb->flush();
+            for(unsigned y=0;y<4;y++) for(unsigned x=0;x<4;x++) {
+                uint32_t actual;memcpy(&actual,guest.bytes+2048+y*16+x*4,4);
+                uint32_t want=y<2 && x<2?0xffffffff:(y==0 && x==3?cpu_green:0xff00ffff);
+                if(actual!=want) {fprintf(stderr,"resize shrink %u,%u: %08X != %08X\n",x,y,actual,want);failed=1;}
+            }
+            red_only.color_mask=0x100;
+            for(unsigned i=0;i<6;i++) quad[i].diffuse=0xff000000;
+            cb->draw(&a,&patch);cb->flush();
+            for(unsigned y=0;y<4;y++) for(unsigned x=0;x<4;x++) {
+                uint32_t actual;memcpy(&actual,guest.bytes+2048+y*16+x*4,4);
+                uint32_t want=y<2 && x<2?0xffff00ff:(y==0 && x==3?0xff000000:0xff0000ff);
+                if(actual!=want) {fprintf(stderr,"resize grow %u,%u: %08X != %08X\n",x,y,actual,want);failed=1;}
+            }
+            /* Actual attract transition: a linear framebuffer is reused as
+             * a smaller Morton target at the same VA. Reinterpret encoded
+             * storage, preserving bytes outside the new view. */
+            Nv2aRenderState tiled_state=rs;tiled_state.surface_format=0x01010228;
+            tiled_state.color_mask=0x10000;patch.state=&tiled_state;
+            cb->draw(&small,&patch);cb->flush();
+            for(unsigned i=0;i<4;i++) {uint32_t actual;memcpy(&actual,guest.bytes+2048+i*4,4);
+                if(actual!=(i==3?0xff000000:0xff0000ff)) failed=1;}
+            red_only.color_mask=0;patch.state=&red_only;
+            cb->draw(&a,&patch);cb->flush();
+            for(unsigned y=1;y<4;y++) for(unsigned x=0;x<4;x++) {
+                uint32_t actual;memcpy(&actual,guest.bytes+2048+y*16+x*4,4);
+                uint32_t want=y<2 && x<2?0xffff00ff:0xff0000ff;
+                if(actual!=want) {fprintf(stderr,"Morton view outside pixel %u,%u: %08X != %08X\n",x,y,actual,want);failed=1;}
+            }
         }
         ch_vk_backend_destroy(backend);
         if(!failed) puts("PASS: resident color defers readback; CPU pixel edits preserve GPU neighbors; sampled/self targets, precise queries and executor semaphore/report flushes");

@@ -1,0 +1,18 @@
+[Vulkan] completed frame 1: 640x480, guest=80408000
+[Vulkan] completed frame 60: 640x480, guest=80534000
+[Vulkan] completed frame 120: 640x480, guest=80660000
+[Vulkan] completed frame 180: 640x480, guest=80534000
+[Vulkan] completed frame 240: 640x480, guest=80408000
+[Vulkan] completed frame 300: 640x480, guest=80660000
+[Vulkan] completed frame 360: 640x480, guest=80534000
+[Vulkan] completed frame 420: 640x480, guest=80534000
+[Vulkan] completed frame 480: 640x480, guest=80408000
+[Vulkan] completed frame 540: 640x480, guest=80660000
+[Vulkan] completed frame 600: 640x480, guest=80534000
+[Vulkan] completed frame 660: 640x480, guest=80534000
+[Vulkan] completed frame 720: 640x480, guest=80408000
+[Vulkan] completed frame 780: 640x480, guest=80660000
+[Vulkan] completed frame 840: 640x480, guest=80660000
+[Vulkan] completed frame 900: 640x480, guest=80660000
+[Vulkan] surface 80408000 changed 640x480 pitch=2560 bpp=4 format=00000124 -> 256x256 pitch=2560 bpp=4 format=08080228
+[Vulkan] fatal surface reinterpretation: VkResult=-8, frame=916

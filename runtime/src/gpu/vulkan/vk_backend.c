@@ -35,6 +35,10 @@ static void fatal(VkResult result,const char *operation) {
     if(active && active->host.fatal) active->host.fatal(result,operation);
     abort();
 }
+static void release_surface(struct Surface *f) {
+    ch_vk_target_destroy(f->target);free(f->rgba);free(f->observed);free(f->cpu);free(f->raw);
+    free(f->depth);free(f->stencil);memset(f,0,sizeof *f);
+}
 static struct Surface *surface(const Nv2aSurface *s,const Nv2aRenderState *rs) {
     if(!active || !s || !rs) fatal(VK_ERROR_INITIALIZATION_FAILED,"surface arguments");
     ChVkGuestLayout layout;
@@ -50,37 +54,48 @@ static struct Surface *surface(const Nv2aSurface *s,const Nv2aRenderState *rs) {
        s->color_va>active->host.guest_bytes || span>active->host.guest_bytes-s->color_va ||
        (uint64_t)s->width*s->height>SIZE_MAX/4)
         fatal(VK_ERROR_INITIALIZATION_FAILED,"surface bounds");
+    struct Surface *f=NULL;
     for(unsigned i=0;i<active->count;i++) {
-        struct Surface *f=&active->surfaces[i];
-        if(f->guest.color_va==s->color_va) {
-            if(f->guest.width!=s->width || f->guest.height!=s->height ||
-               f->guest.pitch!=s->pitch || f->guest.bytes_per_pixel!=s->bytes_per_pixel) {
-                fprintf(stderr,"[Vulkan] surface %08X changed %ux%u pitch=%u bpp=%u format=%08X -> %ux%u pitch=%u bpp=%u format=%08X\n",
-                    s->color_va,f->guest.width,f->guest.height,f->guest.pitch,f->guest.bytes_per_pixel,f->state.surface_format,
-                    s->width,s->height,s->pitch,s->bytes_per_pixel,rs->surface_format);
-                fatal(VK_ERROR_FEATURE_NOT_PRESENT,"surface reinterpretation");
-            }
-            if(f->resident && f->state.surface_format!=rs->surface_format) {
-                observe_guest_color(f); flush_color(f); f->observed_valid=0;
-            }
-            if(f->resident && f->raw_span!=span) {
-                void *raw=realloc(f->raw,(size_t)span);
-                if(!raw) fatal(VK_ERROR_OUT_OF_HOST_MEMORY,"resident guest snapshot resize");
-                f->raw=raw; f->raw_span=(size_t)span;
-            }
-            f->guest=*s; f->state=*rs; return f;
-        }
-        uint64_t old_start=f->guest.color_va;
+        struct Surface *previous=&active->surfaces[i];
+        if(previous->guest.color_va==s->color_va) {f=previous;continue;}
         ChVkGuestLayout old_layout;
-        VkResult old_result=ch_vk_guest_layout(f->state.surface_format,f->guest.width,f->guest.height,
-            f->guest.pitch,f->guest.bytes_per_pixel,&old_layout);
+        VkResult old_result=ch_vk_guest_layout(previous->state.surface_format,previous->guest.width,previous->guest.height,
+            previous->guest.pitch,previous->guest.bytes_per_pixel,&old_layout);
         if(old_result!=VK_SUCCESS) fatal(old_result,"previous color surface layout");
-        uint64_t old_end=old_start+old_layout.span;
+        uint64_t old_start=previous->guest.color_va,old_end=old_start+old_layout.span;
         if(s->color_va<old_end && old_start<(uint64_t)s->color_va+span)
             fatal(VK_ERROR_FEATURE_NOT_PRESENT,"overlapping surfaces");
     }
-    if(active->count==MAX_SURFACES) fatal(VK_ERROR_TOO_MANY_OBJECTS,"surface limit");
-    struct Surface *f=&active->surfaces[active->count++];
+    if(f && f->guest.width==s->width && f->guest.height==s->height &&
+       f->guest.pitch==s->pitch && f->guest.bytes_per_pixel==s->bytes_per_pixel) {
+        if(f->resident && f->state.surface_format!=rs->surface_format) {
+            observe_guest_color(f);flush_color(f);f->observed_valid=0;
+        }
+        if(f->resident && f->raw_span!=span) {
+            void *raw=realloc(f->raw,(size_t)span);
+            if(!raw) fatal(VK_ERROR_OUT_OF_HOST_MEMORY,"resident guest snapshot resize");
+            f->raw=raw;f->raw_span=(size_t)span;
+        }
+        f->guest=*s;f->state=*rs;return f;
+    }
+    if(f) {
+        fprintf(stderr,"[Vulkan] resizing surface %08X: %ux%u pitch=%u bpp=%u -> %ux%u pitch=%u bpp=%u\n",
+            s->color_va,f->guest.width,f->guest.height,f->guest.pitch,f->guest.bytes_per_pixel,
+            s->width,s->height,s->pitch,s->bytes_per_pixel);
+        /* Clip extents and storage interpretation can change at the same VA.
+         * Publish the old view before rebuilding, then seed the new view from
+         * guest storage. This retains pixels outside a temporarily smaller
+         * clip, CPU edits and shared depth without stretching old GPU pixels. */
+        observe_guest_color(f);flush_color(f);
+        if(active->zeta) {
+            VkResult r=ch_vk_depth_resident_release(active->zeta);
+            if(r!=VK_SUCCESS) fatal(r,"depth owner before target resize");
+        }
+        release_surface(f);
+    } else {
+        if(active->count==MAX_SURFACES) fatal(VK_ERROR_TOO_MANY_OBJECTS,"surface limit");
+        f=&active->surfaces[active->count++];
+    }
     f->guest=*s; f->zeta=rs->zeta_va; f->state=*rs; f->bytes=(size_t)s->width*s->height*4;
     f->rgba=malloc(f->bytes);
     f->resident=active->host.resident_color && s->bytes_per_pixel==4;
@@ -413,7 +428,7 @@ void ch_vk_backend_destroy(ChVkBackend *b) {
         if(r!=VK_SUCCESS) fatal(r,"resident depth teardown");
     }
     if(active==b) { nv2a_backend_register(NULL); active=NULL; }
-    for(unsigned i=0;i<b->count;i++) { ch_vk_target_destroy(b->surfaces[i].target); free(b->surfaces[i].rgba); free(b->surfaces[i].observed); free(b->surfaces[i].cpu); free(b->surfaces[i].raw); free(b->surfaces[i].depth); free(b->surfaces[i].stencil); }
+    for(unsigned i=0;i<b->count;i++) release_surface(&b->surfaces[i]);
     ch_vk_texture_cache_destroy(b->textures);
     ch_vk_depth_resident_destroy(b->zeta);
     queue_unlock(b);

@@ -1,0 +1,42 @@
+[Vulkan] completed frame 1: 640x480, guest=80408000
+[Vulkan] completed frame 60: 640x480, guest=80534000
+[Vulkan] completed frame 120: 640x480, guest=80660000
+[Vulkan] completed frame 180: 640x480, guest=80534000
+[Vulkan] completed frame 240: 640x480, guest=80408000
+[INPUT] auto coin at 30.0s
+[INPUT] auto start at 33.0s
+[Vulkan] completed frame 300: 640x480, guest=80660000
+[INPUT] auto start at 35.0s
+[Vulkan] completed frame 360: 640x480, guest=80660000
+[Vulkan] completed frame 420: 640x480, guest=80660000
+[Vulkan] completed frame 480: 640x480, guest=80660000
+[INPUT] auto fire at 50.0s
+[INPUT] auto fire at 52.0s
+[Vulkan] completed frame 540: 640x480, guest=80660000
+[Vulkan] completed frame 600: 640x480, guest=80660000
+[INPUT] auto start at 60.0s
+[INPUT] auto start at 62.0s
+[Vulkan] completed frame 660: 640x480, guest=80660000
+[INPUT] auto fire at 66.0s
+[INPUT] auto fire at 67.0s
+[INPUT] auto fire at 68.0s
+[INPUT] auto fire at 69.0s
+[INPUT] auto fire at 70.0s
+[INPUT] auto reload at 71.0s
+[Vulkan] completed frame 720: 640x480, guest=80660000
+[INPUT] auto fire at 72.0s
+[INPUT] auto fire at 73.0s
+[INPUT] auto fire at 74.0s
+[INPUT] auto fire at 75.0s
+[INPUT] auto fire at 76.0s
+[INPUT] auto reload at 77.0s
+[INPUT] auto fire at 78.0s
+[INPUT] auto fire at 79.0s
+[INPUT] auto fire at 80.0s
+[Vulkan] completed frame 780: 640x480, guest=80660000
+[Vulkan] completed frame 840: 640x480, guest=80660000
+[Vulkan] completed frame 900: 640x480, guest=80660000
+[Vulkan] completed frame 960: 640x480, guest=80660000
+[Vulkan] completed frame 1020: 640x480, guest=80660000
+[Vulkan] completed frame 1080: 640x480, guest=80660000
+[Vulkan] completed frame 1140: 640x480, guest=80660000

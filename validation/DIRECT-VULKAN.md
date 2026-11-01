@@ -352,3 +352,33 @@ before claiming the full game runs. A headless launch cannot use the SDL
 window input self-test; use `AUTOKEYS`/`AUTOAIM` for headless scripted input.
 The local runner now records those controls and depth-residency flags in its
 report so the evidence includes the actual test configuration.
+
+## Target reuse and longer game flow
+
+The failing attract diagnostic identified the exact reuse at `80408000`:
+640x480 linear (`format=00000124`) to 256x256 Morton
+(`format=08080228`), with pitch 2560 and four bytes per pixel. Target storage
+changes now reconcile CPU edits, publish resident color/depth, release the
+old view, and initialize a new target from encoded guest storage. The old
+guest footprint is retained, so a later larger clip can recover pixels
+outside a temporarily smaller view. The backend also checks the entire new
+footprint against other color targets before accepting a resize; overlapping
+distinct target addresses still require unified ownership and fail explicitly.
+
+Quest tests pass shrink/grow with masked color draws, an intervening CPU edit,
+pixels outside the smaller clip, linear/Morton reinterpretation, and D24
+ownership across target destruction/recreation. After a partial depth clear in
+the smaller target, a precise query on the regrown target sees exactly the
+four updated pixels. Existing renderer/deferred/XR tests remain passing.
+
+A native Mac attract replay completed 1,000 frames and captured the cinematic
+at frame 917. Its trace did not contain a resize, so it proves longer execution
+but does not itself reproduce the previously failing transition; a longer
+replay is required. Separately, a headless timed-input probe reached Mission
+Select, captured at frame 900, and reached at least frame 1,140 before its
+125-second limit. It did not establish combat or frame pacing acceptance.
+`AUTOAIM` expects coordinates such as `0.5,0.5`; the initial probe used `1`,
+which places the horizontal aim at the right edge. Future gameplay probes
+must use explicit coordinates and schedule input for the slower game rate.
+Reports, diagnostic excerpts, Quest checks and these game captures are in
+`validation/direct-vulkan-target-reuse/`.

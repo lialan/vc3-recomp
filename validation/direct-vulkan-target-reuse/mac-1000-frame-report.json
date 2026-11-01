@@ -1,0 +1,33 @@
+{
+  "binary": "/Users/lialan/Downloads/VR/vc3-vulkan/build-vulkan-direct/vc3",
+  "binary_sha256": "03c787ae7a2c9abca682880694dceb78a3cc012c3fdfc2bceaf6ebb5a958ff44",
+  "game": "/Users/lialan/Downloads/VR/VC3/extracted",
+  "environment": {
+    "RECOMP_HEADLESS": "1",
+    "RECOMP_FB_WINDOW": "0",
+    "VC3_SOUND": "0",
+    "VC3_SCALE": "1",
+    "VC3_ASPECT": "4:3",
+    "VC3_STEREO": "0",
+    "VC3_FPS": "60",
+    "VC3_SAVE_DIR": "/private/tmp/vc3-vulkan-attract-resize-fixed/save",
+    "VC3_CONFIG_DIR": "/private/tmp/vc3-vulkan-attract-resize-fixed/config",
+    "VC3_VULKAN_DUMP_DIR": "/private/tmp/vc3-vulkan-attract-resize-fixed/frames",
+    "VC3_VULKAN_DUMP_FIRST": "917",
+    "VC3_VULKAN_DUMP_COUNT": "3",
+    "VC3_VULKAN_FRAME_LIMIT": "1000",
+    "VK_ICD_FILENAMES": "/opt/homebrew/Cellar/mesa/26.2.6/share/vulkan/icd.d/kosmickrisp_mesa_icd.aarch64.json",
+    "CHIHIRO_VULKAN_PROFILE": "1"
+  },
+  "requested_frames": 1000,
+  "scope": "Local VC3 guest execution; no Quest or VR acceptance",
+  "opengl_imports": [],
+  "exit_code": 0,
+  "reached_frame_limit": true,
+  "captures": {
+    "frame-000917.ppm": "1f51d384a1d8ca7b793066ccba91444c1883037c85a02ff0351106505c78b92a",
+    "frame-000918.ppm": "d62c29ca357963790f118d2ce718402799a608fe97c6778e99101f48f1fbe17e",
+    "frame-000919.ppm": "a8c0a97266ea356cf9a48c5864e2592d79c02b94685acacb57e97f00abe42435"
+  },
+  "passed_execution": true
+}

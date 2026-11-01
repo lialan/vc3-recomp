@@ -111,6 +111,13 @@ int ch_test_depth_resident(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,ui
     REQUIRE(read_word(ram+1024)==0x40000017);
     nv2a_pb_exec_method(0,0x1d70,0x87654321);
     REQUIRE(read_word(ram+1024)==0x20000017 && read_word(ram+3968)==0x87654321);
+    Nv2aSurface small=surface;small.width=small.height=2;
+    cb->clear(&small,&state,1,0,0xbfffff00);cb->flush();
+    for(unsigned y=0;y<H;y++) for(unsigned x=0;x<W;x++)
+        REQUIRE(read_word(ram+1024+y*24+x*4)==(x<2 && y<2?0xbfffff17:0x20000017));
+    cb->draw(&surface,&batch);REQUIRE(visible==27); /* only four pixels pass after growth */
+    cb->flush();
+    for(unsigned y=0;y<H;y++) for(unsigned x=0;x<W;x++) REQUIRE(read_word(ram+1024+y*24+x*4)==0x20000017);
 done:
     nv2a_pb_set_semaphore_target(0);
     ch_vk_backend_destroy(backend);
