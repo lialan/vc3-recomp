@@ -185,6 +185,17 @@ int ch_test_depth_fragment(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,ui
             ch_vk_depth_resident_stats(owner,&stats);REQUIRE(stats.imports==imports+(n>1) && stats.clean_reuses==hits+(n==1));
             memcpy(input,(char *)guest+4,n*4);
             REQUIRE(ch_vk_target_read_z24s8(target,output,n)==VK_SUCCESS && !memcmp(input,output,n*4));
+            // Public release invalidates every borrowed image, allowing external
+            // mutation/destruction before this owner is used again.
+            other.zeta_va=4+n*4;
+            REQUIRE(ch_vk_depth_resident_bind(owner,peer,&surface,&other)==VK_SUCCESS);
+            REQUIRE(ch_vk_depth_resident_release(owner)==VK_SUCCESS);
+            for(unsigned i=0;i<n;i++) output[i]=0x100000a2;
+            REQUIRE(ch_vk_target_write_z24s8(target,output,n)==VK_SUCCESS);
+            ch_vk_depth_resident_stats(owner,&stats);imports=stats.imports;
+            REQUIRE(ch_vk_depth_resident_bind(owner,target,&surface,&state)==VK_SUCCESS);
+            ch_vk_depth_resident_stats(owner,&stats);REQUIRE(stats.imports==imports+1);
+            REQUIRE(ch_vk_target_read_z24s8(target,output,n)==VK_SUCCESS && !memcmp(input,output,n*4));
             REQUIRE(ch_vk_depth_resident_release(owner)==VK_SUCCESS);
         }
         ch_vk_depth_resident_destroy(owner);owner=NULL;free(guest);guest=NULL;

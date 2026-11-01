@@ -1,0 +1,266 @@
+[Vulkan depth residency] binds=3 imports=0 writebacks=2 CPU merges=0 GPU copies=0 clear skips=2 clean reuses=0
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan depth switches] same-image disjoint/overlap=0/0 different-image disjoint/overlap=0/0 dirty=0/0/0/0
+[FRAMES] 55 flips, 2 late | on time: arrived 0.2 ms after the vblank, executed in 6.1 | late: arrived -14.6, executed in 16.9
+[Vulkan depth residency] binds=3282 imports=146 writebacks=333 CPU merges=0 GPU copies=0 clear skips=293 clean reuses=0
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan depth switches] same-image disjoint/overlap=0/0 different-image disjoint/overlap=232/30 dirty=0/0/228/30
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=36928 texture_ms=0.118 color_pixels=0 color_ms=0.000 (cumulative)
+[FRAMES] 60 flips, 0 late | on time: arrived 1.9 ms after the vblank, executed in 4.3 | late: arrived 0.0, executed in 0.0
+[Vulkan depth residency] binds=6672 imports=296 writebacks=675 CPU merges=0 GPU copies=0 clear skips=593 clean reuses=0
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan depth switches] same-image disjoint/overlap=0/0 different-image disjoint/overlap=472/60 dirty=0/0/464/60
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=36928 texture_ms=0.118 color_pixels=0 color_ms=0.000 (cumulative)
+[Vulkan frame intervals] flips 1..121: 56.77 fps mean 17.61ms p95 19.74ms p99 86.31ms max 92.48ms >20ms=5 >33ms=2 (guest completions, not XR display)
+[FRAMES] 61 flips, 0 late | on time: arrived 1.8 ms after the vblank, executed in 3.9 | late: arrived 0.0, executed in 0.0
+[Vulkan depth residency] binds=10062 imports=446 writebacks=1013 CPU merges=0 GPU copies=0 clear skips=893 clean reuses=0
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan depth switches] same-image disjoint/overlap=0/0 different-image disjoint/overlap=712/90 dirty=0/0/698/88
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=36928 texture_ms=0.118 color_pixels=0 color_ms=0.000 (cumulative)
+[FRAMES] 60 flips, 0 late | on time: arrived 1.9 ms after the vblank, executed in 3.9 | late: arrived 0.0, executed in 0.0
+[Vulkan depth residency] binds=13452 imports=596 writebacks=1353 CPU merges=0 GPU copies=0 clear skips=1193 clean reuses=0
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan depth switches] same-image disjoint/overlap=0/0 different-image disjoint/overlap=952/120 dirty=0/0/933/118
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=36928 texture_ms=0.118 color_pixels=0 color_ms=0.000 (cumulative)
+[Vulkan frame intervals] flips 121..241: 59.96 fps mean 16.68ms p95 19.29ms p99 19.70ms max 19.75ms >20ms=0 >33ms=0 (guest completions, not XR display)
+[FRAMES] 61 flips, 0 late | on time: arrived 2.6 ms after the vblank, executed in 4.0 | late: arrived 0.0, executed in 0.0
+[Vulkan depth residency] binds=16842 imports=746 writebacks=1695 CPU merges=0 GPU copies=0 clear skips=1493 clean reuses=0
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan depth switches] same-image disjoint/overlap=0/0 different-image disjoint/overlap=1192/150 dirty=0/0/1169/148
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=36928 texture_ms=0.118 color_pixels=0 color_ms=0.000 (cumulative)
+[FRAMES] 60 flips, 0 late | on time: arrived 2.3 ms after the vblank, executed in 4.8 | late: arrived 0.0, executed in 0.0
+[Vulkan depth residency] binds=20232 imports=896 writebacks=2034 CPU merges=0 GPU copies=0 clear skips=1793 clean reuses=0
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan depth switches] same-image disjoint/overlap=0/0 different-image disjoint/overlap=1432/180 dirty=0/0/1403/177
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=36928 texture_ms=0.118 color_pixels=0 color_ms=0.000 (cumulative)
+[Vulkan frame intervals] flips 241..361: 59.99 fps mean 16.67ms p95 19.42ms p99 19.98ms max 20.10ms >20ms=1 >33ms=0 (guest completions, not XR display)
+[FRAMES] 60 flips, 0 late | on time: arrived 2.2 ms after the vblank, executed in 5.6 | late: arrived 0.0, executed in 0.0
+[Vulkan depth residency] binds=22206 imports=1046 writebacks=2371 CPU merges=0 GPU copies=0 clear skips=2093 clean reuses=0
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan depth switches] same-image disjoint/overlap=0/0 different-image disjoint/overlap=1672/210 dirty=0/0/1638/207
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=299072 texture_ms=0.605 color_pixels=0 color_ms=0.000 (cumulative)
+[FRAMES] 61 flips, 0 late | on time: arrived 2.0 ms after the vblank, executed in 6.2 | late: arrived 0.0, executed in 0.0
+[Vulkan depth residency] binds=24156 imports=1196 writebacks=2706 CPU merges=0 GPU copies=0 clear skips=2393 clean reuses=0
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan depth switches] same-image disjoint/overlap=0/0 different-image disjoint/overlap=1912/240 dirty=0/0/1872/237
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=299072 texture_ms=0.605 color_pixels=0 color_ms=0.000 (cumulative)
+[Vulkan frame intervals] flips 361..481: 60.00 fps mean 16.67ms p95 20.30ms p99 20.99ms max 21.12ms >20ms=9 >33ms=0 (guest completions, not XR display)
+[FRAMES] 61 flips, 0 late | on time: arrived 1.4 ms after the vblank, executed in 6.7 | late: arrived 0.0, executed in 0.0
+[Vulkan depth residency] binds=26106 imports=1346 writebacks=3042 CPU merges=0 GPU copies=0 clear skips=2693 clean reuses=0
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan depth switches] same-image disjoint/overlap=0/0 different-image disjoint/overlap=2152/270 dirty=0/0/2106/267
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=299072 texture_ms=0.605 color_pixels=0 color_ms=0.000 (cumulative)
+[FRAMES] 61 flips, 0 late | on time: arrived 1.5 ms after the vblank, executed in 6.3 | late: arrived 0.0, executed in 0.0
+[Vulkan depth residency] binds=28426 imports=1496 writebacks=3376 CPU merges=0 GPU copies=0 clear skips=2993 clean reuses=0
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan depth switches] same-image disjoint/overlap=0/0 different-image disjoint/overlap=2392/300 dirty=0/0/2338/297
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=299072 texture_ms=0.605 color_pixels=0 color_ms=0.000 (cumulative)
+[Vulkan frame intervals] flips 481..601: 60.08 fps mean 16.64ms p95 22.40ms p99 23.01ms max 23.19ms >20ms=33 >33ms=0 (guest completions, not XR display)
+[FRAMES] 60 flips, 0 late | on time: arrived 1.4 ms after the vblank, executed in 5.3 | late: arrived 0.0, executed in 0.0
+[Vulkan depth residency] binds=30882 imports=1646 writebacks=3712 CPU merges=0 GPU copies=0 clear skips=3293 clean reuses=0
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan depth switches] same-image disjoint/overlap=0/0 different-image disjoint/overlap=2632/330 dirty=0/0/2571/327
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=299072 texture_ms=0.605 color_pixels=0 color_ms=0.000 (cumulative)
+[Vulkan depth residency] binds=34385 imports=1796 writebacks=4051 CPU merges=0 GPU copies=0 clear skips=3593 clean reuses=0
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan depth switches] same-image disjoint/overlap=0/0 different-image disjoint/overlap=2872/360 dirty=0/0/2804/357
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=299072 texture_ms=0.605 color_pixels=0 color_ms=0.000 (cumulative)
+[FRAMES] 61 flips, 0 late | on time: arrived 1.5 ms after the vblank, executed in 4.3 | late: arrived 0.0, executed in 0.0
+[Vulkan frame intervals] flips 601..721: 60.00 fps mean 16.67ms p95 21.83ms p99 22.70ms max 23.12ms >20ms=37 >33ms=0 (guest completions, not XR display)
+[Vulkan depth residency] binds=38411 imports=1946 writebacks=4395 CPU merges=0 GPU copies=0 clear skips=3893 clean reuses=0
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan depth switches] same-image disjoint/overlap=0/0 different-image disjoint/overlap=3112/390 dirty=0/0/3040/387
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=299072 texture_ms=0.605 color_pixels=0 color_ms=0.000 (cumulative)
+[FRAMES] 60 flips, 0 late | on time: arrived 1.5 ms after the vblank, executed in 4.3 | late: arrived 0.0, executed in 0.0
+[Vulkan depth residency] binds=40289 imports=2096 writebacks=4732 CPU merges=0 GPU copies=0 clear skips=4193 clean reuses=0
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan depth switches] same-image disjoint/overlap=0/0 different-image disjoint/overlap=3352/420 dirty=0/0/3275/417
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=577600 texture_ms=4.108 color_pixels=0 color_ms=0.000 (cumulative)
+[FRAMES] 60 flips, 1 late | on time: arrived 4.1 ms after the vblank, executed in 5.6 | late: arrived -12.8, executed in 12.9
+[Vulkan frame intervals] flips 721..841: 59.75 fps mean 16.74ms p95 24.99ms p99 28.13ms max 28.61ms >20ms=34 >33ms=0 (guest completions, not XR display)
+[Vulkan depth residency] binds=42179 imports=2246 writebacks=5069 CPU merges=0 GPU copies=0 clear skips=4493 clean reuses=0
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan depth switches] same-image disjoint/overlap=0/0 different-image disjoint/overlap=3592/450 dirty=0/0/3511/446
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=577600 texture_ms=4.108 color_pixels=0 color_ms=0.000 (cumulative)
+[FRAMES] 61 flips, 0 late | on time: arrived 4.3 ms after the vblank, executed in 4.9 | late: arrived 0.0, executed in 0.0
+[Vulkan depth residency] binds=45215 imports=2396 writebacks=5407 CPU merges=0 GPU copies=0 clear skips=4793 clean reuses=0
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan depth switches] same-image disjoint/overlap=0/0 different-image disjoint/overlap=3832/480 dirty=0/0/3744/476
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=581696 texture_ms=4.158 color_pixels=0 color_ms=0.000 (cumulative)
+[Vulkan frame intervals] flips 841..961: 60.26 fps mean 16.60ms p95 24.12ms p99 27.15ms max 27.63ms >20ms=28 >33ms=0 (guest completions, not XR display)
+[FRAMES] 60 flips, 0 late | on time: arrived 1.5 ms after the vblank, executed in 3.9 | late: arrived 0.0, executed in 0.0
+[Vulkan depth residency] binds=48578 imports=2546 writebacks=5749 CPU merges=0 GPU copies=0 clear skips=5093 clean reuses=0
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan depth switches] same-image disjoint/overlap=0/0 different-image disjoint/overlap=4072/510 dirty=0/0/3980/506
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=581696 texture_ms=4.158 color_pixels=0 color_ms=0.000 (cumulative)
+[FRAMES] 61 flips, 0 late | on time: arrived 1.7 ms after the vblank, executed in 3.9 | late: arrived 0.0, executed in 0.0
+[Vulkan depth residency] binds=52368 imports=2696 writebacks=6090 CPU merges=0 GPU copies=0 clear skips=5393 clean reuses=0
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan depth switches] same-image disjoint/overlap=0/0 different-image disjoint/overlap=4312/540 dirty=0/0/4213/536
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=843840 texture_ms=4.701 color_pixels=0 color_ms=0.000 (cumulative)
+[Vulkan frame intervals] flips 961..1081: 59.99 fps mean 16.67ms p95 19.30ms p99 19.88ms max 20.33ms >20ms=1 >33ms=0 (guest completions, not XR display)
+[FRAMES] 60 flips, 0 late | on time: arrived 2.1 ms after the vblank, executed in 4.0 | late: arrived 0.0, executed in 0.0
+[FRAMES] 55 flips, 1 late | on time: arrived 2.7 ms after the vblank, executed in 4.4 | late: arrived -4.0, executed in 11.4
+[Vulkan depth residency] binds=58108 imports=2848 writebacks=6442 CPU merges=0 GPU copies=0 clear skips=5693 clean reuses=0
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan depth switches] same-image disjoint/overlap=0/2 different-image disjoint/overlap=4552/570 dirty=0/2/4445/566
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=5930688 texture_ms=100.344 color_pixels=0 color_ms=0.000 (cumulative)
+[FRAMES] 36 flips, 22 late | on time: arrived -11.5 ms after the vblank, executed in 23.8 | late: arrived -16.6, executed in 23.0
+[Vulkan depth residency] binds=129763 imports=3058 writebacks=7159 CPU merges=0 GPU copies=0 clear skips=5993 clean reuses=0
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan depth switches] same-image disjoint/overlap=0/62 different-image disjoint/overlap=4792/600 dirty=0/62/4641/596
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=8698048 texture_ms=153.714 color_pixels=0 color_ms=0.000 (cumulative)
+[Vulkan frame intervals] flips 1081..1201: 37.42 fps mean 26.73ms p95 30.29ms p99 226.73ms max 363.57ms >20ms=67 >33ms=3 (guest completions, not XR display)
+[FRAMES] 31 flips, 17 late | on time: arrived 1.6 ms after the vblank, executed in 12.0 | late: arrived -33.6, executed in 39.6
+[FRAMES] 55 flips, 2 late | on time: arrived 2.5 ms after the vblank, executed in 9.0 | late: arrived -13.9, executed in 22.0
+[Vulkan depth residency] binds=149682 imports=3215 writebacks=7573 CPU merges=0 GPU copies=0 clear skips=6293 clean reuses=0
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan depth switches] same-image disjoint/overlap=0/69 different-image disjoint/overlap=5032/630 dirty=0/69/4863/626
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=11535552 texture_ms=199.571 color_pixels=0 color_ms=0.000 (cumulative)
+[FRAMES] 60 flips, 1 late | on time: arrived 3.2 ms after the vblank, executed in 8.5 | late: arrived -15.3, executed in 31.4
+[Vulkan depth residency] binds=167300 imports=3365 writebacks=7970 CPU merges=0 GPU copies=0 clear skips=6593 clean reuses=0
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan depth switches] same-image disjoint/overlap=0/69 different-image disjoint/overlap=5272/660 dirty=0/69/5089/656
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=12006656 texture_ms=209.177 color_pixels=0 color_ms=0.000 (cumulative)
+[Vulkan frame intervals] flips 1201..1321: 55.83 fps mean 17.91ms p95 24.98ms p99 43.07ms max 118.07ms >20ms=18 >33ms=4 (guest completions, not XR display)
+[FRAMES] 60 flips, 0 late | on time: arrived 3.5 ms after the vblank, executed in 9.6 | late: arrived 0.0, executed in 0.0
+[Vulkan depth residency] binds=189236 imports=3515 writebacks=8387 CPU merges=0 GPU copies=0 clear skips=6893 clean reuses=0
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan depth switches] same-image disjoint/overlap=0/69 different-image disjoint/overlap=5512/690 dirty=0/69/5315/686
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=12019968 texture_ms=209.343 color_pixels=0 color_ms=0.000 (cumulative)
+[Vulkan depth residency] binds=209765 imports=3665 writebacks=8798 CPU merges=0 GPU copies=0 clear skips=7193 clean reuses=0
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan depth switches] same-image disjoint/overlap=0/69 different-image disjoint/overlap=5752/720 dirty=0/69/5542/715
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=12025088 texture_ms=209.414 color_pixels=0 color_ms=0.000 (cumulative)
+[FRAMES] 61 flips, 2 late | on time: arrived 3.4 ms after the vblank, executed in 10.3 | late: arrived -11.7, executed in 13.2
+[Vulkan frame intervals] flips 1321..1441: 59.96 fps mean 16.68ms p95 20.07ms p99 22.00ms max 24.73ms >20ms=7 >33ms=0 (guest completions, not XR display)
+[Vulkan depth residency] binds=227235 imports=3815 writebacks=9192 CPU merges=0 GPU copies=0 clear skips=7493 clean reuses=0
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan depth switches] same-image disjoint/overlap=0/69 different-image disjoint/overlap=5992/750 dirty=0/69/5766/745
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=12107008 texture_ms=210.377 color_pixels=0 color_ms=0.000 (cumulative)
+[FRAMES] 60 flips, 0 late | on time: arrived 3.5 ms after the vblank, executed in 9.8 | late: arrived 0.0, executed in 0.0
+[Vulkan depth residency] binds=244615 imports=3965 writebacks=9589 CPU merges=0 GPU copies=0 clear skips=7793 clean reuses=0
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan depth switches] same-image disjoint/overlap=0/69 different-image disjoint/overlap=6232/780 dirty=0/69/5993/774
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=12107008 texture_ms=210.377 color_pixels=0 color_ms=0.000 (cumulative)
+[Vulkan frame intervals] flips 1441..1561: 60.03 fps mean 16.66ms p95 21.81ms p99 23.55ms max 23.66ms >20ms=23 >33ms=0 (guest completions, not XR display)
+[FRAMES] 61 flips, 2 late | on time: arrived 2.8 ms after the vblank, executed in 9.8 | late: arrived -11.5, executed in 15.9
+[Vulkan depth residency] binds=266232 imports=4115 writebacks=10004 CPU merges=0 GPU copies=0 clear skips=8093 clean reuses=0
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan depth switches] same-image disjoint/overlap=0/69 different-image disjoint/overlap=6472/810 dirty=0/69/6195/803
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=12165376 texture_ms=211.197 color_pixels=0 color_ms=0.000 (cumulative)
+[FRAMES] 59 flips, 2 late | on time: arrived -9.0 ms after the vblank, executed in 14.5 | late: arrived -30.1, executed in 32.2
+[FRAMES] 55 flips, 5 late | on time: arrived -6.3 ms after the vblank, executed in 15.2 | late: arrived -20.3, executed in 22.0
+[Vulkan depth residency] binds=288946 imports=4265 writebacks=10426 CPU merges=0 GPU copies=0 clear skips=8393 clean reuses=0
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan depth switches] same-image disjoint/overlap=0/69 different-image disjoint/overlap=6712/840 dirty=0/69/6397/833
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=12230912 texture_ms=211.858 color_pixels=0 color_ms=0.000 (cumulative)
+[Vulkan frame intervals] flips 1561..1681: 56.41 fps mean 17.73ms p95 22.07ms p99 26.24ms max 30.79ms >20ms=18 >33ms=0 (guest completions, not XR display)
+[FRAMES] 60 flips, 2 late | on time: arrived -8.3 ms after the vblank, executed in 14.8 | late: arrived -19.6, executed in 21.1
+[Vulkan depth residency] binds=311324 imports=4415 writebacks=10844 CPU merges=0 GPU copies=0 clear skips=8693 clean reuses=0
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan depth switches] same-image disjoint/overlap=0/69 different-image disjoint/overlap=6952/870 dirty=0/69/6596/863
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=12247552 texture_ms=212.056 color_pixels=0 color_ms=0.000 (cumulative)
+[FRAMES] 61 flips, 3 late | on time: arrived -7.8 ms after the vblank, executed in 14.9 | late: arrived -15.4, executed in 17.5
+[Vulkan depth residency] binds=333732 imports=4565 writebacks=11259 CPU merges=0 GPU copies=0 clear skips=8993 clean reuses=0
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan depth switches] same-image disjoint/overlap=0/69 different-image disjoint/overlap=7192/900 dirty=0/69/6792/893
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=12247552 texture_ms=212.056 color_pixels=0 color_ms=0.000 (cumulative)
+[Vulkan frame intervals] flips 1681..1801: 60.14 fps mean 16.63ms p95 19.40ms p99 21.18ms max 21.24ms >20ms=4 >33ms=0 (guest completions, not XR display)
+[FRAMES] 61 flips, 3 late | on time: arrived -10.4 ms after the vblank, executed in 15.9 | late: arrived -12.9, executed in 14.2
+[Vulkan depth residency] binds=356493 imports=4715 writebacks=11677 CPU merges=0 GPU copies=0 clear skips=9293 clean reuses=0
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan depth switches] same-image disjoint/overlap=0/69 different-image disjoint/overlap=7432/930 dirty=0/69/6989/923
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=12247552 texture_ms=212.056 color_pixels=0 color_ms=0.000 (cumulative)
+[FRAMES] 61 flips, 9 late | on time: arrived -5.8 ms after the vblank, executed in 13.9 | late: arrived -12.8, executed in 14.8
+[Vulkan depth residency] binds=379359 imports=4865 writebacks=12096 CPU merges=0 GPU copies=0 clear skips=9593 clean reuses=0
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan depth switches] same-image disjoint/overlap=0/69 different-image disjoint/overlap=7672/960 dirty=0/69/7187/953
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=12247552 texture_ms=212.056 color_pixels=0 color_ms=0.000 (cumulative)
+[Vulkan frame intervals] flips 1801..1921: 60.14 fps mean 16.63ms p95 20.55ms p99 22.94ms max 25.37ms >20ms=13 >33ms=0 (guest completions, not XR display)
+[FRAMES] 61 flips, 7 late | on time: arrived 4.2 ms after the vblank, executed in 9.1 | late: arrived -12.8, executed in 14.0
+[Vulkan depth residency] binds=400477 imports=5015 writebacks=12503 CPU merges=0 GPU copies=0 clear skips=9893 clean reuses=0
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan depth switches] same-image disjoint/overlap=0/69 different-image disjoint/overlap=7912/990 dirty=0/69/7393/982
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=12247552 texture_ms=212.056 color_pixels=0 color_ms=0.000 (cumulative)
+[FRAMES] 60 flips, 6 late | on time: arrived 4.3 ms after the vblank, executed in 8.8 | late: arrived -12.1, executed in 13.1
+[Vulkan depth residency] binds=419527 imports=5165 writebacks=12913 CPU merges=0 GPU copies=0 clear skips=10193 clean reuses=0
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan depth switches] same-image disjoint/overlap=0/69 different-image disjoint/overlap=8152/1020 dirty=0/69/7626/1012
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=12247552 texture_ms=212.056 color_pixels=0 color_ms=0.000 (cumulative)
+[Vulkan frame intervals] flips 1921..2041: 59.99 fps mean 16.67ms p95 20.71ms p99 21.66ms max 23.61ms >20ms=14 >33ms=0 (guest completions, not XR display)
+[FRAMES] 60 flips, 1 late | on time: arrived 3.7 ms after the vblank, executed in 9.7 | late: arrived -10.8, executed in 16.2
+[Vulkan depth residency] binds=436820 imports=5315 writebacks=13314 CPU merges=0 GPU copies=0 clear skips=10493 clean reuses=0
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan depth switches] same-image disjoint/overlap=0/69 different-image disjoint/overlap=8392/1050 dirty=0/69/7857/1042
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=12247552 texture_ms=212.056 color_pixels=0 color_ms=0.000 (cumulative)

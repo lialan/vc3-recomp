@@ -13,7 +13,8 @@ VkResult ch_vk_depth_resident_create(void *guest,size_t bytes,ChVkDepthResident 
 void ch_vk_depth_resident_write_watch(ChVkDepthResident *,ChGuestWriteWatch *);
 /* One current owner: an exact shared-zeta target switch copies on the GPU.
  * Changing zeta interpretation publishes/imports, including partial overlaps.
- * Targets must use native D24S8. Guest RAM must be serialized with callbacks.
+ * Targets must preserve exact guest Z24 values (native D24 or quantized D32).
+ * Guest RAM must be serialized with callbacks.
  * Retains target until release; no device or guest-memory ownership. */
 VkResult ch_vk_depth_resident_bind(ChVkDepthResident *,ChVkTarget *,const Nv2aSurface *,const Nv2aRenderState *);
 /* Caller MUST immediately clear every depth AND stencil pixel on this target
