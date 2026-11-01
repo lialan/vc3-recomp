@@ -97,7 +97,9 @@ struct ChVkTarget {
     struct {ChVkTexture *image;void (*release)(void *,ChVkTexture *);void *context;int owned;} retired[BATCH_DRAWS*5];
     int initialized;
     int failed;
+    struct { const char *caller; int readback; uint64_t count; } finish_reasons[32];
 };
+static VkResult finish_batch_named(ChVkTarget *,int,const char *);
 #define TRY(expr) do { result=(expr); if(result!=VK_SUCCESS) goto fail; } while(0)
 static uint64_t time_ns(void) {
     struct timespec t;clock_gettime(CLOCK_MONOTONIC,&t);
@@ -127,6 +129,13 @@ static void report_batch_timing(ChVkTarget *t,uint64_t now) {
         (s->batch_finish_ns-b->batch_finish_ns)/1e6,(s->batch_submit_ns-b->batch_submit_ns)/1e6,
         (s->batch_wait_ns-b->batch_wait_ns)/1e6,
         (s->batch_retire_ns-b->batch_retire_ns)/1e6);
+    fprintf(stderr,"[Vulkan batch boundaries] %ux%u:",t->width,t->height);
+    for(unsigned i=0;i<32;i++) if(t->finish_reasons[i].count) {
+        fprintf(stderr," %s/read%d=%llu",t->finish_reasons[i].caller,t->finish_reasons[i].readback,
+            (unsigned long long)t->finish_reasons[i].count);
+        t->finish_reasons[i].count=0;
+    }
+    fputc('\n',stderr);
     t->batch_report=*s;t->batch_report_start=now;
 }
 static int memory_type(VkPhysicalDevice gpu, uint32_t bits,
@@ -208,13 +217,13 @@ VkResult ch_vk_target_batch_limit(ChVkTarget *t,uint32_t draws) {
 }
 VkResult ch_vk_target_batching(ChVkTarget *t,int enabled) {
     if(!t || t->failed || (enabled && !t->batch_enabled && t->resource_stats.pipeline_builds)) return VK_ERROR_INITIALIZATION_FAILED;
-    VkResult r=ch_vk_target_finish(t);if(r==VK_SUCCESS) t->batch_enabled=!!enabled;return r;
+    VkResult r=finish_batch_named(t,0,__func__);if(r==VK_SUCCESS) t->batch_enabled=!!enabled;return r;
 }
 VkResult ch_vk_target_retire_sample(ChVkTarget *t,ChVkTexture *image,
     void (*release)(void *,ChVkTexture *),void *context,int owned) {
     if(!image) return VK_SUCCESS;
     VkResult r=VK_SUCCESS;
-    if(t && t->pending && t->retired_count==t->batch_limit*5) r=ch_vk_target_finish(t);
+    if(t && t->pending && t->retired_count==t->batch_limit*5) r=finish_batch_named(t,0,__func__);
     if(t && t->pending && r==VK_SUCCESS) {
         unsigned i=t->retired_count++;
         t->retired[i].image=image;t->retired[i].release=release;t->retired[i].context=context;t->retired[i].owned=owned;
@@ -231,7 +240,7 @@ VkResult ch_vk_target_pipeline_cache(ChVkTarget *t,VkPipelineCache cache) {
 void ch_vk_target_destroy(ChVkTarget *t) {
     if(!t) return;
     /* Finish deferred work before destroying anything it references. */
-    if(!t->failed) (void)ch_vk_target_finish(t);
+    if(!t->failed) (void)finish_batch_named(t,0,__func__);
     if(t->failed) vkQueueWaitIdle(t->queue);
     retire_samples(t);
     for(unsigned i=0;i<PIPELINE_SLOTS;i++) destroy_pipeline(t,&t->pipelines[i]);
@@ -405,7 +414,7 @@ static void record_depth_transfer(ChVkTarget *t,int upload) {
     }
 }
 /* readback: 0 none, 1 depth/stencil, 2 color. Staging storage is shared. */
-static VkResult finish_batch(ChVkTarget *t,int readback) {
+static VkResult finish_batch_named(ChVkTarget *t,int readback,const char *caller) {
     if(!t || t->failed) return VK_ERROR_INITIALIZATION_FAILED;
     if(!t->pending) return VK_SUCCESS;
     VkResult result;
@@ -441,6 +450,13 @@ static VkResult finish_batch(ChVkTarget *t,int readback) {
         uint64_t elapsed;TRY(timestamp_elapsed(t,&elapsed));
         t->timing_stats.batch_gpu_ns+=elapsed;
         t->timing_stats.batch_draws+=t->pending;t->timing_stats.batch_submissions++;
+        for(unsigned i=0;i<32;i++) {
+            if(!t->finish_reasons[i].caller ||
+               (t->finish_reasons[i].readback==readback && !strcmp(t->finish_reasons[i].caller,caller))) {
+                t->finish_reasons[i].caller=caller;t->finish_reasons[i].readback=readback;
+                t->finish_reasons[i].count++;break;
+            }
+        }
     }
     t->layout=VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;t->resource_stats.batch_submissions++;
     if(readback==1) t->resource_stats.combined_depth_readbacks++;
@@ -458,11 +474,11 @@ fail:
     t->failed=1;vkQueueWaitIdle(t->queue);t->pending=0;
     retire_samples(t);return result;
 }
-VkResult ch_vk_target_finish(ChVkTarget *t) {return finish_batch(t,0);}
+VkResult ch_vk_target_finish(ChVkTarget *t) {return finish_batch_named(t,0,"external_completion");}
 static VkResult quantize_depth(ChVkTarget *,int);
 VkResult ch_vk_target_depth_quantization(ChVkTarget *t,int mode) {
     if(!t || mode<0 || mode>5)return VK_ERROR_INITIALIZATION_FAILED;
-    if(!mode) {VkResult r=ch_vk_target_finish(t);if(r==VK_SUCCESS)t->quantized_depth=0;return r;}
+    if(!mode) {VkResult r=finish_batch_named(t,0,__func__);if(r==VK_SUCCESS)t->quantized_depth=0;return r;}
     if((mode==3 || mode==4) && !t->input_depth)return VK_ERROR_FEATURE_NOT_PRESENT;
     if(t->quantized_depth==mode)return VK_SUCCESS;
     if(mode==4 && t->pass && !t->input_pass)return VK_ERROR_INITIALIZATION_FAILED;
@@ -482,7 +498,7 @@ VkResult ch_vk_target_depth_quantization(ChVkTarget *t,int mode) {
         if(!compute)return VK_ERROR_FEATURE_NOT_PRESENT;
     }
     VkResult result;
-    TRY(ch_vk_target_finish(t));
+    TRY(finish_batch_named(t,0,__func__));
     if(mode==5) {
         /* Establish canonical storage once before fragment-side depth tests.
          * Later uploads and clears canonicalize at their existing boundary. */
@@ -502,7 +518,7 @@ static VkResult quantize_depth(ChVkTarget *t,int mode) {
     VkResult result;int enabled=t?t->quantized_depth:0;
     TRY(ch_vk_target_depth_quantization(t,mode));
     t->quantized_depth=enabled;
-    TRY(ch_vk_target_finish(t));
+    TRY(finish_batch_named(t,0,__func__));
     TRY(vkResetCommandBuffer(t->command,0));TRY(vkResetFences(t->device,1,&t->fence));
     VkCommandBufferBeginInfo begin={.sType=VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,.flags=VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT};
     TRY(vkBeginCommandBuffer(t->command,&begin));
@@ -588,7 +604,7 @@ static VkResult render_read(ChVkTarget *t, const float rgba[4], uint32_t clear_f
        (!t->initialized && clear_flags!=7))
         return VK_ERROR_INITIALIZATION_FAILED;
     VkResult result;
-    TRY(ch_vk_target_finish(t));
+    TRY(finish_batch_named(t,0,__func__));
     uint64_t cpu_start=t->timing?time_ns():0;
     TRY(vkResetCommandBuffer(t->command,0));
     TRY(vkResetFences(t->device,1,&t->fence));
@@ -737,13 +753,13 @@ fail:
 }
 
 void ch_vk_target_defer_color_readback(ChVkTarget *t,int enabled) {
-    if(t) {if(!enabled && t->pending) (void)ch_vk_target_finish(t);t->defer_color_readback=!!enabled;}
+    if(t) {if(!enabled && t->pending) (void)finish_batch_named(t,0,__func__);t->defer_color_readback=!!enabled;}
 }
 VkResult ch_vk_target_read_color(ChVkTarget *t,void *pixels,VkDeviceSize bytes) {
     if(!t) return VK_ERROR_INITIALIZATION_FAILED;
     if(t->pending) {
         if(!pixels || bytes<t->bytes) return VK_ERROR_INITIALIZATION_FAILED;
-        VkResult r=finish_batch(t,2);
+        VkResult r=finish_batch_named(t,2,__func__);
         if(r!=VK_SUCCESS) return r;
         void *mapped=NULL;
         r=vkMapMemory(t->device,t->read_mem,0,VK_WHOLE_SIZE,0,&mapped);
@@ -767,14 +783,14 @@ VkResult ch_vk_target_snapshot_texture(ChVkTarget *t,uint32_t levels,ChVkTexture
     if(!out) return VK_ERROR_INITIALIZATION_FAILED;
     *out=NULL;
     if(!t || t->failed || !t->initialized) return VK_ERROR_INITIALIZATION_FAILED;
-    VkResult result=ch_vk_target_finish(t);
+    VkResult result=finish_batch_named(t,0,__func__);
     if(result!=VK_SUCCESS) return result;
     if(t->layout!=VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL) return VK_ERROR_INITIALIZATION_FAILED;
     return ch_vk_texture_copy_image(t->physical,t->device,t->queue,t->family,t->width,t->height,t->image,levels,out);
 }
 VkResult ch_vk_target_refresh_texture(ChVkTarget *t,ChVkTexture *texture) {
     if(!t || t->failed || !t->initialized) return VK_ERROR_INITIALIZATION_FAILED;
-    VkResult r=ch_vk_target_finish(t);
+    VkResult r=finish_batch_named(t,0,__func__);
     if(r!=VK_SUCCESS) return r;
     if(t->layout!=VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL) return VK_ERROR_INITIALIZATION_FAILED;
     return ch_vk_texture_copy_from_image(texture,t->device,t->image,t->width,t->height);
@@ -982,7 +998,7 @@ static VkResult draw_full(ChVkTarget *t, const float rgba[4],
     VkResult result;
     if(!state) return VK_ERROR_INITIALIZATION_FAILED;
     int batched=t->batch_enabled && t->reuse_resources && t->defer_color_readback && !samples && !rgba && t->initialized;
-    if((!batched || t->pending==t->batch_limit) && t->pending) TRY(ch_vk_target_finish(t));
+    if((!batched || t->pending==t->batch_limit) && t->pending) TRY(finish_batch_named(t,0,__func__));
     if(state->alpha_test_enable && (state->alpha_func<0x200 || state->alpha_func>0x207))
         return VK_ERROR_FEATURE_NOT_PRESENT;
     VkCullModeFlags cull=VK_CULL_MODE_NONE;
@@ -1038,7 +1054,7 @@ static VkResult draw_full(ChVkTarget *t, const float rgba[4],
     else {
         entry=oldest;
         if(entry->pipeline) {
-            if(entry->pending) TRY(ch_vk_target_finish(t));
+            if(entry->pending) TRY(finish_batch_named(t,0,__func__));
             t->resource_stats.pipeline_evictions++;
         }
         destroy_pipeline(t,entry);t->active_pipeline=entry;
@@ -1065,7 +1081,7 @@ static VkResult draw_full(ChVkTarget *t, const float rgba[4],
     VkDeviceSize payload=header+(VkDeviceSize)vertex_count*vertex_stride+(VkDeviceSize)index_count*sizeof(*indices);
     VkDeviceSize base=t->pending?(t->geometry_used+255)/256*256:0;
     if(base>UINT64_MAX-payload) {result=VK_ERROR_OUT_OF_HOST_MEMORY;goto fail;}
-    if(t->pending && base+payload>t->geometry_capacity) {TRY(ch_vk_target_finish(t));base=0;}
+    if(t->pending && base+payload>t->geometry_capacity) {TRY(finish_batch_named(t,0,__func__));base=0;}
     if(entry->has_descriptors) {
         if(entry->set_used==entry->set_count) {
             VkDescriptorSetAllocateInfo alloc={.sType=VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
@@ -1182,7 +1198,7 @@ VkResult ch_vk_target_export_image(ChVkTarget *t,VkImage destination,void *verif
     if(!t || t->failed || !t->initialized || !destination || destination==t->image ||
         (verify && bytes<t->bytes)) return VK_ERROR_INITIALIZATION_FAILED;
     VkResult result;
-    TRY(ch_vk_target_finish(t));
+    TRY(finish_batch_named(t,0,__func__));
     TRY(vkResetCommandBuffer(t->command,0));
     TRY(vkResetFences(t->device,1,&t->fence));
     VkCommandBufferBeginInfo begin={.sType=VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
@@ -1254,7 +1270,7 @@ VkResult ch_vk_target_import_color(ChVkTarget *t,const void *rgba,VkDeviceSize b
     result=vkFlushMappedMemoryRanges(t->device,1,&range);
     vkUnmapMemory(t->device,t->read_mem);
     if(result!=VK_SUCCESS) goto fail;
-    TRY(ch_vk_target_finish(t));
+    TRY(finish_batch_named(t,0,__func__));
     TRY(vkResetCommandBuffer(t->command,0)); TRY(vkResetFences(t->device,1,&t->fence));
     VkCommandBufferBeginInfo begin={.sType=VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,.flags=VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT};
     TRY(vkBeginCommandBuffer(t->command,&begin));
@@ -1289,7 +1305,7 @@ static VkResult transfer_depth_stencil(ChVkTarget *t,void *depth,void *stencil,s
     VkResult result; void *mapped;
     VkMappedMemoryRange range={.sType=VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE,.memory=t->read_mem,.size=VK_WHOLE_SIZE};
     if(!upload && t->pending) {
-        TRY(finish_batch(t,1));
+        TRY(finish_batch_named(t,1,__func__));
         goto readback;
     }
 
@@ -1312,7 +1328,7 @@ static VkResult transfer_depth_stencil(ChVkTarget *t,void *depth,void *stencil,s
         vkUnmapMemory(t->device,t->read_mem);
         if(result!=VK_SUCCESS) goto fail;
     }
-    TRY(ch_vk_target_finish(t));
+    TRY(finish_batch_named(t,0,__func__));
     TRY(vkResetCommandBuffer(t->command,0)); TRY(vkResetFences(t->device,1,&t->fence));
     VkCommandBufferBeginInfo begin={.sType=VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,.flags=VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT};
     TRY(vkBeginCommandBuffer(t->command,&begin));
@@ -1364,9 +1380,9 @@ VkResult ch_vk_target_copy_depth_stencil(ChVkTarget *source,ChVkTarget *destinat
        s->width!=t->width || s->height!=t->height || s->depth_format!=t->depth_format)
         return VK_ERROR_INITIALIZATION_FAILED;
     VkResult result;
-    TRY(ch_vk_target_finish(s));
+    TRY(finish_batch_named(s,0,__func__));
     if(s==t) return VK_SUCCESS;
-    TRY(ch_vk_target_finish(t));
+    TRY(finish_batch_named(t,0,__func__));
     TRY(vkResetCommandBuffer(t->command,0));TRY(vkResetFences(t->device,1,&t->fence));
     VkCommandBufferBeginInfo begin={.sType=VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
         .flags=VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT};

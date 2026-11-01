@@ -752,3 +752,32 @@ Next focus is the larger surface/coherence/queue-wait contribution, with
 profiling sufficient to distinguish actual GPU work from submission latency.
 CPU VSH remains a possible larger GPU-offload task, but these two small
 interpreter changes did not solve the E.S. bottleneck. No headset/device use.
+
+## E.S. synchronization profiling: readback boundaries dominate
+
+Two2100-frame diagnostic runs completed, exit0: `/tmp/vc3-es-queue-timing`
+and `/tmp/vc3-es-boundary-profile`. GPU timestamps enabled; these are not
+performance acceptance runs. Per-target reporting intervals overlapping flips
+1560..1920 in the first run sum to1121ms GPU batch work and2223ms host fence
+waits, with5713 batch submissions. Intervals report asynchronously per target
+and can straddle the requested flips, so these are not exact frame-window sums.
+
+Added shared optional `[Vulkan batch boundaries]` diagnostics identifying
+internal callers and readback kind (0 completion,1 depth,2 color). They only
+count/report with GPU timestamp profiling enabled. The second run's overlapping
+intervals show2341 color-read and2297 depth-read batch endings out of5718
+(~81%). draw_full accounts for484 (~8.5%; capacity/pipeline/geometry boundaries),
+standalone depth-transfer completion362, texture refresh232, snapshot2.
+Therefore increasing batch capacity alone cannot address the dominant waits.
+Next investigate consolidating color/depth publication where the same guest
+completion boundary needs both, preserving guest visibility and CPU-edit merge
+ordering. Do not suppress guest semaphore/query completion or skip readbacks
+without ownership proof. Readback buffers currently overlap color/depth data,
+so any combined path needs explicit independent staging and lifetime rules.
+
+Final diagnostics use explicit private-helper caller arguments (the profiled
+binary used equivalent internal macros; early setup callers were grouped under
+external_completion). Timestamp-enabled render-texture/coherence fixtures pass
+with validation and no VUID/SYNC errors: `/tmp/vc3-boundary-fixture.log`. Mac main
+and Android offscreen builds pass. No headset/device use. This commit adds
+evidence, not a new speedup; retained uninstrumented E.S. remains~42-45FPS.
