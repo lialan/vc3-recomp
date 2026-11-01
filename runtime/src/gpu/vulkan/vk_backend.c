@@ -513,6 +513,11 @@ static void flip(void) {
             (unsigned long long)stats.binds,(unsigned long long)stats.imports,
             (unsigned long long)stats.writebacks,(unsigned long long)stats.cpu_merges,(unsigned long long)stats.gpu_copies,
             (unsigned long long)stats.clear_skips);
+        fprintf(stderr,"[Vulkan depth switches] same-image disjoint/overlap=%llu/%llu different-image disjoint/overlap=%llu/%llu dirty=%llu/%llu/%llu/%llu\n",
+            (unsigned long long)stats.switches[0],(unsigned long long)stats.switches[1],
+            (unsigned long long)stats.switches[2],(unsigned long long)stats.switches[3],
+            (unsigned long long)stats.dirty_switches[0],(unsigned long long)stats.dirty_switches[1],
+            (unsigned long long)stats.dirty_switches[2],(unsigned long long)stats.dirty_switches[3]);
     }
     if(active->textures && profile && atoi(profile) && (active->frames==1 || active->frames%60==0)) {
         ChVkTextureCacheStats stats;ch_vk_texture_cache_stats(active->textures,&stats);

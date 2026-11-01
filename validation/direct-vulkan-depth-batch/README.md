@@ -878,3 +878,34 @@ multiple-owner cache, measure disjoint versus overlapping switches and same-targ
 image reuse. Any cache must flush aliases, preserve CPU component edits, release
 resized targets, and publish every dirty owner at guest completion boundaries.
 This targets avoiding work rather than merely overlapping the same readbacks.
+
+## Depth-switch eligibility evidence
+
+Added shared depth-residency switch counters: bit1 means different target image,
+bit0 overlapping guest depth storage; dirty switches counted separately.
+`/tmp/vc3-depth-switch-es` completed2100frames, exit0, no failure diagnostics.
+Between completed1560 and1920, different-image disjoint switches increased1440,
+including1203 dirty; different-image overlapping switches increased180,
+including179 dirty. Same-image switch counters did not increase in this window.
+Thus~87% of dirty owner switches in this E.S. window are disjoint and use
+different images: a bounded multiple-owner cache is a justified next experiment.
+Counters do not prove that every transfer can be removed: guest completion
+boundaries must still publish all dirty owners. No performance gain claimed.
+
+Implementation constraints for the next step: retain existing owner logic in
+a separate owner record; cache disjoint owners only while their physical target
+images remain intact. Reusing a target image or binding any overlapping guest
+range must publish/invalidate conflicting cached owners. Exact cached layout
+revisits may reuse GPU contents and observe CPU edits; same-layout transfers
+to another target retain existing GPU-copy semantics. Use both an entry limit
+and CPU staging-byte budget; default low-level behavior can remain single-owner
+for callers/tests needing that contract, while shared backend opts into caching.
+Flush, sample, color-alias checks and release/resize must account for every
+retained owner. Paired color publication can still cover the active owner while
+other dirty depth owners publish normally. Preserve partial CPU component edits,
+padding, full-clear supersession, write-watch ownership and failure cleanup.
+Single-owner and cached modes need exact guest-memory regression comparison,
+including eviction, aliases, target reuse, CPU edits and guest completion.
+
+Diagnostic render-texture/coherence fixture passed:
+`/tmp/vc3-depth-switch-fixture.log`; Mac main build passed. No headset/device use.

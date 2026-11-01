@@ -143,6 +143,13 @@ static VkResult bind_depth(ChVkDepthResident *d,ChVkTarget *target,
         d->target=target;d->surface=*surface;d->state=*state;d->layout=layout;
         d->stats.gpu_copies++;return VK_SUCCESS;
     }
+    if(d->target) {
+        uint64_t old_begin=d->state.zeta_va,old_end=old_begin+d->layout.span;
+        uint64_t new_begin=state->zeta_va,new_end=new_begin+layout.span;
+        unsigned kind=(d->target!=target?2u:0u)|((old_begin<new_end && new_begin<old_end)?1u:0u);
+        d->stats.switches[kind]++;
+        if(d->dirty) d->stats.dirty_switches[kind]++;
+    }
     r=ch_vk_depth_resident_release(d);
     if(r!=VK_SUCCESS) return r;
     size_t count=(size_t)surface->width*surface->height;
