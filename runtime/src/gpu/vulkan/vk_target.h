@@ -181,6 +181,13 @@ VkResult ch_vk_target_write_depth_stencil(ChVkTarget *target, const float *depth
  * on a compute-capable graphics queue. D32 pack rounds like the CPU oracle. */
 /* Read depth/stencil and color in one completed submission, using independent
  * staging. packed selects Z24/S8 guest words; otherwise depth is float[]. */
+/* Two-phase depth/optional-color readback. Begin borrows output buffers until
+ * end; no other operation on this target is allowed between them. Independent
+ * targets may be submitted on the same serialized queue before any end call.
+ * End waits for GPU completion before copying results or releasing resources. */
+VkResult ch_vk_target_read_depth_begin(ChVkTarget *,void *depth,uint8_t *stencil,
+    size_t pixels,int packed,void *rgba,size_t bytes);
+VkResult ch_vk_target_read_depth_end(ChVkTarget *);
 VkResult ch_vk_target_read_depth_color(ChVkTarget *,void *depth,uint8_t *stencil,
     size_t pixels,int packed,void *rgba,size_t color_bytes);
 /* Packed guest transfers require a compute-capable queue for D24 and D32.

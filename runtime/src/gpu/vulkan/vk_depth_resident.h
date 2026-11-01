@@ -7,7 +7,7 @@ typedef struct {uint64_t imports,writebacks,cpu_merges,binds,gpu_copies,clear_sk
     /* Index: bit1 different target image, bit0 overlapping guest storage. */
     uint64_t switches[4],dirty_switches[4];
     /* Guest transfer work only; row memcpy and CPU edit comparisons excluded. */
-    uint64_t cpu_layout_pixels,cpu_float_pixels;} ChVkDepthResidentStats;
+    uint64_t cpu_layout_pixels,cpu_float_pixels,queued_readbacks;} ChVkDepthResidentStats;
 VkResult ch_vk_depth_resident_create(void *guest,size_t bytes,ChVkDepthResident **);
 /* Set before binding a target. Host keeps tracker and hooks alive. */
 void ch_vk_depth_resident_write_watch(ChVkDepthResident *,ChGuestWriteWatch *);
@@ -39,6 +39,11 @@ VkResult ch_vk_depth_resident_dirty(ChVkDepthResident *,ChVkTarget *);
 /* Current GPU-written owner needing publication; borrowed, serialized access. */
 ChVkTarget *ch_vk_depth_resident_dirty_target(const ChVkDepthResident *);
 VkResult ch_vk_depth_resident_flush(ChVkDepthResident *);
+/* Queue disjoint owners before waiting, optionally pairing color snapshots.
+ * Buffers remain borrowed for this call only; guest depth is published before
+ * return. Every listed color target must be a dirty retained owner. */
+typedef struct {ChVkTarget *target;void *rgba;size_t bytes;} ChVkDepthColorRead;
+VkResult ch_vk_depth_resident_flush_many(ChVkDepthResident *,const ChVkDepthColorRead *,size_t count);
 /* Requires dirty_target != NULL. Also returns that target's RGBA bytes, without
  * publishing color guest storage; caller retains its own CPU-edit merge rules. */
 VkResult ch_vk_depth_resident_flush_color(ChVkDepthResident *,void *rgba,size_t bytes);

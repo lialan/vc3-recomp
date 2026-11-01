@@ -59,7 +59,12 @@ int ch_test_depth_fragment(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,ui
         const uint16_t idx[]={0,1,2};
         ChVkTargetResourceStats before,after;ch_vk_target_resource_stats(target,&before);
         REQUIRE(ch_vk_target_draw_state_read(target,NULL,v,3,idx,3,&state,rgba,n*4)==VK_SUCCESS);
-        REQUIRE(ch_vk_target_read_depth_color(target,output,NULL,n,1,rgba,n*4)==VK_SUCCESS);
+        memset(output,0x55,n*4);
+        REQUIRE(ch_vk_target_read_depth_begin(target,output,NULL,n,1,rgba,n*4)==VK_SUCCESS);
+        for(unsigned i=0;i<n;i++) REQUIRE(output[i]==0x55555555);
+        REQUIRE(ch_vk_target_read_depth_begin(target,output,NULL,n,1,rgba,n*4)==VK_ERROR_INITIALIZATION_FAILED);
+        REQUIRE(ch_vk_target_read_depth_end(target)==VK_SUCCESS);
+        REQUIRE(ch_vk_target_read_depth_end(target)==VK_ERROR_INITIALIZATION_FAILED);
         ch_vk_target_resource_stats(target,&after);REQUIRE(after.batch_submissions==before.batch_submissions+1);
         for(unsigned i=0;i<n;i++) {REQUIRE(output[i]==0x40000071);REQUIRE(rgba[i*4+(test>=4?2:0)]==255 && rgba[i*4+1]==0 && rgba[i*4+(test>=4?0:2)]==0);}
         ch_vk_target_destroy(target);target=NULL;free(input);input=NULL;free(output);output=NULL;free(depth);depth=NULL;free(stencil);stencil=NULL;free(rgba);rgba=NULL;
@@ -224,12 +229,20 @@ int ch_test_depth_fragment(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,ui
             REQUIRE(ch_vk_target_read_z24s8(target,(uint32_t *)depth,n)==VK_SUCCESS && !memcmp(depth,input,n*4));
             REQUIRE(ch_vk_depth_resident_target_dirty(owner,peer));
             REQUIRE(ch_vk_target_read_color(peer,rgba,n*4)==VK_SUCCESS);
+            if(layout) {
+                ChVkDepthColorRead color={peer,depth,n*4};
+                uint64_t queued=stats.queued_readbacks;
+                REQUIRE(ch_vk_depth_resident_flush_many(owner,&color,1)==VK_SUCCESS);
+                REQUIRE(!memcmp(rgba,depth,n*4));
+                ch_vk_depth_resident_stats(owner,&stats);REQUIRE(stats.queued_readbacks==queued+2);
+            } else {
             REQUIRE(ch_vk_depth_resident_flush_target_color(owner,peer,depth,n*4)==VK_SUCCESS);
             REQUIRE(!memcmp(rgba,depth,n*4) && !ch_vk_depth_resident_target_dirty(owner,peer));
             REQUIRE(ch_vk_depth_resident_target_dirty(owner,target));
             memcpy(&first,(char *)guest+4,4);REQUIRE(first==0x400000a3);
             REQUIRE(!memcmp((char *)guest+other.zeta_va,output,n*4));
             REQUIRE(ch_vk_depth_resident_flush(owner)==VK_SUCCESS);
+            }
             REQUIRE(!memcmp((char *)guest+4,input,n*4) && !memcmp((char *)guest+other.zeta_va,output,n*4));
             ch_vk_depth_resident_stats(owner,&stats);REQUIRE(stats.writebacks==writes+2);
             // An overlapping texture consumer must publish the inactive owner.

@@ -390,6 +390,7 @@ static void observe_target_color(struct Surface *f) {
 }
 static void flush(void) {
     uint64_t paired_serial[MAX_SURFACES]={0};uint32_t paired=0;
+    ChVkDepthColorRead colors[MAX_SURFACES];size_t color_count=0;
     if(active->profile.enabled) active->profile.flushes++;
     /* Pair every retained owner, not just the most recently bound target.
      * Reading other owners first would force a second color submission. */
@@ -398,14 +399,13 @@ static void flush(void) {
         if(!ch_vk_depth_resident_target_dirty(active->zeta,f->target)) continue;
         if(active->profile.enabled) active->profile.depth_flushes++;
         if(f->resident && f->color_dirty) {
-            VkResult r=ch_vk_depth_resident_flush_target_color(active->zeta,f->target,f->rgba,f->bytes);
-            if(r!=VK_SUCCESS) fatal(r,"paired resident completion");
+            colors[color_count++]=(ChVkDepthColorRead){f->target,f->rgba,f->bytes};
             paired|=1u<<i;paired_serial[i]=f->color_serial;
             if(active->profile.enabled) active->profile.paired_flushes++;
         }
     }
     if(active->zeta) {
-        VkResult r=ch_vk_depth_resident_flush(active->zeta);
+        VkResult r=ch_vk_depth_resident_flush_many(active->zeta,colors,color_count);
         if(r!=VK_SUCCESS) fatal(r,"resident depth completion");
     }
     /* Completion only publishes GPU-written storage. An idle target's RAM
@@ -631,10 +631,10 @@ static void flip(void) {
     }
     if(active->zeta && active->profile.enabled && (active->frames==1 || active->frames%60==0)) {
         ChVkDepthResidentStats stats;ch_vk_depth_resident_stats(active->zeta,&stats);
-        fprintf(stderr,"[Vulkan depth residency] binds=%llu imports=%llu writebacks=%llu CPU merges=%llu GPU copies=%llu clear skips=%llu clean reuses=%llu\n",
+        fprintf(stderr,"[Vulkan depth residency] binds=%llu imports=%llu writebacks=%llu CPU merges=%llu GPU copies=%llu clear skips=%llu clean reuses=%llu queued readbacks=%llu\n",
             (unsigned long long)stats.binds,(unsigned long long)stats.imports,
             (unsigned long long)stats.writebacks,(unsigned long long)stats.cpu_merges,(unsigned long long)stats.gpu_copies,
-            (unsigned long long)stats.clear_skips,(unsigned long long)stats.clean_reuses);
+            (unsigned long long)stats.clear_skips,(unsigned long long)stats.clean_reuses,(unsigned long long)stats.queued_readbacks);
         fprintf(stderr,"[Vulkan CPU resident depth] layout_pixels=%llu float_pixels=%llu (cumulative)\n",
             (unsigned long long)stats.cpu_layout_pixels,(unsigned long long)stats.cpu_float_pixels);
         fprintf(stderr,"[Vulkan depth switches] same-image disjoint/overlap=%llu/%llu different-image disjoint/overlap=%llu/%llu dirty=%llu/%llu/%llu/%llu\n",

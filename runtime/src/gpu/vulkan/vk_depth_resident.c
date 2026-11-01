@@ -119,15 +119,7 @@ static VkResult single_packed(DepthImage *d,int enabled) {
 static ChVkTarget *single_dirty_target(const DepthImage *d) {
     return d && d->dirty?d->target:NULL;
 }
-static VkResult flush_depth(DepthImage *d,void *rgba,size_t bytes) {
-    if(!d) return VK_ERROR_INITIALIZATION_FAILED;
-    /* With no GPU writes, guest RAM already is authoritative. The next bind
-     * observes CPU edits before GPU use; release may discard the idle image. */
-    if(!d->target || !d->dirty) return VK_SUCCESS;
-    VkResult r=observe(d);
-    if(r!=VK_SUCCESS) return r;
-    r=rgba?ch_vk_target_read_depth_color(d->target,d->packed?(void *)d->words:(void *)d->depth,
-        d->stencil,(size_t)d->surface.width*d->surface.height,d->packed,rgba,bytes):read_target(d);
+static VkResult publish_depth(DepthImage *d,VkResult r) {
     ch_guest_write_watch_begin(d->watch,storage(d),(size_t)d->layout.span);
     if(r==VK_SUCCESS && d->morton) memcpy(storage(d),d->words,(size_t)d->surface.width*d->surface.height*4);
     else if(r==VK_SUCCESS) r=d->packed?ch_vk_guest_z24s8_store(&d->surface,&d->state,d->guest,d->bytes,d->words):
@@ -141,6 +133,17 @@ static VkResult flush_depth(DepthImage *d,void *rgba,size_t bytes) {
     ch_guest_write_watch_end(d->watch,storage(d),(size_t)d->layout.span);
     if(r!=VK_SUCCESS) return r;
     d->dirty=0;d->stats.writebacks++;return VK_SUCCESS;
+}
+static VkResult flush_depth(DepthImage *d,void *rgba,size_t bytes) {
+    if(!d) return VK_ERROR_INITIALIZATION_FAILED;
+    /* With no GPU writes, guest RAM already is authoritative. The next bind
+     * observes CPU edits before GPU use; release may discard the idle image. */
+    if(!d->target || !d->dirty) return VK_SUCCESS;
+    VkResult r=observe(d);
+    if(r!=VK_SUCCESS) return r;
+    r=rgba?ch_vk_target_read_depth_color(d->target,d->packed?(void *)d->words:(void *)d->depth,
+        d->stencil,(size_t)d->surface.width*d->surface.height,d->packed,rgba,bytes):read_target(d);
+    return publish_depth(d,r);
 }
 static VkResult single_flush(DepthImage *d) {return flush_depth(d,NULL,0);}
 static VkResult single_flush_color(DepthImage *d,void *rgba,size_t bytes) {
@@ -374,6 +377,40 @@ VkResult ch_vk_depth_resident_flush(ChVkDepthResident *d) {
     for(unsigned i=0;i<4;i++) if(d->image[i]) {VkResult r=single_flush(d->image[i]);if(r!=VK_SUCCESS)return r;}
     return VK_SUCCESS;
 }
+VkResult ch_vk_depth_resident_flush_many(ChVkDepthResident *d,const ChVkDepthColorRead *colors,size_t count) {
+    if(!d || (count && !colors)) return VK_ERROR_INITIALIZATION_FAILED;
+    for(size_t j=0;j<count;j++) {
+        if(!colors[j].rgba || !ch_vk_depth_resident_target_dirty(d,colors[j].target)) return VK_ERROR_INITIALIZATION_FAILED;
+        for(size_t k=0;k<j;k++) if(colors[k].target==colors[j].target) return VK_ERROR_INITIALIZATION_FAILED;
+    }
+    /* Retained owners have disjoint guest depth ranges. Observe all edits
+     * before submitting: observation may itself import/finish a target. Color
+     * buffers are snapshots only; caller publishes them after CPU coherence. */
+    for(unsigned i=0;i<4;i++) if(d->image[i] && d->image[i]->target && d->image[i]->dirty) {
+        VkResult r=observe(d->image[i]);if(r!=VK_SUCCESS) return r;
+    }
+    unsigned started=0;VkResult result=VK_SUCCESS;
+    for(unsigned i=0;i<4;i++) {
+        DepthImage *image=d->image[i];
+        if(!image || !image->target || !image->dirty) continue;
+        void *rgba=NULL;size_t bytes=0;
+        for(size_t j=0;j<count;j++) if(colors[j].target==image->target) {
+            rgba=colors[j].rgba;bytes=colors[j].bytes;break;
+        }
+        result=ch_vk_target_read_depth_begin(image->target,image->packed?(void *)image->words:(void *)image->depth,
+            image->stencil,(size_t)image->surface.width*image->surface.height,image->packed,rgba,bytes);
+        if(result!=VK_SUCCESS) break;
+        started|=1u<<i;image->stats.queued_readbacks++;
+    }
+    /* Drain every submitted request even if a subsequent begin failed. No
+     * caller can release staging or acknowledge guest completion early. */
+    for(unsigned i=0;i<4;i++) if(started&(1u<<i)) {
+        DepthImage *image=d->image[i];VkResult r=ch_vk_target_read_depth_end(image->target);
+        if(r==VK_SUCCESS) r=publish_depth(image,r);
+        if(result==VK_SUCCESS) result=r;
+    }
+    return result;
+}
 int ch_vk_depth_resident_target_dirty(const ChVkDepthResident *d,ChVkTarget *target) {
     if(d) for(unsigned i=0;i<4;i++) if(d->image[i] && d->image[i]->target==target) return d->image[i]->dirty;
     return 0;
@@ -421,7 +458,7 @@ void ch_vk_depth_resident_stats(const ChVkDepthResident *d,ChVkDepthResidentStat
     for(unsigned i=0;i<4;i++) if(d->image[i]) {
         ChVkDepthResidentStats s;single_stats(d->image[i],&s);
 #define SUM(field) out->field+=s.field
-        SUM(imports);SUM(writebacks);SUM(cpu_merges);SUM(binds);SUM(gpu_copies);SUM(clear_skips);SUM(clean_reuses);SUM(cpu_layout_pixels);SUM(cpu_float_pixels);
+        SUM(imports);SUM(writebacks);SUM(cpu_merges);SUM(binds);SUM(gpu_copies);SUM(clear_skips);SUM(clean_reuses);SUM(cpu_layout_pixels);SUM(cpu_float_pixels);SUM(queued_readbacks);
 #undef SUM
         for(unsigned j=0;j<4;j++){out->switches[j]+=s.switches[j];out->dirty_switches[j]+=s.dirty_switches[j];}
     }

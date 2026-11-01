@@ -1,0 +1,60 @@
+{
+  "control": {
+    "combat": {
+      "frames": 234,
+      "interval_ms": 16.695,
+      "completion_ms": 4.812,
+      "completion_cpu_ms": 1.573,
+      "batch_wait_ms": 5.055,
+      "batch_gpu_ms": 3.013,
+      "draw_cpu_ms": 2.064
+    },
+    "activation": {
+      "frames": 115,
+      "interval_ms": 16.476,
+      "completion_ms": 4.917,
+      "completion_cpu_ms": 1.802,
+      "batch_wait_ms": 6.052,
+      "batch_gpu_ms": 3.521,
+      "draw_cpu_ms": 3.372
+    },
+    "held": {
+      "frames": 239,
+      "interval_ms": 16.65,
+      "completion_ms": 5.032,
+      "completion_cpu_ms": 1.82,
+      "batch_wait_ms": 5.798,
+      "batch_gpu_ms": 3.351,
+      "draw_cpu_ms": 3.223
+    }
+  },
+  "candidate": {
+    "combat": {
+      "frames": 234,
+      "interval_ms": 16.71,
+      "completion_ms": 4.442,
+      "completion_cpu_ms": 1.541,
+      "batch_wait_ms": 4.762,
+      "batch_gpu_ms": 3.158,
+      "draw_cpu_ms": 2.107
+    },
+    "activation": {
+      "frames": 115,
+      "interval_ms": 16.449,
+      "completion_ms": 4.465,
+      "completion_cpu_ms": 1.812,
+      "batch_wait_ms": 5.729,
+      "batch_gpu_ms": 3.651,
+      "draw_cpu_ms": 3.394
+    },
+    "held": {
+      "frames": 239,
+      "interval_ms": 16.646,
+      "completion_ms": 4.597,
+      "completion_cpu_ms": 1.808,
+      "batch_wait_ms": 5.598,
+      "batch_gpu_ms": 3.584,
+      "draw_cpu_ms": 3.271
+    }
+  }
+}
