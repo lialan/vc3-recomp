@@ -3,7 +3,47 @@
 #include "vk_backend.h"
 #include "vk_fixed.h"
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
+static int raw_snapshots(void) {
+    ChVkFixedScratch scratch={0};ChVkFixedGeometry g={0};int failed=1;
+    unsigned char source[16][8192];uint32_t program[16][4]={{0}};float constants[192][4]={{0}};
+    uint16_t indices[6];const unsigned types[]={0,1,2,4,5,6},counts[]={1,4,17,129,4};
+#define SNAP(x) do {if(!(x)){fprintf(stderr,"raw snapshot line%d: %s\n",__LINE__,#x);goto done;}}while(0)
+    for(unsigned a=0;a<16;a++) {program[a][1]=a<<9;program[a][2]=2u<<26;program[a][3]=a==15;
+        for(unsigned i=0;i<sizeof source[a];i++)source[a][i]=(unsigned char)(i*7+a*13);}
+    Nv2aRawGeometry raw={.kind=NV2A_RAW_PROGRAM,.program=program,.program_len=16,.constants=constants,.min_index=37};
+    for(unsigned type=0;type<6;type++) for(unsigned size=1;size<=4;size++) for(unsigned trial=0;trial<5;trial++) {
+        unsigned count=counts[trial],element=types[type]==0 || types[type]==6?4:types[type]==1 || types[type]==5?size*2:types[type]==4?size:size*4;
+        raw.max_index=raw.min_index+count-1;raw.prim=5+trial%3;raw.indices=indices;raw.index_count=raw.prim==5?6:4;
+        for(unsigned i=0;i<6;i++)indices[i]=i%count;
+        for(unsigned a=0;a<16;a++) raw.attr[a]=(Nv2aAttrib){.data=a==15?NULL:source[a],.type=types[type],.size=size,
+            .stride=trial==0?0:element+3,.bytes=(count-1)*(trial==0?0:element+3)+element,.value={3,4,5,6}};
+        SNAP(ch_vk_raw_prepare_reuse(&raw,&g,&scratch)==VK_SUCCESS && g.borrowed==3 && g.vertex_count==count);
+        for(unsigned a=0;a<16;a++) for(unsigned i=0;i<count;i++) {
+            float expected[4]={0,0,0,1};
+            if(a==15)memcpy(expected,raw.attr[a].value,sizeof expected);
+            else memcpy(expected,source[a]+i*raw.attr[a].stride,element);
+            SNAP(!memcmp((unsigned char *)g.vertices+i*256+a*16,expected,16));
+            SNAP(g.params.attribute_format[a]==(a==15?0:(size<<8)|(types[type]+1)));
+        }
+        for(unsigned i=0;i<g.index_count;i++) {
+            unsigned tri=i/3,lane=i%3;
+            unsigned at=raw.prim==5?i:raw.prim==7?(lane==0?0:tri+lane):lane==0?tri+(tri&1):lane==1?tri+((tri&1)^1):tri+2;
+            SNAP(g.indices[i]==indices[at]);
+        }
+        ch_vk_fixed_release(&g);
+        // Rejection after a valid prepare must not free or poison retained storage.
+        size_t bytes=raw.attr[0].bytes;raw.attr[0].bytes=0;
+        SNAP(ch_vk_raw_prepare_reuse(&raw,&g,&scratch)==VK_ERROR_FEATURE_NOT_PRESENT && !g.vertices && !g.indices);
+        raw.attr[0].bytes=bytes;
+    }
+    SNAP(scratch.vertex_bytes<=(16u<<20) && scratch.index_bytes<=(1u<<20));
+    puts("PASS: reusable encoded raw snapshots across all formats/sizes, constant and zero-stride streams, growth/shrink, topology and invalid-span recovery");failed=0;
+done:
+    ch_vk_fixed_release(&g);ch_vk_fixed_scratch_release(&scratch);return failed;
+#undef SNAP
+}
 static int decode(const Nv2aTexture *t,uint32_t *p) {(void)t;(void)p;return 0;}
 static int registered_fixed(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,uint32_t family) {
     unsigned char guest[4096]={0};ChVkBackend *backend=NULL;int failed=1;
@@ -48,6 +88,7 @@ done:
     ch_vk_backend_destroy(backend);return failed;
 }
 int ch_test_program_render(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,uint32_t family) {
+    if(raw_snapshots()) return 1;
     if(registered_fixed(gpu,device,queue,family)) return 1;
     unsigned char guest[4096]={0};ChVkBackend *backend=NULL;int failed=1;
 #define REQUIRE(x) do {if(!(x)) {fprintf(stderr,"program render line %d: %s\n",__LINE__,#x);goto done;}} while(0)

@@ -27,7 +27,13 @@ typedef struct {
     ChVkFixedVertex *vertices;
     uint16_t *indices;
     uint32_t vertex_count,index_count;
+    unsigned borrowed; /* scratch-owned vertices/index bits; release still required */
 } ChVkFixedGeometry;
+/* Serialized scratch storage; no prepared geometry may outlive its next use.
+ * Inputs must not alias this storage. Retains at most16MiB vertices+1MiB indices. */
+typedef struct {void *vertices,*indices;size_t vertex_bytes,index_bytes;} ChVkFixedScratch;
+VkResult ch_vk_raw_prepare_reuse(const Nv2aRawGeometry *,ChVkFixedGeometry *,ChVkFixedScratch *);
+void ch_vk_fixed_scratch_release(ChVkFixedScratch *);
 /* Only copy encoded attributes and expand triangle topology. All fixed transforms remain
  * in the shared GPU shader. Unsupported raw kinds/check-output requests return
  * FEATURE_NOT_PRESENT before any GPU work so the executor can use its CPU path. */

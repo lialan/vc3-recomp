@@ -14,7 +14,7 @@
 #define MAX_SURFACES 32
 struct Surface { Nv2aSurface guest; ChVkGuestLayout layout; uint32_t zeta; Nv2aRenderState state; float *depth; uint8_t *stencil; ChVkTarget *target; unsigned char *rgba,*observed,*cpu,*raw; ChGuestWriteRange *write_range; size_t raw_span; int observed_valid,resident,color_bgra,color_fallback_reported,color_dirty,native_z24,quantized_z24; size_t bytes; uint64_t color_serial; };
 typedef struct {uint64_t pipeline_ns,batch_wait_ns,batch_gpu_ns,upload_wait_ns;} FrameCosts;
-struct ChVkBackend { struct {int enabled;uint64_t draw_cpu_ns,clear_cpu_ns,flip_cpu_ns,trim_cpu_ns;uint64_t draw_us,clear_us,flip_us,trim_us,surface_us,coherence_us,imports_us,raster_us,store_us,texture_uploads;FrameCosts retired,previous;} costs; VkPipelineCache pipeline_cache; struct {int enabled;uint64_t start,n,surface,coherence,imports,draw,store,no_color,flushes,depth_flushes,paired_flushes;} profile; struct {int enabled;uint64_t previous,us[120];unsigned count;} frame_profile; ChVkBackendConfig host; ChVkTextureCache *textures; ChVkDepthResident *zeta; uint64_t frames,raw_draws,raw_programs,raw_program_vertices,raw_declined,color_clock,cpu_batches,cpu_vertices,cpu_texels,cpu_texture_us,cpu_color_pixels,cpu_color_us,cpu_depth_pixels; struct Surface surfaces[MAX_SURFACES]; unsigned count; };
+struct ChVkBackend { ChVkFixedScratch raw_scratch; struct {int enabled;uint64_t draw_cpu_ns,clear_cpu_ns,flip_cpu_ns,trim_cpu_ns;uint64_t draw_us,clear_us,flip_us,trim_us,surface_us,coherence_us,imports_us,raster_us,store_us,texture_uploads;FrameCosts retired,previous;} costs; VkPipelineCache pipeline_cache; struct {int enabled;uint64_t start,n,surface,coherence,imports,draw,store,no_color,flushes,depth_flushes,paired_flushes;} profile; struct {int enabled;uint64_t previous,us[120];unsigned count;} frame_profile; ChVkBackendConfig host; ChVkTextureCache *textures; ChVkDepthResident *zeta; uint64_t frames,raw_draws,raw_programs,raw_program_vertices,raw_declined,color_clock,cpu_batches,cpu_vertices,cpu_texels,cpu_texture_us,cpu_color_pixels,cpu_color_us,cpu_depth_pixels; struct Surface surfaces[MAX_SURFACES]; unsigned count; };
 static ChVkBackend *active;
 static void flush_color(struct Surface *);
 static void observe_guest_colors(void);
@@ -711,8 +711,7 @@ static int locked_draw_raw(const Nv2aSurface *s,const Nv2aBatch *b) {
     /* Snapshot encoded attributes and topology without holding the shared XR
      * queue mutex. Vertex shaders unpack the borrowed guest formats. */
     ChVkFixedGeometry fixed;
-    VkResult r=b->raw && b->raw->kind==NV2A_RAW_PROGRAM?
-        ch_vk_program_prepare(b->raw,&fixed):ch_vk_fixed_prepare(b->raw,&fixed);
+    VkResult r=ch_vk_raw_prepare_reuse(b->raw,&fixed,&active->raw_scratch);
     if(r==VK_ERROR_FEATURE_NOT_PRESENT) {active->raw_declined++;return 0;}
     if(r!=VK_SUCCESS) fatal(r,"raw fixed attribute upload");
     queue_lock(active);draw_batch(s,b,&fixed);
@@ -787,6 +786,7 @@ void ch_vk_backend_destroy(ChVkBackend *b) {
     for(unsigned i=0;i<b->count;i++) release_surface(&b->surfaces[i]);
     if(b->pipeline_cache && !b->host.pipeline_cache) vkDestroyPipelineCache(b->host.device,b->pipeline_cache,NULL);
     ch_vk_texture_cache_destroy(b->textures);
+    ch_vk_fixed_scratch_release(&b->raw_scratch);
     ch_vk_depth_resident_destroy(b->zeta);
     queue_unlock(b);
     free(b);
