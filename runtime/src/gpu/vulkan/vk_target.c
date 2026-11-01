@@ -390,7 +390,8 @@ static void record_depth_transfer(ChVkTarget *t,int upload) {
         vkCmdPipelineBarrier(t->command,VK_PIPELINE_STAGE_TRANSFER_BIT,VK_PIPELINE_STAGE_HOST_BIT,0,0,NULL,1,&host,0,NULL);
     }
 }
-static VkResult finish_batch(ChVkTarget *t,int read_depth) {
+/* readback: 0 none, 1 depth/stencil, 2 color. Staging storage is shared. */
+static VkResult finish_batch(ChVkTarget *t,int readback) {
     if(!t || t->failed) return VK_ERROR_INITIALIZATION_FAILED;
     if(!t->pending) return VK_SUCCESS;
     VkResult result;
@@ -402,7 +403,17 @@ static VkResult finish_batch(ChVkTarget *t,int read_depth) {
         .srcQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED,.dstQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED,
         .image=t->image,.subresourceRange={VK_IMAGE_ASPECT_COLOR_BIT,0,1,0,1}};
     vkCmdPipelineBarrier(t->command,VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,VK_PIPELINE_STAGE_TRANSFER_BIT,0,0,NULL,0,NULL,1,&barrier);
-    if(read_depth) record_depth_transfer(t,0);
+    if(readback==1) record_depth_transfer(t,0);
+    if(readback==2) {
+        VkBufferImageCopy copy={.imageSubresource={VK_IMAGE_ASPECT_COLOR_BIT,0,0,1},
+            .imageExtent={t->width,t->height,1}};
+        vkCmdCopyImageToBuffer(t->command,t->image,VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,t->read,1,&copy);
+        VkBufferMemoryBarrier host={.sType=VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
+            .srcAccessMask=VK_ACCESS_TRANSFER_WRITE_BIT,.dstAccessMask=VK_ACCESS_HOST_READ_BIT,
+            .srcQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED,.dstQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED,
+            .buffer=t->read,.size=VK_WHOLE_SIZE};
+        vkCmdPipelineBarrier(t->command,VK_PIPELINE_STAGE_TRANSFER_BIT,VK_PIPELINE_STAGE_HOST_BIT,0,0,NULL,1,&host,0,NULL);
+    }
     if(t->timing) vkCmdWriteTimestamp(t->command,VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,t->timing,1);
     TRY(vkEndCommandBuffer(t->command));
     VkSubmitInfo submit={.sType=VK_STRUCTURE_TYPE_SUBMIT_INFO,.commandBufferCount=1,.pCommandBuffers=&t->command};
@@ -418,7 +429,8 @@ static VkResult finish_batch(ChVkTarget *t,int read_depth) {
         t->timing_stats.batch_draws+=t->pending;t->timing_stats.batch_submissions++;
     }
     t->layout=VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;t->resource_stats.batch_submissions++;
-    if(read_depth) t->resource_stats.combined_depth_readbacks++;
+    if(readback==1) t->resource_stats.combined_depth_readbacks++;
+    if(readback==2) t->resource_stats.combined_color_readbacks++;
     t->pending=0;t->geometry_used=0;
     for(unsigned i=0;i<PIPELINE_SLOTS;i++) {t->pipelines[i].set_used=0;t->pipelines[i].pending=0;}
     uint64_t retire_start=t->timing?time_ns():0;
@@ -686,6 +698,22 @@ void ch_vk_target_defer_color_readback(ChVkTarget *t,int enabled) {
 }
 VkResult ch_vk_target_read_color(ChVkTarget *t,void *pixels,VkDeviceSize bytes) {
     if(!t) return VK_ERROR_INITIALIZATION_FAILED;
+    if(t->pending) {
+        if(!pixels || bytes<t->bytes) return VK_ERROR_INITIALIZATION_FAILED;
+        VkResult r=finish_batch(t,2);
+        if(r!=VK_SUCCESS) return r;
+        void *mapped=NULL;
+        r=vkMapMemory(t->device,t->read_mem,0,VK_WHOLE_SIZE,0,&mapped);
+        if(r==VK_SUCCESS) {
+            VkMappedMemoryRange invalidate={.sType=VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE,
+                .memory=t->read_mem,.size=VK_WHOLE_SIZE};
+            r=vkInvalidateMappedMemoryRanges(t->device,1,&invalidate);
+            if(r==VK_SUCCESS) memcpy(pixels,mapped,(size_t)t->bytes);
+            vkUnmapMemory(t->device,t->read_mem);
+        }
+        if(r!=VK_SUCCESS) t->failed=1;
+        return r;
+    }
     int deferred=t->defer_color_readback;
     t->defer_color_readback=0;
     VkResult result=render_read(t,NULL,0,1,0,VK_NULL_HANDLE,0,0,pixels,bytes);

@@ -260,9 +260,12 @@ static void observe_target_color(struct Surface *f) {
     else observe_guest_color(f);
 }
 static void flush(void) {
-    for(unsigned i=0;i<active->count;i++) {
-        VkResult r=ch_vk_target_finish(active->surfaces[i].target);
-        if(r!=VK_SUCCESS) fatal(r,"pending guest command completion");
+    /* Let resident depth append its readback to pending draws. Finishing every
+     * target first would force another submission/fence for the same data.
+     * Color/depth guest storage aliases are rejected at bind time. */
+    if(active->zeta) {
+        VkResult r=ch_vk_depth_resident_flush(active->zeta);
+        if(r!=VK_SUCCESS) fatal(r,"resident depth completion");
     }
     /* Completion only publishes GPU-written storage. An idle target's RAM
      * already contains its authoritative CPU edits; observe those when the
@@ -272,9 +275,11 @@ static void flush(void) {
     else for(unsigned i=0;i<active->count;i++)
         if(active->surfaces[i].color_dirty) observe_guest_color(&active->surfaces[i]);
     for(unsigned i=0;i<active->count;i++) flush_color(&active->surfaces[i]);
-    if(active->zeta) {
-        VkResult r=ch_vk_depth_resident_flush(active->zeta);
-        if(r!=VK_SUCCESS) fatal(r,"resident depth completion");
+    /* Draws with no dirty resident storage still own resources and must finish
+     * before the executor publishes the guest semaphore/query boundary. */
+    for(unsigned i=0;i<active->count;i++) {
+        VkResult r=ch_vk_target_finish(active->surfaces[i].target);
+        if(r!=VK_SUCCESS) fatal(r,"pending guest command completion");
     }
 }
 static int gpu_sample_matches(const struct Surface *f,const Nv2aTexture *tx) {
@@ -459,9 +464,9 @@ static void flip(void) {
             (unsigned long long)active->raw_draws,(unsigned long long)active->raw_declined);
     const char *profile=getenv("CHIHIRO_VULKAN_PROFILE");
     if(active->profile.enabled && (active->frames==1 || active->frames%60==0)) {
-        uint64_t draws=0,submits=0,depth_reads=0;
-        for(unsigned i=0;i<active->count;i++) {ChVkTargetResourceStats stats;ch_vk_target_resource_stats(active->surfaces[i].target,&stats);draws+=stats.batch_draws;submits+=stats.batch_submissions;depth_reads+=stats.combined_depth_readbacks;}
-        fprintf(stderr,"[Vulkan command batches] live targets: draws=%llu submissions=%llu combined_depth_reads=%llu\n",(unsigned long long)draws,(unsigned long long)submits,(unsigned long long)depth_reads);
+        uint64_t draws=0,submits=0,depth_reads=0,color_reads=0;
+        for(unsigned i=0;i<active->count;i++) {ChVkTargetResourceStats stats;ch_vk_target_resource_stats(active->surfaces[i].target,&stats);draws+=stats.batch_draws;submits+=stats.batch_submissions;depth_reads+=stats.combined_depth_readbacks;color_reads+=stats.combined_color_readbacks;}
+        fprintf(stderr,"[Vulkan command batches] live targets: draws=%llu submissions=%llu combined_depth_reads=%llu combined_color_reads=%llu\n",(unsigned long long)draws,(unsigned long long)submits,(unsigned long long)depth_reads,(unsigned long long)color_reads);
     }
     if(active->zeta && active->profile.enabled && (active->frames==1 || active->frames%60==0)) {
         ChVkDepthResidentStats stats;ch_vk_depth_resident_stats(active->zeta,&stats);

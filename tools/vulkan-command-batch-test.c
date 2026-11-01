@@ -44,16 +44,23 @@ int ch_test_command_batches(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,u
             if(batched) REQUIRE(ch_vk_target_pending(t)>0 && ch_vk_target_completion_fence(t)==VK_NULL_HANDLE);
         }
         for(unsigned i=0;i<sizeof pixels;i++) REQUIRE(pixels[i]==0xa5);
-        REQUIRE(ch_vk_target_finish(t)==VK_SUCCESS && !ch_vk_target_pending(t));
+        if(batched) {
+            uint32_t pending=ch_vk_target_pending(t);
+            REQUIRE(ch_vk_target_read_color(t,NULL,sizeof pixels)==VK_ERROR_INITIALIZATION_FAILED);
+            REQUIRE(ch_vk_target_read_color(t,pixels,sizeof pixels-1)==VK_ERROR_INITIALIZATION_FAILED);
+            REQUIRE(ch_vk_target_pending(t)==pending);
+        }
+        REQUIRE(ch_vk_target_read_color(t,pixels,sizeof pixels)==VK_SUCCESS && !ch_vk_target_pending(t));
         double elapsed=now_ms()-start;
         REQUIRE(vkGetFenceStatus(device,ch_vk_target_completion_fence(t))==VK_SUCCESS);
         ChVkTargetResourceStats stats;ch_vk_target_resource_stats(t,&stats);
         REQUIRE(stats.batch_draws-before.batch_draws==(batched?514u:0u) && stats.batch_submissions-before.batch_submissions==(batched?submissions:0u));
+        REQUIRE(stats.combined_color_readbacks-before.combined_color_readbacks==(batched?1u:0u));
         ChVkTargetTimingStats timing;ch_vk_target_timing_stats(t,&timing);
         if(timing.available) {
             REQUIRE(timing.batch_submissions-timing_before.batch_submissions==(batched?submissions:0u));
             REQUIRE(timing.batch_draws-timing_before.batch_draws==(batched?514u:0u));
-            REQUIRE(timing.sync_render_submissions-timing_before.sync_render_submissions==(batched?0u:514u));
+            REQUIRE(timing.sync_render_submissions-timing_before.sync_render_submissions==(batched?0u:515u));
             if(batched) REQUIRE(timing.batch_record_ns>timing_before.batch_record_ns && timing.batch_finish_ns>timing_before.batch_finish_ns &&
                 timing.batch_wait_ns<=timing.batch_finish_ns && timing.batch_retire_ns<=timing.batch_finish_ns);
             puts("PASS: completed GPU timestamp samples cover every synchronous draw or command batch with exact submission/draw counts and host phase totals");

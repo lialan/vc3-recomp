@@ -186,3 +186,25 @@ add service/coins/start/fire. Frame 5520 shows a continue screen with 4 credits;
 the run includes gameplay and deaths, not sustained controlled combat. A CPU
 sample is saved in cpu-late.txt. Later scene costs and pacing remain poor;
 optimizations are not performance acceptance. No headset was accessed.
+
+## Combine completion readbacks
+
+The shared backend now flushes dirty resident depth before its final target
+completion loop, allowing the depth copy to join pending draws. Color readback
+also appends its transfer/host barrier to pending draws and waits on the same
+real fence, rather than finishing and starting a second submission. The final
+loop still drains targets without dirty resident storage. Invalid color output
+buffers are rejected before consuming pending draws. Combined color/depth copies
+use the shared staging buffer separately, never concurrently.
+
+Exact-pixel command/lifetime tests at limits 1/64/256 and exact-guest-memory
+backend scenarios pass with validation and sync validation requested; no VUID or
+SYNC diagnostics in /tmp/vc3-combined-{color,flush}-validation.log. Mac main and
+Android offscreen builds pass. Real-game performance remains to be measured.
+
+The unchanged immutable batch256 binary repeat (/tmp/vc3-batch256-repeat)
+completed 2400 frames. Frame 1200 matches the previous extended run exactly.
+Frames 1680/2160 differ even without a code change: respectively 148603/271431
+pixels, mean absolute channel differences 0.603/6.003. This establishes run-to-run
+variation, not its cause or whole-game correctness. Single-frame comparisons
+later in gameplay cannot alone attribute differences to an optimization.
