@@ -186,6 +186,7 @@ static VkResult attach(ChVkBackendConfig config)
     config.depth_float_transfers=packed && !strcmp(packed,"0");
     fprintf(stderr,"[Vulkan] resident color targets: %s\n",config.resident_color?"enabled":"disabled");
     fprintf(stderr,"[Vulkan] immutable GPU render-target sampling: %s\n",config.sample_render_targets?"enabled":"disabled");
+    fprintf(stderr,"[Vulkan] exact quantized D32 depth residency: %s\n",config.quantized_depth?"enabled":"disabled");
     fprintf(stderr,"[Vulkan] resident D24 depth targets: %s\n",config.resident_depth?"enabled":"disabled");
     config.present_rgba=present;
     if(!config.fatal) config.fatal=fatal;

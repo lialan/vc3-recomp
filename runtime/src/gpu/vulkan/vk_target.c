@@ -503,7 +503,8 @@ static VkResult record_batch(ChVkTarget *t,VkBuffer geometry,VkDeviceSize index_
     vkCmdBindVertexBuffers(t->command,0,1,&geometry,&vertex_offset);
     vkCmdBindIndexBuffer(t->command,geometry,index_offset,VK_INDEX_TYPE_UINT16);
     vkCmdDrawIndexed(t->command,index_count,1,0,0,0);
-    if(t->quantized_depth) {
+    if(t->quantized_depth && t->active_pipeline->key.depth.depthTestEnable &&
+       t->active_pipeline->key.depth.depthWriteEnable) {
         vkCmdEndRenderPass(t->command);
         ch_vk_depth_quant_record(t->depth_quant,t->command,t->depth,t->width,t->height);
         VkMemoryBarrier color={.sType=VK_STRUCTURE_TYPE_MEMORY_BARRIER,.srcAccessMask=VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
@@ -603,7 +604,9 @@ static VkResult render_read(ChVkTarget *t, const float rgba[4], uint32_t clear_f
         if(t->count_requested) vkCmdEndQuery(t->command,t->queries,0);
         vkCmdEndRenderPass(t->command);
     }
-    if(t->quantized_depth) ch_vk_depth_quant_record(t->depth_quant,t->command,t->depth,t->width,t->height);
+    if(t->quantized_depth && ((clear_flags&2) || (geometry &&
+       t->active_pipeline->key.depth.depthTestEnable && t->active_pipeline->key.depth.depthWriteEnable)))
+        ch_vk_depth_quant_record(t->depth_quant,t->command,t->depth,t->width,t->height);
     barrier.srcAccessMask=geometry?VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT:VK_ACCESS_TRANSFER_WRITE_BIT;
     barrier.dstAccessMask=VK_ACCESS_TRANSFER_READ_BIT;
     barrier.oldLayout=geometry?VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL:VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
