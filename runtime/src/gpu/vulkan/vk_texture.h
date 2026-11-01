@@ -1,6 +1,7 @@
 #ifndef CHIHIRO_VK_TEXTURE_H
 #define CHIHIRO_VK_TEXTURE_H
 #include <vulkan/vulkan.h>
+#include <stddef.h>
 /* Texture immutable throughout every sampling lease, optionally with a mip chain. Host owns
  * device/queue; calls are serialized.
  * CPU Nv2a decoder output is native uint32 ARGB, not byte-order-dependent RGBA.
@@ -20,6 +21,11 @@ VkResult ch_vk_texture_upload_mips(VkPhysicalDevice,VkDevice,VkQueue,uint32_t fa
  * sampling leases. cube requests six square planes and levels==1. */
 VkResult ch_vk_texture_upload_queued(VkPhysicalDevice,VkDevice,VkQueue,uint32_t family,
     uint32_t width,uint32_t height,const uint32_t *argb,uint32_t levels,int cube,ChVkTexture **out);
+/* Replace all base-level pixels and regenerate existing mips, preserving the
+ * allocation and sampler. Caller must complete ALL prior sampling leases.
+ * Waits for any previous upload before reusing staging; queued follows the
+ * same-queue contract above. pixels counts all six faces for cube images. */
+VkResult ch_vk_texture_replace_argb(ChVkTexture *,const uint32_t *argb,size_t pixels,int queued);
 /* Immutable RGBA8 snapshot of a completed, same-device single-layer source in
  * TRANSFER_SRC_OPTIMAL. No CPU readback/upload. Source layout is unchanged;
  * optional mips use the same generation policy as CPU uploads. */

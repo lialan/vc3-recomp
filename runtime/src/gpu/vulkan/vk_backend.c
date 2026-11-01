@@ -525,8 +525,8 @@ static void flip(void) {
             (unsigned long long)stats.hits,(unsigned long long)stats.uploads,
             (unsigned long long)stats.evictions,stats.bytes/(1024.*1024.),stats.entries,stats.capacity,
             (unsigned long long)stats.gpu_copies,(unsigned long long)stats.gpu_hits,(unsigned long long)stats.gpu_reuses);
-        fprintf(stderr,"[Vulkan texture comparisons] checks=%llu logical_bytes=%llu changed=%llu tracked=%llu\n",
-            (unsigned long long)stats.cpu_checks,(unsigned long long)stats.cpu_check_bytes,(unsigned long long)stats.cpu_changes,(unsigned long long)stats.tracked_checks);
+        fprintf(stderr,"[Vulkan texture comparisons] checks=%llu logical_bytes=%llu changed=%llu tracked=%llu reused=%llu\n",
+            (unsigned long long)stats.cpu_checks,(unsigned long long)stats.cpu_check_bytes,(unsigned long long)stats.cpu_changes,(unsigned long long)stats.tracked_checks,(unsigned long long)stats.cpu_reuses);
     }
     uint32_t presented=nv2a_backend_presented_va();
     if(active->host.present_rgba && presented) {
@@ -614,7 +614,7 @@ VkResult ch_vk_backend_create(const ChVkBackendConfig *config,ChVkBackend **out)
         ChVkTextureCacheConfig texture_config={.physical=config->physical,.device=config->device,
             .queue=config->queue,.family=config->family,.guest_base=config->guest_base,
             .guest_bytes=config->guest_bytes,.decode=config->decode,.max_entries=config->texture_cache_entries,
-            .max_bytes=config->texture_cache_bytes,.queued_uploads=1,
+            .max_bytes=config->texture_cache_bytes,.queued_uploads=1,.reuse_uploads=1,
             .guest_write_watch=config->strict_texture_checks?NULL:config->guest_write_watch};
         VkResult r=ch_vk_texture_cache_create(&texture_config,&b->textures);
         if(r!=VK_SUCCESS) {ch_vk_depth_resident_destroy(b->zeta);free(b);return r;}

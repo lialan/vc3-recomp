@@ -160,10 +160,12 @@ VkResult ch_vk_texture_cache_resolve(void *context,const Nv2aTexture *t,ChVkSamp
         return VK_ERROR_INITIALIZATION_FAILED;
     VkSamplerCreateInfo sampler;
     r=ch_vk_sampler_state(t,&sampler);if(r!=VK_SUCCESS) return r;
+    struct Entry *reusable=NULL;
     for(uint32_t i=0;i<c->extent;i++) {
         struct Entry *e=&c->entries[i];
-        if(e->image && !e->source && !memcmp(&e->key,t,sizeof *t) && unchanged(c,e,t)) {
-            c->stats.hits++;pin(c,e,out);return VK_SUCCESS;
+        if(e->image && !e->source && !memcmp(&e->key,t,sizeof *t)) {
+            if(unchanged(c,e,t)) {c->stats.hits++;pin(c,e,out);return VK_SUCCESS;}
+            if(c->config.reuse_uploads && !e->pins) reusable=e;
         }
     }
     c->stats.misses++;
@@ -174,7 +176,7 @@ VkResult ch_vk_texture_cache_resolve(void *context,const Nv2aTexture *t,ChVkSamp
     if(span>c->config.max_bytes || palette>c->config.max_bytes-span ||
        pixels>c->config.max_bytes-span-palette) return VK_NOT_READY;
     size_t cost=span+palette+pixels;
-    struct Entry *slot=make_room(c,cost);if(!slot) return VK_NOT_READY;
+    struct Entry *slot=reusable?reusable:make_room(c,cost);if(!slot) return VK_NOT_READY;
     unsigned char *raw=malloc(span+palette);
     uint32_t *argb=malloc(staging);
     if(!raw || !argb) {free(raw);free(argb);return VK_ERROR_OUT_OF_HOST_MEMORY;}
@@ -183,6 +185,13 @@ VkResult ch_vk_texture_cache_resolve(void *context,const Nv2aTexture *t,ChVkSamp
     if(!ch_vk_decode_texture_faces(t,c->config.decode,argb)) {free(raw);free(argb);return VK_ERROR_FORMAT_NOT_SUPPORTED;}
     struct Entry snapshot={.raw=raw,.span=span,.palette=palette};
     if(!unchanged(c,&snapshot,t)) {free(raw);free(argb);return VK_NOT_READY;}
+    if(reusable) {
+        r=ch_vk_texture_replace_argb(reusable->image,argb,staging/4,c->config.queued_uploads);
+        free(argb);
+        if(r!=VK_SUCCESS) {free(raw);drop(c,reusable);return r;}
+        free(reusable->raw);reusable->raw=raw;reusable->observed_valid=0;
+        c->stats.uploads++;c->stats.cpu_reuses++;pin(c,reusable,out);return VK_SUCCESS;
+    }
     ChVkTexture *image=NULL;
     if(c->config.queued_uploads) r=ch_vk_texture_upload_queued(c->config.physical,c->config.device,c->config.queue,c->config.family,
         t->width,t->height,argb,levels,t->cube,&image);

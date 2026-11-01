@@ -218,22 +218,32 @@ static VkResult upload(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,
     ChVkTexture *t=NULL;
     VkResult result=allocate_texture(gpu,device,queue,family,width,height,levels,layers,&t);
     if(result!=VK_SUCCESS) return result;
-    t->deferred_upload=deferred;
+    result=ch_vk_texture_replace_argb(t,argb,(size_t)width*height*layers,deferred);
+    if(result!=VK_SUCCESS) {ch_vk_texture_destroy(t);return result;}
+    *out=t;return VK_SUCCESS;
+}
+VkResult ch_vk_texture_replace_argb(ChVkTexture *t,const uint32_t *argb,size_t pixels,int queued) {
+    if(!t || t->failed || !argb || pixels<t->bytes/4) return VK_ERROR_INITIALIZATION_FAILED;
+    VkResult result;
+    /* Sampling leases must already be complete. The previous upload can
+     * still own staging even if no draw ever sampled this image. */
+    TRY(wait_transfer(t));
     TRY(ensure_staging(t));
     void *mapped;
-    TRY(vkMapMemory(device,t->staging_memory,0,VK_WHOLE_SIZE,0,&mapped));
+    TRY(vkMapMemory(t->device,t->staging_memory,0,VK_WHOLE_SIZE,0,&mapped));
     unsigned char *bytes=mapped;
-    for(size_t i=0;i<(size_t)width*height*layers;i++) {
+    for(size_t i=0;i<t->bytes/4;i++) {
         bytes[i*4]=(argb[i]>>16)&255;bytes[i*4+1]=(argb[i]>>8)&255;
         bytes[i*4+2]=argb[i]&255;bytes[i*4+3]=argb[i]>>24;
     }
     VkMappedMemoryRange flush={.sType=VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE,.memory=t->staging_memory,.size=VK_WHOLE_SIZE};
-    result=vkFlushMappedMemoryRanges(device,1,&flush);
-    vkUnmapMemory(device,t->staging_memory);
+    result=vkFlushMappedMemoryRanges(t->device,1,&flush);
+    vkUnmapMemory(t->device,t->staging_memory);
     if(result!=VK_SUCCESS) goto fail;
-    TRY(transfer(t,1,0));*out=t;return VK_SUCCESS;
+    t->deferred_upload=!!queued;
+    TRY(transfer(t,1,0));return VK_SUCCESS;
 fail:
-    ch_vk_texture_destroy(t);return result;
+    t->failed=1;return result;
 }
 VkResult ch_vk_texture_copy_from_image(ChVkTexture *t,VkDevice device,VkImage source,uint32_t width,uint32_t height) {
     if(!t || t->failed || !source || source==t->image || device!=t->device ||

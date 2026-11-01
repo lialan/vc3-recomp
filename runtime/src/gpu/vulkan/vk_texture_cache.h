@@ -11,10 +11,11 @@ typedef struct {
     /* Optional tracker with all alias/fault/syscall hooks installed. Borrowed
      * until cache destruction; unsupported ranges retain exact comparison. */
     ChGuestWriteWatch *guest_write_watch;
+    int reuse_uploads; /* reuse matching unpinned CPU texture allocations */
     int queued_uploads; /* opt-in: all sampling follows on the configured queue */
     size_t max_bytes; uint32_t max_entries; /* zero: 64 MiB / 2048 entries */
 } ChVkTextureCacheConfig;
-typedef struct { uint64_t hits,misses,uploads,evictions,gpu_copies,gpu_hits,gpu_reuses,cpu_checks,cpu_check_bytes,cpu_changes,tracked_checks; size_t bytes; uint32_t entries,capacity; } ChVkTextureCacheStats;
+typedef struct { uint64_t hits,misses,uploads,evictions,gpu_copies,gpu_hits,gpu_reuses,cpu_checks,cpu_check_bytes,cpu_changes,tracked_checks,cpu_reuses; size_t bytes; uint32_t entries,capacity; } ChVkTextureCacheStats;
 VkResult ch_vk_texture_cache_create(const ChVkTextureCacheConfig *,ChVkTextureCache **);
 /* Encoded level-zero byte range (full padded six-face footprint for cubes),
  * with an optional 1024-byte P8 palette.

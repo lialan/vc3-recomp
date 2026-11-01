@@ -186,6 +186,15 @@ static int queued_uploads(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,uin
         if(cube) CHECK(ch_vk_texture_upload_cube(gpu,device,queue,family,16,argb,&sync)==VK_SUCCESS);
         else CHECK(ch_vk_texture_upload_mips(gpu,device,queue,family,16,16,argb,5,&sync)==VK_SUCCESS);
         CHECK(ch_vk_texture_upload_queued(gpu,device,queue,family,16,16,argb,cube?1:5,cube,&queued)==VK_SUCCESS);
+        VkDescriptorImageInfo descriptor=ch_vk_texture_descriptor(queued);
+        CHECK(ch_vk_texture_replace_argb(queued,argb,1,1)==VK_ERROR_INITIALIZATION_FAILED);
+        for(unsigned pass=0;pass<2;pass++) {
+            for(unsigned i=0;i<sizeof argb/sizeof *argb;i++) argb[i]^=0x00f01234u+pass;
+            CHECK(ch_vk_texture_replace_argb(queued,argb,sizeof argb/sizeof *argb,1)==VK_SUCCESS);
+        }
+        CHECK(ch_vk_texture_replace_argb(sync,argb,sizeof argb/sizeof *argb,0)==VK_SUCCESS);
+        VkDescriptorImageInfo reused=ch_vk_texture_descriptor(queued);
+        CHECK(reused.imageView==descriptor.imageView && reused.sampler==descriptor.sampler);
         for(unsigned level=0;level<(cube?1u:5u);level++) {
             size_t bytes=(16u>>level)*(16u>>level)*4*(cube?6:1);
             CHECK(ch_vk_texture_read_level_rgba(sync,level,expected,bytes)==VK_SUCCESS);
