@@ -1,5 +1,7 @@
 # Remaining CPU graphics audit
 
+Follow-up correction: the residual estimate below omitted CPU Morton depth layout transfers. The [Morton transfer audit](../direct-vulkan-gpu-morton-transfer/README.md) adds depth counters and moves that work, plus Morton color transfer, to shared GPU compute. Treat the newer audit as authoritative.
+
 Simulator/headless Vulkan only. No headset operations. All changes are in the shared runtime/backend, without guest addresses or scene-based rendering shortcuts.
 
 ## Changes

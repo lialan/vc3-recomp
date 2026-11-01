@@ -161,6 +161,9 @@ VkResult ch_vk_target_draw_combiner_read(ChVkTarget *target, const float rgba[4]
  * readbacks). GPU images and snapshot/verification APIs remain RGBA. Requires
  * a compute-capable graphics queue. Change only between complete host uses. */
 VkResult ch_vk_target_color_bgra(ChVkTarget *target,int enabled);
+/* 0 RGBA, 1 linear BGRA, 2 full rectangular power-of-two Morton BGRA.
+ * Host buffers retain width*height*4 bytes; mode2 uses guest Morton order. */
+VkResult ch_vk_target_color_layout(ChVkTarget *target,int mode);
 VkResult ch_vk_target_import_color(ChVkTarget *target, const void *rgba, VkDeviceSize bytes);
 /* Explicit host representation: normalized float32 depth + uint8 stencil.
  * Transfers preserve color and finish in depth/stencil attachment layout.
@@ -176,6 +179,10 @@ VkResult ch_vk_target_write_depth_stencil(ChVkTarget *target, const float *depth
  * staging. packed selects Z24/S8 guest words; otherwise depth is float[]. */
 VkResult ch_vk_target_read_depth_color(ChVkTarget *,void *depth,uint8_t *stencil,
     size_t pixels,int packed,void *rgba,size_t color_bytes);
+/* Packed guest transfers require a compute-capable queue for D24 and D32.
+ * Transfer order only; float/stencil APIs remain linear.
+ * Morton requires full power-of-two rectangular dimensions and compute queue. */
+VkResult ch_vk_target_depth_morton(ChVkTarget *,int enabled);
 VkResult ch_vk_target_read_z24s8(ChVkTarget *,uint32_t *words,size_t pixels);
 VkResult ch_vk_target_write_z24s8(ChVkTarget *,const uint32_t *words,size_t pixels);
 /* Exact same-device/queue/extent/format copy. Completes both pending targets,

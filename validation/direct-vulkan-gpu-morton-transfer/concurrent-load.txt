@@ -1,0 +1,4 @@
+  PID STARTED                          ELAPSED  %CPU COMM
+  607 Sun Oct 25 07:41:54 2026     07-08:04:56  51.3 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer
+  611 Sun Oct 25 07:41:54 2026     07-08:04:56   0.0 /System/Library/CoreServices/loginwindow.app/Contents/MacOS/loginwindow
+65145 Sun Nov  1 14:45:18 2026           01:32  40.9 /Users/lialan/Downloads/VR/gse-recomp-hotd4-steam-frame/build-gse-vulkan/vk/ghostsquadevolution

@@ -1,0 +1,3 @@
+[PROF] 1.01 s: batches 509 ms | FF xf 0 ms (0) | VP xf 0 ms (0) | clip+expand 0 ms | draw 0 ms (0) | raw 508 ms (23064) | flip 2 ms | VP extent 0.0 ms (0) | metadata vertex 0.852 ms
+[PROF] 1.02 s: batches 556 ms | FF xf 0 ms (0) | VP xf 0 ms (0) | clip+expand 0 ms | draw 0 ms (0) | raw 555 ms (23035) | flip 2 ms | VP extent 0.0 ms (0) | metadata vertex 0.947 ms
+[PROF] 1.01 s: batches 559 ms | FF xf 0 ms (0) | VP xf 0 ms (0) | clip+expand 0 ms | draw 0 ms (0) | raw 558 ms (23155) | flip 2 ms | VP extent 0.0 ms (0) | metadata vertex 0.887 ms

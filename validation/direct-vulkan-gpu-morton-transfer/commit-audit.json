@@ -1,0 +1,47 @@
+{
+  "combat": {
+    "first_counter_frame": 1320,
+    "last_counter_frame": 1560,
+    "per_frame": {
+      "depth_layout_pixels": 0.0,
+      "depth_float_pixels": 0.0,
+      "geometry_batches": 0.0,
+      "geometry_vertices": 0.0,
+      "strict_depth_pixels": 0.0,
+      "texture_pixels": 418.1333333333333,
+      "texture_ms": 0.005479166666666657,
+      "color_pixels": 0.0,
+      "color_ms": 0.0
+    }
+  },
+  "activation": {
+    "first_counter_frame": 1560,
+    "last_counter_frame": 1680,
+    "per_frame": {
+      "depth_layout_pixels": 0.0,
+      "depth_float_pixels": 0.0,
+      "geometry_batches": 0.0,
+      "geometry_vertices": 0.0,
+      "strict_depth_pixels": 0.0,
+      "texture_pixels": 486.4,
+      "texture_ms": 0.007474999999999928,
+      "color_pixels": 0.0,
+      "color_ms": 0.0
+    }
+  },
+  "held": {
+    "first_counter_frame": 1680,
+    "last_counter_frame": 1920,
+    "per_frame": {
+      "depth_layout_pixels": 0.0,
+      "depth_float_pixels": 0.0,
+      "geometry_batches": 0.0,
+      "geometry_vertices": 0.0,
+      "strict_depth_pixels": 0.0,
+      "texture_pixels": 69.33333333333333,
+      "texture_ms": 0.000833333333333286,
+      "color_pixels": 0.0,
+      "color_ms": 0.0
+    }
+  }
+}

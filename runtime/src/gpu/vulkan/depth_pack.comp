@@ -1,23 +1,27 @@
 #version 450
 #extension GL_GOOGLE_include_directive : require
 #include "depth_quant.glsl"
+#include "morton.glsl"
 layout(local_size_x=64) in;
 layout(std430,set=0,binding=0) buffer Storage {uint words[];} data;
-layout(push_constant) uniform Params {uint count;uint upload;} pc;
+layout(push_constant) uniform Params {uint count;uint upload;uint width;uint height;uint morton;uint native_z24;} pc;
 void main() {
     uint group=gl_GlobalInvocationID.x,base=group*4u;
     if(base>=pc.count) return;
     uint packed_offset=pc.count+(pc.count+3u)/4u;
     uint stencil=pc.upload!=0u?0u:data.words[pc.count+group];
     for(uint j=0u;j<4u && base+j<pc.count;j++) {
-        uint i=base+j;
+        uint i=base+j,at=i;
+        if(pc.morton!=0u) {
+            at=ch_morton_index(i%pc.width,i/pc.width,pc.width,pc.height);
+        }
         if(pc.upload!=0u) {
-            uint word=data.words[packed_offset+i];
-            data.words[i]=floatBitsToUint(ch_depth_unpack(word>>8));
+            uint word=data.words[packed_offset+at];
+            data.words[i]=pc.native_z24!=0u?word>>8:floatBitsToUint(ch_depth_unpack(word>>8));
             stencil|=(word&255u)<<(j*8u);
         } else {
-            uint z=ch_depth_pack(uintBitsToFloat(data.words[i]));
-            data.words[packed_offset+i]=(z<<8)|((stencil>>(j*8u))&255u);
+            uint z=pc.native_z24!=0u?data.words[i]&0xffffffu:ch_depth_pack(uintBitsToFloat(data.words[i]));
+            data.words[packed_offset+at]=(z<<8)|((stencil>>(j*8u))&255u);
         }
     }
     if(pc.upload!=0u) data.words[pc.count+group]=stencil;

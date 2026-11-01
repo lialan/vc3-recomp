@@ -5,7 +5,9 @@
 typedef struct ChVkDepthResident ChVkDepthResident;
 typedef struct {uint64_t imports,writebacks,cpu_merges,binds,gpu_copies,clear_skips;
     /* Index: bit1 different target image, bit0 overlapping guest storage. */
-    uint64_t switches[4],dirty_switches[4];} ChVkDepthResidentStats;
+    uint64_t switches[4],dirty_switches[4];
+    /* Guest transfer work only; row memcpy and CPU edit comparisons excluded. */
+    uint64_t cpu_layout_pixels,cpu_float_pixels;} ChVkDepthResidentStats;
 VkResult ch_vk_depth_resident_create(void *guest,size_t bytes,ChVkDepthResident **);
 /* Set before binding a target. Host keeps tracker and hooks alive. */
 void ch_vk_depth_resident_write_watch(ChVkDepthResident *,ChGuestWriteWatch *);
@@ -20,6 +22,8 @@ VkResult ch_vk_depth_resident_bind(ChVkDepthResident *,ChVkTarget *,const Nv2aSu
 VkResult ch_vk_depth_resident_bind_clear(ChVkDepthResident *,ChVkTarget *,const Nv2aSurface *,const Nv2aRenderState *);
 /* Diagnostic synchronous roundtrip control. Default is enabled. */
 void ch_vk_depth_resident_gpu_copies(ChVkDepthResident *,int enabled);
+/* Enable before binding; full Morton packed transfers use GPU layout conversion. */
+void ch_vk_depth_resident_gpu_layout(ChVkDepthResident *,int enabled);
 /* Diagnostic float-conversion control. Default packed; switch only unbound. */
 VkResult ch_vk_depth_resident_packed(ChVkDepthResident *,int enabled);
 VkResult ch_vk_depth_resident_dirty(ChVkDepthResident *,ChVkTarget *);

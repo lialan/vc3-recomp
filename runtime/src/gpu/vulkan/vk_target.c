@@ -71,10 +71,10 @@ struct ChVkTarget {
     VkImage depth;
     VkFormat depth_format;
     ChVkDepthQuant *depth_quant,*depth_quant_draw,*depth_quant_input,*depth_quant_inline;
-    int quantized_depth,input_pass,input_depth,packed_transfer;
+    int quantized_depth,input_pass,input_depth,packed_transfer,depth_morton;
     ChVkDepthPack *depth_pack;
     ChVkColorPack *color_pack,*paired_color_pack;
-    int color_bgra;
+    int color_bgra; /* 0 RGBA, 1 linear BGRA, 2 rectangular Morton BGRA */
     VkDeviceMemory depth_mem;
     VkImageView depth_view;
     VkImage image;
@@ -410,7 +410,7 @@ static void record_depth_transfer(ChVkTarget *t,int upload) {
         .srcQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED,.dstQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED,
         .buffer=t->read,.size=VK_WHOLE_SIZE};
     if(t->depth_pack) vkCmdPipelineBarrier(t->command,VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,VK_PIPELINE_STAGE_TRANSFER_BIT,0,0,NULL,1,&reuse,0,NULL);
-    if(t->packed_transfer && upload) ch_vk_depth_pack_record(t->depth_pack,t->command,(uint32_t)(t->bytes/4),1);
+    if(t->packed_transfer && upload) ch_vk_depth_pack_record(t->depth_pack,t->command,t->width,t->height,1,t->depth_morton,t->depth_format==VK_FORMAT_D24_UNORM_S8_UINT);
     VkImageMemoryBarrier barrier={.sType=VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
         .srcAccessMask=VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT|VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
         .dstAccessMask=upload?VK_ACCESS_TRANSFER_WRITE_BIT:VK_ACCESS_TRANSFER_READ_BIT,
@@ -430,7 +430,7 @@ static void record_depth_transfer(ChVkTarget *t,int upload) {
     barrier.oldLayout=barrier.newLayout; barrier.newLayout=VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
     vkCmdPipelineBarrier(t->command,VK_PIPELINE_STAGE_TRANSFER_BIT,
         VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT|VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,0,0,NULL,0,NULL,1,&barrier);
-    if(t->packed_transfer && !upload) ch_vk_depth_pack_record(t->depth_pack,t->command,(uint32_t)(t->bytes/4),0);
+    if(t->packed_transfer && !upload) ch_vk_depth_pack_record(t->depth_pack,t->command,t->width,t->height,0,t->depth_morton,t->depth_format==VK_FORMAT_D24_UNORM_S8_UINT);
     if(!upload) {
         VkBufferMemoryBarrier host={.sType=VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
             .srcAccessMask=VK_ACCESS_TRANSFER_WRITE_BIT,.dstAccessMask=VK_ACCESS_HOST_READ_BIT,
@@ -443,7 +443,7 @@ static void record_depth_transfer(ChVkTarget *t,int upload) {
 static VkResult ensure_paired_color(ChVkTarget *t) {
     if(t->paired_color) return VK_SUCCESS;
     VkResult result;VkBuffer buffer=VK_NULL_HANDLE;VkDeviceMemory memory=VK_NULL_HANDLE;
-    VkBufferCreateInfo info={.sType=VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,.size=t->bytes,
+    VkBufferCreateInfo info={.sType=VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,.size=2*t->bytes,
         .usage=VK_BUFFER_USAGE_TRANSFER_DST_BIT|VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,.sharingMode=VK_SHARING_MODE_EXCLUSIVE};
     TRY(vkCreateBuffer(t->device,&info,NULL,&buffer));
     VkMemoryRequirements req;vkGetBufferMemoryRequirements(t->device,buffer,&req);
@@ -463,7 +463,7 @@ static void record_paired_color(ChVkTarget *t) {
     VkBufferImageCopy copy={.imageSubresource={VK_IMAGE_ASPECT_COLOR_BIT,0,0,1},
         .imageExtent={t->width,t->height,1}};
     vkCmdCopyImageToBuffer(t->command,t->image,VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,t->paired_color,1,&copy);
-    if(t->color_bgra) ch_vk_color_pack_record(t->paired_color_pack,t->command,(uint32_t)(t->bytes/4),0);
+    if(t->color_bgra) ch_vk_color_pack_record(t->paired_color_pack,t->command,t->width,t->height,0,t->color_bgra==2);
     VkBufferMemoryBarrier host={.sType=VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
         .srcAccessMask=VK_ACCESS_TRANSFER_WRITE_BIT,.dstAccessMask=VK_ACCESS_HOST_READ_BIT,
         .srcQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED,.dstQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED,
@@ -495,7 +495,7 @@ static VkResult finish_batch_named(ChVkTarget *t,int readback,const char *caller
         VkBufferImageCopy copy={.imageSubresource={VK_IMAGE_ASPECT_COLOR_BIT,0,0,1},
             .imageExtent={t->width,t->height,1}};
         vkCmdCopyImageToBuffer(t->command,t->image,VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,t->read,1,&copy);
-        if(t->color_bgra) ch_vk_color_pack_record(t->color_pack,t->command,(uint32_t)(t->bytes/4),0);
+        if(t->color_bgra) ch_vk_color_pack_record(t->color_pack,t->command,t->width,t->height,0,t->color_bgra==2);
         VkBufferMemoryBarrier host={.sType=VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
             .srcAccessMask=VK_ACCESS_TRANSFER_WRITE_BIT,.dstAccessMask=VK_ACCESS_HOST_READ_BIT,
             .srcQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED,.dstQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED,
@@ -764,7 +764,7 @@ static VkResult render_read(ChVkTarget *t, const float rgba[4], uint32_t clear_f
         VkBufferImageCopy copy={.imageSubresource={VK_IMAGE_ASPECT_COLOR_BIT,0,0,1},
             .imageExtent={t->width,t->height,1}};
         vkCmdCopyImageToBuffer(t->command,t->image,VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,t->read,1,&copy);
-        if(t->color_bgra) ch_vk_color_pack_record(t->color_pack,t->command,(uint32_t)(t->bytes/4),0);
+        if(t->color_bgra) ch_vk_color_pack_record(t->color_pack,t->command,t->width,t->height,0,t->color_bgra==2);
         VkBufferMemoryBarrier host={.sType=VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
             .srcAccessMask=VK_ACCESS_TRANSFER_WRITE_BIT,.dstAccessMask=VK_ACCESS_HOST_READ_BIT,
             .srcQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED,.dstQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED,
@@ -813,7 +813,7 @@ static VkResult render_read(ChVkTarget *t, const float rgba[4], uint32_t clear_f
     VkMappedMemoryRange invalidate={.sType=VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE,
         .memory=t->read_mem,.offset=0,.size=VK_WHOLE_SIZE};
     result=vkInvalidateMappedMemoryRanges(t->device,1,&invalidate);
-    if(result==VK_SUCCESS) memcpy(pixels,mapped,(size_t)t->bytes);
+    if(result==VK_SUCCESS) memcpy(pixels,(char *)mapped+(t->color_bgra==2?t->bytes:0),(size_t)t->bytes);
     vkUnmapMemory(t->device,t->read_mem);
     if(result!=VK_SUCCESS) goto fail;
     return VK_SUCCESS;
@@ -836,7 +836,7 @@ VkResult ch_vk_target_read_color(ChVkTarget *t,void *pixels,VkDeviceSize bytes) 
             VkMappedMemoryRange invalidate={.sType=VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE,
                 .memory=t->read_mem,.size=VK_WHOLE_SIZE};
             r=vkInvalidateMappedMemoryRanges(t->device,1,&invalidate);
-            if(r==VK_SUCCESS) memcpy(pixels,mapped,(size_t)t->bytes);
+            if(r==VK_SUCCESS) memcpy(pixels,(char *)mapped+(t->color_bgra==2?t->bytes:0),(size_t)t->bytes);
             vkUnmapMemory(t->device,t->read_mem);
         }
         if(r!=VK_SUCCESS) t->failed=1;
@@ -1338,17 +1338,21 @@ VkResult ch_vk_target_draw_count_read(ChVkTarget *t,const float rgba[4],
 }
 
 VkResult ch_vk_target_color_bgra(ChVkTarget *t,int enabled) {
+    return ch_vk_target_color_layout(t,enabled?1:0);
+}
+VkResult ch_vk_target_color_layout(ChVkTarget *t,int mode) {
     if(!t || t->failed) return VK_ERROR_INITIALIZATION_FAILED;
     VkResult result;TRY(finish_batch_named(t,0,__func__));
-    if(enabled && !t->color_pack) {
+    if(mode<0 || mode>2 || (mode==2 && ((t->width&(t->width-1)) || (t->height&(t->height-1))))) return VK_ERROR_FEATURE_NOT_PRESENT;
+    if(mode && !t->color_pack) {
         VkPhysicalDeviceProperties properties;vkGetPhysicalDeviceProperties(t->physical,&properties);
-        if(t->bytes>properties.limits.maxStorageBufferRange || t->bytes/4>UINT32_MAX-255u ||
+        if(2*t->bytes>properties.limits.maxStorageBufferRange || t->bytes/4>UINT32_MAX-255u ||
            (t->bytes/4+255u)/256u>properties.limits.maxComputeWorkGroupCount[0]) return VK_ERROR_FEATURE_NOT_PRESENT;
         TRY(ensure_paired_color(t));
-        TRY(ch_vk_color_pack_create(t->device,t->pipeline_cache,t->read,t->bytes,&t->color_pack));
-        TRY(ch_vk_color_pack_create(t->device,t->pipeline_cache,t->paired_color,t->bytes,&t->paired_color_pack));
+        TRY(ch_vk_color_pack_create(t->device,t->pipeline_cache,t->read,2*t->bytes,&t->color_pack));
+        TRY(ch_vk_color_pack_create(t->device,t->pipeline_cache,t->paired_color,2*t->bytes,&t->paired_color_pack));
     }
-    t->color_bgra=!!enabled;return VK_SUCCESS;
+    t->color_bgra=mode;return VK_SUCCESS;
 fail:
     t->failed=1;return result;
 }
@@ -1358,7 +1362,7 @@ VkResult ch_vk_target_import_color(ChVkTarget *t,const void *rgba,VkDeviceSize b
     VkResult result; void *mapped;
     TRY(finish_batch_named(t,0,__func__));
     TRY(vkMapMemory(t->device,t->read_mem,0,VK_WHOLE_SIZE,0,&mapped));
-    memcpy(mapped,rgba,(size_t)t->bytes);
+    memcpy((char *)mapped+(t->color_bgra==2?t->bytes:0),rgba,(size_t)t->bytes);
     VkMappedMemoryRange range={.sType=VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE,.memory=t->read_mem,.size=VK_WHOLE_SIZE};
     result=vkFlushMappedMemoryRanges(t->device,1,&range);
     vkUnmapMemory(t->device,t->read_mem);
@@ -1374,7 +1378,7 @@ VkResult ch_vk_target_import_color(ChVkTarget *t,const void *rgba,VkDeviceSize b
         .image=t->image,.subresourceRange={VK_IMAGE_ASPECT_COLOR_BIT,0,1,0,1}};
     vkCmdPipelineBarrier(t->command,VK_PIPELINE_STAGE_TRANSFER_BIT,VK_PIPELINE_STAGE_TRANSFER_BIT,0,0,NULL,0,NULL,1,&barrier);
     VkBufferImageCopy copy={.imageSubresource={VK_IMAGE_ASPECT_COLOR_BIT,0,0,1},.imageExtent={t->width,t->height,1}};
-    if(t->color_bgra) ch_vk_color_pack_record(t->color_pack,t->command,(uint32_t)(t->bytes/4),1);
+    if(t->color_bgra) ch_vk_color_pack_record(t->color_pack,t->command,t->width,t->height,1,t->color_bgra==2);
     vkCmdCopyBufferToImage(t->command,t->read,t->image,VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,1,&copy);
     barrier.srcAccessMask=VK_ACCESS_TRANSFER_WRITE_BIT; barrier.dstAccessMask=VK_ACCESS_TRANSFER_READ_BIT;
     barrier.oldLayout=VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL; barrier.newLayout=VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
@@ -1388,11 +1392,26 @@ fail:
     t->failed=1; return result;
 }
 
+VkResult ch_vk_target_depth_morton(ChVkTarget *t,int enabled) {
+    if(!t || t->failed) return VK_ERROR_INITIALIZATION_FAILED;
+    if(t->depth_morton==!!enabled) return VK_SUCCESS;
+    if(enabled && ((t->width&(t->width-1)) || (t->height&(t->height-1)))) return VK_ERROR_FEATURE_NOT_PRESENT;
+    if(enabled) {
+        VkPhysicalDeviceProperties p;vkGetPhysicalDeviceProperties(t->physical,&p);
+        if(2*t->bytes+(t->bytes/4+3)/4*4>p.limits.maxStorageBufferRange ||
+           t->bytes/4>UINT32_MAX-255u || (t->bytes/4+255u)/256u>p.limits.maxComputeWorkGroupCount[0])
+            return VK_ERROR_FEATURE_NOT_PRESENT;
+    }
+    VkResult result=finish_batch_named(t,0,__func__);
+    if(result==VK_SUCCESS) t->depth_morton=!!enabled;
+    return result;
+}
+
 static VkResult transfer_depth_stencil(ChVkTarget *t,void *depth,void *stencil,size_t pixels,int upload,int packed,void *rgba,size_t color_bytes) {
     if(!t || t->failed || !t->initialized || !depth || (!packed && !stencil) || pixels<t->bytes/4)
         return VK_ERROR_INITIALIZATION_FAILED;
     if(rgba && (upload || color_bytes<t->bytes)) return VK_ERROR_INITIALIZATION_FAILED;
-    int gpu_packed=packed && t->depth_format==VK_FORMAT_D32_SFLOAT_S8_UINT;
+    int gpu_packed=packed;
     if(gpu_packed && !t->depth_pack) {
         uint32_t count=0;vkGetPhysicalDeviceQueueFamilyProperties(t->physical,&count,NULL);
         VkQueueFamilyProperties *families=calloc(count,sizeof *families);
@@ -1422,11 +1441,7 @@ static VkResult transfer_depth_stencil(ChVkTarget *t,void *depth,void *stencil,s
         TRY(finish_batch_named(t,0,__func__));
         TRY(vkMapMemory(t->device,t->read_mem,0,VK_WHOLE_SIZE,0,&mapped));
         if(gpu_packed) memcpy((char *)mapped+packed_offset,depth,(size_t)t->bytes);
-        else if(packed) {
-            uint32_t *z=mapped;uint8_t *s=(uint8_t *)mapped+t->bytes;
-            const uint32_t *words=depth;
-            for(size_t i=0;i<t->bytes/4;i++) {z[i]=words[i]>>8;s[i]=(uint8_t)words[i];}
-        } else if(t->depth_format==VK_FORMAT_D24_UNORM_S8_UINT) {
+        else if(t->depth_format==VK_FORMAT_D24_UNORM_S8_UINT) {
             uint32_t *z=mapped;
             for(size_t i=0;i<t->bytes/4;i++)
                 z[i]=(uint32_t)((double)((const float *)depth)[i]*16777215.0+0.5);
@@ -1458,11 +1473,7 @@ readback:
         result=vkInvalidateMappedMemoryRanges(t->device,1,&range);
         if(result==VK_SUCCESS) {
             if(gpu_packed) memcpy(depth,(char *)mapped+packed_offset,(size_t)t->bytes);
-            else if(packed) {
-                const uint32_t *z=mapped;const uint8_t *s=(const uint8_t *)mapped+t->bytes;
-                uint32_t *words=depth;
-                for(size_t i=0;i<t->bytes/4;i++) words[i]=((z[i]&0xffffffu)<<8)|s[i];
-            } else if(t->depth_format==VK_FORMAT_D24_UNORM_S8_UINT) {
+            else if(t->depth_format==VK_FORMAT_D24_UNORM_S8_UINT) {
                 const uint32_t *z=mapped;
                 for(size_t i=0;i<t->bytes/4;i++)
                     ((float *)depth)[i]=(float)((double)(z[i]&0xffffffu)/16777215.0);
@@ -1477,7 +1488,7 @@ readback:
         VkMappedMemoryRange color_range={.sType=VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE,
             .memory=t->paired_color_mem,.size=VK_WHOLE_SIZE};
         result=vkInvalidateMappedMemoryRanges(t->device,1,&color_range);
-        if(result==VK_SUCCESS) memcpy(rgba,mapped,(size_t)t->bytes);
+        if(result==VK_SUCCESS) memcpy(rgba,(char *)mapped+(t->color_bgra==2?t->bytes:0),(size_t)t->bytes);
         vkUnmapMemory(t->device,t->paired_color_mem);
         if(result!=VK_SUCCESS) goto fail;
     }

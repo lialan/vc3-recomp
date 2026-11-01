@@ -1,0 +1,249 @@
+[Vulkan raw vertices] GPU fixed batches=0 program batches=1 program vertices=4 CPU declined batches=0
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan] completed frame 1: 640x480, guest=80408000
+[PROF] 1.00 s: batches 222 ms | FF xf 0 ms (0) | VP xf 0 ms (0) | clip+expand 0 ms | draw 0 ms (0) | raw 222 ms (3027) | flip 1 ms | VP extent 0.0 ms (0) | metadata vertex 0.388 ms
+[Vulkan raw vertices] GPU fixed batches=0 program batches=3135 program vertices=12540 CPU declined batches=0
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=36928 texture_ms=0.118 color_pixels=0 color_ms=0.000 (cumulative)
+[Vulkan] completed frame 60: 640x480, guest=80534000
+[PROF] 1.01 s: batches 197 ms | FF xf 0 ms (0) | VP xf 0 ms (0) | clip+expand 0 ms | draw 0 ms (0) | raw 197 ms (3293) | flip 1 ms | VP extent 0.0 ms (0) | metadata vertex 0.404 ms
+[Vulkan raw vertices] GPU fixed batches=0 program batches=6375 program vertices=25500 CPU declined batches=0
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=36928 texture_ms=0.118 color_pixels=0 color_ms=0.000 (cumulative)
+[Vulkan] completed frame 120: 640x480, guest=80534000
+[PROF] 1.00 s: batches 183 ms | FF xf 0 ms (0) | VP xf 0 ms (0) | clip+expand 0 ms | draw 0 ms (0) | raw 182 ms (3240) | flip 1 ms | VP extent 0.0 ms (0) | metadata vertex 0.390 ms
+[Vulkan raw vertices] GPU fixed batches=0 program batches=9615 program vertices=38460 CPU declined batches=0
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=36928 texture_ms=0.118 color_pixels=0 color_ms=0.000 (cumulative)
+[Vulkan] completed frame 180: 640x480, guest=80534000
+[PROF] 1.02 s: batches 176 ms | FF xf 0 ms (0) | VP xf 0 ms (0) | clip+expand 0 ms | draw 0 ms (0) | raw 176 ms (3295) | flip 1 ms | VP extent 0.0 ms (0) | metadata vertex 0.388 ms
+[Vulkan raw vertices] GPU fixed batches=0 program batches=12855 program vertices=51420 CPU declined batches=0
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=36928 texture_ms=0.118 color_pixels=0 color_ms=0.000 (cumulative)
+[Vulkan] completed frame 240: 640x480, guest=80534000
+[Vulkan raw vertices] GPU fixed batches=0 program batches=16095 program vertices=64380 CPU declined batches=0
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=36928 texture_ms=0.118 color_pixels=0 color_ms=0.000 (cumulative)
+[Vulkan] completed frame 300: 640x480, guest=80534000
+[PROF] 1.02 s: batches 187 ms | FF xf 0 ms (0) | VP xf 0 ms (0) | clip+expand 0 ms | draw 0 ms (0) | raw 187 ms (3293) | flip 2 ms | VP extent 0.0 ms (0) | metadata vertex 0.441 ms
+[Vulkan raw vertices] GPU fixed batches=0 program batches=19335 program vertices=77340 CPU declined batches=0
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=36928 texture_ms=0.118 color_pixels=0 color_ms=0.000 (cumulative)
+[Vulkan] completed frame 360: 640x480, guest=80534000
+[PROF] 1.02 s: batches 187 ms | FF xf 0 ms (0) | VP xf 0 ms (0) | clip+expand 0 ms | draw 0 ms (0) | raw 187 ms (3271) | flip 2 ms | VP extent 0.0 ms (0) | metadata vertex 0.432 ms
+[Vulkan raw vertices] GPU fixed batches=0 program batches=21159 program vertices=84636 CPU declined batches=0
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=299072 texture_ms=0.629 color_pixels=0 color_ms=0.000 (cumulative)
+[Vulkan] completed frame 420: 640x480, guest=80534000
+[PROF] 1.01 s: batches 171 ms | FF xf 0 ms (0) | VP xf 0 ms (0) | clip+expand 0 ms | draw 0 ms (0) | raw 171 ms (1829) | flip 1 ms | VP extent 0.0 ms (0) | metadata vertex 0.268 ms
+[Vulkan raw vertices] GPU fixed batches=0 program batches=22959 program vertices=91836 CPU declined batches=0
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=299072 texture_ms=0.629 color_pixels=0 color_ms=0.000 (cumulative)
+[Vulkan] completed frame 480: 640x480, guest=80534000
+[PROF] 1.00 s: batches 189 ms | FF xf 0 ms (0) | VP xf 0 ms (0) | clip+expand 0 ms | draw 0 ms (0) | raw 189 ms (1800) | flip 1 ms | VP extent 0.0 ms (0) | metadata vertex 0.215 ms
+[Vulkan raw vertices] GPU fixed batches=0 program batches=24759 program vertices=99036 CPU declined batches=0
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=299072 texture_ms=0.629 color_pixels=0 color_ms=0.000 (cumulative)
+[Vulkan] completed frame 540: 640x480, guest=80534000
+[PROF] 1.01 s: batches 210 ms | FF xf 0 ms (0) | VP xf 0 ms (0) | clip+expand 0 ms | draw 0 ms (0) | raw 209 ms (1800) | flip 1 ms | VP extent 0.0 ms (0) | metadata vertex 0.230 ms
+[Vulkan raw vertices] GPU fixed batches=0 program batches=26929 program vertices=107716 CPU declined batches=0
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=299072 texture_ms=0.629 color_pixels=0 color_ms=0.000 (cumulative)
+[Vulkan] completed frame 600: 640x480, guest=80534000
+[PROF] 1.01 s: batches 223 ms | FF xf 0 ms (0) | VP xf 0 ms (0) | clip+expand 0 ms | draw 0 ms (0) | raw 223 ms (2236) | flip 2 ms | VP extent 0.0 ms (0) | metadata vertex 0.282 ms
+[Vulkan raw vertices] GPU fixed batches=0 program batches=29235 program vertices=116940 CPU declined batches=0
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=299072 texture_ms=0.629 color_pixels=0 color_ms=0.000 (cumulative)
+[Vulkan] completed frame 660: 640x480, guest=80534000
+[PROF] 1.00 s: batches 216 ms | FF xf 0 ms (0) | VP xf 0 ms (0) | clip+expand 0 ms | draw 0 ms (0) | raw 216 ms (2336) | flip 1 ms | VP extent 0.0 ms (0) | metadata vertex 0.330 ms
+[Vulkan raw vertices] GPU fixed batches=0 program batches=32588 program vertices=130352 CPU declined batches=0
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=299072 texture_ms=0.629 color_pixels=0 color_ms=0.000 (cumulative)
+[Vulkan] completed frame 720: 640x480, guest=80534000
+[PROF] 1.02 s: batches 223 ms | FF xf 0 ms (0) | VP xf 0 ms (0) | clip+expand 0 ms | draw 0 ms (0) | raw 223 ms (3483) | flip 2 ms | VP extent 0.0 ms (0) | metadata vertex 0.440 ms
+[Vulkan raw vertices] GPU fixed batches=0 program batches=36460 program vertices=145840 CPU declined batches=0
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=299072 texture_ms=0.629 color_pixels=0 color_ms=0.000 (cumulative)
+[Vulkan] completed frame 780: 640x480, guest=80534000
+[PROF] 1.00 s: batches 221 ms | FF xf 0 ms (0) | VP xf 0 ms (0) | clip+expand 0 ms | draw 0 ms (0) | raw 221 ms (3714) | flip 1 ms | VP extent 0.0 ms (0) | metadata vertex 0.444 ms
+[Vulkan raw vertices] GPU fixed batches=0 program batches=38188 program vertices=152752 CPU declined batches=0
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=577600 texture_ms=4.129 color_pixels=0 color_ms=0.000 (cumulative)
+[Vulkan] completed frame 840: 640x480, guest=80534000
+[PROF] 1.00 s: batches 224 ms | FF xf 0 ms (0) | VP xf 0 ms (0) | clip+expand 0 ms | draw 0 ms (0) | raw 224 ms (1715) | flip 2 ms | VP extent 0.0 ms (0) | metadata vertex 0.241 ms
+[Vulkan raw vertices] GPU fixed batches=0 program batches=39928 program vertices=159712 CPU declined batches=0
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=577600 texture_ms=4.129 color_pixels=0 color_ms=0.000 (cumulative)
+[Vulkan] completed frame 900: 640x480, guest=80534000
+[PROF] 1.01 s: batches 218 ms | FF xf 0 ms (0) | VP xf 0 ms (0) | clip+expand 0 ms | draw 0 ms (0) | raw 218 ms (1877) | flip 1 ms | VP extent 0.0 ms (0) | metadata vertex 0.243 ms
+[Vulkan raw vertices] GPU fixed batches=0 program batches=42814 program vertices=171256 CPU declined batches=0
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=581696 texture_ms=4.178 color_pixels=0 color_ms=0.000 (cumulative)
+[Vulkan] completed frame 960: 640x480, guest=80534000
+[PROF] 1.00 s: batches 227 ms | FF xf 0 ms (0) | VP xf 0 ms (0) | clip+expand 0 ms | draw 0 ms (0) | raw 227 ms (2860) | flip 1 ms | VP extent 0.0 ms (0) | metadata vertex 0.332 ms
+[Vulkan raw vertices] GPU fixed batches=0 program batches=46027 program vertices=184108 CPU declined batches=0
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=581696 texture_ms=4.178 color_pixels=0 color_ms=0.000 (cumulative)
+[Vulkan] completed frame 1020: 640x480, guest=80534000
+[PROF] 1.02 s: batches 218 ms | FF xf 0 ms (0) | VP xf 0 ms (0) | clip+expand 0 ms | draw 0 ms (0) | raw 218 ms (3381) | flip 1 ms | VP extent 0.0 ms (0) | metadata vertex 0.401 ms
+[Vulkan raw vertices] GPU fixed batches=0 program batches=49667 program vertices=198668 CPU declined batches=0
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=843840 texture_ms=4.586 color_pixels=0 color_ms=0.000 (cumulative)
+[Vulkan] completed frame 1080: 640x480, guest=80534000
+[PROF] 1.02 s: batches 196 ms | FF xf 0 ms (0) | VP xf 0 ms (0) | clip+expand 0 ms | draw 0 ms (0) | raw 196 ms (3702) | flip 1 ms | VP extent 0.0 ms (0) | metadata vertex 0.448 ms
+[PROF] 1.10 s: batches 384 ms | FF xf 0 ms (0) | VP xf 0 ms (0) | clip+expand 0 ms | draw 0 ms (0) | raw 384 ms (2714) | flip 1 ms | VP extent 0.0 ms (0) | metadata vertex 0.254 ms
+[Vulkan raw vertices] GPU fixed batches=2963 program batches=52299 program vertices=209712 CPU declined batches=0
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=6192832 texture_ms=100.823 color_pixels=0 color_ms=0.000 (cumulative)
+[Vulkan] completed frame 1140: 640x480, guest=80534000
+[PROF] 1.01 s: batches 476 ms | FF xf 0 ms (0) | VP xf 0 ms (0) | clip+expand 0 ms | draw 0 ms (0) | raw 474 ms (39421) | flip 1 ms | VP extent 0.0 ms (0) | metadata vertex 0.607 ms
+[Vulkan raw vertices] GPU fixed batches=66563 program batches=60324 program vertices=252132 CPU declined batches=0
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=8960192 texture_ms=154.061 color_pixels=0 color_ms=0.000 (cumulative)
+[Vulkan] completed frame 1200: 640x480, guest=80534000
+[PROF] 1.02 s: batches 564 ms | FF xf 0 ms (0) | VP xf 0 ms (0) | clip+expand 0 ms | draw 0 ms (0) | raw 562 ms (38190) | flip 1 ms | VP extent 0.0 ms (0) | metadata vertex 0.563 ms
+[PROF] 1.01 s: batches 451 ms | FF xf 0 ms (0) | VP xf 0 ms (0) | clip+expand 0 ms | draw 0 ms (0) | raw 450 ms (14653) | flip 1 ms | VP extent 0.0 ms (0) | metadata vertex 0.458 ms
+[Vulkan raw vertices] GPU fixed batches=82519 program batches=64165 program vertices=277816 CPU declined batches=0
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=11797696 texture_ms=200.241 color_pixels=0 color_ms=0.000 (cumulative)
+[Vulkan] completed frame 1260: 640x480, guest=80534000
+[PROF] 1.00 s: batches 324 ms | FF xf 0 ms (0) | VP xf 0 ms (0) | clip+expand 0 ms | draw 0 ms (0) | raw 323 ms (16967) | flip 1 ms | VP extent 0.0 ms (0) | metadata vertex 0.522 ms
+[Vulkan raw vertices] GPU fixed batches=96644 program batches=67508 program vertices=301508 CPU declined batches=0
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=12268800 texture_ms=209.318 color_pixels=0 color_ms=0.000 (cumulative)
+[Vulkan] completed frame 1320: 640x480, guest=80534000
+[PROF] 1.00 s: batches 314 ms | FF xf 0 ms (0) | VP xf 0 ms (0) | clip+expand 0 ms | draw 0 ms (0) | raw 313 ms (21741) | flip 1 ms | VP extent 0.0 ms (0) | metadata vertex 0.470 ms
+[Vulkan raw vertices] GPU fixed batches=115077 program batches=70861 program vertices=324036 CPU declined batches=0
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=12282112 texture_ms=209.480 color_pixels=0 color_ms=0.000 (cumulative)
+[Vulkan] completed frame 1380: 640x480, guest=80534000
+[PROF] 1.02 s: batches 327 ms | FF xf 0 ms (0) | VP xf 0 ms (0) | clip+expand 0 ms | draw 0 ms (0) | raw 326 ms (20955) | flip 1 ms | VP extent 0.0 ms (0) | metadata vertex 0.388 ms
+[Vulkan raw vertices] GPU fixed batches=132156 program batches=74161 program vertices=337236 CPU declined batches=0
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=12287232 texture_ms=209.541 color_pixels=0 color_ms=0.000 (cumulative)
+[Vulkan] completed frame 1440: 640x480, guest=80534000
+[PROF] 1.00 s: batches 298 ms | FF xf 0 ms (0) | VP xf 0 ms (0) | clip+expand 0 ms | draw 0 ms (0) | raw 297 ms (17404) | flip 1 ms | VP extent 0.0 ms (0) | metadata vertex 0.424 ms
+[Vulkan raw vertices] GPU fixed batches=146111 program batches=77526 program vertices=362748 CPU declined batches=0
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=12369152 texture_ms=210.633 color_pixels=0 color_ms=0.000 (cumulative)
+[Vulkan] completed frame 1500: 640x480, guest=80534000
+[PROF] 1.00 s: batches 332 ms | FF xf 0 ms (0) | VP xf 0 ms (0) | clip+expand 0 ms | draw 0 ms (0) | raw 332 ms (17229) | flip 2 ms | VP extent 0.0 ms (0) | metadata vertex 0.415 ms
+[Vulkan raw vertices] GPU fixed batches=160041 program batches=80826 program vertices=375948 CPU declined batches=0
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=12369152 texture_ms=210.633 color_pixels=0 color_ms=0.000 (cumulative)
+[Vulkan] completed frame 1560: 640x480, guest=80534000
+[PROF] 1.00 s: batches 567 ms | FF xf 0 ms (0) | VP xf 0 ms (0) | clip+expand 0 ms | draw 0 ms (0) | raw 566 ms (20506) | flip 1 ms | VP extent 0.0 ms (0) | metadata vertex 0.809 ms
+[Vulkan raw vertices] GPU fixed batches=174751 program batches=87835 program vertices=1664236 CPU declined batches=0
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=12427520 texture_ms=211.530 color_pixels=0 color_ms=0.000 (cumulative)
+[Vulkan] completed frame 1620: 640x480, guest=80534000
+[PROF] 1.01 s: batches 559 ms | FF xf 0 ms (0) | VP xf 0 ms (0) | clip+expand 0 ms | draw 0 ms (0) | raw 558 ms (20757) | flip 2 ms | VP extent 0.0 ms (0) | metadata vertex 0.811 ms
+[Vulkan raw vertices] GPU fixed batches=189968 program batches=95239 program vertices=3133232 CPU declined batches=0
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=12427520 texture_ms=211.530 color_pixels=0 color_ms=0.000 (cumulative)
+[Vulkan] completed frame 1680: 640x480, guest=80534000
+[PROF] 1.01 s: batches 586 ms | FF xf 0 ms (0) | VP xf 0 ms (0) | clip+expand 0 ms | draw 0 ms (0) | raw 585 ms (21953) | flip 1 ms | VP extent 0.0 ms (0) | metadata vertex 0.872 ms
+[Vulkan raw vertices] GPU fixed batches=205127 program batches=102365 program vertices=4550508 CPU declined batches=0
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=12444160 texture_ms=211.730 color_pixels=0 color_ms=0.000 (cumulative)
+[Vulkan] completed frame 1740: 640x480, guest=80534000
+[PROF] 1.01 s: batches 509 ms | FF xf 0 ms (0) | VP xf 0 ms (0) | clip+expand 0 ms | draw 0 ms (0) | raw 508 ms (23064) | flip 2 ms | VP extent 0.0 ms (0) | metadata vertex 0.852 ms
+[Vulkan raw vertices] GPU fixed batches=220455 program batches=109355 program vertices=6005796 CPU declined batches=0
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=12444160 texture_ms=211.730 color_pixels=0 color_ms=0.000 (cumulative)
+[Vulkan] completed frame 1800: 640x480, guest=80534000
+[PROF] 1.02 s: batches 556 ms | FF xf 0 ms (0) | VP xf 0 ms (0) | clip+expand 0 ms | draw 0 ms (0) | raw 555 ms (23035) | flip 2 ms | VP extent 0.0 ms (0) | metadata vertex 0.947 ms
+[Vulkan raw vertices] GPU fixed batches=235755 program batches=116746 program vertices=7462688 CPU declined batches=0
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=12444160 texture_ms=211.730 color_pixels=0 color_ms=0.000 (cumulative)
+[Vulkan] completed frame 1860: 640x480, guest=80534000
+[PROF] 1.01 s: batches 559 ms | FF xf 0 ms (0) | VP xf 0 ms (0) | clip+expand 0 ms | draw 0 ms (0) | raw 558 ms (23155) | flip 2 ms | VP extent 0.0 ms (0) | metadata vertex 0.887 ms
+[Vulkan raw vertices] GPU fixed batches=250988 program batches=124282 program vertices=8920160 CPU declined batches=0
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=12444160 texture_ms=211.730 color_pixels=0 color_ms=0.000 (cumulative)
+[Vulkan] completed frame 1920: 640x480, guest=80534000
+[PROF] 1.01 s: batches 482 ms | FF xf 0 ms (0) | VP xf 0 ms (0) | clip+expand 0 ms | draw 0 ms (0) | raw 481 ms (21784) | flip 2 ms | VP extent 0.0 ms (0) | metadata vertex 0.755 ms
+[Vulkan raw vertices] GPU fixed batches=266346 program batches=129870 program vertices=9760504 CPU declined batches=0
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=12444160 texture_ms=211.730 color_pixels=0 color_ms=0.000 (cumulative)
+[Vulkan] completed frame 1980: 640x480, guest=80534000
+[PROF] 1.00 s: batches 304 ms | FF xf 0 ms (0) | VP xf 0 ms (0) | clip+expand 0 ms | draw 0 ms (0) | raw 303 ms (19134) | flip 2 ms | VP extent 0.0 ms (0) | metadata vertex 0.422 ms
+[Vulkan raw vertices] GPU fixed batches=281892 program batches=133230 program vertices=9773944 CPU declined batches=0
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=12444160 texture_ms=211.730 color_pixels=0 color_ms=0.000 (cumulative)
+[Vulkan] completed frame 2040: 640x480, guest=80534000
+[PROF] 1.00 s: batches 304 ms | FF xf 0 ms (0) | VP xf 0 ms (0) | clip+expand 0 ms | draw 0 ms (0) | raw 303 ms (17322) | flip 2 ms | VP extent 0.0 ms (0) | metadata vertex 0.431 ms
+[Vulkan raw vertices] GPU fixed batches=295678 program batches=136590 program vertices=9787384 CPU declined batches=0
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=12444160 texture_ms=211.730 color_pixels=0 color_ms=0.000 (cumulative)
+[Vulkan] completed frame 2100: 640x480, guest=80534000

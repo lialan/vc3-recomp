@@ -1,11 +1,17 @@
 #version 450
+#extension GL_GOOGLE_include_directive : require
+#include "morton.glsl"
 layout(local_size_x=64) in;
 layout(std430,set=0,binding=0) buffer Storage {uint words[];} data;
-layout(push_constant) uniform Params {uint count;uint upload;} pc;
+layout(push_constant) uniform Params {uint count;uint upload;uint width;uint height;uint morton;} pc;
 void main() {
     uint base=gl_GlobalInvocationID.x*4u;
     for(uint j=0u;j<4u && base+j<pc.count;j++) {
-        uint v=data.words[base+j];
-        data.words[base+j]=(v&0xff00ff00u)|((v&255u)<<16)|((v>>16)&255u);
+        uint i=base+j,at=i;
+        if(pc.morton!=0u) {
+            at=ch_morton_index(i%pc.width,i/pc.width,pc.width,pc.height)+pc.count;
+        }
+        uint v=data.words[pc.upload!=0u?at:i];
+        data.words[pc.upload!=0u?i:at]=(v&0xff00ff00u)|((v&255u)<<16)|((v>>16)&255u);
     }
 }

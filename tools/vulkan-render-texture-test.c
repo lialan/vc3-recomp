@@ -99,7 +99,7 @@ static int scenario(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,uint32_t 
     ChVkBackend *backend=NULL;int failed=1;memset(memory,0xa5,sizeof memory);decodes=0;
     ChVkBackendConfig config={.physical=gpu,.device=device,.queue=queue,.family=family,
         .pipeline_cache=pipeline_cache,.guest_base=memory,.guest_bytes=sizeof memory,.decode=decode,.resident_color=1,.cache_textures=1,
-        .sample_render_targets=fast,.resident_depth=test>=10 && fast,.quantized_depth=test>=10 && fast,.gpu_depth_pack=test>=10 && fast,.gpu_color_pack=fast,.depth_quant_inline=test>=10 && fast==1,.depth_quant_fragment=test>=10 && fast==2,.batch_draws=1,.texture_cache_entries=2,
+        .sample_render_targets=fast,.resident_depth=test>=10 && fast,.quantized_depth=test>=10 && fast,.gpu_depth_pack=test>=10 && fast,.gpu_color_pack=fast,.gpu_morton_color=fast,.depth_quant_inline=test>=10 && fast==1,.depth_quant_fragment=test>=10 && fast==2,.batch_draws=1,.texture_cache_entries=2,
         .texture_cache_bytes=test==7?64:test==8?256:8192};
 #define REQUIRE(x) do {if(!(x)) {fprintf(stderr,"render texture integration case%u fast%u line%d: %s\n",test,fast,__LINE__,#x);goto done;}}while(0)
     config.batch_draw_limit=257;

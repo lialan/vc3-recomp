@@ -203,8 +203,12 @@ static VkResult attach(ChVkBackendConfig config)
     const char *color_pack=ch_env("VULKAN_GPU_COLOR_PACK");
     config.gpu_color_pack=(!color_pack || atoi(color_pack)) && config.family<queue_count &&
         (queues[config.family].queueFlags&VK_QUEUE_COMPUTE_BIT);
+    const char *morton_depth=ch_env("VULKAN_GPU_MORTON_DEPTH");
+    config.gpu_morton_depth=(!morton_depth || atoi(morton_depth)) && config.gpu_depth_pack;
+    const char *morton_color=ch_env("VULKAN_GPU_MORTON_COLOR");
+    config.gpu_morton_color=(!morton_color || atoi(morton_color)) && config.gpu_color_pack;
     free(queues);
-    fprintf(stderr,"[Vulkan] D32 guest depth GPU conversion: %s\n",config.gpu_depth_pack?"enabled":"disabled");
+    fprintf(stderr,"[Vulkan] D24/D32 guest depth GPU conversion: %s\n",config.gpu_depth_pack?"enabled":"disabled");
     const char *fixed=ch_env("VULKAN_GPU_FIXED");
     if(fixed && !strcmp(fixed,"0")) config.raw_fixed=0;
     fprintf(stderr,"[Vulkan] raw fixed/program GPU transforms: %s\n",config.raw_fixed?"enabled":"disabled");

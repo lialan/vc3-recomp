@@ -264,7 +264,7 @@ endif()
 
 add_custom_command(OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/depth_pack.spv"
     COMMAND "${CHIHIRO_GLSLC}" --target-env=vulkan1.0 -O "${CMAKE_CURRENT_SOURCE_DIR}/depth_pack.comp" -o "${CMAKE_CURRENT_BINARY_DIR}/depth_pack.spv"
-    DEPENDS depth_pack.comp depth_quant.glsl VERBATIM)
+    DEPENDS depth_pack.comp depth_quant.glsl morton.glsl VERBATIM)
 add_custom_command(OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/depth_pack_spv.h"
     COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/embed_binary_spirv.py"
         "${CMAKE_CURRENT_BINARY_DIR}/depth_pack.spv" "${CMAKE_CURRENT_BINARY_DIR}/depth_pack_spv.h" depth_pack_spv
@@ -281,7 +281,7 @@ endif()
 
 add_custom_command(OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/texture_decode.spv"
     COMMAND "${CHIHIRO_GLSLC}" --target-env=vulkan1.0 -O "${CMAKE_CURRENT_SOURCE_DIR}/texture_decode.comp" -o "${CMAKE_CURRENT_BINARY_DIR}/texture_decode.spv"
-    DEPENDS texture_decode.comp VERBATIM)
+    DEPENDS texture_decode.comp morton.glsl VERBATIM)
 add_custom_command(OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/texture_decode_spv.h"
     COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/embed_binary_spirv.py"
         "${CMAKE_CURRENT_BINARY_DIR}/texture_decode.spv" "${CMAKE_CURRENT_BINARY_DIR}/texture_decode_spv.h" texture_decode_spv
@@ -298,7 +298,7 @@ endif()
 
 add_custom_command(OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/color_pack.spv"
     COMMAND "${CHIHIRO_GLSLC}" --target-env=vulkan1.0 -O "${CMAKE_CURRENT_SOURCE_DIR}/color_pack.comp" -o "${CMAKE_CURRENT_BINARY_DIR}/color_pack.spv"
-    DEPENDS color_pack.comp VERBATIM)
+    DEPENDS color_pack.comp morton.glsl VERBATIM)
 add_custom_command(OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/color_pack_spv.h"
     COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/embed_binary_spirv.py"
         "${CMAKE_CURRENT_BINARY_DIR}/color_pack.spv" "${CMAKE_CURRENT_BINARY_DIR}/color_pack_spv.h" color_pack_spv

@@ -1,0 +1,10 @@
+[Vulkan] resizing surface 00000100: 4x4 pitch=24 bpp=4 -> 2x2 pitch=24 bpp=4
+[Vulkan] resizing surface 00000100: 4x4 pitch=24 bpp=4 -> 2x2 pitch=24 bpp=4
+[Vulkan] resizing surface 00000100: 4x4 pitch=24 bpp=4 -> 2x2 pitch=24 bpp=4
+[Vulkan] resizing surface 00000100: 4x4 pitch=24 bpp=4 -> 2x2 pitch=24 bpp=4
+[Vulkan] resizing surface 00000100: 4x4 pitch=24 bpp=4 -> 2x2 pitch=24 bpp=4
+device=llvmpipe (LLVM 23.1.4, 128 bits) vendor=10005 deviceID=0000 api=1.4.354
+PASS: texture write tracking, aliases, palettes, pinned snapshots, repeated mismatch, restored bytes, active write leases and invalidation fallback
+PASS: driver exports no complete cache header; persistence skipped without creating a file
+PASS: exact GPU snapshots preserve all UNORM bytes/mips/orientation; version and sampler keys, pin-budget rejection, source destruction before pending sampling and shared bounded cache lifetime
+PASS: strict-vs-GPU render-target sampling preserves exact guest memory for pitched/Morton targets, CPU edits, self sampling, resize, sampler changes, format/subview rejection and budget/pin fallback; eligible cases avoid CPU decoding

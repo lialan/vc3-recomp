@@ -23,8 +23,10 @@ typedef struct {
     /* Set only when host enabled VkPhysicalDeviceFeatures.occlusionQueryPrecise. */
     int precise_queries;
     int gpu_texture_decode; /* common ARGB/XRGB on compute-capable graphics queue */
+    int gpu_morton_color; /* full power-of-two Morton ARGB transfer layouts */
     int gpu_color_pack; /* linear resident ARGB color transfers on compute queue */
-    int gpu_depth_pack; /* D32 guest Z24/S8 conversion on compute-capable graphics queue */
+    int gpu_morton_depth; /* full power-of-two Morton Z24S8 transfer layouts */
+    int gpu_depth_pack; /* D24/D32 guest Z24/S8 conversion on compute-capable graphics queue */
     int raw_fixed; /* raw fixed/program GPU transforms; device enabled shaderClipDistance + depthClamp */
     /* Keep ARGB8888 targets resident between draws. Flush publishes guest
      * pixels at fences/flip or before texture decoding samples a dirty target.

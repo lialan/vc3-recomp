@@ -9,7 +9,7 @@
 #include <time.h>
 #define MAX_SURFACES 32
 struct Surface { Nv2aSurface guest; uint32_t zeta; Nv2aRenderState state; float *depth; uint8_t *stencil; ChVkTarget *target; unsigned char *rgba,*observed,*cpu,*raw; ChGuestWriteRange *write_range; size_t raw_span; int observed_valid,resident,color_bgra,color_fallback_reported,color_dirty,native_z24,quantized_z24; size_t bytes; uint64_t color_serial; };
-struct ChVkBackend { VkPipelineCache pipeline_cache; struct {int enabled;uint64_t start,n,surface,coherence,imports,draw,store,no_color,flushes,depth_flushes,paired_flushes;} profile; struct {uint64_t previous,us[120];unsigned count;} frame_profile; ChVkBackendConfig host; ChVkTextureCache *textures; ChVkDepthResident *zeta; uint64_t frames,raw_draws,raw_programs,raw_program_vertices,raw_declined,color_clock,cpu_batches,cpu_vertices,cpu_texels,cpu_texture_us,cpu_color_pixels,cpu_color_us; struct Surface surfaces[MAX_SURFACES]; unsigned count; };
+struct ChVkBackend { VkPipelineCache pipeline_cache; struct {int enabled;uint64_t start,n,surface,coherence,imports,draw,store,no_color,flushes,depth_flushes,paired_flushes;} profile; struct {uint64_t previous,us[120];unsigned count;} frame_profile; ChVkBackendConfig host; ChVkTextureCache *textures; ChVkDepthResident *zeta; uint64_t frames,raw_draws,raw_programs,raw_program_vertices,raw_declined,color_clock,cpu_batches,cpu_vertices,cpu_texels,cpu_texture_us,cpu_color_pixels,cpu_color_us,cpu_depth_pixels; struct Surface surfaces[MAX_SURFACES]; unsigned count; };
 static ChVkBackend *active;
 static void flush_color(struct Surface *);
 static void observe_guest_colors(void);
@@ -74,13 +74,18 @@ static void release_surface(struct Surface *f) {
     free(f->depth);free(f->stencil);memset(f,0,sizeof *f);
 }
 static void color_encoding(struct Surface *f,int swizzled) {
-    int bgra=active->host.gpu_color_pack && f->resident && !swizzled && !active->host.guest_color_changed;
+    int bgra=active->host.gpu_color_pack && f->resident && !active->host.guest_color_changed;
+    if(swizzled) {
+        uint32_t wx=(f->state.surface_format>>16)&255,hy=f->state.surface_format>>24;
+        bgra=bgra && active->host.gpu_morton_color && wx<=15 && hy<=15 &&
+            f->guest.width==(1u<<wx) && f->guest.height==(1u<<hy)?2:0;
+    }
     if(bgra==f->color_bgra) return;
     if(active->profile.enabled && !bgra && !f->color_fallback_reported) {
         fprintf(stderr,"[Vulkan color fallback] %ux%u bpp=%u Morton=%d\n",f->guest.width,f->guest.height,f->guest.bytes_per_pixel,swizzled);
         f->color_fallback_reported=1;
     }
-    VkResult r=ch_vk_target_color_bgra(f->target,bgra);
+    VkResult r=ch_vk_target_color_layout(f->target,bgra);
     if(r!=VK_SUCCESS) fatal(r,"GPU color conversion setup");
     f->color_bgra=bgra;f->observed_valid=0;
 }
@@ -92,6 +97,7 @@ static VkResult load_surface_color(struct Surface *f,void *pixels) {
         return r;
     }
     const unsigned char *src=(const unsigned char *)active->host.guest_base+f->guest.color_va;
+    if(f->color_bgra==2) {memcpy(pixels,src,f->bytes);return VK_SUCCESS;}
     for(uint32_t y=0;y<f->guest.height;y++)
         memcpy((unsigned char *)pixels+(size_t)y*f->guest.width*4,src+(size_t)y*f->guest.pitch,(size_t)f->guest.width*4);
     return VK_SUCCESS;
@@ -104,6 +110,7 @@ static VkResult store_surface_color(struct Surface *f,const void *pixels) {
         return r;
     }
     unsigned char *dst=(unsigned char *)active->host.guest_base+f->guest.color_va;
+    if(f->color_bgra==2) {memcpy(dst,pixels,f->bytes);return VK_SUCCESS;}
     for(uint32_t y=0;y<f->guest.height;y++)
         memcpy(dst+(size_t)y*f->guest.pitch,(const unsigned char *)pixels+(size_t)y*f->guest.width*4,(size_t)f->guest.width*4);
     return VK_SUCCESS;
@@ -253,6 +260,7 @@ static void store(struct Surface *f,VkResult result,const char *operation,int co
             if(result!=VK_SUCCESS) fatal(result,"resident depth ownership");
             return;
         }
+        active->cpu_depth_pixels+=f->bytes/4;
         result=ch_vk_target_read_depth_stencil(f->target,f->depth,f->stencil,f->bytes/4);
         if(result==VK_SUCCESS) result=ch_vk_guest_depth_store(&f->guest,&f->state,active->host.guest_base,active->host.guest_bytes,f->depth,f->stencil);
         if(result!=VK_SUCCESS) fatal(result,"depth writeback");
@@ -462,6 +470,7 @@ static void import_depth(struct Surface *f,int overwrite) {
         r=ch_vk_depth_resident_release(active->zeta);
         if(r!=VK_SUCCESS) fatal(r,"resident depth strict transition");
     }
+    active->cpu_depth_pixels+=f->bytes/4;
     VkResult r=ch_vk_guest_depth_load(&f->guest,&f->state,active->host.guest_base,active->host.guest_bytes,f->depth,f->stencil);
     if(r!=VK_SUCCESS) fprintf(stderr,"[Vulkan] depth surface=%08X zeta=%08X format=%08X pitch=%u size=%ux%u\n",
         f->guest.color_va,f->state.zeta_va,f->state.surface_format,f->state.zeta_pitch,f->guest.width,f->guest.height);
@@ -561,6 +570,8 @@ static void flip(void) {
             (unsigned long long)stats.binds,(unsigned long long)stats.imports,
             (unsigned long long)stats.writebacks,(unsigned long long)stats.cpu_merges,(unsigned long long)stats.gpu_copies,
             (unsigned long long)stats.clear_skips);
+        fprintf(stderr,"[Vulkan CPU resident depth] layout_pixels=%llu float_pixels=%llu (cumulative)\n",
+            (unsigned long long)stats.cpu_layout_pixels,(unsigned long long)stats.cpu_float_pixels);
         fprintf(stderr,"[Vulkan depth switches] same-image disjoint/overlap=%llu/%llu different-image disjoint/overlap=%llu/%llu dirty=%llu/%llu/%llu/%llu\n",
             (unsigned long long)stats.switches[0],(unsigned long long)stats.switches[1],
             (unsigned long long)stats.switches[2],(unsigned long long)stats.switches[3],
@@ -579,17 +590,19 @@ static void flip(void) {
     if(profile && atoi(profile) && active->frames%60==0)
         fprintf(stderr,"[Vulkan CPU geometry] batches=%llu vertices=%llu (includes pretransformed input)\n",
             (unsigned long long)active->cpu_batches,(unsigned long long)active->cpu_vertices);
-    if(profile && atoi(profile) && active->frames%60==0)
+    if(profile && atoi(profile) && active->frames%60==0) {
+        fprintf(stderr,"[Vulkan CPU strict depth] pixels=%llu (cumulative)\n",(unsigned long long)active->cpu_depth_pixels);
         fprintf(stderr,"[Vulkan CPU graphics] texture_pixels=%llu texture_ms=%.3f color_pixels=%llu color_ms=%.3f (cumulative)\n",
             (unsigned long long)active->cpu_texels,active->cpu_texture_us/1000.,
             (unsigned long long)active->cpu_color_pixels,active->cpu_color_us/1000.);
+    }
     uint32_t presented=nv2a_backend_presented_va();
     if((active->host.present_rgba || active->host.present_bgra) && presented) {
         struct Surface *f=NULL;
         for(unsigned i=0;i<active->count;i++) if(active->surfaces[i].guest.color_va==presented) { f=&active->surfaces[i]; break; }
         if(!f) fatal(VK_ERROR_FEATURE_NOT_PRESENT,"unknown presented surface");
         VkResult r;
-        if(f->color_bgra && active->host.present_bgra) {
+        if(f->color_bgra==1 && active->host.present_bgra) {
             r=load_surface_color(f,f->rgba);
             if(r==VK_SUCCESS) r=active->host.present_bgra(active->host.render_context,&f->guest,f->rgba,f->bytes);
         } else {
@@ -672,7 +685,8 @@ VkResult ch_vk_backend_create(const ChVkBackendConfig *config,ChVkBackend **out)
         VkResult r=ch_vk_depth_resident_create(config->guest_base,config->guest_bytes,&b->zeta);
         if(r!=VK_SUCCESS) {free(b);return r;}
         ch_vk_depth_resident_write_watch(b->zeta,config->guest_write_watch);
-        r=ch_vk_depth_resident_packed(b->zeta,!(config->depth_float_transfers || (config->quantized_depth && !config->gpu_depth_pack)));
+        ch_vk_depth_resident_gpu_layout(b->zeta,config->gpu_morton_depth && config->gpu_depth_pack);
+        r=ch_vk_depth_resident_packed(b->zeta,config->gpu_depth_pack && !config->depth_float_transfers);
         if(r!=VK_SUCCESS) {ch_vk_depth_resident_destroy(b->zeta);free(b);return r;}
         ch_vk_depth_resident_gpu_copies(b->zeta,!config->strict_depth_switches);
     }

@@ -26,7 +26,7 @@ VkResult ch_vk_depth_pack_create(VkDevice device,VkPipelineCache cache,VkBuffer 
     VkDescriptorBufferInfo buffer_info={buffer,0,bytes};
     VkWriteDescriptorSet write={.sType=VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,.dstSet=p->set,.descriptorCount=1,.descriptorType=VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,.pBufferInfo=&buffer_info};
     vkUpdateDescriptorSets(device,1,&write,0,NULL);
-    VkPushConstantRange push={VK_SHADER_STAGE_COMPUTE_BIT,0,8};
+    VkPushConstantRange push={VK_SHADER_STAGE_COMPUTE_BIT,0,24};
     VkPipelineLayoutCreateInfo layout={.sType=VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,.setLayoutCount=1,.pSetLayouts=&p->dsl,.pushConstantRangeCount=1,.pPushConstantRanges=&push};
     TRY(vkCreatePipelineLayout(device,&layout,NULL,&p->layout));
     VkShaderModuleCreateInfo module={.sType=VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,.codeSize=sizeof depth_pack_spv,.pCode=depth_pack_spv};
@@ -38,7 +38,8 @@ fail:
     if(shader) vkDestroyShaderModule(device,shader,NULL);ch_vk_depth_pack_destroy(p);return result;
 #undef TRY
 }
-void ch_vk_depth_pack_record(ChVkDepthPack *p,VkCommandBuffer cmd,uint32_t count,int upload) {
+void ch_vk_depth_pack_record(ChVkDepthPack *p,VkCommandBuffer cmd,uint32_t width,uint32_t height,int upload,int morton,int native_z24) {
+    uint32_t count=width*height;
     VkBufferMemoryBarrier barrier={.sType=VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
         .srcAccessMask=VK_ACCESS_HOST_WRITE_BIT|VK_ACCESS_TRANSFER_WRITE_BIT|VK_ACCESS_TRANSFER_READ_BIT|VK_ACCESS_SHADER_WRITE_BIT|VK_ACCESS_SHADER_READ_BIT,
         .dstAccessMask=VK_ACCESS_SHADER_READ_BIT|VK_ACCESS_SHADER_WRITE_BIT,
@@ -47,7 +48,7 @@ void ch_vk_depth_pack_record(ChVkDepthPack *p,VkCommandBuffer cmd,uint32_t count
         VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,0,0,NULL,1,&barrier,0,NULL);
     vkCmdBindPipeline(cmd,VK_PIPELINE_BIND_POINT_COMPUTE,p->pipeline);
     vkCmdBindDescriptorSets(cmd,VK_PIPELINE_BIND_POINT_COMPUTE,p->layout,0,1,&p->set,0,NULL);
-    uint32_t push[2]={count,!!upload};vkCmdPushConstants(cmd,p->layout,VK_SHADER_STAGE_COMPUTE_BIT,0,sizeof push,push);
+    uint32_t push[6]={count,!!upload,width,height,!!morton,!!native_z24};vkCmdPushConstants(cmd,p->layout,VK_SHADER_STAGE_COMPUTE_BIT,0,sizeof push,push);
     vkCmdDispatch(cmd,(count+255u)/256u,1,1);
     barrier.srcAccessMask=VK_ACCESS_SHADER_WRITE_BIT;
     barrier.dstAccessMask=upload?VK_ACCESS_TRANSFER_READ_BIT:VK_ACCESS_HOST_READ_BIT;
