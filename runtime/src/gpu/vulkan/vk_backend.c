@@ -14,7 +14,7 @@
 #define MAX_SURFACES 32
 struct Surface { Nv2aSurface guest; ChVkGuestLayout layout; uint32_t zeta; Nv2aRenderState state; float *depth; uint8_t *stencil; ChVkTarget *target; unsigned char *rgba,*observed,*cpu,*raw; ChGuestWriteRange *write_range; size_t raw_span; int observed_valid,resident,color_bgra,color_fallback_reported,color_dirty,native_z24,quantized_z24; size_t bytes; uint64_t color_serial; };
 typedef struct {uint64_t pipeline_ns,batch_wait_ns,batch_gpu_ns,upload_wait_ns;} FrameCosts;
-struct ChVkBackend { struct {int enabled;uint64_t draw_cpu_ns,clear_cpu_ns,flip_cpu_ns,trim_cpu_ns;uint64_t draw_us,clear_us,flip_us,trim_us,surface_us,coherence_us,imports_us,raster_us,store_us,texture_uploads;FrameCosts retired,previous;} costs; VkPipelineCache pipeline_cache; struct {int enabled;uint64_t start,n,surface,coherence,imports,draw,store,no_color,flushes,depth_flushes,paired_flushes;} profile; struct {uint64_t previous,us[120];unsigned count;} frame_profile; ChVkBackendConfig host; ChVkTextureCache *textures; ChVkDepthResident *zeta; uint64_t frames,raw_draws,raw_programs,raw_program_vertices,raw_declined,color_clock,cpu_batches,cpu_vertices,cpu_texels,cpu_texture_us,cpu_color_pixels,cpu_color_us,cpu_depth_pixels; struct Surface surfaces[MAX_SURFACES]; unsigned count; };
+struct ChVkBackend { struct {int enabled;uint64_t draw_cpu_ns,clear_cpu_ns,flip_cpu_ns,trim_cpu_ns;uint64_t draw_us,clear_us,flip_us,trim_us,surface_us,coherence_us,imports_us,raster_us,store_us,texture_uploads;FrameCosts retired,previous;} costs; VkPipelineCache pipeline_cache; struct {int enabled;uint64_t start,n,surface,coherence,imports,draw,store,no_color,flushes,depth_flushes,paired_flushes;} profile; struct {int enabled;uint64_t previous,us[120];unsigned count;} frame_profile; ChVkBackendConfig host; ChVkTextureCache *textures; ChVkDepthResident *zeta; uint64_t frames,raw_draws,raw_programs,raw_program_vertices,raw_declined,color_clock,cpu_batches,cpu_vertices,cpu_texels,cpu_texture_us,cpu_color_pixels,cpu_color_us,cpu_depth_pixels; struct Surface surfaces[MAX_SURFACES]; unsigned count; };
 static ChVkBackend *active;
 static void flush_color(struct Surface *);
 static void observe_guest_colors(void);
@@ -97,7 +97,7 @@ static int add_target_costs(FrameCosts *costs,ChVkTarget *target) {
     return timing.available;
 }
 static void profile_frame(void) {
-    if(!active->profile.enabled) return;
+    if(!active->frame_profile.enabled) return;
     uint64_t now=now_us(),previous=active->frame_profile.previous;
     active->frame_profile.previous=now;
     if(active->costs.enabled) {
@@ -745,6 +745,8 @@ VkResult ch_vk_backend_create(const ChVkBackendConfig *config,ChVkBackend **out)
     const char *costs=getenv("CHIHIRO_VULKAN_FRAME_COSTS");
     b->costs.enabled=costs && atoi(costs)!=0;
     b->profile.enabled=(profile && atoi(profile)!=0) || b->costs.enabled;
+    const char *frames=getenv("CHIHIRO_VULKAN_FRAME_PROFILE");
+    b->frame_profile.enabled=b->profile.enabled || (frames && atoi(frames)!=0);
     if(config->resident_depth) {
         VkResult r=ch_vk_depth_resident_create(config->guest_base,config->guest_bytes,&b->zeta);
         if(r!=VK_SUCCESS) {free(b);return r;}

@@ -1,0 +1,22 @@
+  [GPU] flip pacing on (RECOMP_FLIP_PACING=1)
+[GPU] flip hold: holds 0 held_ms 0.0 hold_timeouts 0 clock_stops 0 iv0 0 iv1 0 iv2 0 iv3 0 nonop 0 counters_owned 0
+[Vulkan frame intervals] flips 1..121: 58.48 fps mean 17.10ms p95 20.73ms p99 42.84ms max 79.93ms >20ms=25 >33ms=2 (guest completions, not XR display)
+[Vulkan frame intervals] flips 121..241: 59.98 fps mean 16.67ms p95 20.56ms p99 20.72ms max 20.97ms >20ms=23 >33ms=0 (guest completions, not XR display)
+[Vulkan frame intervals] flips 241..361: 60.00 fps mean 16.67ms p95 20.51ms p99 20.68ms max 21.41ms >20ms=17 >33ms=0 (guest completions, not XR display)
+[GPU] flip hold: holds 444 held_ms 5004.6 hold_timeouts 0 clock_stops 0 iv0 0 iv1 449 iv2 0 iv3 0 nonop 0 counters_owned 0
+[Vulkan frame intervals] flips 361..481: 60.02 fps mean 16.66ms p95 20.26ms p99 20.81ms max 20.84ms >20ms=13 >33ms=0 (guest completions, not XR display)
+[Vulkan frame intervals] flips 481..601: 60.02 fps mean 16.66ms p95 20.43ms p99 21.14ms max 22.48ms >20ms=18 >33ms=0 (guest completions, not XR display)
+[Vulkan frame intervals] flips 601..721: 60.01 fps mean 16.67ms p95 20.22ms p99 20.66ms max 20.68ms >20ms=20 >33ms=0 (guest completions, not XR display)
+[Vulkan frame intervals] flips 721..841: 59.81 fps mean 16.72ms p95 20.96ms p99 25.75ms max 26.15ms >20ms=24 >33ms=0 (guest completions, not XR display)
+[Vulkan frame intervals] flips 841..961: 60.17 fps mean 16.62ms p95 20.56ms p99 21.32ms max 25.63ms >20ms=16 >33ms=0 (guest completions, not XR display)
+[GPU] flip hold: holds 601 held_ms 6343.0 hold_timeouts 0 clock_stops 0 iv0 0 iv1 601 iv2 0 iv3 0 nonop 0 counters_owned 0
+[Vulkan frame intervals] flips 961..1081: 60.02 fps mean 16.66ms p95 20.30ms p99 20.68ms max 20.86ms >20ms=23 >33ms=0 (guest completions, not XR display)
+[Vulkan frame intervals] flips 1081..1201: 42.80 fps mean 23.36ms p95 24.36ms p99 212.84ms max 226.49ms >20ms=72 >33ms=3 (guest completions, not XR display)
+[Vulkan frame intervals] flips 1201..1321: 56.67 fps mean 17.64ms p95 22.87ms p99 41.56ms max 113.80ms >20ms=19 >33ms=3 (guest completions, not XR display)
+[Vulkan frame intervals] flips 1321..1441: 60.00 fps mean 16.67ms p95 20.46ms p99 20.76ms max 20.90ms >20ms=12 >33ms=0 (guest completions, not XR display)
+[Vulkan frame intervals] flips 1441..1561: 60.00 fps mean 16.67ms p95 20.47ms p99 21.10ms max 21.14ms >20ms=19 >33ms=0 (guest completions, not XR display)
+[GPU] flip hold: holds 503 held_ms 3787.7 hold_timeouts 0 clock_stops 0 iv0 0 iv1 545 iv2 0 iv3 0 nonop 0 counters_owned 0
+[Vulkan frame intervals] flips 1561..1681: 59.88 fps mean 16.70ms p95 20.09ms p99 22.47ms max 26.59ms >20ms=8 >33ms=0 (guest completions, not XR display)
+[Vulkan frame intervals] flips 1681..1801: 59.99 fps mean 16.67ms p95 19.60ms p99 20.41ms max 27.50ms >20ms=4 >33ms=0 (guest completions, not XR display)
+[Vulkan frame intervals] flips 1801..1921: 60.01 fps mean 16.67ms p95 19.73ms p99 20.23ms max 20.61ms >20ms=4 >33ms=0 (guest completions, not XR display)
+[Vulkan frame intervals] flips 1921..2041: 60.11 fps mean 16.64ms p95 20.01ms p99 20.88ms max 21.34ms >20ms=7 >33ms=0 (guest completions, not XR display)
