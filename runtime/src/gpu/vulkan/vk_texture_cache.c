@@ -10,6 +10,8 @@ struct Entry {
     size_t span,palette,cost;
     uint64_t used;
     unsigned pins;
+    ChVkTarget *source;
+    uint64_t serial;
 };
 struct ChVkTextureCache {
     ChVkTextureCacheConfig config;
@@ -78,6 +80,31 @@ static struct Entry *oldest(ChVkTextureCache *c) {
     }
     return found;
 }
+static struct Entry *make_room(ChVkTextureCache *c,size_t cost) {
+    if(cost>c->config.max_bytes) return NULL;
+    struct Entry *slot=NULL;
+    for(uint32_t i=0;i<c->extent;i++) if(!c->entries[i].image) {slot=&c->entries[i];break;}
+    if(!slot && c->extent<c->config.max_entries) slot=&c->entries[c->extent];
+    while(c->stats.bytes>c->config.max_bytes-cost || !slot) {
+        struct Entry *e=oldest(c);
+        if(!e) return NULL;
+        drop(c,e);if(!slot) slot=e;
+    }
+    return slot;
+}
+static VkResult image_cost(const ChVkTextureCache *c,const Nv2aTexture *t,size_t *cost) {
+    size_t pixels=0;uint32_t width=t->width,height=t->height,levels=ch_nv2a_texture_mip_levels(t,1);
+    for(uint32_t i=0;i<levels;i++) {
+        uint64_t bytes=(uint64_t)width*height*4*(t->cube?6:1);
+        if(bytes>c->config.max_bytes || pixels>c->config.max_bytes-bytes) return VK_NOT_READY;
+        pixels+=(size_t)bytes;width=width>1?width/2:1;height=height>1?height/2:1;
+    }
+    /* Reserve the base-level diagnostic/readback staging cost even for GPU
+     * snapshots, which only allocate that buffer if it is actually read. */
+    uint64_t staging=(uint64_t)t->width*t->height*4*(t->cube?6:1);
+    if(staging>c->config.max_bytes-pixels) return VK_NOT_READY;
+    *cost=pixels+(size_t)staging;return VK_SUCCESS;
+}
 static void release(void *context,ChVkTexture *image) {
     ChVkTextureCache *c=context;
     for(uint32_t i=0;i<c->extent;i++) if(c->entries[i].image==image) {
@@ -119,35 +146,21 @@ VkResult ch_vk_texture_cache_resolve(void *context,const Nv2aTexture *t,ChVkSamp
         return VK_ERROR_INITIALIZATION_FAILED;
     VkSamplerCreateInfo sampler;
     r=ch_vk_sampler_state(t,&sampler);if(r!=VK_SUCCESS) return r;
-    struct Entry *slot=NULL;
     for(uint32_t i=0;i<c->extent;i++) {
         struct Entry *e=&c->entries[i];
-        if(!e->image) {if(!slot) slot=e;continue;}
-        if(!memcmp(&e->key,t,sizeof *t) && unchanged(c,e,t)) {
+        if(e->image && !e->source && !memcmp(&e->key,t,sizeof *t) && unchanged(c,e,t)) {
             c->stats.hits++;pin(c,e,out);return VK_SUCCESS;
         }
     }
-    if(!slot && c->extent<c->config.max_entries) slot=&c->entries[c->extent];
     c->stats.misses++;
     size_t pixels=0;
-    uint32_t levels=ch_nv2a_texture_mip_levels(t,1),width=t->width,height=t->height;
-    for(uint32_t i=0;i<levels;i++) {
-        uint64_t size=(uint64_t)width*height*4*(t->cube?6:1);
-        if(size>c->config.max_bytes || pixels>c->config.max_bytes-size) return VK_NOT_READY;
-        pixels+=(size_t)size;width=width>1?width/2:1;height=height>1?height/2:1;
-    }
-    /* The immutable upload retains a base-level staging/readback buffer. */
+    uint32_t levels=ch_nv2a_texture_mip_levels(t,1);
+    r=image_cost(c,t,&pixels);if(r!=VK_SUCCESS) return r;
     size_t staging=(size_t)t->width*t->height*4*(t->cube?6:1);
-    if(staging>c->config.max_bytes-pixels) return VK_NOT_READY;
-    pixels+=staging;
     if(span>c->config.max_bytes || palette>c->config.max_bytes-span ||
        pixels>c->config.max_bytes-span-palette) return VK_NOT_READY;
     size_t cost=span+palette+pixels;
-    while(c->stats.bytes>c->config.max_bytes-cost || !slot) {
-        struct Entry *e=oldest(c);
-        if(!e) return VK_NOT_READY;
-        drop(c,e);if(!slot) slot=e;
-    }
+    struct Entry *slot=make_room(c,cost);if(!slot) return VK_NOT_READY;
     unsigned char *raw=malloc(span+palette);
     uint32_t *argb=malloc(staging);
     if(!raw || !argb) {free(raw);free(argb);return VK_ERROR_OUT_OF_HOST_MEMORY;}
@@ -166,6 +179,40 @@ VkResult ch_vk_texture_cache_resolve(void *context,const Nv2aTexture *t,ChVkSamp
     *slot=(struct Entry){.key=*t,.image=image,.raw=raw,.span=span,.palette=palette,.cost=(size_t)cost};
     if(slot==c->entries+c->extent) c->extent++;
     c->stats.entries++;c->stats.bytes+=(size_t)cost;c->stats.uploads++;pin(c,slot,out);return VK_SUCCESS;
+}
+VkResult ch_vk_texture_cache_resolve_target(ChVkTextureCache *c,const Nv2aTexture *t,
+    ChVkTarget *source,uint64_t serial,ChVkSampleImage *out) {
+    if(!out) return VK_ERROR_INITIALIZATION_FAILED;
+    memset(out,0,sizeof *out);
+    if(!c || !t || !source || !serial || t->cube || ch_vk_target_device(source)!=c->config.device)
+        return VK_ERROR_INITIALIZATION_FAILED;
+    uint32_t width,height;ch_vk_target_size(source,&width,&height);
+    if(width!=t->width || height!=t->height) return VK_ERROR_INITIALIZATION_FAILED;
+    VkSamplerCreateInfo sampler;VkResult r=ch_vk_sampler_state(t,&sampler);
+    if(r!=VK_SUCCESS) return r;
+    struct Entry *reusable=NULL;
+    for(uint32_t i=0;i<c->extent;i++) {
+        struct Entry *e=&c->entries[i];
+        if(e->image && e->source==source && !memcmp(&e->key,t,sizeof *t)) {
+            if(e->serial==serial) {c->stats.hits++;c->stats.gpu_hits++;pin(c,e,out);return VK_SUCCESS;}
+            if(!e->pins) reusable=e;
+        }
+    }
+    if(reusable) {
+        r=ch_vk_target_refresh_texture(source,reusable->image);if(r!=VK_SUCCESS) return r;
+        reusable->serial=serial;c->stats.misses++;c->stats.gpu_copies++;c->stats.gpu_reuses++;
+        pin(c,reusable,out);return VK_SUCCESS;
+    }
+    c->stats.misses++;size_t cost;
+    r=image_cost(c,t,&cost);if(r!=VK_SUCCESS) return r;
+    struct Entry *slot=make_room(c,cost);if(!slot) return VK_NOT_READY;
+    ChVkTexture *image=NULL;
+    r=ch_vk_target_snapshot_texture(source,ch_nv2a_texture_mip_levels(t,1),&image);
+    if(r==VK_SUCCESS) r=ch_vk_texture_set_sampler(image,&sampler);
+    if(r!=VK_SUCCESS) {ch_vk_texture_destroy(image);return r;}
+    *slot=(struct Entry){.key=*t,.image=image,.cost=cost,.source=source,.serial=serial};
+    if(slot==c->entries+c->extent) c->extent++;
+    c->stats.entries++;c->stats.bytes+=cost;c->stats.gpu_copies++;pin(c,slot,out);return VK_SUCCESS;
 }
 void ch_vk_texture_cache_stats(const ChVkTextureCache *c,ChVkTextureCacheStats *out) {
     if(out) *out=c?c->stats:(ChVkTextureCacheStats){0};

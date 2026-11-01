@@ -3,7 +3,13 @@
 #include <stdio.h>
 #include <stdlib.h>
 #define CHECK(call) do { VkResult r=(call); if(r!=VK_SUCCESS) { fprintf(stderr,"%s: %d\n",#call,r); goto done; } } while(0)
-#ifdef CH_VK_SPECIALIZATION_TEST
+#ifdef CH_VK_RENDER_TEXTURE_TEST
+#include "nv2a_backend.h"
+static const Nv2aBackend *registered;
+void nv2a_backend_register(const Nv2aBackend *backend) {registered=backend;}
+uint32_t nv2a_backend_presented_va(void) {abort();} /* No guest flip in this fixture. */
+int ch_test_render_textures(VkPhysicalDevice,VkDevice,VkQueue,uint32_t);
+#elif defined(CH_VK_SPECIALIZATION_TEST)
 int ch_test_specialized_combiners(VkPhysicalDevice,VkDevice,VkQueue,uint32_t);
 #else
 int combiner_check(VkPhysicalDevice,VkDevice,VkQueue,VkCommandPool);
@@ -41,7 +47,7 @@ int main(void) {
     float priority=1;
     VkDeviceQueueCreateInfo qci={.sType=VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,.queueFamilyIndex=family,.queueCount=1,.pQueuePriorities=&priority};
     VkDeviceCreateInfo dci={.sType=VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,.queueCreateInfoCount=1,.pQueueCreateInfos=&qci};
-#ifdef CH_VK_SPECIALIZATION_TEST
+#if defined(CH_VK_SPECIALIZATION_TEST) || defined(CH_VK_RENDER_TEXTURE_TEST)
     VkPhysicalDeviceFeatures available;vkGetPhysicalDeviceFeatures(gpu,&available);
     if(!available.occlusionQueryPrecise) {fputs("Precise visibility queries required by specialization fixture\n",stderr);goto done;}
     VkPhysicalDeviceFeatures features={.occlusionQueryPrecise=VK_TRUE};dci.pEnabledFeatures=&features;
@@ -62,7 +68,10 @@ int main(void) {
     VkSubmitInfo si={.sType=VK_STRUCTURE_TYPE_SUBMIT_INFO,.commandBufferCount=1,.pCommandBuffers=&command};
     CHECK(vkQueueSubmit(queue,1,&si,fence));
     CHECK(vkWaitForFences(device,1,&fence,VK_TRUE,5000000000ULL));
-#ifdef CH_VK_SPECIALIZATION_TEST
+#ifdef CH_VK_RENDER_TEXTURE_TEST
+    result=ch_test_render_textures(gpu,device,queue,family);
+    if(registered) {fputs("Render fixture left an attached backend\n",stderr);result=1;}
+#elif defined(CH_VK_SPECIALIZATION_TEST)
     result=ch_test_specialized_combiners(gpu,device,queue,family);
 #else
     result=combiner_check(gpu,device,queue,pool);

@@ -30,6 +30,7 @@ typedef struct {
     int depth_float_transfers; /* diagnostic: normalized-float staging instead of exact packed D24 */
     int batch_draws; /* resident no-query draws, complete before guest fences */
     int cache_textures; /* exact level-zero storage/palette/sampler cache */
+    int sample_render_targets; /* opt-in immutable GPU snapshots; requires both resident_color/cache_textures */
     uint32_t texture_cache_entries; /* zero: default capacity */
     size_t texture_cache_bytes; /* zero: default byte budget */
     /* Synchronous host rendering hooks, after guest-visible completion.

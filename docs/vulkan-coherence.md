@@ -73,3 +73,19 @@ GPU neighbor preservation and exact fallback after a protection change. Platform
 kernel-file and memory-view registry regressions pass on Mac. Actual Quest runs
 reach the bomb battle; their evidence is in `validation/direct-vulkan-write-watch`.
 Combat throughput, full gameplay and immersive XR acceptance remain open.
+
+## Experimental GPU render-target sampling
+
+`CHIHIRO_VULKAN_GPU_RENDER_TEXTURES=1` allows exact full-view ARGB8888 bindings
+to sample GPU snapshots instead of publishing/decoding RAM at that binding.
+It requires resident color and texture caching; the default remains off.
+Pitched/Morton layout and extent must agree exactly. Other formats/subviews and
+cache pressure keep the existing publication-before-decoding fallback.
+
+Each GPU color write or CPU pixel import advances a content serial. Snapshots
+use the existing cache budget and pins, so pending draws keep their old image
+even when the source changes or is destroyed. An unpinned completed image can
+be refreshed in place. Guest completion boundaries still publish dirty RAM;
+this optimization does not make guest reads depend on a new lazy-read policy.
+Local evidence and device-validation limits are recorded in
+`validation/direct-vulkan-render-textures`.

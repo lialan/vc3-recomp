@@ -65,6 +65,11 @@ uint32_t ch_vk_target_pending(const ChVkTarget *);
 VkResult ch_vk_target_retire_sample(ChVkTarget *,ChVkTexture *,
     void (*release)(void *,ChVkTexture *),void *,int owned);
 VkResult ch_vk_target_read_color(ChVkTarget *,void *,VkDeviceSize);
+/* Complete source draws, then make an owned immutable sampled texture.
+ * Does not read or publish guest color memory. */
+VkResult ch_vk_target_snapshot_texture(ChVkTarget *,uint32_t levels,ChVkTexture **);
+/* Snapshot into a matching texture whose previous sampling has completed. */
+VkResult ch_vk_target_refresh_texture(ChVkTarget *,ChVkTexture *);
 /* Initial untextured indexed triangle path: clip-space xyzw and float RGBA (w=0 is shorthand for 1).
  * Non-NULL rgba clears all attachments (depth=1, stencil=0).
  * NULL rgba preserves all attachments; target must first be initialized with

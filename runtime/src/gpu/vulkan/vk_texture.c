@@ -3,7 +3,7 @@
 #include <stdint.h>
 #include <string.h>
 struct ChVkTexture {
-    VkDevice device; VkQueue queue;
+    VkPhysicalDevice physical; VkDevice device; VkQueue queue;
     VkImage image; VkDeviceMemory image_memory;
     VkImageView view; VkSampler sampler;
     VkBuffer staging; VkDeviceMemory staging_memory;
@@ -33,6 +33,59 @@ void ch_vk_texture_destroy(ChVkTexture *t) {
     if(t->staging_memory) vkFreeMemory(t->device,t->staging_memory,NULL);
     free(t);
 }
+static VkResult ensure_staging(ChVkTexture *t) {
+    if(t->staging) return VK_SUCCESS;
+    VkResult result;VkBuffer buffer=VK_NULL_HANDLE;VkDeviceMemory memory=VK_NULL_HANDLE;
+    VkBufferCreateInfo info={.sType=VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,.size=t->bytes,
+        .usage=VK_BUFFER_USAGE_TRANSFER_SRC_BIT|VK_BUFFER_USAGE_TRANSFER_DST_BIT,.sharingMode=VK_SHARING_MODE_EXCLUSIVE};
+    TRY(vkCreateBuffer(t->device,&info,NULL,&buffer));
+    VkMemoryRequirements req;vkGetBufferMemoryRequirements(t->device,buffer,&req);
+    VkMemoryAllocateInfo alloc={.sType=VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,.allocationSize=req.size};
+    if(!memory_type(t->physical,req.memoryTypeBits,VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT,&alloc.memoryTypeIndex)) {
+        result=VK_ERROR_FEATURE_NOT_PRESENT;goto fail;
+    }
+    TRY(vkAllocateMemory(t->device,&alloc,NULL,&memory));
+    TRY(vkBindBufferMemory(t->device,buffer,memory,0));
+    t->staging=buffer;t->staging_memory=memory;return VK_SUCCESS;
+fail:
+    if(buffer) vkDestroyBuffer(t->device,buffer,NULL);
+    if(memory) vkFreeMemory(t->device,memory,NULL);
+    return result;
+}
+static void finish_upload(ChVkTexture *t) {
+    uint32_t width=t->width,height=t->height;
+    VkImageMemoryBarrier image={.sType=VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+        .srcQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED,.dstQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED,
+        .image=t->image,.subresourceRange={VK_IMAGE_ASPECT_COLOR_BIT,0,1,0,t->layers}};
+    for(uint32_t mip=1;mip<t->levels;mip++) {
+        image.srcAccessMask=VK_ACCESS_TRANSFER_WRITE_BIT;
+        image.dstAccessMask=VK_ACCESS_TRANSFER_READ_BIT;
+        image.oldLayout=VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+        image.newLayout=VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+        image.subresourceRange.baseMipLevel=mip-1;image.subresourceRange.levelCount=1;
+        vkCmdPipelineBarrier(t->command,VK_PIPELINE_STAGE_TRANSFER_BIT,VK_PIPELINE_STAGE_TRANSFER_BIT,
+            0,0,NULL,0,NULL,1,&image);
+        uint32_t next_width=width>1?width/2:1,next_height=height>1?height/2:1;
+        VkImageBlit blit={.srcSubresource={VK_IMAGE_ASPECT_COLOR_BIT,mip-1,0,1},
+            .srcOffsets={{0,0,0},{(int32_t)width,(int32_t)height,1}},
+            .dstSubresource={VK_IMAGE_ASPECT_COLOR_BIT,mip,0,1},
+            .dstOffsets={{0,0,0},{(int32_t)next_width,(int32_t)next_height,1}}};
+        vkCmdBlitImage(t->command,t->image,VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+            t->image,VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,1,&blit,VK_FILTER_LINEAR);
+        image.srcAccessMask=VK_ACCESS_TRANSFER_READ_BIT;image.dstAccessMask=VK_ACCESS_SHADER_READ_BIT;
+        image.oldLayout=VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;image.newLayout=VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        vkCmdPipelineBarrier(t->command,VK_PIPELINE_STAGE_TRANSFER_BIT,VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT,
+            0,0,NULL,0,NULL,1,&image);
+        width=next_width;height=next_height;
+    }
+    image.subresourceRange.baseMipLevel=t->levels-1;image.subresourceRange.levelCount=1;
+    image.srcAccessMask=VK_ACCESS_TRANSFER_WRITE_BIT;
+    image.dstAccessMask=VK_ACCESS_SHADER_READ_BIT;
+    image.oldLayout=VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    image.newLayout=VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    vkCmdPipelineBarrier(t->command,VK_PIPELINE_STAGE_TRANSFER_BIT,VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT,
+        0,0,NULL,0,NULL,1,&image);
+}
 static VkResult transfer(ChVkTexture *t,int upload,uint32_t level) {
     VkResult result;
     TRY(vkResetCommandBuffer(t->command,0));
@@ -55,34 +108,13 @@ static VkResult transfer(ChVkTexture *t,int upload,uint32_t level) {
     VkBufferImageCopy copy={.imageSubresource={VK_IMAGE_ASPECT_COLOR_BIT,level,0,t->layers},.imageExtent={width,height,1}};
     if(upload) vkCmdCopyBufferToImage(t->command,t->staging,t->image,image.newLayout,1,&copy);
     else vkCmdCopyImageToBuffer(t->command,t->image,image.newLayout,t->staging,1,&copy);
-    if(upload) for(uint32_t mip=1;mip<t->levels;mip++) {
-        image.srcAccessMask=VK_ACCESS_TRANSFER_WRITE_BIT;
-        image.dstAccessMask=VK_ACCESS_TRANSFER_READ_BIT;
-        image.oldLayout=VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-        image.newLayout=VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
-        image.subresourceRange.baseMipLevel=mip-1;image.subresourceRange.levelCount=1;
-        vkCmdPipelineBarrier(t->command,VK_PIPELINE_STAGE_TRANSFER_BIT,VK_PIPELINE_STAGE_TRANSFER_BIT,
-            0,0,NULL,0,NULL,1,&image);
-        uint32_t next_width=width>1?width/2:1,next_height=height>1?height/2:1;
-        VkImageBlit blit={.srcSubresource={VK_IMAGE_ASPECT_COLOR_BIT,mip-1,0,1},
-            .srcOffsets={{0,0,0},{(int32_t)width,(int32_t)height,1}},
-            .dstSubresource={VK_IMAGE_ASPECT_COLOR_BIT,mip,0,1},
-            .dstOffsets={{0,0,0},{(int32_t)next_width,(int32_t)next_height,1}}};
-        vkCmdBlitImage(t->command,t->image,VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-            t->image,VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,1,&blit,VK_FILTER_LINEAR);
+    if(upload) finish_upload(t);
+    else {
         image.srcAccessMask=VK_ACCESS_TRANSFER_READ_BIT;image.dstAccessMask=VK_ACCESS_SHADER_READ_BIT;
         image.oldLayout=VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;image.newLayout=VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
         vkCmdPipelineBarrier(t->command,VK_PIPELINE_STAGE_TRANSFER_BIT,VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT,
             0,0,NULL,0,NULL,1,&image);
-        width=next_width;height=next_height;
     }
-    image.subresourceRange.baseMipLevel=upload?t->levels-1:level;image.subresourceRange.levelCount=1;
-    image.srcAccessMask=upload?VK_ACCESS_TRANSFER_WRITE_BIT:VK_ACCESS_TRANSFER_READ_BIT;
-    image.dstAccessMask=VK_ACCESS_SHADER_READ_BIT;
-    image.oldLayout=upload?VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL:VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
-    image.newLayout=VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-    vkCmdPipelineBarrier(t->command,VK_PIPELINE_STAGE_TRANSFER_BIT,VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT,
-        0,0,NULL,0,NULL,1,&image);
     if(!upload) {
         VkBufferMemoryBarrier host={.sType=VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
             .srcAccessMask=VK_ACCESS_TRANSFER_WRITE_BIT,.dstAccessMask=VK_ACCESS_HOST_READ_BIT,
@@ -113,11 +145,11 @@ VkResult ch_vk_texture_upload_cube(VkPhysicalDevice gpu,VkDevice device,VkQueue 
     uint32_t family,uint32_t size,const uint32_t *faces,ChVkTexture **out) {
     return upload(gpu,device,queue,family,size,size,faces,1,6,out);
 }
-static VkResult upload(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,
-    uint32_t family,uint32_t width,uint32_t height,const uint32_t *argb,uint32_t levels,uint32_t layers,ChVkTexture **out) {
+static VkResult allocate_texture(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,
+    uint32_t family,uint32_t width,uint32_t height,uint32_t levels,uint32_t layers,ChVkTexture **out) {
     if(!out) return VK_ERROR_INITIALIZATION_FAILED;
     *out=NULL;
-    if(!width || !height || !argb || (uint64_t)width*height>SIZE_MAX/4/layers) return VK_ERROR_INITIALIZATION_FAILED;
+    if(!width || !height || (uint64_t)width*height>SIZE_MAX/4/layers) return VK_ERROR_INITIALIZATION_FAILED;
     uint32_t full=1,extent=width>height?width:height;
     while(extent>1) {extent>>=1;full++;}
     if(levels!=1 && levels!=full) return VK_ERROR_INITIALIZATION_FAILED;
@@ -129,7 +161,7 @@ static VkResult upload(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,
     }
     ChVkTexture *t=calloc(1,sizeof(*t));
     if(!t) return VK_ERROR_OUT_OF_HOST_MEMORY;
-    t->device=device; t->queue=queue; t->width=width; t->height=height;t->levels=levels;t->layers=layers; t->bytes=(VkDeviceSize)width*height*4*layers;
+    t->physical=gpu;t->device=device; t->queue=queue; t->width=width; t->height=height;t->levels=levels;t->layers=layers; t->bytes=(VkDeviceSize)width*height*4*layers;
     VkResult result;
     VkImageCreateInfo image={.sType=VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,.flags=layers==6?VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT:0,.imageType=VK_IMAGE_TYPE_2D,
         .format=VK_FORMAT_R8G8B8A8_UNORM,.extent={width,height,1},.mipLevels=levels,.arrayLayers=layers,
@@ -143,24 +175,6 @@ static VkResult upload(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,
     if(!memory_type(gpu,req.memoryTypeBits,0,&mem.memoryTypeIndex)) { result=VK_ERROR_FEATURE_NOT_PRESENT; goto fail; }
     TRY(vkAllocateMemory(device,&mem,NULL,&t->image_memory));
     TRY(vkBindImageMemory(device,t->image,t->image_memory,0));
-    VkBufferCreateInfo buf={.sType=VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,.size=t->bytes,
-        .usage=VK_BUFFER_USAGE_TRANSFER_SRC_BIT|VK_BUFFER_USAGE_TRANSFER_DST_BIT,.sharingMode=VK_SHARING_MODE_EXCLUSIVE};
-    TRY(vkCreateBuffer(device,&buf,NULL,&t->staging));
-    vkGetBufferMemoryRequirements(device,t->staging,&req); mem.allocationSize=req.size;
-    if(!memory_type(gpu,req.memoryTypeBits,VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT,&mem.memoryTypeIndex)) { result=VK_ERROR_FEATURE_NOT_PRESENT; goto fail; }
-    TRY(vkAllocateMemory(device,&mem,NULL,&t->staging_memory));
-    TRY(vkBindBufferMemory(device,t->staging,t->staging_memory,0));
-    void *mapped;
-    TRY(vkMapMemory(device,t->staging_memory,0,VK_WHOLE_SIZE,0,&mapped));
-    unsigned char *bytes=mapped;
-    for(size_t i=0;i<(size_t)width*height*layers;i++) {
-        bytes[i*4]=(argb[i]>>16)&255; bytes[i*4+1]=(argb[i]>>8)&255;
-        bytes[i*4+2]=argb[i]&255; bytes[i*4+3]=argb[i]>>24;
-    }
-    VkMappedMemoryRange flush={.sType=VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE,.memory=t->staging_memory,.size=VK_WHOLE_SIZE};
-    result=vkFlushMappedMemoryRanges(device,1,&flush);
-    vkUnmapMemory(device,t->staging_memory);
-    if(result!=VK_SUCCESS) goto fail;
     VkCommandPoolCreateInfo pool={.sType=VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
         .flags=VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT,.queueFamilyIndex=family};
     TRY(vkCreateCommandPool(device,&pool,NULL,&t->pool));
@@ -169,7 +183,6 @@ static VkResult upload(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,
     TRY(vkAllocateCommandBuffers(device,&cmd,&t->command));
     VkFenceCreateInfo fence={.sType=VK_STRUCTURE_TYPE_FENCE_CREATE_INFO};
     TRY(vkCreateFence(device,&fence,NULL,&t->fence));
-    TRY(transfer(t,1,0));
     VkImageViewCreateInfo view={.sType=VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,.image=t->image,
         .viewType=layers==6?VK_IMAGE_VIEW_TYPE_CUBE:VK_IMAGE_VIEW_TYPE_2D,.format=image.format,.subresourceRange={VK_IMAGE_ASPECT_COLOR_BIT,0,levels,0,layers}};
     TRY(vkCreateImageView(device,&view,NULL,&t->view));
@@ -181,6 +194,68 @@ static VkResult upload(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,
     *out=t; return VK_SUCCESS;
 fail:
     ch_vk_texture_destroy(t); return result;
+}
+static VkResult upload(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,
+    uint32_t family,uint32_t width,uint32_t height,const uint32_t *argb,uint32_t levels,uint32_t layers,ChVkTexture **out) {
+    if(!out) return VK_ERROR_INITIALIZATION_FAILED;
+    *out=NULL;if(!argb) return VK_ERROR_INITIALIZATION_FAILED;
+    ChVkTexture *t=NULL;
+    VkResult result=allocate_texture(gpu,device,queue,family,width,height,levels,layers,&t);
+    if(result!=VK_SUCCESS) return result;
+    TRY(ensure_staging(t));
+    void *mapped;
+    TRY(vkMapMemory(device,t->staging_memory,0,VK_WHOLE_SIZE,0,&mapped));
+    unsigned char *bytes=mapped;
+    for(size_t i=0;i<(size_t)width*height*layers;i++) {
+        bytes[i*4]=(argb[i]>>16)&255;bytes[i*4+1]=(argb[i]>>8)&255;
+        bytes[i*4+2]=argb[i]&255;bytes[i*4+3]=argb[i]>>24;
+    }
+    VkMappedMemoryRange flush={.sType=VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE,.memory=t->staging_memory,.size=VK_WHOLE_SIZE};
+    result=vkFlushMappedMemoryRanges(device,1,&flush);
+    vkUnmapMemory(device,t->staging_memory);
+    if(result!=VK_SUCCESS) goto fail;
+    TRY(transfer(t,1,0));*out=t;return VK_SUCCESS;
+fail:
+    ch_vk_texture_destroy(t);return result;
+}
+VkResult ch_vk_texture_copy_from_image(ChVkTexture *t,VkDevice device,VkImage source,uint32_t width,uint32_t height) {
+    if(!t || t->failed || !source || source==t->image || device!=t->device ||
+        width!=t->width || height!=t->height || t->layers!=1) return VK_ERROR_INITIALIZATION_FAILED;
+    VkResult result;uint32_t levels=t->levels;
+    TRY(vkResetCommandBuffer(t->command,0));
+    TRY(vkResetFences(t->device,1,&t->fence));
+    VkCommandBufferBeginInfo begin={.sType=VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+        .flags=VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT};
+    TRY(vkBeginCommandBuffer(t->command,&begin));
+    VkImageMemoryBarrier image={.sType=VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+        .dstAccessMask=VK_ACCESS_TRANSFER_WRITE_BIT,.oldLayout=VK_IMAGE_LAYOUT_UNDEFINED,
+        .newLayout=VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+        .srcQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED,.dstQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED,
+        .image=t->image,.subresourceRange={VK_IMAGE_ASPECT_COLOR_BIT,0,levels,0,1}};
+    vkCmdPipelineBarrier(t->command,VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,VK_PIPELINE_STAGE_TRANSFER_BIT,
+        0,0,NULL,0,NULL,1,&image);
+    VkImageCopy copy={.srcSubresource={VK_IMAGE_ASPECT_COLOR_BIT,0,0,1},
+        .dstSubresource={VK_IMAGE_ASPECT_COLOR_BIT,0,0,1},.extent={width,height,1}};
+    vkCmdCopyImage(t->command,source,VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+        t->image,VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,1,&copy);
+    finish_upload(t);
+    TRY(vkEndCommandBuffer(t->command));
+    VkSubmitInfo submit={.sType=VK_STRUCTURE_TYPE_SUBMIT_INFO,.commandBufferCount=1,.pCommandBuffers=&t->command};
+    TRY(vkQueueSubmit(t->queue,1,&submit,t->fence));
+    TRY(vkWaitForFences(t->device,1,&t->fence,VK_TRUE,5000000000ULL));
+    return VK_SUCCESS;
+fail:
+    t->failed=1;return result;
+}
+VkResult ch_vk_texture_copy_image(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,uint32_t family,
+    uint32_t width,uint32_t height,VkImage source,uint32_t levels,ChVkTexture **out) {
+    if(!out) return VK_ERROR_INITIALIZATION_FAILED;
+    *out=NULL;if(!source) return VK_ERROR_INITIALIZATION_FAILED;
+    ChVkTexture *t=NULL;
+    VkResult r=allocate_texture(gpu,device,queue,family,width,height,levels,1,&t);
+    if(r==VK_SUCCESS) r=ch_vk_texture_copy_from_image(t,device,source,width,height);
+    if(r!=VK_SUCCESS) {ch_vk_texture_destroy(t);return r;}
+    *out=t;return VK_SUCCESS;
 }
 VkDescriptorImageInfo ch_vk_texture_descriptor(const ChVkTexture *t) {
     return (VkDescriptorImageInfo){t?t->sampler:VK_NULL_HANDLE,t?t->view:VK_NULL_HANDLE,VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
@@ -197,7 +272,9 @@ VkResult ch_vk_texture_read_level_rgba(ChVkTexture *t,uint32_t level,void *rgba,
     if(!height) height=1;
     VkDeviceSize used=(VkDeviceSize)width*height*4*t->layers;
     if(bytes<used) return VK_ERROR_INITIALIZATION_FAILED;
-    VkResult result=transfer(t,0,level);
+    VkResult result=ensure_staging(t);
+    if(result!=VK_SUCCESS) return result;
+    result=transfer(t,0,level);
     if(result!=VK_SUCCESS) return result;
     void *mapped;
     TRY(vkMapMemory(t->device,t->staging_memory,0,VK_WHOLE_SIZE,0,&mapped));

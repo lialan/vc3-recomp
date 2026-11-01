@@ -150,6 +150,8 @@ static VkResult attach(ChVkBackendConfig config)
     config.resident_color=!resident || strcmp(resident,"0");
     const char *cache=ch_env("VULKAN_TEXTURE_CACHE");
     config.cache_textures=!cache || strcmp(cache,"0");
+    const char *gpu_render_textures=ch_env("VULKAN_GPU_RENDER_TEXTURES");
+    config.sample_render_targets=gpu_render_textures && atoi(gpu_render_textures);
     const char *entries=ch_env("VULKAN_TEXTURE_CACHE_ENTRIES");
     if(entries) {
         char *end;errno=0;unsigned long value=strtoul(entries,&end,10);
@@ -181,6 +183,7 @@ static VkResult attach(ChVkBackendConfig config)
     const char *packed=ch_env("VULKAN_DEPTH_PACKED");
     config.depth_float_transfers=packed && !strcmp(packed,"0");
     fprintf(stderr,"[Vulkan] resident color targets: %s\n",config.resident_color?"enabled":"disabled");
+    fprintf(stderr,"[Vulkan] immutable GPU render-target sampling: %s\n",config.sample_render_targets?"enabled":"disabled");
     fprintf(stderr,"[Vulkan] resident D24 depth targets: %s\n",config.resident_depth?"enabled":"disabled");
     config.present_rgba=present;
     if(!config.fatal) config.fatal=fatal;

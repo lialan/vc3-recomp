@@ -8,8 +8,8 @@
 #include <stdio.h>
 #include <time.h>
 #define MAX_SURFACES 32
-struct Surface { Nv2aSurface guest; uint32_t zeta; Nv2aRenderState state; float *depth; uint8_t *stencil; ChVkTarget *target; unsigned char *rgba,*observed,*cpu,*raw; ChGuestWriteRange *write_range; size_t raw_span; int observed_valid,resident,color_dirty,native_z24; size_t bytes; };
-struct ChVkBackend { struct {int enabled;uint64_t start,n,surface,coherence,imports,draw,store,no_color;} profile; struct {uint64_t previous,us[120];unsigned count;} frame_profile; ChVkBackendConfig host; ChVkTextureCache *textures; ChVkDepthResident *zeta; uint64_t frames,raw_draws,raw_declined; struct Surface surfaces[MAX_SURFACES]; unsigned count; };
+struct Surface { Nv2aSurface guest; uint32_t zeta; Nv2aRenderState state; float *depth; uint8_t *stencil; ChVkTarget *target; unsigned char *rgba,*observed,*cpu,*raw; ChGuestWriteRange *write_range; size_t raw_span; int observed_valid,resident,color_dirty,native_z24; size_t bytes; uint64_t color_serial; };
+struct ChVkBackend { struct {int enabled;uint64_t start,n,surface,coherence,imports,draw,store,no_color;} profile; struct {uint64_t previous,us[120];unsigned count;} frame_profile; ChVkBackendConfig host; ChVkTextureCache *textures; ChVkDepthResident *zeta; uint64_t frames,raw_draws,raw_declined,color_clock; struct Surface surfaces[MAX_SURFACES]; unsigned count; };
 static ChVkBackend *active;
 static void flush_color(struct Surface *);
 static void observe_guest_colors(void);
@@ -165,6 +165,7 @@ static struct Surface *surface(const Nv2aSurface *s,const Nv2aRenderState *rs) {
 }
 static void store(struct Surface *f,VkResult result,const char *operation,int color_dirty,int depth_dirty) {
     if(result!=VK_SUCCESS) fatal(result,operation);
+    if(color_dirty) f->color_serial=++active->color_clock;
     if(f->resident) f->color_dirty|=!!color_dirty;
     else {
         result=ch_vk_nv2a_store_color_state(&f->guest,&f->state,f->rgba,f->bytes,active->host.guest_base,active->host.guest_bytes);
@@ -227,6 +228,7 @@ static void observe_guest_color(struct Surface *f) {
             }
             r=ch_vk_target_import_color(f->target,f->rgba,f->bytes);
             if(r!=VK_SUCCESS) fatal(r,"resident CPU edit import");
+            f->color_serial=++active->color_clock;
         }
         if(active->host.guest_color_changed) {
             r=active->host.guest_color_changed(active->host.render_context,&f->guest,cpu,f->bytes,!f->observed_valid);
@@ -264,6 +266,37 @@ static void flush(void) {
         if(r!=VK_SUCCESS) fatal(r,"resident depth completion");
     }
 }
+static int gpu_sample_matches(const struct Surface *f,const Nv2aTexture *tx) {
+    if(!active->host.sample_render_targets || !f->resident || tx->cube ||
+       tx->offset!=f->guest.color_va || tx->width!=f->guest.width || tx->height!=f->guest.height)
+        return 0;
+    ChVkGuestLayout layout;
+    if(ch_vk_guest_layout(f->state.surface_format,f->guest.width,f->guest.height,
+        f->guest.pitch,4,&layout)!=VK_SUCCESS) return 0;
+    if(layout.swizzled) {
+        uint32_t wx=(f->state.surface_format>>16)&255,hy=f->state.surface_format>>24;
+        if(tx->color!=0x06 || tx->width!=(1u<<wx) || tx->height!=(1u<<hy)) return 0;
+    } else if(tx->color!=0x12 || tx->pitch!=f->guest.pitch) return 0;
+    size_t span,palette;
+    return ch_vk_texture_storage_span(tx,&span,&palette)==VK_SUCCESS && !palette && span==layout.span;
+}
+static VkResult resolve_sample(void *context,const Nv2aTexture *tx,ChVkSampleImage *out) {
+    ChVkBackend *b=context;
+    if(!b->host.sample_render_targets) return ch_vk_texture_cache_resolve(b->textures,tx,out);
+    for(unsigned i=0;i<b->count;i++) {
+        struct Surface *f=&b->surfaces[i];
+        if(!gpu_sample_matches(f,tx)) continue;
+        /* Pre-draw alias handling already observes this source. Rechecking
+         * here also covers callers that resolve a binding more than once. */
+        observe_guest_color(f);
+        VkResult r=ch_vk_texture_cache_resolve_target(b->textures,tx,f->target,f->color_serial,out);
+        if(r!=VK_NOT_READY) return r;
+        /* Budget/pin pressure retains the exact decoder path. Publish the
+         * source before a CPU cache lookup or uncached decode can read it. */
+        flush_color(f);break;
+    }
+    return b->textures?ch_vk_texture_cache_resolve(b->textures,tx,out):VK_NOT_READY;
+}
 static void flush_sampled_colors(const Nv2aBatch *b) {
     if(!active->host.resident_color && !active->zeta) return;
     for(unsigned stage=0;stage<4;stage++) {
@@ -287,7 +320,7 @@ static void flush_sampled_colors(const Nv2aBatch *b) {
                 (palette && ((uint64_t)tx->palette<=color?color-tx->palette<palette:(uint64_t)tx->palette-color<layout.span));
             if(overlap) {
                 observe_guest_color(f);
-                flush_color(f);
+                if(!gpu_sample_matches(f,tx)) flush_color(f);
             }
         }
     }
@@ -361,9 +394,9 @@ static void draw_batch(const Nv2aSurface *s,const Nv2aBatch *b,const ChVkFixedGe
     if(b->state->depth_test_enable || b->state->stencil_enable) import_depth(f,0);
     if(active->profile.enabled) t[3]=now_us();
     VkResult result=fixed?ch_vk_nv2a_draw_fixed_resolved_read(f->target,s,b,fixed,active->host.decode,
-        active->textures?ch_vk_texture_cache_resolve:NULL,active->textures,f->rgba,f->bytes):
+        active->textures?resolve_sample:NULL,active,f->rgba,f->bytes):
         ch_vk_nv2a_draw_resolved_read(f->target,s,b,active->host.decode,
-        active->textures?ch_vk_texture_cache_resolve:NULL,active->textures,f->rgba,f->bytes);
+        active->textures?resolve_sample:NULL,active,f->rgba,f->bytes);
     if(active->profile.enabled) t[4]=now_us();
     if(result!=VK_SUCCESS) {
         fprintf(stderr,"[Vulkan] rejected draw surface=%08X size=%ux%u vertices=%u ext=%d rc=%d stages=%08X\n",
@@ -419,9 +452,10 @@ static void flip(void) {
     }
     if(active->textures && profile && atoi(profile) && (active->frames==1 || active->frames%60==0)) {
         ChVkTextureCacheStats stats;ch_vk_texture_cache_stats(active->textures,&stats);
-        fprintf(stderr,"[Vulkan texture cache] hits=%llu uploads=%llu evictions=%llu live=%.1fMiB entries=%u/%u\n",
+        fprintf(stderr,"[Vulkan texture cache] hits=%llu uploads=%llu evictions=%llu live=%.1fMiB entries=%u/%u GPU copies/hits/reuses=%llu/%llu/%llu\n",
             (unsigned long long)stats.hits,(unsigned long long)stats.uploads,
-            (unsigned long long)stats.evictions,stats.bytes/(1024.*1024.),stats.entries,stats.capacity);
+            (unsigned long long)stats.evictions,stats.bytes/(1024.*1024.),stats.entries,stats.capacity,
+            (unsigned long long)stats.gpu_copies,(unsigned long long)stats.gpu_hits,(unsigned long long)stats.gpu_reuses);
     }
     uint32_t presented=nv2a_backend_presented_va();
     if(active->host.present_rgba && presented) {
@@ -484,6 +518,7 @@ VkResult ch_vk_backend_create(const ChVkBackendConfig *config,ChVkBackend **out)
     if(!config || !config->physical || !config->device || !config->queue ||
        !config->guest_base || !config->guest_bytes || !config->decode ||
        (!!config->lock_queue != !!config->unlock_queue) ||
+       (config->sample_render_targets && (!config->resident_color || !config->cache_textures)) ||
        ((config->resident_color || config->resident_depth) && (config->render_clear || config->render_draw ||
         config->render_flip || config->guest_color_changed)))
         return VK_ERROR_INITIALIZATION_FAILED;

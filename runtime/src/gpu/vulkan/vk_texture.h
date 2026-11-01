@@ -1,7 +1,7 @@
 #ifndef CHIHIRO_VK_TEXTURE_H
 #define CHIHIRO_VK_TEXTURE_H
 #include <vulkan/vulkan.h>
-/* Immutable texture, optionally with a generated mip chain. Host owns
+/* Texture immutable throughout every sampling lease, optionally with a mip chain. Host owns
  * device/queue; calls are serialized.
  * CPU Nv2a decoder output is native uint32 ARGB, not byte-order-dependent RGBA.
  * Upload completes before return. Destroy only after all sampling has completed. */
@@ -13,6 +13,14 @@ VkResult ch_vk_texture_upload(VkPhysicalDevice gpu, VkDevice device, VkQueue que
  * levels must be one or the full chain length for the given dimensions. */
 VkResult ch_vk_texture_upload_mips(VkPhysicalDevice,VkDevice,VkQueue,uint32_t family,
     uint32_t width,uint32_t height,const uint32_t *argb,uint32_t levels,ChVkTexture **out);
+/* Immutable RGBA8 snapshot of a completed, same-device single-layer source in
+ * TRANSFER_SRC_OPTIMAL. No CPU readback/upload. Source layout is unchanged;
+ * optional mips use the same generation policy as CPU uploads. */
+VkResult ch_vk_texture_copy_image(VkPhysicalDevice,VkDevice,VkQueue,uint32_t family,
+    uint32_t width,uint32_t height,VkImage source,uint32_t levels,ChVkTexture **out);
+/* Reuse an existing image only after every previous sampling pin completes.
+ * Same source contract; checks device/extent and regenerates existing mips. */
+VkResult ch_vk_texture_copy_from_image(ChVkTexture *,VkDevice,VkImage source,uint32_t width,uint32_t height);
 uint32_t ch_vk_texture_levels(const ChVkTexture *);
 int ch_vk_texture_is_cube(const ChVkTexture *);
 /* Six tightly packed ARGB planes, in +X,-X,+Y,-Y,+Z,-Z order. */

@@ -588,6 +588,22 @@ VkResult ch_vk_target_read_color(ChVkTarget *t,void *pixels,VkDeviceSize bytes) 
     t->defer_color_readback=deferred;
     return result;
 }
+VkResult ch_vk_target_snapshot_texture(ChVkTarget *t,uint32_t levels,ChVkTexture **out) {
+    if(!out) return VK_ERROR_INITIALIZATION_FAILED;
+    *out=NULL;
+    if(!t || t->failed || !t->initialized) return VK_ERROR_INITIALIZATION_FAILED;
+    VkResult result=ch_vk_target_finish(t);
+    if(result!=VK_SUCCESS) return result;
+    if(t->layout!=VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL) return VK_ERROR_INITIALIZATION_FAILED;
+    return ch_vk_texture_copy_image(t->physical,t->device,t->queue,t->family,t->width,t->height,t->image,levels,out);
+}
+VkResult ch_vk_target_refresh_texture(ChVkTarget *t,ChVkTexture *texture) {
+    if(!t || t->failed || !t->initialized) return VK_ERROR_INITIALIZATION_FAILED;
+    VkResult r=ch_vk_target_finish(t);
+    if(r!=VK_SUCCESS) return r;
+    if(t->layout!=VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL) return VK_ERROR_INITIALIZATION_FAILED;
+    return ch_vk_texture_copy_from_image(texture,t->device,t->image,t->width,t->height);
+}
 VkResult ch_vk_target_clear_read(ChVkTarget *t, const float rgba[4],
     void *pixels, VkDeviceSize bytes) {
     return render_read(t,rgba,7,1.0f,0,VK_NULL_HANDLE,0,0,pixels,bytes);

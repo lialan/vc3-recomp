@@ -9,7 +9,7 @@ typedef struct {
     ChVkDecodeTexture decode;
     size_t max_bytes; uint32_t max_entries; /* zero: 64 MiB / 2048 entries */
 } ChVkTextureCacheConfig;
-typedef struct { uint64_t hits,misses,uploads,evictions; size_t bytes; uint32_t entries,capacity; } ChVkTextureCacheStats;
+typedef struct { uint64_t hits,misses,uploads,evictions,gpu_copies,gpu_hits,gpu_reuses; size_t bytes; uint32_t entries,capacity; } ChVkTextureCacheStats;
 VkResult ch_vk_texture_cache_create(const ChVkTextureCacheConfig *,ChVkTextureCache **);
 /* Encoded level-zero byte range (full padded six-face footprint for cubes),
  * with an optional 1024-byte P8 palette.
@@ -23,6 +23,12 @@ VkResult ch_vk_texture_storage_span(const Nv2aTexture *,size_t *span,size_t *pal
  * VK_NOT_READY retains the normal decoder path for unsupported storage or a
  * cache budget/pin conflict. Invalid guest spans fail before any decode. */
 VkResult ch_vk_texture_cache_resolve(void *,const Nv2aTexture *,ChVkSampleImage *);
+/* Caller proves exact render-target/texture storage equivalence and observes
+ * CPU edits first. serial uniquely identifies that source's color contents.
+ * Same serialized device/queue/family required. Snapshots share this cache's
+ * budget and completion-gated pins, and never publish guest color memory. */
+VkResult ch_vk_texture_cache_resolve_target(ChVkTextureCache *,const Nv2aTexture *,
+    ChVkTarget *,uint64_t serial,ChVkSampleImage *);
 void ch_vk_texture_cache_stats(const ChVkTextureCache *,ChVkTextureCacheStats *);
 /* Stop sampling first. All returned pins must have been released. */
 void ch_vk_texture_cache_destroy(ChVkTextureCache *);

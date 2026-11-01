@@ -1,0 +1,44 @@
+[Vulkan raw vertices] GPU fixed batches=0 CPU declined batches=0
+[Vulkan depth residency] binds=0 imports=0 writebacks=0 CPU merges=0 GPU copies=0 clear skips=0
+[Vulkan texture cache] hits=0 uploads=1 evictions=0 live=0.0MiB entries=1/2048 GPU copies/hits/reuses=0/0/0
+[Vulkan raw vertices] GPU fixed batches=0 CPU declined batches=0
+[Vulkan depth residency] binds=0 imports=0 writebacks=0 CPU merges=0 GPU copies=0 clear skips=0
+[Vulkan texture cache] hits=3094 uploads=10 evictions=0 live=9.6MiB entries=14/2048 GPU copies/hits/reuses=25/0/21
+[Vulkan raw vertices] GPU fixed batches=0 CPU declined batches=0
+[Vulkan depth residency] binds=0 imports=0 writebacks=0 CPU merges=0 GPU copies=0 clear skips=0
+[Vulkan texture cache] hits=6301 uploads=10 evictions=0 live=9.6MiB entries=14/2048 GPU copies/hits/reuses=54/0/50
+[Vulkan frame intervals] flips 1..121: 9.91 fps mean 100.90ms p95 108.17ms p99 111.53ms max 146.07ms >20ms=120 >33ms=120 (guest completions, not XR display)
+[Vulkan raw vertices] GPU fixed batches=0 CPU declined batches=0
+[Vulkan depth residency] binds=0 imports=0 writebacks=0 CPU merges=0 GPU copies=0 clear skips=0
+[Vulkan texture cache] hits=9547 uploads=11 evictions=0 live=10.4MiB entries=15/2048 GPU copies/hits/reuses=84/0/80
+[Vulkan raw vertices] GPU fixed batches=0 CPU declined batches=0
+[Vulkan depth residency] binds=0 imports=0 writebacks=0 CPU merges=0 GPU copies=0 clear skips=0
+[Vulkan texture cache] hits=12733 uploads=11 evictions=0 live=10.4MiB entries=15/2048 GPU copies/hits/reuses=114/0/110
+[Vulkan frame intervals] flips 121..241: 9.93 fps mean 100.72ms p95 108.76ms p99 118.56ms max 172.02ms >20ms=120 >33ms=120 (guest completions, not XR display)
+[Vulkan raw vertices] GPU fixed batches=0 CPU declined batches=0
+[Vulkan depth residency] binds=0 imports=0 writebacks=0 CPU merges=0 GPU copies=0 clear skips=0
+[Vulkan texture cache] hits=15918 uploads=11 evictions=0 live=10.4MiB entries=15/2048 GPU copies/hits/reuses=144/0/140
+[Vulkan raw vertices] GPU fixed batches=0 CPU declined batches=0
+[Vulkan depth residency] binds=0 imports=0 writebacks=0 CPU merges=0 GPU copies=0 clear skips=0
+[Vulkan texture cache] hits=19066 uploads=12 evictions=0 live=12.9MiB entries=16/2048 GPU copies/hits/reuses=174/0/170
+[Vulkan frame intervals] flips 241..361: 10.14 fps mean 98.58ms p95 106.67ms p99 107.55ms max 108.35ms >20ms=120 >33ms=120 (guest completions, not XR display)
+[Vulkan raw vertices] GPU fixed batches=0 CPU declined batches=0
+[Vulkan depth residency] binds=0 imports=0 writebacks=0 CPU merges=0 GPU copies=0 clear skips=0
+[Vulkan texture cache] hits=20836 uploads=12 evictions=0 live=12.9MiB entries=16/2048 GPU copies/hits/reuses=204/0/200
+[Vulkan raw vertices] GPU fixed batches=0 CPU declined batches=0
+[Vulkan depth residency] binds=0 imports=0 writebacks=0 CPU merges=0 GPU copies=0 clear skips=0
+[Vulkan texture cache] hits=22582 uploads=12 evictions=0 live=12.9MiB entries=16/2048 GPU copies/hits/reuses=234/0/230
+[Vulkan frame intervals] flips 361..481: 17.26 fps mean 57.94ms p95 63.39ms p99 64.82ms max 65.23ms >20ms=119 >33ms=119 (guest completions, not XR display)
+[Vulkan raw vertices] GPU fixed batches=0 CPU declined batches=0
+[Vulkan depth residency] binds=0 imports=0 writebacks=0 CPU merges=0 GPU copies=0 clear skips=0
+[Vulkan texture cache] hits=24344 uploads=15 evictions=0 live=16.8MiB entries=19/2048 GPU copies/hits/reuses=263/0/259
+[Vulkan raw vertices] GPU fixed batches=0 CPU declined batches=0
+[Vulkan depth residency] binds=0 imports=0 writebacks=0 CPU merges=0 GPU copies=0 clear skips=0
+[Vulkan texture cache] hits=26510 uploads=15 evictions=0 live=16.8MiB entries=19/2048 GPU copies/hits/reuses=293/0/289
+[Vulkan frame intervals] flips 481..601: 14.74 fps mean 67.83ms p95 79.38ms p99 147.77ms max 174.63ms >20ms=120 >33ms=120 (guest completions, not XR display)
+[Vulkan raw vertices] GPU fixed batches=0 CPU declined batches=0
+[Vulkan depth residency] binds=0 imports=0 writebacks=0 CPU merges=0 GPU copies=0 clear skips=0
+[Vulkan texture cache] hits=28804 uploads=16 evictions=0 live=16.8MiB entries=20/2048 GPU copies/hits/reuses=323/0/319
+[Vulkan raw vertices] GPU fixed batches=0 CPU declined batches=0
+[Vulkan depth residency] binds=0 imports=0 writebacks=0 CPU merges=0 GPU copies=0 clear skips=0
+[Vulkan texture cache] hits=32158 uploads=17 evictions=0 live=17.2MiB entries=21/2048 GPU copies/hits/reuses=352/0/348
