@@ -27,3 +27,15 @@ alone did not resolve the observed class of failure. The patched follow-up
 /tmp/vc3-split-packet-profile uses immutable /tmp/vc3-split-packet-vc3 and
 RECOMP_PB_SPLIT_LOG=1 to report the first 16 actual split packets. Inspect its
 report before claiming game-level resolution. No headset access occurred.
+
+The patched segment run still aborted at frame 1148 with invalid register
+values. All reported split boundaries were 803FCE90, consistent with the
+segment scanner's inferred ring upper bound rather than proving a real PUT
+split. The split fix is therefore insufficient for game-level recovery.
+
+The standalone test also accepts `dma` to exercise the existing DMA walker,
+including both jump encodings wrapping from high to low addresses and exact
+GET at the submitted endpoint. Both modes pass. A same-binary control with
+RECOMP_PB_WALK=dma is /tmp/vc3-dma-walk-profile; it was live after frame 241
+when started. DMA mode remains opt-in; it may exercise unimplemented software
+interrupt waits, so inspect the terminal result before selecting it by default.

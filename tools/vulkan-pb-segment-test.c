@@ -3,7 +3,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
-static uint32_t memory[2048],reg;static unsigned calls,fast;
+static uint32_t memory[2048],reg;static unsigned calls,fast,dma;
 struct Event {uint32_t s,m,p;} events[256],reference[256];
 ptrdiff_t xbox_GetMemoryOffset(void){return (ptrdiff_t)memory-0x80000000u;}
 void nv2a_pb_exec_method(uint32_t s,uint32_t m,uint32_t p){if(calls>=256) abort();events[calls++]=(struct Event){s,m,p};}
@@ -16,8 +16,13 @@ volatile uint32_t *xbox_Nv2aRegPtr(uint32_t o){return &reg;}
 void nv2a_pb_exec_walk_begin(void){}
 void nv2a_pb_scan_segment(uint32_t,uint32_t);
 
-static void scan(unsigned a,unsigned b){nv2a_pb_scan_segment(0x80000000u+a*4,0x80000000u+b*4);}
-int main(void){
+void nv2a_pb_resync(uint32_t);void nv2a_pb_scan(uint32_t);
+static void scan(unsigned a,unsigned b){
+ if(dma){if(a==0||a==100){reg=a*4;nv2a_pb_resync(reg);}nv2a_pb_scan(b*4);}
+ else nv2a_pb_scan_segment(0x80000000u+a*4,0x80000000u+b*4);
+}
+int main(int argc,char **argv){
+ (void)argv;dma=argc>1;
  setenv("RECOMP_PB_EXEC","1",1);
  unsigned n=0;
  for(unsigned k=0;k<4;k++){
@@ -36,5 +41,12 @@ int main(void){
  /* A discontinuous restart starts at a header, not old payload. */
  calls=0;scan(0,2);memory[100]=(1u<<18)|0x354;memory[101]=0x207;scan(100,102);
  if(calls!=2||events[1].m!=0x354||events[1].p!=0x207)return 2;
+ if(dma)for(unsigned style=0;style<2;style++){
+   calls=0;memory[200]=(1u<<18)|0x354;memory[201]=0x207;
+   memory[202]=(style?0x20000000u:1u)|(50u*4);
+   memory[50]=(1u<<18)|0x358;memory[51]=123;
+   reg=200*4;nv2a_pb_resync(reg);nv2a_pb_scan(52*4);
+   if(calls!=2||events[0].m!=0x354||events[1].m!=0x358||events[1].p!=123||reg!=52*4)return 3;
+ }
  puts("PASS: every segment split matches unsplit methods/parameters, scalar and bulk paths, CALL/RETURN and discontinuous restart");return 0;
 }
