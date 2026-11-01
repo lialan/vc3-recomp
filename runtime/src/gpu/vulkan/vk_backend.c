@@ -453,9 +453,9 @@ static void flip(void) {
             (unsigned long long)active->raw_draws,(unsigned long long)active->raw_declined);
     const char *profile=getenv("CHIHIRO_VULKAN_PROFILE");
     if(active->profile.enabled && (active->frames==1 || active->frames%60==0)) {
-        uint64_t draws=0,submits=0;
-        for(unsigned i=0;i<active->count;i++) {ChVkTargetResourceStats stats;ch_vk_target_resource_stats(active->surfaces[i].target,&stats);draws+=stats.batch_draws;submits+=stats.batch_submissions;}
-        fprintf(stderr,"[Vulkan command batches] live targets: draws=%llu submissions=%llu\n",(unsigned long long)draws,(unsigned long long)submits);
+        uint64_t draws=0,submits=0,depth_reads=0;
+        for(unsigned i=0;i<active->count;i++) {ChVkTargetResourceStats stats;ch_vk_target_resource_stats(active->surfaces[i].target,&stats);draws+=stats.batch_draws;submits+=stats.batch_submissions;depth_reads+=stats.combined_depth_readbacks;}
+        fprintf(stderr,"[Vulkan command batches] live targets: draws=%llu submissions=%llu combined_depth_reads=%llu\n",(unsigned long long)draws,(unsigned long long)submits,(unsigned long long)depth_reads);
     }
     if(active->zeta && active->profile.enabled && (active->frames==1 || active->frames%60==0)) {
         ChVkDepthResidentStats stats;ch_vk_depth_resident_stats(active->zeta,&stats);
