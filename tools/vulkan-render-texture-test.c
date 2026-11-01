@@ -311,7 +311,9 @@ done:
     return failed;
 #undef CHECK
 }
+int ch_test_texture_watch(VkPhysicalDevice,VkDevice,VkQueue,uint32_t);
 int ch_test_render_textures(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,uint32_t family) {
+    if(ch_test_texture_watch(gpu,device,queue,family)) return 1;
     if(cache_roundtrip(gpu,device,queue,family) || paired_readbacks(gpu,device,queue,family) || queued_uploads(gpu,device,queue,family) || snapshots(gpu,device,queue,family)) return 1;
     unsigned char *reference=malloc(sizeof memory),*candidate=malloc(sizeof memory);
     if(!reference || !candidate) {free(reference);free(candidate);return 1;}

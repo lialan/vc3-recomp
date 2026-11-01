@@ -12,6 +12,8 @@ struct Entry {
     unsigned pins;
     ChVkTarget *source;
     uint64_t serial;
+    ChGuestWriteRange *raw_watch,*palette_watch;
+    int observed_valid,observed_same;
 };
 struct ChVkTextureCache {
     ChVkTextureCacheConfig config;
@@ -61,14 +63,26 @@ VkResult ch_vk_texture_storage_span(const Nv2aTexture *t,size_t *span,size_t *pa
 static const unsigned char *guest(const ChVkTextureCache *c,uint32_t va) {
     return (const unsigned char *)c->config.guest_base+va;
 }
-static int unchanged(const ChVkTextureCache *c,const struct Entry *e,const Nv2aTexture *t) {
-    return !memcmp(e->raw,guest(c,t->offset),e->span) &&
+static int unchanged(ChVkTextureCache *c,struct Entry *e,const Nv2aTexture *t) {
+    if(e->raw_watch) {
+        int changed=ch_guest_write_range_changed(e->raw_watch);
+        if(e->palette) changed|=ch_guest_write_range_changed(e->palette_watch);
+        /* A consumed generation must not turn a previously mismatched pinned
+         * snapshot back into a hit on the next acquire. Remember both results. */
+        if(e->observed_valid && !changed) {c->stats.tracked_checks++;return e->observed_same;}
+    }
+    /* Logical comparison span, not measured memory traffic: memcmp may stop
+     * at the first mismatch or reuse bytes already in the CPU cache. */
+    c->stats.cpu_checks++;c->stats.cpu_check_bytes+=e->span+e->palette;
+    int same=!memcmp(e->raw,guest(c,t->offset),e->span) &&
         (!e->palette || !memcmp(e->raw+e->span,guest(c,t->palette),e->palette));
+    c->stats.cpu_changes+=!same;e->observed_valid=1;e->observed_same=same;return same;
 }
 static void drop(ChVkTextureCache *c,struct Entry *e) {
     if(!e->image) return;
     if(e->pins) abort();
     ch_vk_texture_destroy(e->image);free(e->raw);
+    ch_guest_write_range_destroy(e->raw_watch);ch_guest_write_range_destroy(e->palette_watch);
     c->stats.bytes-=e->cost;c->stats.evictions++;c->stats.entries--;
     memset(e,0,sizeof *e);
 }
@@ -179,6 +193,8 @@ VkResult ch_vk_texture_cache_resolve(void *context,const Nv2aTexture *t,ChVkSamp
     if(r==VK_SUCCESS) r=ch_vk_texture_set_sampler(image,&sampler);
     if(r!=VK_SUCCESS) {ch_vk_texture_destroy(image);free(raw);return r;}
     *slot=(struct Entry){.key=*t,.image=image,.raw=raw,.span=span,.palette=palette,.cost=(size_t)cost};
+    slot->raw_watch=ch_guest_write_range_create(c->config.guest_write_watch,guest(c,t->offset),span);
+    if(palette) slot->palette_watch=ch_guest_write_range_create(c->config.guest_write_watch,guest(c,t->palette),palette);
     if(slot==c->entries+c->extent) c->extent++;
     c->stats.entries++;c->stats.bytes+=(size_t)cost;c->stats.uploads++;pin(c,slot,out);return VK_SUCCESS;
 }

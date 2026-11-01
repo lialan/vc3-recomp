@@ -214,6 +214,8 @@ static VkResult attach(ChVkBackendConfig config)
     fprintf(stderr,"[Vulkan] immutable GPU render-target sampling: %s\n",config.sample_render_targets?"enabled":"disabled");
     fprintf(stderr,"[Vulkan] exact quantized D32 depth residency: %s\n",config.quantized_depth?(config.depth_quant_fragment?"native-style fragment rounding":config.depth_quant_inline?"same-subpass input draw":config.depth_quant_draw?"depth-only draw":"compute"):"disabled");
     fprintf(stderr,"[Vulkan] resident D24 depth targets: %s\n",config.resident_depth?"enabled":"disabled");
+    const char *texture_watch=ch_env("VULKAN_TEXTURE_WRITE_WATCH");
+    config.strict_texture_checks=texture_watch && !strcmp(texture_watch,"0");
     config.present_rgba=present;
     if(!config.fatal) config.fatal=fatal;
     const char *cache_path=ch_env("VULKAN_PIPELINE_CACHE");

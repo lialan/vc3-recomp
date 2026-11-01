@@ -38,6 +38,7 @@ typedef struct {
     int depth_float_transfers; /* diagnostic: normalized-float staging instead of exact packed D24 */
     int batch_draws; /* resident no-query draws, complete before guest fences */
     uint32_t batch_draw_limit; /* zero: shared default; otherwise 1..CH_VK_MAX_BATCH_DRAWS */
+    int strict_texture_checks; /* disable tracked texture comparisons for diagnostics */
     int cache_textures; /* exact level-zero storage/palette/sampler cache */
     int sample_render_targets; /* opt-in immutable GPU snapshots; requires both resident_color/cache_textures */
     uint32_t texture_cache_entries; /* zero: default capacity */

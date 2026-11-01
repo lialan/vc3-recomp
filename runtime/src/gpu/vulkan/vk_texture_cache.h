@@ -1,16 +1,20 @@
 #ifndef CH_VK_TEXTURE_CACHE_H
 #define CH_VK_TEXTURE_CACHE_H
 #include "vk_nv2a.h"
+#include "../guest_write_watch.h"
 typedef struct ChVkTextureCache ChVkTextureCache;
 #define CH_VK_TEXTURE_CACHE_DEFAULT_ENTRIES 2048u
 typedef struct {
     VkPhysicalDevice physical; VkDevice device; VkQueue queue; uint32_t family;
     const void *guest_base; size_t guest_bytes;
     ChVkDecodeTexture decode;
+    /* Optional tracker with all alias/fault/syscall hooks installed. Borrowed
+     * until cache destruction; unsupported ranges retain exact comparison. */
+    ChGuestWriteWatch *guest_write_watch;
     int queued_uploads; /* opt-in: all sampling follows on the configured queue */
     size_t max_bytes; uint32_t max_entries; /* zero: 64 MiB / 2048 entries */
 } ChVkTextureCacheConfig;
-typedef struct { uint64_t hits,misses,uploads,evictions,gpu_copies,gpu_hits,gpu_reuses; size_t bytes; uint32_t entries,capacity; } ChVkTextureCacheStats;
+typedef struct { uint64_t hits,misses,uploads,evictions,gpu_copies,gpu_hits,gpu_reuses,cpu_checks,cpu_check_bytes,cpu_changes,tracked_checks; size_t bytes; uint32_t entries,capacity; } ChVkTextureCacheStats;
 VkResult ch_vk_texture_cache_create(const ChVkTextureCacheConfig *,ChVkTextureCache **);
 /* Encoded level-zero byte range (full padded six-face footprint for cubes),
  * with an optional 1024-byte P8 palette.
