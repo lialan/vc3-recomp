@@ -158,7 +158,8 @@ static struct Surface *surface(const Nv2aSurface *s,const Nv2aRenderState *rs) {
     r=ch_vk_target_pipeline_cache(f->target,active->pipeline_cache);
     if(r!=VK_SUCCESS) fatal(r,"shared pipeline cache binding");
     if(f->resident && active->host.batch_draws) {
-        r=ch_vk_target_batching(f->target,1);
+        r=ch_vk_target_batch_limit(f->target,active->host.batch_draw_limit);
+        if(r==VK_SUCCESS) r=ch_vk_target_batching(f->target,1);
         if(r!=VK_SUCCESS) fatal(r,"resident command batch setup");
     }
     if(active->host.precise_queries) {
@@ -536,6 +537,7 @@ VkResult ch_vk_backend_create(const ChVkBackendConfig *config,ChVkBackend **out)
     *out=NULL;
     if(!config || !config->physical || !config->device || !config->queue ||
        !config->guest_base || !config->guest_bytes || !config->decode ||
+       config->batch_draw_limit>CH_VK_MAX_BATCH_DRAWS ||
        (!!config->lock_queue != !!config->unlock_queue) ||
        (config->quantized_depth && !config->resident_depth) ||
        (config->sample_render_targets && (!config->resident_color || !config->cache_textures)) ||

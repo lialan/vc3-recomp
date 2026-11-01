@@ -151,3 +151,38 @@ fall from 102/110 to 32/35 per 120-frame window. This is one local comparison;
 loading overlapped a short compilation, but measured intro windows did not.
 Remaining command-recording, GPU depth round-trip costs and first-use compilation
 still prevent smooth 60 FPS. Full playable-combat acceptance remains open.
+
+### Capture interpretation correction
+
+Reviewing the intermediate captures shows active combat at frame 1680 (player
+HUD/ammo/health and enemies), then a continue-after-death screen at frame 2160.
+The scripted inputs did start gameplay; zero remaining credits on later screens
+was not evidence that every run remained in attract mode. Controlled sustained
+combat/pacing is still open. Frames 1200, 1680, 2640, 3120 and 3600 match exactly
+between the 64-draw watch run and /tmp/vc3-batch256-extended. Frame 2160 differs
+in 271086 pixels (mean absolute channel difference 5.924); frame 4080 differs in
+12700 pixels (mean 0.104). The images depict the same respective scenes, but the
+cause of these differences has not been isolated. Do not claim whole-run parity.
+
+## Shared configuration
+
+`ChVkBackendConfig.batch_draw_limit` and `ch_vk_target_batch_limit` expose the
+bounded draw budget to all games (zero/default 256, explicit 1..256). The common
+host accepts `CHIHIRO_VULKAN_BATCH_LIMIT`; the local runner records it. Invalid
+limits and changes after pipeline creation are rejected. Library integration and
+ownership requirements are documented in runtime/src/gpu/vulkan/README.md.
+The latest 7200-frame run uses the earlier immutable batch256 binary, not these
+new configuration APIs.
+
+Shared batch API validation passes: standalone 514-draw test at limits 1, 64,
+256 (514, 9, 3 submissions respectively), rejected invalid/late configuration,
+exact pixels and resource lifetimes. Backend scenarios use limits 1/64/default
+and compare exact guest memory. Validation + sync validation requested, no
+VUID/SYNC diagnostics. Mac main and Android offscreen builds pass.
+
+/tmp/vc3-batch256-extended completed all 7200 frames with exit 0, no failure
+diagnostics. This is the earlier immutable /tmp/vc3-batch256-vc3. Later inputs
+add service/coins/start/fire. Frame 5520 shows a continue screen with 4 credits;
+the run includes gameplay and deaths, not sustained controlled combat. A CPU
+sample is saved in cpu-late.txt. Later scene costs and pacing remain poor;
+optimizations are not performance acceptance. No headset was accessed.

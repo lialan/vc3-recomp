@@ -174,6 +174,14 @@ static VkResult attach(ChVkBackendConfig config)
     const char *batch=ch_env("VULKAN_BATCH_DRAWS");
     config.batch_draws=!batch || strcmp(batch,"0");
     fprintf(stderr,"[Vulkan] resident command batches: %s\n",config.batch_draws?"enabled":"disabled");
+    const char *batch_limit=ch_env("VULKAN_BATCH_LIMIT");
+    if(batch_limit) {
+        char *end;errno=0;unsigned long value=strtoul(batch_limit,&end,10);
+        if(errno || end==batch_limit || *end || value<1 || value>CH_VK_MAX_BATCH_DRAWS)
+            return VK_ERROR_INITIALIZATION_FAILED;
+        config.batch_draw_limit=(uint32_t)value;
+    }
+    fprintf(stderr,"[Vulkan] command batch draw limit: %u\n",config.batch_draw_limit?config.batch_draw_limit:CH_VK_MAX_BATCH_DRAWS);
     const char *depth=ch_env("VULKAN_RESIDENT_DEPTH");
     config.resident_depth=depth && !strcmp(depth,"1");
     const char *depth_copy=ch_env("VULKAN_DEPTH_GPU_COPY");

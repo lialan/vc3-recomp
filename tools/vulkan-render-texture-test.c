@@ -100,6 +100,9 @@ static int scenario(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,uint32_t 
         .sample_render_targets=fast,.resident_depth=test>=10 && fast,.quantized_depth=test>=10 && fast,.batch_draws=1,.texture_cache_entries=2,
         .texture_cache_bytes=test==7?64:test==8?256:8192};
 #define REQUIRE(x) do {if(!(x)) {fprintf(stderr,"render texture integration case%u fast%u line%d: %s\n",test,fast,__LINE__,#x);goto done;}}while(0)
+    config.batch_draw_limit=257;
+    REQUIRE(ch_vk_backend_create(&config,&backend)==VK_ERROR_INITIALIZATION_FAILED && !backend);
+    config.batch_draw_limit=test%3==0?1:test%3==1?64:0;
     REQUIRE(ch_vk_backend_create(&config,&backend)==VK_SUCCESS && ch_vk_backend_attach(backend)==VK_SUCCESS);
     const Nv2aBackend *cb=ch_vk_backend_callbacks();
     Nv2aSurface source={.color_va=256,.width=4,.height=4,.pitch=24,.bytes_per_pixel=4};

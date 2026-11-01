@@ -23,7 +23,7 @@ typedef struct {
 #define PIPELINE_SLOTS 128u
 /* Bound descriptor/snapshot lifetimes without forcing a wait every 64 draws.
  * Queries, guest publication, resource pressure and target changes still finish. */
-#define BATCH_DRAWS 256u
+#define BATCH_DRAWS CH_VK_MAX_BATCH_DRAWS
 typedef struct {
     PipelineKey key;
     uint64_t used;
@@ -90,6 +90,7 @@ struct ChVkTarget {
     int effect;
     int defer_color_readback;
     int batch_enabled;
+    uint32_t batch_limit;
     uint32_t pending,retired_count;
     VkDeviceSize geometry_used;
     struct {ChVkTexture *image;void (*release)(void *,ChVkTexture *);void *context;int owned;} retired[BATCH_DRAWS*5];
@@ -200,6 +201,10 @@ static void retire_samples(ChVkTarget *t) {
     t->retired_count=0;
 }
 uint32_t ch_vk_target_pending(const ChVkTarget *t) {return t?t->pending:0;}
+VkResult ch_vk_target_batch_limit(ChVkTarget *t,uint32_t draws) {
+    if(!t || t->failed || t->resource_stats.pipeline_builds || draws>BATCH_DRAWS) return VK_ERROR_INITIALIZATION_FAILED;
+    t->batch_limit=draws?draws:BATCH_DRAWS;return VK_SUCCESS;
+}
 VkResult ch_vk_target_batching(ChVkTarget *t,int enabled) {
     if(!t || t->failed || (enabled && !t->batch_enabled && t->resource_stats.pipeline_builds)) return VK_ERROR_INITIALIZATION_FAILED;
     VkResult r=ch_vk_target_finish(t);if(r==VK_SUCCESS) t->batch_enabled=!!enabled;return r;
@@ -208,7 +213,7 @@ VkResult ch_vk_target_retire_sample(ChVkTarget *t,ChVkTexture *image,
     void (*release)(void *,ChVkTexture *),void *context,int owned) {
     if(!image) return VK_SUCCESS;
     VkResult r=VK_SUCCESS;
-    if(t && t->pending && t->retired_count==BATCH_DRAWS*5) r=ch_vk_target_finish(t);
+    if(t && t->pending && t->retired_count==t->batch_limit*5) r=ch_vk_target_finish(t);
     if(t && t->pending && r==VK_SUCCESS) {
         unsigned i=t->retired_count++;
         t->retired[i].image=image;t->retired[i].release=release;t->retired[i].context=context;t->retired[i].owned=owned;
@@ -267,6 +272,7 @@ VkResult ch_vk_target_create_depth(VkPhysicalDevice physical, VkDevice device,
         return VK_ERROR_INITIALIZATION_FAILED;
     ChVkTarget *t=calloc(1,sizeof(*t));
     if(!t) return VK_ERROR_OUT_OF_HOST_MEMORY;
+    t->batch_limit=BATCH_DRAWS;
     t->family=family; t->physical=physical; t->device=device; t->queue=queue; t->width=width; t->height=height;
     const char *reuse=getenv("CHIHIRO_VULKAN_REUSE_RESOURCES");
     t->reuse_resources=!reuse || strcmp(reuse,"0");
@@ -811,8 +817,8 @@ static VkResult create_pipeline(ChVkTarget *t, const VkPipelineColorBlendAttachm
         VkDescriptorPoolSize sizes[2];n=0;
         if(images) sizes[n++]=(VkDescriptorPoolSize){VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,images};
         if(buffers) sizes[n++]=(VkDescriptorPoolSize){VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,buffers};
-        for(unsigned i=0;i<n;i++) sizes[i].descriptorCount*=t->batch_enabled?BATCH_DRAWS:1;
-        VkDescriptorPoolCreateInfo pool={.sType=VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,.maxSets=t->batch_enabled?BATCH_DRAWS:1,.poolSizeCount=n,.pPoolSizes=sizes};
+        for(unsigned i=0;i<n;i++) sizes[i].descriptorCount*=t->batch_enabled?t->batch_limit:1;
+        VkDescriptorPoolCreateInfo pool={.sType=VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,.maxSets=t->batch_enabled?t->batch_limit:1,.poolSizeCount=n,.pPoolSizes=sizes};
         TRY(vkCreateDescriptorPool(t->device,&pool,NULL,&t->active_pipeline->descriptor_pool));
         VkDescriptorSetAllocateInfo alloc={.sType=VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
             .descriptorPool=t->active_pipeline->descriptor_pool,.descriptorSetCount=1,.pSetLayouts=&t->active_pipeline->descriptor_layout};
@@ -889,7 +895,7 @@ static VkResult draw_full(ChVkTarget *t, const float rgba[4],
     VkResult result;
     if(!state) return VK_ERROR_INITIALIZATION_FAILED;
     int batched=t->batch_enabled && t->reuse_resources && t->defer_color_readback && !samples && !rgba && t->initialized;
-    if((!batched || t->pending==BATCH_DRAWS) && t->pending) TRY(ch_vk_target_finish(t));
+    if((!batched || t->pending==t->batch_limit) && t->pending) TRY(ch_vk_target_finish(t));
     if(state->alpha_test_enable && (state->alpha_func<0x200 || state->alpha_func>0x207))
         return VK_ERROR_FEATURE_NOT_PRESENT;
     VkCullModeFlags cull=VK_CULL_MODE_NONE;

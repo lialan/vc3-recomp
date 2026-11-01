@@ -21,14 +21,19 @@ int ch_test_command_batches(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,u
     const uint16_t indices[]={0,1,2,0,2,3};
     Nv2aRenderState add={.color_mask=0x01010101,.blend_enable=1,.blend_src=1,.blend_dst=1,.blend_eq=0x8006};
 #define REQUIRE(x) do {if(!(x)) {fprintf(stderr,"command batch failure line%d: %s\n",__LINE__,#x);goto done;}}while(0)
-    for(unsigned batched=0;batched<2;batched++) {
+    for(unsigned batched=0;batched<4;batched++) {
         REQUIRE(ch_vk_target_create(gpu,device,queue,family,16,16,&t)==VK_SUCCESS);
+        unsigned limit=batched==1?1:batched==2?64:256,submissions=(514+limit-1)/limit;
+        REQUIRE(ch_vk_target_batch_limit(t,257)==VK_ERROR_INITIALIZATION_FAILED);
+        REQUIRE(ch_vk_target_batch_limit(t,0)==VK_SUCCESS);
+        REQUIRE(ch_vk_target_batch_limit(t,limit)==VK_SUCCESS);
         REQUIRE(ch_vk_target_batching(t,batched)==VK_SUCCESS);
         REQUIRE(ch_vk_target_enable_queries(t)==VK_SUCCESS);
         REQUIRE(ch_vk_target_clear_read(t,black,pixels,sizeof pixels)==VK_SUCCESS);
         ch_vk_target_defer_color_readback(t,1);
         REQUIRE(ch_vk_target_draw_state_read(t,NULL,v,4,indices,6,&add,pixels,sizeof pixels)==VK_SUCCESS);
         REQUIRE(ch_vk_target_finish(t)==VK_SUCCESS);
+        REQUIRE(ch_vk_target_batch_limit(t,limit)==VK_ERROR_INITIALIZATION_FAILED);
         REQUIRE(ch_vk_target_clear_read(t,black,pixels,sizeof pixels)==VK_SUCCESS);
         ChVkTargetResourceStats before;ch_vk_target_resource_stats(t,&before);
         ChVkTargetTimingStats timing_before;ch_vk_target_timing_stats(t,&timing_before);
@@ -43,10 +48,10 @@ int ch_test_command_batches(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,u
         double elapsed=now_ms()-start;
         REQUIRE(vkGetFenceStatus(device,ch_vk_target_completion_fence(t))==VK_SUCCESS);
         ChVkTargetResourceStats stats;ch_vk_target_resource_stats(t,&stats);
-        REQUIRE(stats.batch_draws-before.batch_draws==(batched?514u:0u) && stats.batch_submissions-before.batch_submissions==(batched?3u:0u));
+        REQUIRE(stats.batch_draws-before.batch_draws==(batched?514u:0u) && stats.batch_submissions-before.batch_submissions==(batched?submissions:0u));
         ChVkTargetTimingStats timing;ch_vk_target_timing_stats(t,&timing);
         if(timing.available) {
-            REQUIRE(timing.batch_submissions-timing_before.batch_submissions==(batched?3u:0u));
+            REQUIRE(timing.batch_submissions-timing_before.batch_submissions==(batched?submissions:0u));
             REQUIRE(timing.batch_draws-timing_before.batch_draws==(batched?514u:0u));
             REQUIRE(timing.sync_render_submissions-timing_before.sync_render_submissions==(batched?0u:514u));
             if(batched) REQUIRE(timing.batch_record_ns>timing_before.batch_record_ns && timing.batch_finish_ns>timing_before.batch_finish_ns &&
@@ -56,7 +61,7 @@ int ch_test_command_batches(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,u
         REQUIRE(ch_vk_target_read_color(t,pixels,sizeof pixels)==VK_SUCCESS);
         const unsigned char expected[]={172,171,171,255};
         for(unsigned i=0;i<sizeof pixels;i++) REQUIRE(pixels[i]==expected[i%4]);
-        printf("PASS: command batch control=%u:514 changing-geometry draws %.2fms, batch submissions=%llu, exact additive pixels and pending fence ownership\n",!batched,elapsed,(unsigned long long)(stats.batch_submissions-before.batch_submissions));
+        printf("PASS: command batch control=%u limit=%u:514 changing-geometry draws %.2fms, batch submissions=%llu, exact additive pixels and pending fence ownership\n",!batched,limit,elapsed,(unsigned long long)(stats.batch_submissions-before.batch_submissions));
         if(!batched) {ch_vk_target_destroy(t);t=NULL;continue;}
         /* A query is an immediate completion boundary even on a resident target. */
         for(unsigned k=0;k<4;k++) for(unsigned c=0;c<4;c++) v[k].rgba[c]=1;
