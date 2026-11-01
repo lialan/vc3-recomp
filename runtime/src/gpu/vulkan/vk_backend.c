@@ -378,7 +378,11 @@ static void clear(const Nv2aSurface *s,const Nv2aRenderState *rs,uint32_t flags,
     }
 }
 static void draw_batch(const Nv2aSurface *s,const Nv2aBatch *b,const ChVkFixedGeometry *fixed) {
-    if(!b) fatal(VK_ERROR_INITIALIZATION_FAILED,"batch arguments");
+    if(!b || !s) fatal(VK_ERROR_INITIALIZATION_FAILED,"batch arguments");
+    /* An empty guest clip cannot rasterize fragments. Reset-state draws may
+     * still carry an unset format/pitch; no image or guest memory is touched.
+     * Pending earlier work remains ordered by the normal fence/flip path. */
+    if(!s->width || !s->height) return;
     uint64_t t[6]={0};
     if(active->profile.enabled) t[0]=now_us();
     struct Surface *f=surface(s,b->state);

@@ -115,6 +115,14 @@ static int scenario(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,uint32_t 
     Nv2aVertex src_vertices[6],dst_vertices[6];vertices(src_vertices,0x8040c020,4);vertices(dst_vertices,0xffffffff,(float)tx.width);
     Nv2aBatch draw_source={.vertices=src_vertices,.count=6,.state=&src_state};
     Nv2aBatch draw_dest={.vertices=dst_vertices,.count=6,.state=&dst_state,.texture=&tx};
+    {
+        Nv2aSurface empty={.color_va=0x80001bf0};
+        Nv2aRenderState reset={.surface_format=0xffffffffu};
+        Nv2aBatch empty_batch=draw_source;empty_batch.state=&reset;
+        cb->draw(&empty,&empty_batch);
+        empty.width=4;cb->draw(&empty,&empty_batch);
+        empty.width=0;empty.height=4;cb->draw(&empty,&empty_batch);
+    }
     cb->draw(&source,&draw_source);
     if(test==8) {
         dst_state.blend_enable=1;dst_state.blend_src=dst_state.blend_dst=1;dst_state.blend_eq=0x8006;
