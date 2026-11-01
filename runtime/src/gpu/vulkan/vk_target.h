@@ -165,10 +165,11 @@ VkResult ch_vk_target_read_depth_stencil(ChVkTarget *target, float *depth,
     uint8_t *stencil, size_t pixels);
 VkResult ch_vk_target_write_depth_stencil(ChVkTarget *target, const float *depth,
     const uint8_t *stencil, size_t pixels);
-/* Native D24 only: row-major host words, depth in bits31..8, stencil in7..0.
- * Exact integer transfers; other attachment formats fail before GPU work. */
+/* Row-major guest words: depth in bits31..8, stencil in7..0. Native D24
+ * uses integer transfers; D32 uses exact Z24 pack/unpack compute conversion
+ * on a compute-capable graphics queue. D32 pack rounds like the CPU oracle. */
 /* Read depth/stencil and color in one completed submission, using independent
- * staging. packed selects native D24 guest words; otherwise depth is float[]. */
+ * staging. packed selects Z24/S8 guest words; otherwise depth is float[]. */
 VkResult ch_vk_target_read_depth_color(ChVkTarget *,void *depth,uint8_t *stencil,
     size_t pixels,int packed,void *rgba,size_t color_bytes);
 VkResult ch_vk_target_read_z24s8(ChVkTarget *,uint32_t *words,size_t pixels);

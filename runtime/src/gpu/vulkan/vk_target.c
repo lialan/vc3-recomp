@@ -1,5 +1,6 @@
 #include "vk_target.h"
 #include "vk_depth_quant.h"
+#include "vk_depth_pack.h"
 #include "vk_depth_quant_math.h"
 #include <stdlib.h>
 #include <string.h>
@@ -69,7 +70,8 @@ struct ChVkTarget {
     VkImage depth;
     VkFormat depth_format;
     ChVkDepthQuant *depth_quant,*depth_quant_draw,*depth_quant_input,*depth_quant_inline;
-    int quantized_depth,input_pass,input_depth;
+    int quantized_depth,input_pass,input_depth,packed_transfer;
+    ChVkDepthPack *depth_pack;
     VkDeviceMemory depth_mem;
     VkImageView depth_view;
     VkImage image;
@@ -268,6 +270,7 @@ void ch_vk_target_destroy(ChVkTarget *t) {
     ch_vk_depth_quant_destroy(t->depth_quant);
     if(t->paired_color) vkDestroyBuffer(t->device,t->paired_color,NULL);
     if(t->paired_color_mem) vkFreeMemory(t->device,t->paired_color_mem,NULL);
+    ch_vk_depth_pack_destroy(t->depth_pack);
     if(t->read) vkDestroyBuffer(t->device,t->read,NULL);
     if(t->read_mem) vkFreeMemory(t->device,t->read_mem,NULL);
     if(t->depth_view) vkDestroyImageView(t->device,t->depth_view,NULL);
@@ -299,7 +302,7 @@ static VkResult create_depth(VkPhysicalDevice physical,VkDevice device,VkQueue q
     *out=NULL;
     if(depth_format!=VK_FORMAT_D32_SFLOAT_S8_UINT && depth_format!=VK_FORMAT_D24_UNORM_S8_UINT)
         return VK_ERROR_FORMAT_NOT_SUPPORTED;
-    if(!width || !height || (uint64_t)width*height>SIZE_MAX/5)
+    if(!width || !height || (uint64_t)width*height>SIZE_MAX/12 || (uint64_t)width*height>UINT32_MAX/3)
         return VK_ERROR_INITIALIZATION_FAILED;
     ChVkTarget *t=calloc(1,sizeof(*t));
     if(!t) return VK_ERROR_OUT_OF_HOST_MEMORY;
@@ -354,7 +357,7 @@ static VkResult create_depth(VkPhysicalDevice physical,VkDevice device,VkQueue q
         .subresourceRange={VK_IMAGE_ASPECT_DEPTH_BIT|VK_IMAGE_ASPECT_STENCIL_BIT,0,1,0,1}};
     TRY(vkCreateImageView(device,&depth_view,NULL,&t->depth_view));
     VkBufferCreateInfo buffer={.sType=VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
-        .size=t->bytes+t->bytes/4,.usage=VK_BUFFER_USAGE_TRANSFER_DST_BIT|VK_BUFFER_USAGE_TRANSFER_SRC_BIT|VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+        .size=2*t->bytes+(t->bytes/4+3)/4*4,.usage=VK_BUFFER_USAGE_TRANSFER_DST_BIT|VK_BUFFER_USAGE_TRANSFER_SRC_BIT|VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
         .sharingMode=VK_SHARING_MODE_EXCLUSIVE};
     TRY(vkCreateBuffer(device,&buffer,NULL,&t->read));
     vkGetBufferMemoryRequirements(device,t->read,&req);
@@ -395,6 +398,14 @@ fail:
     ch_vk_target_destroy(t); return result;
 }
 static void record_depth_transfer(ChVkTarget *t,int upload) {
+    // Staging may previously have been read/written by the pack compute pass.
+    VkBufferMemoryBarrier reuse={.sType=VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
+        .srcAccessMask=VK_ACCESS_SHADER_READ_BIT|VK_ACCESS_SHADER_WRITE_BIT,
+        .dstAccessMask=VK_ACCESS_TRANSFER_WRITE_BIT|VK_ACCESS_TRANSFER_READ_BIT,
+        .srcQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED,.dstQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED,
+        .buffer=t->read,.size=VK_WHOLE_SIZE};
+    if(t->depth_pack) vkCmdPipelineBarrier(t->command,VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,VK_PIPELINE_STAGE_TRANSFER_BIT,0,0,NULL,1,&reuse,0,NULL);
+    if(t->packed_transfer && upload) ch_vk_depth_pack_record(t->depth_pack,t->command,(uint32_t)(t->bytes/4),1);
     VkImageMemoryBarrier barrier={.sType=VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
         .srcAccessMask=VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT|VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
         .dstAccessMask=upload?VK_ACCESS_TRANSFER_WRITE_BIT:VK_ACCESS_TRANSFER_READ_BIT,
@@ -414,6 +425,7 @@ static void record_depth_transfer(ChVkTarget *t,int upload) {
     barrier.oldLayout=barrier.newLayout; barrier.newLayout=VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
     vkCmdPipelineBarrier(t->command,VK_PIPELINE_STAGE_TRANSFER_BIT,
         VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT|VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,0,0,NULL,0,NULL,1,&barrier);
+    if(t->packed_transfer && !upload) ch_vk_depth_pack_record(t->depth_pack,t->command,(uint32_t)(t->bytes/4),0);
     if(!upload) {
         VkBufferMemoryBarrier host={.sType=VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
             .srcAccessMask=VK_ACCESS_TRANSFER_WRITE_BIT,.dstAccessMask=VK_ACCESS_HOST_READ_BIT,
@@ -1343,7 +1355,17 @@ static VkResult transfer_depth_stencil(ChVkTarget *t,void *depth,void *stencil,s
     if(!t || t->failed || !t->initialized || !depth || (!packed && !stencil) || pixels<t->bytes/4)
         return VK_ERROR_INITIALIZATION_FAILED;
     if(rgba && (upload || color_bytes<t->bytes)) return VK_ERROR_INITIALIZATION_FAILED;
-    if(packed && t->depth_format!=VK_FORMAT_D24_UNORM_S8_UINT) return VK_ERROR_FORMAT_NOT_SUPPORTED;
+    int gpu_packed=packed && t->depth_format==VK_FORMAT_D32_SFLOAT_S8_UINT;
+    if(gpu_packed && !t->depth_pack) {
+        uint32_t count=0;vkGetPhysicalDeviceQueueFamilyProperties(t->physical,&count,NULL);
+        VkQueueFamilyProperties *families=calloc(count,sizeof *families);
+        if(!families) return VK_ERROR_OUT_OF_HOST_MEMORY;
+        vkGetPhysicalDeviceQueueFamilyProperties(t->physical,&count,families);
+        int compute=t->family<count && (families[t->family].queueFlags&VK_QUEUE_COMPUTE_BIT);free(families);
+        if(!compute) return VK_ERROR_FEATURE_NOT_PRESENT;
+        VkResult r=ch_vk_depth_pack_create(t->device,t->pipeline_cache,t->read,2*t->bytes+(t->bytes/4+3)/4*4,&t->depth_pack);
+        if(r!=VK_SUCCESS) return r;
+    }
     if(upload && !packed) for(size_t i=0;i<t->bytes/4;i++) {
         float d=((const float *)depth)[i];
         if(!isfinite(d) || d<0 || d>1) return VK_ERROR_INITIALIZATION_FAILED;
@@ -1352,14 +1374,18 @@ static VkResult transfer_depth_stencil(ChVkTarget *t,void *depth,void *stencil,s
     VkResult result; void *mapped;
     if(rgba) {result=ensure_paired_color(t);if(result!=VK_SUCCESS) return result;}
     VkMappedMemoryRange range={.sType=VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE,.memory=t->read_mem,.size=VK_WHOLE_SIZE};
+    t->packed_transfer=gpu_packed;
+    VkDeviceSize packed_offset=t->bytes+(t->bytes/4+3)/4*4;
     if(!upload && t->pending) {
         TRY(finish_batch_named(t,rgba?3:1,__func__));
         goto readback;
     }
 
     if(upload) {
+        TRY(finish_batch_named(t,0,__func__));
         TRY(vkMapMemory(t->device,t->read_mem,0,VK_WHOLE_SIZE,0,&mapped));
-        if(packed) {
+        if(gpu_packed) memcpy((char *)mapped+packed_offset,depth,(size_t)t->bytes);
+        else if(packed) {
             uint32_t *z=mapped;uint8_t *s=(uint8_t *)mapped+t->bytes;
             const uint32_t *words=depth;
             for(size_t i=0;i<t->bytes/4;i++) {z[i]=words[i]>>8;s[i]=(uint8_t)words[i];}
@@ -1393,7 +1419,8 @@ readback:
         TRY(vkMapMemory(t->device,t->read_mem,0,VK_WHOLE_SIZE,0,&mapped));
         result=vkInvalidateMappedMemoryRanges(t->device,1,&range);
         if(result==VK_SUCCESS) {
-            if(packed) {
+            if(gpu_packed) memcpy(depth,(char *)mapped+packed_offset,(size_t)t->bytes);
+            else if(packed) {
                 const uint32_t *z=mapped;const uint8_t *s=(const uint8_t *)mapped+t->bytes;
                 uint32_t *words=depth;
                 for(size_t i=0;i<t->bytes/4;i++) words[i]=((z[i]&0xffffffu)<<8)|s[i];
@@ -1417,9 +1444,9 @@ readback:
         if(result!=VK_SUCCESS) goto fail;
     }
     if(upload_start) {t->depth_uploads++;t->depth_upload_ns+=time_ns()-upload_start;}
-    return VK_SUCCESS;
+    t->packed_transfer=0;return VK_SUCCESS;
 fail:
-    t->failed=1; return result;
+    t->packed_transfer=0;t->failed=1; return result;
 }
 VkResult ch_vk_target_read_depth_color(ChVkTarget *t,void *depth,uint8_t *stencil,size_t pixels,
     int packed,void *rgba,size_t color_bytes) {

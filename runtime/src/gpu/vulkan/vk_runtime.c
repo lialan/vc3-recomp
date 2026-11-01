@@ -180,6 +180,15 @@ static VkResult attach(ChVkBackendConfig config)
     }
     fprintf(stderr,"[Vulkan] texture cache budget: %zuMiB\n",
         config.texture_cache_bytes?config.texture_cache_bytes>>20:(size_t)64);
+    const char *pack=ch_env("VULKAN_GPU_DEPTH_PACK");
+    uint32_t queue_count=0;vkGetPhysicalDeviceQueueFamilyProperties(config.physical,&queue_count,NULL);
+    VkQueueFamilyProperties *queues=calloc(queue_count,sizeof *queues);
+    if(!queues) return VK_ERROR_OUT_OF_HOST_MEMORY;
+    vkGetPhysicalDeviceQueueFamilyProperties(config.physical,&queue_count,queues);
+    config.gpu_depth_pack=(!pack || atoi(pack)) && config.family<queue_count &&
+        (queues[config.family].queueFlags&VK_QUEUE_COMPUTE_BIT);
+    free(queues);
+    fprintf(stderr,"[Vulkan] D32 guest depth GPU conversion: %s\n",config.gpu_depth_pack?"enabled":"disabled");
     const char *fixed=ch_env("VULKAN_GPU_FIXED");
     if(fixed && !strcmp(fixed,"0")) config.raw_fixed=0;
     fprintf(stderr,"[Vulkan] raw fixed/program GPU transforms: %s\n",config.raw_fixed?"enabled":"disabled");

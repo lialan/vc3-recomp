@@ -1,0 +1,2 @@
+device=llvmpipe (LLVM 23.1.4, 128 bits) vendor=10005 deviceID=0000 api=1.4.354
+PASS: fragment depth exact color/depth/stencil/query comparisons against native D24 (384 constant/gradient cases)

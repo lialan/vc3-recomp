@@ -1,0 +1,2 @@
+device=llvmpipe (LLVM 23.1.4, 128 bits) vendor=10005 deviceID=0000 api=1.4.354
+PASS: GPU D32/Z24S8 exact roundtrip and float packing, stencil, odd sizes, repeated staging reuse, combined pending depth/color readback

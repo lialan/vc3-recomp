@@ -611,7 +611,7 @@ VkResult ch_vk_backend_create(const ChVkBackendConfig *config,ChVkBackend **out)
         VkResult r=ch_vk_depth_resident_create(config->guest_base,config->guest_bytes,&b->zeta);
         if(r!=VK_SUCCESS) {free(b);return r;}
         ch_vk_depth_resident_write_watch(b->zeta,config->guest_write_watch);
-        r=ch_vk_depth_resident_packed(b->zeta,!(config->depth_float_transfers || config->quantized_depth));
+        r=ch_vk_depth_resident_packed(b->zeta,!(config->depth_float_transfers || (config->quantized_depth && !config->gpu_depth_pack)));
         if(r!=VK_SUCCESS) {ch_vk_depth_resident_destroy(b->zeta);free(b);return r;}
         ch_vk_depth_resident_gpu_copies(b->zeta,!config->strict_depth_switches);
     }

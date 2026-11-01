@@ -261,3 +261,20 @@ if(CHIHIRO_VULKAN_TESTS OR CHIHIRO_VULKAN_SHADER_TESTS)
     target_compile_options(vulkan_program_render_check PRIVATE -Wall -Wextra -Werror)
     target_link_libraries(vulkan_program_render_check PRIVATE chihiro_vulkan)
 endif()
+
+add_custom_command(OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/depth_pack.spv"
+    COMMAND "${CHIHIRO_GLSLC}" --target-env=vulkan1.0 -O "${CMAKE_CURRENT_SOURCE_DIR}/depth_pack.comp" -o "${CMAKE_CURRENT_BINARY_DIR}/depth_pack.spv"
+    DEPENDS depth_pack.comp depth_quant.glsl VERBATIM)
+add_custom_command(OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/depth_pack_spv.h"
+    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/embed_binary_spirv.py"
+        "${CMAKE_CURRENT_BINARY_DIR}/depth_pack.spv" "${CMAKE_CURRENT_BINARY_DIR}/depth_pack_spv.h" depth_pack_spv
+    DEPENDS "${CMAKE_CURRENT_BINARY_DIR}/depth_pack.spv" embed_binary_spirv.py VERBATIM)
+target_sources(chihiro_vulkan PRIVATE vk_depth_pack.c "${CMAKE_CURRENT_BINARY_DIR}/depth_pack_spv.h")
+
+if(CHIHIRO_VULKAN_TESTS OR CHIHIRO_VULKAN_SHADER_TESTS)
+    add_executable(vulkan_depth_pack_check "${CH_VK_ROOT}/tools/vulkan-combiner-driver.c"
+        "${CH_VK_ROOT}/tools/vulkan-depth-pack-test.c")
+    target_compile_definitions(vulkan_depth_pack_check PRIVATE CH_VK_DEPTH_FRAGMENT_TEST=1)
+    target_compile_options(vulkan_depth_pack_check PRIVATE -Wall -Wextra -Werror)
+    target_link_libraries(vulkan_depth_pack_check PRIVATE chihiro_vulkan)
+endif()
