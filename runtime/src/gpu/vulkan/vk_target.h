@@ -43,6 +43,7 @@ typedef struct {
     uint64_t sync_render_submissions,sync_render_gpu_ns,sync_render_host_ns;
     uint64_t batch_submissions,batch_draws,batch_gpu_ns,batch_record_ns;
     uint64_t batch_finish_ns,batch_submit_ns,batch_wait_ns,batch_retire_ns;
+    uint64_t depth_upload_wait_ns;
 } ChVkTargetTimingStats;
 /* Completed batch GPU samples and host phase totals. No wait is introduced by
  * this snapshot; pending work is not yet included in completed GPU totals. */

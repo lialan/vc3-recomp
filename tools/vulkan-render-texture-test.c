@@ -27,6 +27,50 @@ static void release_image(ChVkSampleImage *image) {
     if(image->release) image->release(image->release_context,image->gpu);
     memset(image,0,sizeof *image);
 }
+static int cold_eviction(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,uint32_t family) {
+    ChVkTextureCache *cache=NULL;ChVkSampleImage image={0},pinned={0};int failed=1;
+#define REQUIRE(x) do {if(!(x)){fprintf(stderr,"cold eviction line%d: %s\n",__LINE__,#x);goto done;}}while(0)
+    for(unsigned mode=0;mode<4;mode++) {
+        // Four tiny old entries and one newer large entry fill 240 bytes:
+        // guest snapshot + one mip image + transfer staging, no GPU decode.
+        ChVkTextureCacheConfig cfg={.physical=gpu,.device=device,.queue=queue,.family=family,
+            .guest_base=memory,.guest_bytes=sizeof memory,.decode=decode,.max_entries=8,.max_bytes=240,
+            .size_aware_eviction=mode!=0};
+        REQUIRE(ch_vk_texture_cache_create(&cfg,&cache)==VK_SUCCESS);
+        uint32_t red=0xffff0000;for(unsigned i=0;i<1024;i+=4)memcpy(memory+i,&red,4);
+        Nv2aTexture t={.width=1,.height=1,.pitch=4,.color=0x12,.levels=1,.filter=0x01010000,.addr_u=3,.addr_v=3};
+        for(unsigned i=0;i<4;i++) {t.offset=i*4;REQUIRE(ch_vk_texture_cache_resolve(cache,&t,&image)==VK_SUCCESS);release_image(&image);}
+        t.offset=256;t.width=t.height=4;t.pitch=16;
+        REQUIRE(ch_vk_texture_cache_resolve(cache,&t,&image)==VK_SUCCESS);
+        if(mode==3) {pinned=image;memset(&image,0,sizeof image);}else release_image(&image);
+        ChVkTextureCacheStats stats;ch_vk_texture_cache_stats(cache,&stats);REQUIRE(stats.entries==5 && stats.bytes==240);
+        ch_vk_texture_cache_advance_frame(cache);
+        if(mode!=2)ch_vk_texture_cache_advance_frame(cache);
+        ch_vk_texture_cache_stats(cache,&stats);REQUIRE(stats.evictions==((mode==1 || mode==3)?1:0));
+        t.offset=512;
+        if(mode==3) {
+            REQUIRE(ch_vk_texture_cache_resolve(cache,&t,&image)==VK_NOT_READY && !image.gpu);
+            unsigned char retained[64];REQUIRE(ch_vk_texture_read_rgba(pinned.gpu,retained,sizeof retained)==VK_SUCCESS);
+            for(unsigned i=0;i<16;i++)REQUIRE(retained[4*i]==255 && retained[4*i+3]==255);
+            release_image(&pinned);ch_vk_texture_cache_advance_frame(cache);
+        }
+        REQUIRE(ch_vk_texture_cache_resolve(cache,&t,&image)==VK_SUCCESS);
+        unsigned char rgba[64];REQUIRE(ch_vk_texture_read_rgba(image.gpu,rgba,sizeof rgba)==VK_SUCCESS);
+        for(unsigned i=0;i<16;i++) REQUIRE(rgba[4*i]==255 && !rgba[4*i+1] && !rgba[4*i+2] && rgba[4*i+3]==255);
+        release_image(&image);ch_vk_texture_cache_stats(cache,&stats);
+        REQUIRE(stats.evictions==(mode==1?1:5) && stats.bytes<=240);
+        if(mode==1) {
+            uint64_t hits=stats.hits;t.offset=0;t.width=t.height=1;t.pitch=4;
+            REQUIRE(ch_vk_texture_cache_resolve(cache,&t,&image)==VK_SUCCESS);release_image(&image);
+            ch_vk_texture_cache_stats(cache,&stats);REQUIRE(stats.hits==hits+1);
+        }
+        ch_vk_texture_cache_destroy(cache);cache=NULL;
+    }
+    puts("PASS: amortized byte-budget eviction selects one fitting cold image, retains tiny snapshots, preserves frame grace and LRU control");failed=0;
+done:
+    release_image(&image);release_image(&pinned);ch_vk_texture_cache_destroy(cache);return failed;
+#undef REQUIRE
+}
 static int snapshots(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,uint32_t family) {
     ChVkTarget *source=NULL,*destination=NULL;ChVkTexture *copy=NULL,*upload=NULL;
     ChVkTextureCache *cache=NULL;ChVkSampleImage a={0},b={0},c={0},probe={0};int failed=1;
@@ -323,6 +367,7 @@ done:
 int ch_test_texture_watch(VkPhysicalDevice,VkDevice,VkQueue,uint32_t);
 int ch_test_render_textures(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,uint32_t family) {
     if(ch_test_texture_watch(gpu,device,queue,family)) return 1;
+    if(cold_eviction(gpu,device,queue,family)) return 1;
     if(cache_roundtrip(gpu,device,queue,family) || paired_readbacks(gpu,device,queue,family) || queued_uploads(gpu,device,queue,family) || snapshots(gpu,device,queue,family)) return 1;
     unsigned char *reference=malloc(sizeof memory),*candidate=malloc(sizeof memory);
     if(!reference || !candidate) {free(reference);free(candidate);return 1;}

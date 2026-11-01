@@ -3,12 +3,14 @@
 #include "../d3d/d3d8_swizzle.h"
 #include <stdlib.h>
 #include <string.h>
+#include <stdio.h>
+#include <time.h>
 struct Entry {
     Nv2aTexture key;
     ChVkTexture *image;
     unsigned char *raw;
     size_t span,palette,cost;
-    uint64_t used;
+    uint64_t used,frame;
     unsigned pins;
     ChVkTarget *source;
     uint64_t serial;
@@ -18,10 +20,21 @@ struct Entry {
 struct ChVkTextureCache {
     ChVkTextureCacheConfig config;
     struct Entry *entries;
-    uint64_t clock;
+    uint64_t clock,frame;
     uint32_t extent; /* Skip the never-populated tail of the bounded table. */
     ChVkTextureCacheStats stats;
+    int trace;
 };
+static uint64_t cache_us(void) {
+    struct timespec t;clock_gettime(CLOCK_MONOTONIC,&t);
+    return (uint64_t)t.tv_sec*1000000u+t.tv_nsec/1000;
+}
+static void trace_miss(ChVkTextureCache *c,const Nv2aTexture *t,uint64_t start,uint64_t room,uint64_t snapshot,uint64_t upload,int target,int reuse) {
+    if(!c->trace) return;
+    uint64_t end=cache_us();if(end-start<1000) return;
+    fprintf(stderr,"[Vulkan texture miss] %ux%u format=%02x target=%d reuse=%d room_ms=%.3f snapshot_ms=%.3f upload_ms=%.3f watch_ms=%.3f\n",
+        t->width,t->height,t->color,target,reuse,(room-start)/1000.,(snapshot-room)/1000.,(upload-snapshot)/1000.,(end-upload)/1000.);
+}
 VkResult ch_vk_texture_storage_span(const Nv2aTexture *t,size_t *span,size_t *palette) {
     if(!span || !palette || !t || !t->width || !t->height || (uint64_t)t->width*t->height>SIZE_MAX/4)
         return VK_ERROR_INITIALIZATION_FAILED;
@@ -86,13 +99,20 @@ static void drop(ChVkTextureCache *c,struct Entry *e) {
     c->stats.bytes-=e->cost;c->stats.evictions++;c->stats.entries--;
     memset(e,0,sizeof *e);
 }
-static struct Entry *oldest(ChVkTextureCache *c) {
-    struct Entry *found=NULL;
+static struct Entry *oldest(ChVkTextureCache *c,size_t needed) {
+    struct Entry *found=NULL,*fit=NULL,*largest=NULL;
     for(uint32_t i=0;i<c->extent;i++) {
         struct Entry *e=&c->entries[i];
-        if(e->image && !e->pins && (!found || e->used<found->used)) found=e;
+        if(!e->image || e->pins) continue;
+        if(!found || e->used<found->used) found=e;
+        /* Avoid destroying dozens of small stale images for one large image.
+         * Protect the current/previous frame's working set; entry-count
+         * pressure and clients without frame boundaries retain exact LRU. */
+        if(!needed || !c->config.size_aware_eviction || c->frame-e->frame<2) continue;
+        if(e->cost>=needed && (!fit || e->cost<fit->cost || (e->cost==fit->cost && e->used<fit->used))) fit=e;
+        if(!largest || e->cost>largest->cost || (e->cost==largest->cost && e->used<largest->used)) largest=e;
     }
-    return found;
+    return fit?fit:largest?largest:found;
 }
 static struct Entry *make_room(ChVkTextureCache *c,size_t cost) {
     if(cost>c->config.max_bytes) return NULL;
@@ -100,7 +120,8 @@ static struct Entry *make_room(ChVkTextureCache *c,size_t cost) {
     for(uint32_t i=0;i<c->extent;i++) if(!c->entries[i].image) {slot=&c->entries[i];break;}
     if(!slot && c->extent<c->config.max_entries) slot=&c->entries[c->extent];
     while(c->stats.bytes>c->config.max_bytes-cost || !slot) {
-        struct Entry *e=oldest(c);
+        size_t needed=c->stats.bytes>c->config.max_bytes-cost?c->stats.bytes-(c->config.max_bytes-cost):0;
+        struct Entry *e=oldest(c,needed);
         if(!e) return NULL;
         drop(c,e);if(!slot) slot=e;
     }
@@ -128,7 +149,7 @@ static void release(void *context,ChVkTexture *image) {
     abort();
 }
 static void pin(ChVkTextureCache *c,struct Entry *e,ChVkSampleImage *out) {
-    e->pins++;e->used=++c->clock;
+    e->pins++;e->used=++c->clock;e->frame=c->frame;
     *out=(ChVkSampleImage){.width=e->key.width,.height=e->key.height,.gpu=e->image,
         .release=release,.release_context=c};
 }
@@ -141,6 +162,7 @@ VkResult ch_vk_texture_cache_create(const ChVkTextureCacheConfig *config,ChVkTex
     ChVkTextureCache *c=calloc(1,sizeof *c);
     if(!c) return VK_ERROR_OUT_OF_HOST_MEMORY;
     c->config=*config;
+    const char *trace=getenv("CHIHIRO_VULKAN_FRAME_COSTS");c->trace=trace && atoi(trace)!=0;
     if(!c->config.max_bytes) c->config.max_bytes=64u<<20;
     if(!c->config.max_entries) c->config.max_entries=CH_VK_TEXTURE_CACHE_DEFAULT_ENTRIES;
     c->entries=calloc(c->config.max_entries,sizeof *c->entries);
@@ -179,7 +201,9 @@ VkResult ch_vk_texture_cache_resolve(void *context,const Nv2aTexture *t,ChVkSamp
     size_t cost=span+palette+pixels;
     // Encoded GPU staging is retained in addition to the existing CPU snapshot.
     if(gpu_decode) {if(span>c->config.max_bytes-cost) return VK_NOT_READY;cost+=span;}
+    uint64_t start=c->trace?cache_us():0;
     struct Entry *slot=reusable?reusable:make_room(c,cost);if(!slot) return VK_NOT_READY;
+    uint64_t room=c->trace?cache_us():0;
     unsigned char *raw=malloc(span+palette);
     uint32_t *argb=gpu_decode?NULL:malloc(staging);
     if(!raw || (!gpu_decode && !argb)) {free(raw);free(argb);return VK_ERROR_OUT_OF_HOST_MEMORY;}
@@ -189,13 +213,15 @@ VkResult ch_vk_texture_cache_resolve(void *context,const Nv2aTexture *t,ChVkSamp
     if(!gpu_decode) c->stats.cpu_decode_pixels+=(uint64_t)t->width*t->height*(t->cube?6:1);
     struct Entry snapshot={.raw=raw,.span=span,.palette=palette};
     if(!unchanged(c,&snapshot,t)) {free(raw);free(argb);return VK_NOT_READY;}
+    uint64_t copied=c->trace?cache_us():0;
     if(reusable) {
         r=gpu_decode?ch_vk_texture_replace_encoded32(reusable->image,c->config.pipeline_cache,t,raw,span,c->config.queued_uploads):
             ch_vk_texture_replace_argb(reusable->image,argb,staging/4,c->config.queued_uploads);
         free(argb);
         if(r!=VK_SUCCESS) {free(raw);drop(c,reusable);return r;}
         free(reusable->raw);reusable->raw=raw;reusable->observed_valid=0;
-        c->stats.uploads++;c->stats.cpu_reuses++;c->stats.gpu_decodes+=gpu_decode;pin(c,reusable,out);return VK_SUCCESS;
+        c->stats.uploads++;c->stats.cpu_reuses++;c->stats.gpu_decodes+=gpu_decode;pin(c,reusable,out);
+        trace_miss(c,t,start,room,copied,c->trace?cache_us():0,0,1);return VK_SUCCESS;
     }
     ChVkTexture *image=NULL;
     if(gpu_decode) r=ch_vk_texture_upload_encoded32(c->config.physical,c->config.device,c->config.queue,c->config.family,
@@ -208,11 +234,13 @@ VkResult ch_vk_texture_cache_resolve(void *context,const Nv2aTexture *t,ChVkSamp
     free(argb);
     if(r==VK_SUCCESS) r=ch_vk_texture_set_sampler(image,&sampler);
     if(r!=VK_SUCCESS) {ch_vk_texture_destroy(image);free(raw);return r;}
+    uint64_t uploaded=c->trace?cache_us():0;
     *slot=(struct Entry){.key=*t,.image=image,.raw=raw,.span=span,.palette=palette,.cost=(size_t)cost};
     slot->raw_watch=ch_guest_write_range_create(c->config.guest_write_watch,guest(c,t->offset),span);
     if(palette) slot->palette_watch=ch_guest_write_range_create(c->config.guest_write_watch,guest(c,t->palette),palette);
     if(slot==c->entries+c->extent) c->extent++;
-    c->stats.entries++;c->stats.bytes+=(size_t)cost;c->stats.uploads++;c->stats.gpu_decodes+=gpu_decode;pin(c,slot,out);return VK_SUCCESS;
+    c->stats.entries++;c->stats.bytes+=(size_t)cost;c->stats.uploads++;c->stats.gpu_decodes+=gpu_decode;pin(c,slot,out);
+    trace_miss(c,t,start,room,copied,uploaded,0,0);return VK_SUCCESS;
 }
 VkResult ch_vk_texture_cache_resolve_target(ChVkTextureCache *c,const Nv2aTexture *t,
     ChVkTarget *source,uint64_t serial,ChVkSampleImage *out) {
@@ -239,14 +267,30 @@ VkResult ch_vk_texture_cache_resolve_target(ChVkTextureCache *c,const Nv2aTextur
     }
     c->stats.misses++;size_t cost;
     r=image_cost(c,t,&cost);if(r!=VK_SUCCESS) return r;
+    uint64_t start=c->trace?cache_us():0;
     struct Entry *slot=make_room(c,cost);if(!slot) return VK_NOT_READY;
     ChVkTexture *image=NULL;
+    uint64_t room=c->trace?cache_us():0;
     r=ch_vk_target_snapshot_texture(source,ch_nv2a_texture_mip_levels(t,1),&image);
     if(r==VK_SUCCESS) r=ch_vk_texture_set_sampler(image,&sampler);
     if(r!=VK_SUCCESS) {ch_vk_texture_destroy(image);return r;}
     *slot=(struct Entry){.key=*t,.image=image,.cost=cost,.source=source,.serial=serial};
     if(slot==c->entries+c->extent) c->extent++;
-    c->stats.entries++;c->stats.bytes+=cost;c->stats.gpu_copies++;pin(c,slot,out);return VK_SUCCESS;
+    c->stats.entries++;c->stats.bytes+=cost;c->stats.gpu_copies++;pin(c,slot,out);
+    trace_miss(c,t,start,room,room,c->trace?cache_us():0,1,0);return VK_SUCCESS;
+}
+void ch_vk_texture_cache_advance_frame(ChVkTextureCache *c) {
+    if(!c) return;
+    c->frame++;
+    // Amortize cold destruction before a large first-use allocation. Keep a
+    // quarter of the existing byte budget available when cold images allow
+    // it; never trim a pinned or current/previous-frame image, and retire at
+    // most one image per completed frame. The hard allocation cap is unchanged.
+    size_t retained=c->config.max_bytes-c->config.max_bytes/4;
+    if(c->config.size_aware_eviction && c->stats.bytes>retained) {
+        struct Entry *e=oldest(c,c->stats.bytes-retained);
+        if(e && c->frame-e->frame>=2) drop(c,e);
+    }
 }
 void ch_vk_texture_cache_stats(const ChVkTextureCache *c,ChVkTextureCacheStats *out) {
     if(out) *out=c?c->stats:(ChVkTextureCacheStats){0};

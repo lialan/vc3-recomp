@@ -14,6 +14,7 @@ typedef struct {
     int gpu_decode; /* common 2D ARGB/XRGB on a compute-capable graphics queue */
     VkPipelineCache pipeline_cache; /* optional borrowed compiler cache */
     int reuse_uploads; /* reuse matching unpinned CPU texture allocations */
+    int size_aware_eviction; /* prefer fitting cold victims; trim one cold image/frame above 75% */
     int queued_uploads; /* opt-in: all sampling follows on the configured queue */
     size_t max_bytes; uint32_t max_entries; /* zero: 64 MiB / 2048 entries */
 } ChVkTextureCacheConfig;
@@ -38,6 +39,9 @@ VkResult ch_vk_texture_cache_resolve(void *,const Nv2aTexture *,ChVkSampleImage 
  * budget and completion-gated pins, and never publish guest color memory. */
 VkResult ch_vk_texture_cache_resolve_target(ChVkTextureCache *,const Nv2aTexture *,
     ChVkTarget *,uint64_t serial,ChVkSampleImage *);
+/* Call once per completed guest frame; optional cold trimming may retire one
+ * unpinned image. Without this hook eviction stays LRU. */
+void ch_vk_texture_cache_advance_frame(ChVkTextureCache *);
 void ch_vk_texture_cache_stats(const ChVkTextureCache *,ChVkTextureCacheStats *);
 /* Stop sampling first. All returned pins must have been released. */
 void ch_vk_texture_cache_destroy(ChVkTextureCache *);

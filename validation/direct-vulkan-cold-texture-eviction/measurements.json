@@ -1,0 +1,42 @@
+{
+  "frame-costs-v4": {
+    "cpu_texture_ms_per_frame": {
+      "normal": 0.005000000000000071,
+      "activation": 0.007000000000000029,
+      "held": 0.0008166666666666581
+    },
+    "max_trim_ms": 0,
+    "warm_pipeline_ms": 20.123,
+    "draw_phase_max_error_ms": 3.552713678800501e-15
+  },
+  "cold-eviction-control": {
+    "cpu_texture_ms_per_frame": {
+      "normal": 0.004816666666666691,
+      "activation": 0.006858333333333396,
+      "held": 0.0008541666666666003
+    },
+    "max_trim_ms": 0,
+    "warm_pipeline_ms": 22.057,
+    "draw_phase_max_error_ms": 3.552713678800501e-15
+  },
+  "cold-eviction-candidate": {
+    "cpu_texture_ms_per_frame": {
+      "normal": 0.0053708333333332805,
+      "activation": 0.012716666666666755,
+      "held": 0.0008124999999999716
+    },
+    "max_trim_ms": 0,
+    "warm_pipeline_ms": 18.842,
+    "draw_phase_max_error_ms": 3.552713678800501e-15
+  },
+  "cold-trim": {
+    "cpu_texture_ms_per_frame": {
+      "normal": 0.006149999999999997,
+      "activation": 0.024724999999999872,
+      "held": 0.0008500000000000323
+    },
+    "max_trim_ms": 5.478,
+    "warm_pipeline_ms": 34.566,
+    "draw_phase_max_error_ms": 7.105427357601002e-15
+  }
+}

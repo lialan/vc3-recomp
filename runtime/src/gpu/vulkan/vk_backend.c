@@ -9,7 +9,8 @@
 #include <time.h>
 #define MAX_SURFACES 32
 struct Surface { Nv2aSurface guest; uint32_t zeta; Nv2aRenderState state; float *depth; uint8_t *stencil; ChVkTarget *target; unsigned char *rgba,*observed,*cpu,*raw; ChGuestWriteRange *write_range; size_t raw_span; int observed_valid,resident,color_bgra,color_fallback_reported,color_dirty,native_z24,quantized_z24; size_t bytes; uint64_t color_serial; };
-struct ChVkBackend { VkPipelineCache pipeline_cache; struct {int enabled;uint64_t start,n,surface,coherence,imports,draw,store,no_color,flushes,depth_flushes,paired_flushes;} profile; struct {uint64_t previous,us[120];unsigned count;} frame_profile; ChVkBackendConfig host; ChVkTextureCache *textures; ChVkDepthResident *zeta; uint64_t frames,raw_draws,raw_programs,raw_program_vertices,raw_declined,color_clock,cpu_batches,cpu_vertices,cpu_texels,cpu_texture_us,cpu_color_pixels,cpu_color_us,cpu_depth_pixels; struct Surface surfaces[MAX_SURFACES]; unsigned count; };
+typedef struct {uint64_t pipeline_ns,batch_wait_ns,batch_gpu_ns,upload_wait_ns;} FrameCosts;
+struct ChVkBackend { struct {int enabled;uint64_t draw_us,clear_us,flip_us,trim_us,surface_us,coherence_us,imports_us,raster_us,store_us,texture_uploads;FrameCosts retired,previous;} costs; VkPipelineCache pipeline_cache; struct {int enabled;uint64_t start,n,surface,coherence,imports,draw,store,no_color,flushes,depth_flushes,paired_flushes;} profile; struct {uint64_t previous,us[120];unsigned count;} frame_profile; ChVkBackendConfig host; ChVkTextureCache *textures; ChVkDepthResident *zeta; uint64_t frames,raw_draws,raw_programs,raw_program_vertices,raw_declined,color_clock,cpu_batches,cpu_vertices,cpu_texels,cpu_texture_us,cpu_color_pixels,cpu_color_us,cpu_depth_pixels; struct Surface surfaces[MAX_SURFACES]; unsigned count; };
 static ChVkBackend *active;
 static void flush_color(struct Surface *);
 static void observe_guest_colors(void);
@@ -22,6 +23,11 @@ static void profile_draw(const uint64_t t[6]) {
     if(!active->profile.enabled) return;
     if(!active->profile.start) active->profile.start=t[0];
     active->profile.n++;
+    if(active->costs.enabled) {
+        active->costs.draw_us+=t[5]-t[0];active->costs.surface_us+=t[1]-t[0];
+        active->costs.coherence_us+=t[2]-t[1];active->costs.imports_us+=t[3]-t[2];
+        active->costs.raster_us+=t[4]-t[3];active->costs.store_us+=t[5]-t[4];
+    }
     active->profile.surface+=t[1]-t[0];active->profile.coherence+=t[2]-t[1];
     active->profile.imports+=t[3]-t[2];active->profile.draw+=t[4]-t[3];active->profile.store+=t[5]-t[4];
     if(t[5]-active->profile.start<1000000) return;
@@ -48,10 +54,33 @@ static int decode_cpu_texture(const Nv2aTexture *texture,uint32_t *argb) {
 static int compare_us(const void *a,const void *b) {
     uint64_t x=*(const uint64_t *)a,y=*(const uint64_t *)b;return (x>y)-(x<y);
 }
+static int add_target_costs(FrameCosts *costs,ChVkTarget *target) {
+    ChVkTargetResourceStats resource;ChVkTargetTimingStats timing;
+    ch_vk_target_resource_stats(target,&resource);ch_vk_target_timing_stats(target,&timing);
+    costs->pipeline_ns+=resource.pipeline_create_ns;
+    costs->batch_wait_ns+=timing.batch_wait_ns;costs->batch_gpu_ns+=timing.batch_gpu_ns;
+    costs->upload_wait_ns+=timing.depth_upload_wait_ns;
+    return timing.available;
+}
 static void profile_frame(void) {
     if(!active->profile.enabled) return;
     uint64_t now=now_us(),previous=active->frame_profile.previous;
     active->frame_profile.previous=now;
+    if(active->costs.enabled) {
+        FrameCosts total=active->costs.retired,*old=&active->costs.previous;int timed=0;
+        for(unsigned i=0;i<active->count;i++) timed|=add_target_costs(&total,active->surfaces[i].target);
+        ChVkTextureCacheStats textures={0};if(active->textures) ch_vk_texture_cache_stats(active->textures,&textures);
+        if(previous) fprintf(stderr,"[Vulkan frame costs] frame=%llu interval_ms=%.3f draw_ms=%.3f clear_ms=%.3f flip_flush_ms=%.3f cache_trim_ms=%.3f other_ms=%.3f pipeline_ms=%.3f batch_wait_ms=%.3f batch_gpu_ms=%.3f depth_upload_wait_ms=%.3f gpu_timing=%d surface_ms=%.3f coherence_ms=%.3f imports_ms=%.3f raster_ms=%.3f store_ms=%.3f texture_uploads=%llu\n",
+            (unsigned long long)active->frames,(now-previous)/1000.,active->costs.draw_us/1000.,active->costs.clear_us/1000.,active->costs.flip_us/1000.,active->costs.trim_us/1000.,
+            ((double)(now-previous)-active->costs.draw_us-active->costs.clear_us-active->costs.flip_us-active->costs.trim_us)/1000.,
+            (total.pipeline_ns-old->pipeline_ns)/1e6,(total.batch_wait_ns-old->batch_wait_ns)/1e6,
+            (total.batch_gpu_ns-old->batch_gpu_ns)/1e6,(total.upload_wait_ns-old->upload_wait_ns)/1e6,timed,active->costs.surface_us/1000.,active->costs.coherence_us/1000.,
+            active->costs.imports_us/1000.,active->costs.raster_us/1000.,active->costs.store_us/1000.,
+            (unsigned long long)(textures.uploads-active->costs.texture_uploads));
+        active->costs.texture_uploads=textures.uploads;
+        active->costs.surface_us=active->costs.coherence_us=active->costs.imports_us=active->costs.raster_us=active->costs.store_us=0;
+        *old=total;active->costs.draw_us=active->costs.clear_us=active->costs.flip_us=active->costs.trim_us=0;
+    }
     if(!previous) return;
     active->frame_profile.us[active->frame_profile.count++]=now-previous;
     if(active->frame_profile.count<120) return;
@@ -174,6 +203,7 @@ static struct Surface *surface(const Nv2aSurface *s,const Nv2aRenderState *rs) {
             VkResult r=ch_vk_depth_resident_release(active->zeta);
             if(r!=VK_SUCCESS) fatal(r,"depth owner before target resize");
         }
+        if(active->costs.enabled) add_target_costs(&active->costs.retired,f->target);
         release_surface(f);
     } else {
         if(active->count==MAX_SURFACES) fatal(VK_ERROR_TOO_MANY_OBJECTS,"surface limit");
@@ -478,6 +508,7 @@ static void import_depth(struct Surface *f,int overwrite) {
     if(r!=VK_SUCCESS) fatal(r,"guest depth import");
 }
 static void clear(const Nv2aSurface *s,const Nv2aRenderState *rs,uint32_t flags,uint32_t argb,uint32_t zs) {
+    uint64_t start=active->costs.enabled?now_us():0;
     struct Surface *f=surface(s,rs);
     if(!f->resident || (flags&0xf0)) observe_target_color(f);
     if((flags & 0xf0)!=0xf0 || rs->clear_rect_set) import_color(f);
@@ -487,6 +518,7 @@ static void clear(const Nv2aSurface *s,const Nv2aRenderState *rs,uint32_t flags,
         VkResult r=active->host.render_clear(active->host.render_context,s,rs,flags,argb,zs);
         if(r!=VK_SUCCESS) fatal(r,"host clear routing");
     }
+    if(active->costs.enabled) active->costs.clear_us+=now_us()-start;
 }
 static void draw_batch(const Nv2aSurface *s,const Nv2aBatch *b,const ChVkFixedGeometry *fixed) {
     if(!b || !s) fatal(VK_ERROR_INITIALIZATION_FAILED,"batch arguments");
@@ -541,8 +573,13 @@ static void flip(void) {
     /* All guest work completed. Snapshot guest-authoritative pixels before
      * crossing the submission/display thread boundary. */
     if(!active) fatal(VK_ERROR_INITIALIZATION_FAILED,"flip without backend");
+    uint64_t start=active->costs.enabled?now_us():0;
     flush();
+    if(active->costs.enabled) active->costs.flip_us+=now_us()-start;
     active->frames++;
+    start=active->costs.enabled?now_us():0;
+    ch_vk_texture_cache_advance_frame(active->textures);
+    if(active->costs.enabled) active->costs.trim_us+=now_us()-start;
     if(active->host.guest_write_watch && active->profile.enabled && (active->frames==1 || active->frames%60==0)) {
         ChGuestWriteStats stats;ch_guest_write_watch_stats(active->host.guest_write_watch,&stats);
         fprintf(stderr,"[Vulkan write tracking] ranges=%llu checks=%llu unchanged=%llu faults=%llu protection calls=%llu\n",
@@ -680,7 +717,9 @@ VkResult ch_vk_backend_create(const ChVkBackendConfig *config,ChVkBackend **out)
     if(!b) return VK_ERROR_OUT_OF_HOST_MEMORY;
     b->host=*config;b->pipeline_cache=config->pipeline_cache;
     const char *profile=getenv("CHIHIRO_VULKAN_PROFILE");
-    b->profile.enabled=profile && atoi(profile)!=0;
+    const char *costs=getenv("CHIHIRO_VULKAN_FRAME_COSTS");
+    b->costs.enabled=costs && atoi(costs)!=0;
+    b->profile.enabled=(profile && atoi(profile)!=0) || b->costs.enabled;
     if(config->resident_depth) {
         VkResult r=ch_vk_depth_resident_create(config->guest_base,config->guest_bytes,&b->zeta);
         if(r!=VK_SUCCESS) {free(b);return r;}
@@ -693,7 +732,7 @@ VkResult ch_vk_backend_create(const ChVkBackendConfig *config,ChVkBackend **out)
     if(config->cache_textures) {
         ChVkTextureCacheConfig texture_config={.physical=config->physical,.device=config->device,
             .queue=config->queue,.family=config->family,.guest_base=config->guest_base,
-            .guest_bytes=config->guest_bytes,.decode=decode_cpu_texture,.max_entries=config->texture_cache_entries,
+            .guest_bytes=config->guest_bytes,.size_aware_eviction=config->size_aware_texture_eviction,.decode=decode_cpu_texture,.max_entries=config->texture_cache_entries,
             .max_bytes=config->texture_cache_bytes,.queued_uploads=1,.reuse_uploads=1,
             .gpu_decode=config->gpu_texture_decode,.pipeline_cache=config->pipeline_cache,
             .guest_write_watch=config->strict_texture_checks?NULL:config->guest_write_watch};

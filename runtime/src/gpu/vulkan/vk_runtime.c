@@ -203,6 +203,8 @@ static VkResult attach(ChVkBackendConfig config)
     const char *color_pack=ch_env("VULKAN_GPU_COLOR_PACK");
     config.gpu_color_pack=(!color_pack || atoi(color_pack)) && config.family<queue_count &&
         (queues[config.family].queueFlags&VK_QUEUE_COMPUTE_BIT);
+    const char *size_eviction=ch_env("VULKAN_SIZE_AWARE_EVICTION");
+    config.size_aware_texture_eviction=!size_eviction || atoi(size_eviction)!=0;
     const char *morton_depth=ch_env("VULKAN_GPU_MORTON_DEPTH");
     config.gpu_morton_depth=(!morton_depth || atoi(morton_depth)) && config.gpu_depth_pack;
     const char *morton_color=ch_env("VULKAN_GPU_MORTON_COLOR");

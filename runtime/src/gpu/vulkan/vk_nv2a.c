@@ -15,6 +15,10 @@ static uint64_t profile_us(void) {
 }
 static void profile_draw(uint64_t start,uint64_t vertices,uint64_t textures,uint64_t raster,int reduced) {
     static uint64_t first,n,fast,vertex_us,texture_us,raster_us;
+    static int detail=-1;
+    if(detail<0) {const char *e=getenv("CHIHIRO_VULKAN_FRAME_COSTS");detail=e && atoi(e)!=0;}
+    if(detail && raster-start>=1000) fprintf(stderr,"[Vulkan slow draw] geometry_ms=%.3f textures_ms=%.3f raster_ms=%.3f\n",
+        (vertices-start)/1000.,(textures-vertices)/1000.,(raster-textures)/1000.);
     if(!first) first=start;
     n++;fast+=!!reduced;vertex_us+=vertices-start;texture_us+=textures-vertices;raster_us+=raster-textures;
     if(raster-first<1000000) return;

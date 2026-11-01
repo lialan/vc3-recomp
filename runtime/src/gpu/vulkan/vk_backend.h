@@ -25,6 +25,7 @@ typedef struct {
     int gpu_texture_decode; /* common ARGB/XRGB on compute-capable graphics queue */
     int gpu_morton_color; /* full power-of-two Morton ARGB transfer layouts */
     int gpu_color_pack; /* linear resident ARGB color transfers on compute queue */
+    int size_aware_texture_eviction; /* byte-budget eviction avoids bursts of tiny cold images */
     int gpu_morton_depth; /* full power-of-two Morton Z24S8 transfer layouts */
     int gpu_depth_pack; /* D24/D32 guest Z24/S8 conversion on compute-capable graphics queue */
     int raw_fixed; /* raw fixed/program GPU transforms; device enabled shaderClipDistance + depthClamp */

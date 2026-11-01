@@ -1466,7 +1466,8 @@ static VkResult transfer_depth_stencil(ChVkTarget *t,void *depth,void *stencil,s
     TRY(vkQueueSubmit(t->queue,1,&submit,t->fence));
     uint64_t upload_wait=upload_start?time_ns():0;
     TRY(vkWaitForFences(t->device,1,&t->fence,VK_TRUE,5000000000ULL));
-    if(upload_start) t->depth_upload_wait_ns+=time_ns()-upload_wait;
+    if(upload_start) {uint64_t elapsed=time_ns()-upload_wait;
+        t->depth_upload_wait_ns+=elapsed;t->timing_stats.depth_upload_wait_ns+=elapsed;}
 readback:
     if(!upload) {
         TRY(vkMapMemory(t->device,t->read_mem,0,VK_WHOLE_SIZE,0,&mapped));
