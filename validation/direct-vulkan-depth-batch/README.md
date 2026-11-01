@@ -983,3 +983,35 @@ The initial `/tmp/vc3-retained-es-cpu-profile` attempt stopped at activation
 because its process lookup compared /tmp against the resolved /private/tmp
 path. Its process is gone and it has no report; it is not a completed run.
 The v2 script resolves paths and waits for the runner even on sampling failure.
+
+## Combined render-target snapshot experiment (rejected)
+
+Appended snapshot image copy/mip generation to the pending source-draw batch,
+so source rendering and snapshot completed in one submission/wait. Kept the
+existing synchronous standalone path when no draws were pending. A diagnostic
+counter measured actual combined copies. Added pending-source snapshot/refresh
+fixtures, including invalid request rejection before consuming pending work,
+queued-upload destination reuse, exact pixels/mips, untouched depth/stencil,
+and immediate source destruction after completion. Expanded KosmicKrisp
+validation+sync-validation fixture passed, no VUID/SYNC errors:
+`/tmp/vc3-batched-snapshot-expanded.log`.
+
+Same immutable binary `/tmp/vc3-batched-snapshot-vc3`, warm pipeline cache,
+2100-frame controls via CHIHIRO_VULKAN_BATCH_SNAPSHOTS=0/1:
+`/tmp/vc3-batched-snapshot-control` and `-combined`. Both exit 0 with no runner
+failure diagnostics. Held E.S. control49.33/51.31FPS, combined49.53/51.71FPS;
+activation40.91/40.68FPS. Crucially, combined copies stayed at362 from completed
+frame1560 through1920. This experiment does not remove any E.S. submissions: the
+source is already completed when those snapshots are requested. Small FPS
+differences are not evidence of a gain from this mechanism.
+
+Removed all runtime/API/test changes. Patch with implementation and fixtures:
+`/tmp/vc3-batched-snapshot-rejected.patch`. No Android build or headset run
+was attempted for this rejected change. No pending benchmark processes.
+
+Next inspect ordinary texture-cache comparison cost: encoded bytes and palettes
+are currently memcmp'd on every matching acquire, even when CPU storage is
+unchanged. Integrating the existing shared guest-write tracker could avoid that
+work. It must not accidentally validate an older pinned image after consuming
+a changed generation; failed byte comparisons must retain invalid snapshot
+state. Cover aliases, palettes, fallback pages and CPU writes between snapshots.
