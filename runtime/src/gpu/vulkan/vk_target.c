@@ -64,6 +64,7 @@ struct ChVkTarget {
     VkImage depth;
     VkFormat depth_format;
     ChVkDepthQuant *depth_quant;
+    int quantized_depth;
     VkDeviceMemory depth_mem;
     VkImageView depth_view;
     VkImage image;
@@ -424,7 +425,10 @@ fail:
     retire_samples(t);return result;
 }
 VkResult ch_vk_target_finish(ChVkTarget *t) {return finish_batch(t,0);}
-VkResult ch_vk_target_quantize_depth(ChVkTarget *t) {
+VkResult ch_vk_target_depth_quantization(ChVkTarget *t,int enabled) {
+    if(!t)return VK_ERROR_INITIALIZATION_FAILED;
+    if(!enabled) {VkResult r=ch_vk_target_finish(t);if(r==VK_SUCCESS)t->quantized_depth=0;return r;}
+    if(t->quantized_depth)return VK_SUCCESS;
     if(!t || t->failed || !t->initialized || t->depth_format!=VK_FORMAT_D32_SFLOAT_S8_UINT)
         return VK_ERROR_FORMAT_NOT_SUPPORTED;
     VkPhysicalDeviceProperties props;vkGetPhysicalDeviceProperties(t->physical,&props);
@@ -441,6 +445,14 @@ VkResult ch_vk_target_quantize_depth(ChVkTarget *t) {
     VkResult result;
     TRY(ch_vk_target_finish(t));
     if(!t->depth_quant) TRY(ch_vk_depth_quant_create(t->device,t->read,t->bytes,&t->depth_quant));
+    t->quantized_depth=1;return VK_SUCCESS;
+fail:return result;
+}
+VkResult ch_vk_target_quantize_depth(ChVkTarget *t) {
+    VkResult result;int enabled=t?t->quantized_depth:0;
+    TRY(ch_vk_target_depth_quantization(t,1));
+    t->quantized_depth=enabled;
+    TRY(ch_vk_target_finish(t));
     TRY(vkResetCommandBuffer(t->command,0));TRY(vkResetFences(t->device,1,&t->fence));
     VkCommandBufferBeginInfo begin={.sType=VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,.flags=VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT};
     TRY(vkBeginCommandBuffer(t->command,&begin));
@@ -491,6 +503,16 @@ static VkResult record_batch(ChVkTarget *t,VkBuffer geometry,VkDeviceSize index_
     vkCmdBindVertexBuffers(t->command,0,1,&geometry,&vertex_offset);
     vkCmdBindIndexBuffer(t->command,geometry,index_offset,VK_INDEX_TYPE_UINT16);
     vkCmdDrawIndexed(t->command,index_count,1,0,0,0);
+    if(t->quantized_depth) {
+        vkCmdEndRenderPass(t->command);
+        ch_vk_depth_quant_record(t->depth_quant,t->command,t->depth,t->width,t->height);
+        VkMemoryBarrier color={.sType=VK_STRUCTURE_TYPE_MEMORY_BARRIER,.srcAccessMask=VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+            .dstAccessMask=VK_ACCESS_COLOR_ATTACHMENT_READ_BIT|VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT};
+        vkCmdPipelineBarrier(t->command,VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,0,1,&color,0,NULL,0,NULL);
+        VkRenderPassBeginInfo pass={.sType=VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,.renderPass=t->pass,
+            .framebuffer=t->framebuffer,.renderArea={{0,0},{t->width,t->height}}};
+        vkCmdBeginRenderPass(t->command,&pass,VK_SUBPASS_CONTENTS_INLINE);
+    }
     t->active_pipeline->pending=1;
     t->pending++;t->resource_stats.batch_draws++;
     if(t->timing) t->timing_stats.batch_record_ns+=time_ns()-record_start;
@@ -581,6 +603,7 @@ static VkResult render_read(ChVkTarget *t, const float rgba[4], uint32_t clear_f
         if(t->count_requested) vkCmdEndQuery(t->command,t->queries,0);
         vkCmdEndRenderPass(t->command);
     }
+    if(t->quantized_depth) ch_vk_depth_quant_record(t->depth_quant,t->command,t->depth,t->width,t->height);
     barrier.srcAccessMask=geometry?VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT:VK_ACCESS_TRANSFER_WRITE_BIT;
     barrier.dstAccessMask=VK_ACCESS_TRANSFER_READ_BIT;
     barrier.oldLayout=geometry?VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL:VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;

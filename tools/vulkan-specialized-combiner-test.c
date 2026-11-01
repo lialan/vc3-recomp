@@ -179,6 +179,28 @@ int ch_test_specialized_combiners(VkPhysicalDevice gpu,VkDevice device,VkQueue q
             REQUIRE(depth[1][i]==expected && stencil[1][i]==stencil[0][i]);
         }
     }
+    REQUIRE(ch_vk_target_depth_quantization(t[1],1)==VK_SUCCESS);
+    for(unsigned mode=0;mode<2;mode++) {
+        for(unsigned i=0;i<16;i++){depth[mode][i]=.5f;stencil[mode][i]=0;}
+        REQUIRE(ch_vk_target_write_depth_stencil(t[mode],depth[mode],stencil[mode],16)==VK_SUCCESS);
+        REQUIRE(ch_vk_target_clear_read(t[mode],black,rgba[mode],64)==VK_SUCCESS);
+    }
+    for(unsigned draw=0;draw<32;draw++) {
+        uint32_t bits=0x3f000000u+(draw%7)-3;
+        for(unsigned k=0;k<3;k++)memcpy(&v[k].xy[2],&bits,4);
+        zs.depth_func=0x200+(draw%8);zs.stencil_ref=draw;
+        for(unsigned mode=0;mode<2;mode++) {
+            REQUIRE(ch_vk_target_draw_combiner_read(t[mode],NULL,v,3,indices,3,&zs,NULL,NULL,&project,0,NULL,rgba[mode],64)==VK_SUCCESS);
+            if(!mode) {
+                REQUIRE(ch_vk_target_read_depth_stencil(t[0],depth[0],stencil[0],16)==VK_SUCCESS);
+                for(unsigned i=0;i<16;i++){uint32_t q=(uint32_t)((double)depth[0][i]*16777215.0+0.5);depth[0][i]=(float)((double)q/16777215.0);}
+                REQUIRE(ch_vk_target_write_depth_stencil(t[0],depth[0],stencil[0],16)==VK_SUCCESS);
+            }
+        }
+    }
+    REQUIRE(ch_vk_target_read_depth_stencil(t[1],depth[1],stencil[1],16)==VK_SUCCESS);
+    REQUIRE(ch_vk_target_read_color(t[1],rgba[1],64)==VK_SUCCESS);
+    REQUIRE(!memcmp(depth[0],depth[1],sizeof depth[0]) && !memcmp(stencil[0],stencil[1],16) && !memcmp(rgba[0],rgba[1],64));
     puts("PASS: 32 specialized combiner cases match interpreter/CPU across 0..8 stages, dynamic factors/fog, fetch modes/cube/missing samplers and exact alpha/depth/stencil; inactive edits reuse pipelines, NOAT retains projective q, 140 pending factor updates survive bounded LRU eviction and three batches");failed=0;
 done:
     for(unsigned i=0;i<2;i++) ch_vk_target_destroy(t[i]);

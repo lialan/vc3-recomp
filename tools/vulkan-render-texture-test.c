@@ -97,7 +97,7 @@ static int scenario(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,uint32_t 
     ChVkBackend *backend=NULL;int failed=1;memset(memory,0xa5,sizeof memory);decodes=0;
     ChVkBackendConfig config={.physical=gpu,.device=device,.queue=queue,.family=family,
         .guest_base=memory,.guest_bytes=sizeof memory,.decode=decode,.resident_color=1,.cache_textures=1,
-        .sample_render_targets=fast,.batch_draws=1,.texture_cache_entries=2,
+        .sample_render_targets=fast,.resident_depth=test>=10 && fast,.quantized_depth=test>=10 && fast,.batch_draws=1,.texture_cache_entries=2,
         .texture_cache_bytes=test==7?64:test==8?256:8192};
 #define REQUIRE(x) do {if(!(x)) {fprintf(stderr,"render texture integration case%u fast%u line%d: %s\n",test,fast,__LINE__,#x);goto done;}}while(0)
     REQUIRE(ch_vk_backend_create(&config,&backend)==VK_SUCCESS && ch_vk_backend_attach(backend)==VK_SUCCESS);
@@ -105,12 +105,16 @@ static int scenario(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,uint32_t 
     Nv2aSurface source={.color_va=256,.width=4,.height=4,.pitch=24,.bytes_per_pixel=4};
     Nv2aSurface dest={.color_va=4096,.width=4,.height=4,.pitch=16,.bytes_per_pixel=4};
     Nv2aRenderState src_state={.color_mask=0x01010101,.surface_format=0x100,.depth_max=1};
+    if(test>=10) {
+        src_state.surface_format=0x120;src_state.zeta_va=8192;src_state.zeta_pitch=24;
+        src_state.depth_test_enable=src_state.depth_write=1;src_state.depth_func=0x201;
+    }
     Nv2aRenderState dst_state=src_state;
     if(test==5 || test==6) src_state.surface_format=0x200|((test==6?3:2)<<16)|(2u<<24);
     Nv2aTexture tx={.offset=source.color_va,.width=4,.height=4,.pitch=source.pitch,
         .color=test==5 || test==6?0x06:test==4?0x1e:0x12,.levels=1,.filter=0x01010000,.addr_u=3,.addr_v=3};
     if(test==3) {tx.offset+=4;tx.width=3;}
-    cb->clear(&source,&src_state,0xf0,0x204080c0,0xffffff00);
+    cb->clear(&source,&src_state,test>=10?0xf3:0xf0,0x204080c0,0x80000007);
     cb->clear(&dest,&dst_state,0xf0,0,0xffffff00);
     Nv2aVertex src_vertices[6],dst_vertices[6];vertices(src_vertices,0x8040c020,4);vertices(dst_vertices,0xffffffff,(float)tx.width);
     Nv2aBatch draw_source={.vertices=src_vertices,.count=6,.state=&src_state};
@@ -124,6 +128,11 @@ static int scenario(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,uint32_t 
         empty.width=0;empty.height=4;cb->draw(&empty,&empty_batch);
     }
     cb->draw(&source,&draw_source);
+    if(test>=10) {
+        if(test==11) {memory[8192]=0x39;memory[8192+24+7]=0x40;}
+        cb->draw(&source,&draw_source);
+        if(test==12) {source.width=source.height=2;cb->clear(&source,&src_state,3,0,0x40000027);}
+    }
     if(test==8) {
         dst_state.blend_enable=1;dst_state.blend_src=dst_state.blend_dst=1;dst_state.blend_eq=0x8006;
         for(unsigned i=0;i<8;i++) {
@@ -166,12 +175,12 @@ int ch_test_render_textures(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,u
     unsigned char *reference=malloc(sizeof memory),*candidate=malloc(sizeof memory);
     if(!reference || !candidate) {free(reference);free(candidate);return 1;}
     int failed=0;
-    for(unsigned test=0;test<10 && !failed;test++) {
+    for(unsigned test=0;test<13 && !failed;test++) {
         unsigned control=0,fast=0;
         failed=scenario(gpu,device,queue,family,0,test,reference,&control) ||
             scenario(gpu,device,queue,family,1,test,candidate,&fast);
         if(!failed && (memcmp(reference,candidate,sizeof memory) ||
-            ((test==3 || test==4 || test==6 || test==7)?!fast:test==8?fast>=control:fast!=0))) {
+            (test<10 && ((test==3 || test==4 || test==6 || test==7)?!fast:test==8?fast>=control:fast!=0)))) {
             fprintf(stderr,"render texture integration mismatch case%u decoder counts %u/%u\n",test,control,fast);failed=1;
         }
     }

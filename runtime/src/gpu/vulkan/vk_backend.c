@@ -8,7 +8,7 @@
 #include <stdio.h>
 #include <time.h>
 #define MAX_SURFACES 32
-struct Surface { Nv2aSurface guest; uint32_t zeta; Nv2aRenderState state; float *depth; uint8_t *stencil; ChVkTarget *target; unsigned char *rgba,*observed,*cpu,*raw; ChGuestWriteRange *write_range; size_t raw_span; int observed_valid,resident,color_dirty,native_z24; size_t bytes; uint64_t color_serial; };
+struct Surface { Nv2aSurface guest; uint32_t zeta; Nv2aRenderState state; float *depth; uint8_t *stencil; ChVkTarget *target; unsigned char *rgba,*observed,*cpu,*raw; ChGuestWriteRange *write_range; size_t raw_span; int observed_valid,resident,color_dirty,native_z24,quantized_z24; size_t bytes; uint64_t color_serial; };
 struct ChVkBackend { VkPipelineCache pipeline_cache; struct {int enabled;uint64_t start,n,surface,coherence,imports,draw,store,no_color;} profile; struct {uint64_t previous,us[120];unsigned count;} frame_profile; ChVkBackendConfig host; ChVkTextureCache *textures; ChVkDepthResident *zeta; uint64_t frames,raw_draws,raw_declined,color_clock; struct Surface surfaces[MAX_SURFACES]; unsigned count; };
 static ChVkBackend *active;
 static void flush_color(struct Surface *);
@@ -189,7 +189,7 @@ static void store(struct Surface *f,VkResult result,const char *operation,int co
         }
     }
     if(f->state.zeta_va && depth_dirty) {
-        if(active->zeta && f->native_z24 && ((f->state.surface_format>>4)&15)==2) {
+        if(active->zeta && (f->native_z24 || f->quantized_z24) && ((f->state.surface_format>>4)&15)==2) {
             result=ch_vk_depth_resident_dirty(active->zeta,f->target);
             if(result!=VK_SUCCESS) fatal(result,"resident depth ownership");
             return;
@@ -344,6 +344,11 @@ static void import_color(struct Surface *f) {
 }
 static void import_depth(struct Surface *f,int overwrite) {
     if(!f->state.zeta_va) return;
+    if(active->host.quantized_depth && !f->native_z24) {
+        f->quantized_z24=((f->state.surface_format>>4)&15)==2;
+        VkResult q=ch_vk_target_depth_quantization(f->target,f->quantized_z24);
+        if(q!=VK_SUCCESS) fatal(q,"D32 depth quantization setup");
+    }
     if(active->zeta) {
         ChVkGuestLayout depth_layout;
         uint32_t format=(f->state.surface_format>>4)&15;
@@ -361,7 +366,7 @@ static void import_depth(struct Surface *f,int overwrite) {
                (uint64_t)f->state.zeta_va<c->guest.color_va+color_layout.span)
                 fatal(VK_ERROR_FEATURE_NOT_PRESENT,"color/depth storage alias");
         }
-        if(f->native_z24 && format==2) {
+        if((f->native_z24 || f->quantized_z24) && format==2) {
             r=overwrite?ch_vk_depth_resident_bind_clear(active->zeta,f->target,&f->guest,&f->state):
                 ch_vk_depth_resident_bind(active->zeta,f->target,&f->guest,&f->state);
             if(r!=VK_SUCCESS) fatal(r,"resident depth bind");
@@ -532,6 +537,7 @@ VkResult ch_vk_backend_create(const ChVkBackendConfig *config,ChVkBackend **out)
     if(!config || !config->physical || !config->device || !config->queue ||
        !config->guest_base || !config->guest_bytes || !config->decode ||
        (!!config->lock_queue != !!config->unlock_queue) ||
+       (config->quantized_depth && !config->resident_depth) ||
        (config->sample_render_targets && (!config->resident_color || !config->cache_textures)) ||
        ((config->resident_color || config->resident_depth) && (config->render_clear || config->render_draw ||
         config->render_flip || config->guest_color_changed)))
@@ -545,7 +551,7 @@ VkResult ch_vk_backend_create(const ChVkBackendConfig *config,ChVkBackend **out)
         VkResult r=ch_vk_depth_resident_create(config->guest_base,config->guest_bytes,&b->zeta);
         if(r!=VK_SUCCESS) {free(b);return r;}
         ch_vk_depth_resident_write_watch(b->zeta,config->guest_write_watch);
-        r=ch_vk_depth_resident_packed(b->zeta,!config->depth_float_transfers);
+        r=ch_vk_depth_resident_packed(b->zeta,!(config->depth_float_transfers || config->quantized_depth));
         if(r!=VK_SUCCESS) {ch_vk_depth_resident_destroy(b->zeta);free(b);return r;}
         ch_vk_depth_resident_gpu_copies(b->zeta,!config->strict_depth_switches);
     }

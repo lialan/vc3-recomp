@@ -62,3 +62,20 @@ exact against the CPU oracle; stencil is unchanged. The fixture passes with
 VK_LAYER_KHRONOS_validation and synchronization validation requested, with no
 VUID/SYNC diagnostics in /tmp/vc3-depth-roundtrip-validation.log. Android
 offscreen build passes. Renderer residency integration remains to be done.
+
+## Opt-in D32 residency
+
+CHIHIRO_VULKAN_QUANTIZED_DEPTH=1 (requires resident depth) enables exact Z24
+round-trips after each D32 draw, inside the command buffer. Native D24 stays
+on its native path. Float staging is used for the resident manager so CPU
+edits, target switches, sampling/fence publication and resize retain the
+existing ownership rules. D32 Z16 continues through the strict fallback.
+The default is off pending actual-game measurements.
+
+Thirty-two queued draws around rounding boundaries, covering all eight depth
+comparison functions, match strict per-draw CPU round-trips in exact final
+color/depth/stencil. Backend scenarios compare every guest byte after depth
+writes, CPU component edits, target switching, resize/full clears and flush.
+Both fixtures pass with validation and synchronization validation requested;
+logs /tmp/vc3-quantized-{draw,backend}-validation.log have no VUID/SYNC errors.
+Mac main and Android offscreen builds pass. No guest performance claim yet.

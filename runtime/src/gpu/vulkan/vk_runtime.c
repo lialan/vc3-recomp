@@ -180,6 +180,8 @@ static VkResult attach(ChVkBackendConfig config)
     config.strict_depth_switches=depth_copy && !strcmp(depth_copy,"0");
     const char *clear_skip=ch_env("VULKAN_DEPTH_CLEAR_SKIP");
     config.strict_depth_clears=clear_skip && !strcmp(clear_skip,"0");
+    const char *quant=ch_env("VULKAN_QUANTIZED_DEPTH");
+    config.quantized_depth=quant && !strcmp(quant,"1");
     const char *packed=ch_env("VULKAN_DEPTH_PACKED");
     config.depth_float_transfers=packed && !strcmp(packed,"0");
     fprintf(stderr,"[Vulkan] resident color targets: %s\n",config.resident_color?"enabled":"disabled");

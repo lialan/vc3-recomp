@@ -27,6 +27,7 @@ typedef struct {
     int resident_depth; /* D24S8 only; strict fallback when native D24 unavailable */
     int strict_depth_switches; /* diagnostic: CPU roundtrips even for identical zeta */
     int strict_depth_clears; /* diagnostic: import depth before full replacement */
+    int quantized_depth; /* opt-in exact GPU Z24 roundtrip on D32 fallback */
     int depth_float_transfers; /* diagnostic: normalized-float staging instead of exact packed D24 */
     int batch_draws; /* resident no-query draws, complete before guest fences */
     int cache_textures; /* exact level-zero storage/palette/sampler cache */
