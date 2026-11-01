@@ -1,0 +1,7 @@
+# Additional GPU channel-order decoding
+
+Shared Vulkan compute upload now supports swizzled A8B8G8R8/B8G8R8A8/R8G8B8A8 (0x3a..0x3c) and their pitched linear twins (0x3f..0x41). Previously these formats entered CPU decode through the texture cache. Existing 32-bit APIs and cache routing automatically select the GPU path. Channel normalization uses the existing compute dispatch and staging allocation, with no extra pass. Morton power-of-two and pitched row bounds remain checked. Cubes and other unsupported formats remain fallbacks.
+
+Native vc3 build passed. One focused KosmicKrisp GPU validation run passed with synchronization validation enabled: 240 cases across all ten supported 32-bit formats, rectangular Morton and pitched odd dimensions, three replacement epochs, exact mip comparison to a separate byte-lane CPU oracle and ordinary upload, descriptor identity, alternating CPU/GPU replacement and truncated input rejection. Device Apple M4 Pro. No VUID/SYNC diagnostics. git diff --check passed. No headset or additional benchmark matrix.
+
+This proves removal of these six CPU decoding paths, not that VC3 uses them in the measured activation window. No new FPS claim; previous warm-cache tails remain above16.67ms. The historical approximately0.22ms fallback number has not been re-established for current code. Next investigation must separate remaining format fallback usage from completion/driver waiting rather than attributing all frame tails to CPU decoding.

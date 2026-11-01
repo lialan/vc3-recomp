@@ -12,6 +12,10 @@ void main() {
         at=ch_morton_index(x,y,pc.width,pc.height);
     }
     uint word=data.words[pc.width*pc.height+at];
+    uint order=pc.flags>>2;
+    if(order==1u) word=(word&0xff00ff00u)|((word&255u)<<16)|((word>>16)&255u);
+    else if(order==2u) word=((word&255u)<<24)|((word&0xff00u)<<8)|((word>>8)&0xff00u)|(word>>24);
+    else if(order==3u) word=(word<<24)|(word>>8);
     if((pc.flags&2u)!=0u) word|=0xff000000u;
     data.words[y*pc.width+x]=(word&0xff00ff00u)|((word&255u)<<16)|((word>>16)&255u);
 }

@@ -8,10 +8,10 @@ int ch_test_command_batches(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,u
     ChVkTexture *image=NULL,*reference=NULL;int failed=1;
     uint32_t *argb=NULL;unsigned char *raw=NULL,*actual=NULL,*expected=NULL;
     const unsigned dims[][2]={{1,1},{1,8},{8,1},{4,16},{16,4},{8,8},{3,5},{17,9},{512,512}};
-    const unsigned formats[]={6,7,0x12,0x1e};unsigned cases=0;
+    const unsigned formats[]={6,7,0x12,0x1e,0x3a,0x3b,0x3c,0x3f,0x40,0x41};unsigned cases=0;
 #define REQUIRE(x) do {if(!(x)){fprintf(stderr,"texture decode line%d: %s\n",__LINE__,#x);goto done;}}while(0)
-    for(unsigned shape=0;shape<9;shape++) for(unsigned format=0;format<4;format++) {
-        unsigned w=dims[shape][0],h=dims[shape][1],n=w*h,swizzled=format<2;
+    for(unsigned shape=0;shape<9;shape++) for(unsigned format=0;format<sizeof(formats)/sizeof(formats[0]);format++) {
+        unsigned w=dims[shape][0],h=dims[shape][1],n=w*h,swizzled=format<2 || (format>=4 && format<=6);
         if(swizzled && ((w&(w-1)) || (h&(h-1)))) continue;
         unsigned pitch=(w+3)*4;size_t span=swizzled?n*4:(h-1)*pitch+w*4;
         argb=malloc(n*4);raw=malloc(span);actual=malloc(n*4);expected=malloc(n*4);REQUIRE(argb && raw && actual && expected);
@@ -23,7 +23,18 @@ int ch_test_command_batches(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,u
             memset(raw,0xa5,span);
             if(swizzled) xbox_swizzle_rect(raw,argb,w,h,4);
             else for(unsigned y=0;y<h;y++) memcpy(raw+y*pitch,argb+y*w,w*4);
-            if(format&1) for(unsigned i=0;i<n;i++) argb[i]|=0xff000000;
+            for(unsigned i=0;i<n;i++) {
+                uint32_t v=argb[i];
+                if(format==1 || format==3) argb[i]|=0xff000000;
+                // Independent byte-lane oracle, before the ordinary ARGB upload.
+                if(format>=4) {
+                    unsigned order=(format-4)%3;
+                    unsigned char b[4];memcpy(b,&v,4);
+                    if(order==0) argb[i]=((uint32_t)b[3]<<24)|((uint32_t)b[0]<<16)|((uint32_t)b[1]<<8)|b[2];
+                    if(order==1) argb[i]=((uint32_t)b[0]<<24)|((uint32_t)b[1]<<16)|((uint32_t)b[2]<<8)|b[3];
+                    if(order==2) argb[i]=((uint32_t)b[0]<<24)|((uint32_t)b[3]<<16)|((uint32_t)b[2]<<8)|b[1];
+                }
+            }
             if(!image) {
                 REQUIRE(ch_vk_texture_upload_encoded32(gpu,device,queue,family,VK_NULL_HANDLE,&source,raw,span,levels,1,&image)==VK_SUCCESS);
                 identity=ch_vk_texture_descriptor(image);
@@ -53,7 +64,7 @@ int ch_test_command_batches(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,u
         ch_vk_texture_destroy(image);image=NULL;
         free(argb);argb=NULL;free(raw);raw=NULL;free(actual);actual=NULL;free(expected);expected=NULL;
     }
-    printf("PASS: %u GPU texture decode cases, ARGB/XRGB, rectangular Morton/pitched/odd sizes, exact mips, queued replacement and bounds\n",cases);failed=0;
+    printf("PASS: %u GPU texture decode cases, all ten supported 32-bit formats, rectangular Morton/pitched/odd sizes, exact mips, queued replacement and bounds\n",cases);failed=0;
 done:
     ch_vk_texture_destroy(reference);ch_vk_texture_destroy(image);free(argb);free(raw);free(actual);free(expected);return failed;
 }

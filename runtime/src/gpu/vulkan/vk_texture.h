@@ -27,7 +27,7 @@ VkResult ch_vk_texture_upload_queued(VkPhysicalDevice,VkDevice,VkQueue,uint32_t 
  * Waits for any previous upload before reusing staging; queued follows the
  * same-queue contract above. pixels counts all six faces for cube images. */
 VkResult ch_vk_texture_replace_argb(ChVkTexture *,const uint32_t *argb,size_t pixels,int queued);
-/* Shared compute decoder for 2D ARGB/XRGB, linear or rectangular Morton.
+/* Shared compute decoder for 2D 32-bit ARGB/XRGB/ABGR/BGRA/RGBA, linear or rectangular Morton.
  * Raw bytes are snapshotted before return; sampling/replacement contracts match
  * upload_queued/replace_argb. Requires a compute-capable graphics queue.
  * Other formats deliberately return FEATURE_NOT_PRESENT before GPU work. */

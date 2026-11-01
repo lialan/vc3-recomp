@@ -346,14 +346,14 @@ VkResult ch_vk_texture_set_sampler(ChVkTexture *t,const VkSamplerCreateInfo *inf
 
 int ch_vk_texture_can_decode32(const Nv2aTexture *s) {
     if(!s || s->cube || !s->width || !s->height || (uint64_t)s->width*s->height>UINT32_MAX/3) return 0;
-    if(s->color==6 || s->color==7) return !(s->width&(s->width-1)) && !(s->height&(s->height-1));
-    return (s->color==0x12 || s->color==0x1e) && !(s->pitch&3) && (uint64_t)s->width*4<=s->pitch;
+    if(s->color==6 || s->color==7 || (s->color>=0x3a && s->color<=0x3c)) return !(s->width&(s->width-1)) && !(s->height&(s->height-1));
+    return (s->color==0x12 || s->color==0x1e || (s->color>=0x3f && s->color<=0x41)) && !(s->pitch&3) && (uint64_t)s->width*4<=s->pitch;
 }
 VkResult ch_vk_texture_replace_encoded32(ChVkTexture *t,VkPipelineCache cache,const Nv2aTexture *s,const void *raw,size_t bytes,int queued) {
     if(!t || t->failed || !raw) return VK_ERROR_INITIALIZATION_FAILED;
     if(!ch_vk_texture_can_decode32(s)) return VK_ERROR_FEATURE_NOT_PRESENT;
     if(t->layers!=1 || t->width!=s->width || t->height!=s->height) return VK_ERROR_INITIALIZATION_FAILED;
-    int swizzled=s->color==6 || s->color==7;
+    int swizzled=s->color==6 || s->color==7 || (s->color>=0x3a && s->color<=0x3c);
     uint64_t span=swizzled?t->bytes:(uint64_t)(s->height-1)*s->pitch+(uint64_t)s->width*4;
     if(span>bytes || span>SIZE_MAX-t->bytes || span/4+t->bytes/4>UINT32_MAX) return VK_ERROR_INITIALIZATION_FAILED;
     if(!t->decode_max_bytes) {
@@ -372,6 +372,9 @@ VkResult ch_vk_texture_replace_encoded32(ChVkTexture *t,VkPipelineCache cache,co
     VkMappedMemoryRange flush={.sType=VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE,.memory=t->staging_memory,.size=VK_WHOLE_SIZE};
     result=vkFlushMappedMemoryRanges(t->device,1,&flush);vkUnmapMemory(t->device,t->staging_memory);if(result!=VK_SUCCESS) goto fail;
     t->decode_pitch=s->pitch/4;t->decode_flags=swizzled|((s->color==7 || s->color==0x1e)?2:0);
+    /* Modes 1..3 normalize the alternate channel orders to ARGB. */
+    if(s->color>=0x3a && s->color<=0x3c) t->decode_flags|=(s->color-0x39)<<2;
+    if(s->color>=0x3f && s->color<=0x41) t->decode_flags|=(s->color-0x3e)<<2;
     t->raw_decode=1;t->deferred_upload=!!queued;result=transfer(t,1,0);t->raw_decode=0;return result;
 fail:
     t->failed=1;return result;
