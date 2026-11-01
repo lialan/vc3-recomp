@@ -56,9 +56,14 @@ VkResult ch_vk_nv2a_clear_read(ChVkTarget *t, const Nv2aSurface *s,
     return ch_vk_target_draw_state_read(t,NULL,quad,4,indices,6,&state,pixels,bytes);
 }
 static VkResult sample_image(ChVkTarget *target,const Nv2aTexture *tx,ChVkDecodeTexture decode,
-    ChVkSampleResolver resolve,void *context,ChVkTexture **out) {
+    ChVkSampleResolver resolve,void *context,ChVkTexture **out,ChVkSampleImage *lease) {
     ChVkSampleImage image={0};
     VkResult result=resolve?resolve(context,tx,&image):VK_NOT_READY;
+    *lease=image;
+    if(result==VK_SUCCESS && image.gpu) {
+        if(image.argb || !image.width || !image.height) return VK_ERROR_INITIALIZATION_FAILED;
+        *out=image.gpu;return VK_SUCCESS;
+    }
     if(result==VK_SUCCESS) {
         if(!image.argb || !image.width || !image.height || (uint64_t)image.width*image.height>SIZE_MAX/4)
             return VK_ERROR_INITIALIZATION_FAILED;
@@ -126,6 +131,7 @@ static VkResult draw_decoded(ChVkTarget *t, const Nv2aSurface *s,
     float low=b->state->depth_min, high=b->state->depth_max;
     if(!(high>low)) { low=0; high=16777215.f; }
     ChVkTexture *stage_images[4]={0};
+    ChVkSampleImage leases[4]={0},plain_lease={0};
     ChVkTexture *texture=NULL;
     VkResult result=VK_ERROR_INITIALIZATION_FAILED;
     if(!isfinite(low) || !isfinite(high)) goto done;
@@ -182,9 +188,9 @@ static VkResult draw_decoded(ChVkTarget *t, const Nv2aSurface *s,
     uint64_t vertices_done=profile?profile_us():0;
     if(plain && !rc) {
         const Nv2aTexture *tx=plain;
-        result=sample_image(t,tx,decode,resolve,context,&texture);
+        result=sample_image(t,tx,decode,resolve,context,&texture,&plain_lease);
         if(result!=VK_SUCCESS) goto done;
-        result=ch_vk_texture_set_sampler(texture,&sampler);
+        result=plain_lease.gpu?VK_SUCCESS:ch_vk_texture_set_sampler(texture,&sampler);
         if(result!=VK_SUCCESS) goto done;
     }
     if(rc) for(unsigned st=0;st<4;st++) {
@@ -194,9 +200,9 @@ static VkResult draw_decoded(ChVkTarget *t, const Nv2aSurface *s,
         VkSamplerCreateInfo sm;
         if((!decode && !resolve) || ch_vk_sampler_state(tx,&sm)!=VK_SUCCESS) { result=VK_ERROR_FEATURE_NOT_PRESENT; goto done; }
         if(!tx->width || !tx->height || (uint64_t)tx->width*tx->height>SIZE_MAX/4) { result=VK_ERROR_INITIALIZATION_FAILED; goto done; }
-        result=sample_image(t,tx,decode,resolve,context,&stage_images[st]);
+        result=sample_image(t,tx,decode,resolve,context,&stage_images[st],&leases[st]);
         if(result!=VK_SUCCESS) goto done;
-        result=ch_vk_texture_set_sampler(stage_images[st],&sm); if(result!=VK_SUCCESS) goto done;
+        result=leases[st].gpu?VK_SUCCESS:ch_vk_texture_set_sampler(stage_images[st],&sm); if(result!=VK_SUCCESS) goto done;
         if(!d3d8_format_is_swizzled(tx->color) && !d3d8_format_dxt_block_bytes(tx->color))
             for(uint32_t i=0;i<b->count;i++) { v[i].xy[11+st*4]/=tx->width; v[i].xy[12+st*4]/=tx->height; }
     }
@@ -209,9 +215,18 @@ static VkResult draw_decoded(ChVkTarget *t, const Nv2aSurface *s,
     if(profile) profile_draw(start,vertices_done,textures_done,profile_us(),modulate);
     if(result==VK_SUCCESS && b->zpass_out) *b->zpass_out+=samples;
 done:
-    for(unsigned i=0;i<4;i++) ch_vk_texture_destroy(stage_images[i]);
-    ch_vk_texture_destroy(texture);
+    for(unsigned i=0;i<4;i++) {
+        if(leases[i].gpu) {if(leases[i].release) leases[i].release(leases[i].release_context,leases[i].gpu);}
+        else ch_vk_texture_destroy(stage_images[i]);
+    }
+    if(plain_lease.gpu) {if(plain_lease.release) plain_lease.release(plain_lease.release_context,plain_lease.gpu);}
+    else ch_vk_texture_destroy(texture);
     free(v); free(indices); return result;
+}
+
+VkResult ch_vk_nv2a_draw_resolved_read(ChVkTarget *t,const Nv2aSurface *s,const Nv2aBatch *b,
+    ChVkDecodeTexture decode,ChVkSampleResolver resolve,void *context,void *pixels,VkDeviceSize bytes) {
+    return draw_decoded(t,s,b,decode,NULL,0,resolve,context,pixels,bytes);
 }
 
 VkResult ch_vk_nv2a_draw_read(ChVkTarget *t, const Nv2aSurface *s,

@@ -1,0 +1,9 @@
+[Vulkan texture cache] hits=0 uploads=1 evictions=0 live=0.0MiB
+[Vulkan draw] 371 batches (371 reduced): geometry 0.2ms textures 12.7ms raster 124.8ms
+[Vulkan draw] 431 batches (431 reduced): geometry 0.1ms textures 7.8ms raster 135.6ms
+[Vulkan draw] 440 batches (440 reduced): geometry 0.1ms textures 2.0ms raster 137.4ms
+[Vulkan draw] 427 batches (427 reduced): geometry 0.1ms textures 2.0ms raster 135.6ms
+[Vulkan draw] 431 batches (431 reduced): geometry 0.1ms textures 2.0ms raster 136.8ms
+[Vulkan draw] 434 batches (434 reduced): geometry 0.1ms textures 2.0ms raster 138.0ms
+[Vulkan draw] 436 batches (436 reduced): geometry 0.1ms textures 2.0ms raster 138.0ms
+[Vulkan texture cache] hits=3121 uploads=14 evictions=0 live=7.1MiB

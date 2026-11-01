@@ -1,0 +1,83 @@
+[android] CHIHIRO_TEST_RUN_ID=vc3-ae703d0b84544fdb81ced62dfd8c3f0e
+[xr] session state 1
+[xr] session state 2
+[xr] session state 3
+[xr] session state 4
+[xr] session state 5
+[Vulkan texture cache] hits=0 uploads=1 evictions=0 live=0.0MiB
+[D3D] BlockOnTime(0x00000011) timed out: head 0x00000019 sem 0x0000000D
+[pace] headset 68 frames: game frames shown 1x 0, 2x 0, 3x 0, 4+x 1
+[Vulkan draw] 5 batches (5 reduced): geometry 0.1ms textures 11.3ms raster 46.3ms
+[Vulkan backend] 5 batches: surface 2.7ms CPU edits 12.1ms imports 6.6ms draw 57.7ms writeback 5.6ms
+[D3D] BlockOnTime(0x00000015) timed out: head 0x0000001F sem 0x0000000D
+[fence] 5 waits/s, 4 slept, 650.27 ms waiting
+[D3D] BlockOnTime(0x00000019) timed out: head 0x00000023 sem 0x0000000D
+[xr] session state 4
+[xr] session state 3
+[xr] session state 6
+[D3D] BlockOnTime(0x0000001F) timed out: head 0x00000027 sem 0x0000000D
+[xr] session state 1
+[pace] game 2 frames: ms p50 1246.1 p95 1246.1 max 1246.1, >20 ms 2
+[D3D] BlockOnTime(0x00000023) timed out: head 0x0000002B sem 0x00000011
+[Vulkan draw] 66 batches (66 reduced): geometry 0.2ms textures 24.3ms raster 76.9ms
+[Vulkan backend] 66 batches: surface 4.3ms CPU edits 71.2ms imports 198.1ms draw 101.8ms writeback 180.3ms
+[D3D] BlockOnTime(0x00000027) timed out: head 0x00000031 sem 0x00000011
+[fence] 4 waits/s, 4 slept, 1000.39 ms waiting
+[D3D] BlockOnTime(0x0000002B) timed out: head 0x00000035 sem 0x00000015
+[D3D] BlockOnTime(0x00000031) timed out: head 0x00000039 sem 0x00000015
+[Vulkan draw] 122 batches (122 reduced): geometry 0.4ms textures 7.7ms raster 105.6ms
+[Vulkan backend] 122 batches: surface 2.5ms CPU edits 119.7ms imports 303.1ms draw 114.5ms writeback 303.2ms
+[pace] game 3 frames: ms p50 464.3 p95 524.3 max 524.3, >20 ms 3
+[fence] 4 waits/s, 4 slept, 1000.11 ms waiting
+[Vulkan draw] 133 batches (133 reduced): geometry 0.5ms textures 7.7ms raster 96.5ms
+[Vulkan backend] 133 batches: surface 3.7ms CPU edits 128.0ms imports 319.1ms draw 105.5ms writeback 322.7ms
+[fence] 4 waits/s, 4 slept, 1000.14 ms waiting
+[pace] game 3 frames: ms p50 394.6 p95 469.3 max 469.3, >20 ms 3
+[Vulkan draw] 127 batches (127 reduced): geometry 0.6ms textures 8.3ms raster 80.5ms
+[Vulkan backend] 127 batches: surface 3.3ms CPU edits 126.2ms imports 312.4ms draw 90.3ms writeback 299.4ms
+[fence] 4 waits/s, 4 slept, 1000.09 ms waiting
+[pace] game 3 frames: ms p50 426.4 p95 436.5 max 436.5, >20 ms 3
+[Vulkan draw] 136 batches (136 reduced): geometry 0.6ms textures 7.4ms raster 71.5ms
+[Vulkan backend] 136 batches: surface 3.6ms CPU edits 134.3ms imports 336.8ms draw 80.3ms writeback 329.4ms
+[fence] 4 waits/s, 4 slept, 1000.23 ms waiting
+[pace] game 3 frames: ms p50 404.4 p95 419.2 max 419.2, >20 ms 3
+[Vulkan draw] 127 batches (127 reduced): geometry 0.6ms textures 12.2ms raster 77.5ms
+[Vulkan backend] 128 batches: surface 5.7ms CPU edits 136.2ms imports 309.3ms draw 91.5ms writeback 296.8ms
+[fence] 4 waits/s, 4 slept, 1000.20 ms waiting
+[Vulkan draw] 131 batches (131 reduced): geometry 0.5ms textures 4.0ms raster 78.5ms
+[Vulkan backend] 131 batches: surface 2.7ms CPU edits 135.6ms imports 326.4ms draw 83.9ms writeback 330.9ms
+[pace] game 3 frames: ms p50 433.1 p95 433.7 max 433.7, >20 ms 3
+[fence] 4 waits/s, 4 slept, 1000.21 ms waiting
+[Vulkan draw] 129 batches (129 reduced): geometry 0.7ms textures 3.8ms raster 70.3ms
+[Vulkan backend] 130 batches: surface 3.1ms CPU edits 131.9ms imports 330.9ms draw 78.0ms writeback 308.4ms
+[pace] game 3 frames: ms p50 402.7 p95 430.7 max 430.7, >20 ms 3
+[fence] 4 waits/s, 4 slept, 1000.16 ms waiting
+[Vulkan draw] 130 batches (130 reduced): geometry 0.5ms textures 3.9ms raster 88.2ms
+[Vulkan backend] 130 batches: surface 2.5ms CPU edits 132.1ms imports 325.4ms draw 92.7ms writeback 320.3ms
+[pace] game 3 frames: ms p50 437.4 p95 442.0 max 442.0, >20 ms 3
+[fence] 4 waits/s, 4 slept, 1000.31 ms waiting
+[Vulkan draw] 134 batches (134 reduced): geometry 0.7ms textures 3.9ms raster 80.2ms
+[Vulkan backend] 134 batches: surface 2.5ms CPU edits 135.4ms imports 339.0ms draw 84.7ms writeback 328.8ms
+[fence] 4 waits/s, 4 slept, 1000.15 ms waiting
+[pace] game 3 frames: ms p50 397.3 p95 429.9 max 429.9, >20 ms 3
+[Vulkan draw] 126 batches (126 reduced): geometry 0.6ms textures 4.0ms raster 81.9ms
+[Vulkan backend] 126 batches: surface 6.0ms CPU edits 134.3ms imports 307.1ms draw 87.2ms writeback 303.0ms
+[fence] 4 waits/s, 4 slept, 1000.16 ms waiting
+[Vulkan draw] 135 batches (135 reduced): geometry 0.6ms textures 4.1ms raster 79.8ms
+[Vulkan backend] 135 batches: surface 3.7ms CPU edits 135.2ms imports 331.1ms draw 87.0ms writeback 326.6ms
+[pace] game 3 frames: ms p50 426.6 p95 433.6 max 433.6, >20 ms 3
+[fence] 4 waits/s, 4 slept, 1000.18 ms waiting
+[Vulkan draw] 126 batches (126 reduced): geometry 0.5ms textures 4.1ms raster 79.0ms
+[Vulkan backend] 125 batches: surface 4.2ms CPU edits 126.0ms imports 307.2ms draw 82.4ms writeback 303.5ms
+[pace] game 3 frames: ms p50 399.3 p95 435.5 max 435.5, >20 ms 3
+[fence] 4 waits/s, 4 slept, 1000.22 ms waiting
+[Vulkan draw] 134 batches (134 reduced): geometry 0.6ms textures 4.1ms raster 78.2ms
+[Vulkan backend] 134 batches: surface 2.7ms CPU edits 133.3ms imports 332.1ms draw 84.0ms writeback 337.8ms
+[pace] game 3 frames: ms p50 428.6 p95 436.2 max 436.2, >20 ms 3
+[fence] 4 waits/s, 4 slept, 1000.13 ms waiting
+[Vulkan draw] 132 batches (132 reduced): geometry 0.6ms textures 4.4ms raster 81.5ms
+[Vulkan backend] 131 batches: surface 2.1ms CPU edits 133.6ms imports 334.4ms draw 86.6ms writeback 316.0ms
+[pace] game 3 frames: ms p50 408.0 p95 431.3 max 431.3, >20 ms 3
+[Vulkan draw] 130 batches (130 reduced): geometry 0.6ms textures 4.3ms raster 78.2ms
+[Vulkan backend] 130 batches: surface 5.9ms CPU edits 139.5ms imports 321.1ms draw 83.9ms writeback 317.3ms
+[fence] 4 waits/s, 4 slept, 1000.25 ms waiting

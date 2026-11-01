@@ -1,15 +1,34 @@
 #include "vk_backend.h"
 #include "vk_depth_guest.h"
 #include "vk_guest_layout.h"
+#include "vk_texture_cache.h"
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
+#include <time.h>
 #define MAX_SURFACES 32
 struct Surface { Nv2aSurface guest; uint32_t zeta; Nv2aRenderState state; float *depth; uint8_t *stencil; ChVkTarget *target; unsigned char *rgba,*observed,*cpu,*raw; size_t raw_span; int observed_valid,resident,color_dirty; size_t bytes; };
-struct ChVkBackend { ChVkBackendConfig host; struct Surface surfaces[MAX_SURFACES]; unsigned count; };
+struct ChVkBackend { struct {int enabled;uint64_t start,n,surface,coherence,imports,draw,store;} profile; ChVkBackendConfig host; ChVkTextureCache *textures; uint64_t frames; struct Surface surfaces[MAX_SURFACES]; unsigned count; };
 static ChVkBackend *active;
 static void flush_color(struct Surface *);
 static void observe_guest_colors(void);
+static uint64_t now_us(void) {
+    struct timespec t;clock_gettime(CLOCK_MONOTONIC,&t);
+    return (uint64_t)t.tv_sec*1000000u+t.tv_nsec/1000;
+}
+static void profile_draw(const uint64_t t[6]) {
+    if(!active->profile.enabled) return;
+    if(!active->profile.start) active->profile.start=t[0];
+    active->profile.n++;
+    active->profile.surface+=t[1]-t[0];active->profile.coherence+=t[2]-t[1];
+    active->profile.imports+=t[3]-t[2];active->profile.draw+=t[4]-t[3];active->profile.store+=t[5]-t[4];
+    if(t[5]-active->profile.start<1000000) return;
+    fprintf(stderr,"[Vulkan backend] %llu batches: surface %.1fms CPU edits %.1fms imports %.1fms draw %.1fms writeback %.1fms\n",
+        (unsigned long long)active->profile.n,active->profile.surface/1000.,active->profile.coherence/1000.,
+        active->profile.imports/1000.,active->profile.draw/1000.,active->profile.store/1000.);
+    active->profile.n=active->profile.surface=active->profile.coherence=active->profile.imports=0;
+    active->profile.draw=active->profile.store=0;active->profile.start=t[5];
+}
 static void fatal(VkResult result,const char *operation) {
     if(active && active->host.fatal) active->host.fatal(result,operation);
     abort();
@@ -191,12 +210,19 @@ static void clear(const Nv2aSurface *s,const Nv2aRenderState *rs,uint32_t flags,
 }
 static void draw(const Nv2aSurface *s,const Nv2aBatch *b) {
     if(!b) fatal(VK_ERROR_INITIALIZATION_FAILED,"batch arguments");
+    uint64_t t[6]={0};
+    if(active->profile.enabled) t[0]=now_us();
     struct Surface *f=surface(s,b->state);
+    if(active->profile.enabled) t[1]=now_us();
     observe_guest_colors();
+    if(active->profile.enabled) t[2]=now_us();
     import_color(f);
     flush_sampled_colors(b);
     if(b->state->depth_test_enable || b->state->stencil_enable) import_depth(f);
-    VkResult result=ch_vk_nv2a_draw_decoded_read(f->target,s,b,active->host.decode,f->rgba,f->bytes);
+    if(active->profile.enabled) t[3]=now_us();
+    VkResult result=ch_vk_nv2a_draw_resolved_read(f->target,s,b,active->host.decode,
+        active->textures?ch_vk_texture_cache_resolve:NULL,active->textures,f->rgba,f->bytes);
+    if(active->profile.enabled) t[4]=now_us();
     if(result!=VK_SUCCESS) {
         fprintf(stderr,"[Vulkan] rejected draw surface=%08X size=%ux%u vertices=%u ext=%d rc=%d stages=%08X\n",
             s->color_va,s->width,s->height,b->count,b->ext!=NULL,b->rc!=NULL,b->rc?b->rc->stage_program:0);
@@ -209,6 +235,7 @@ static void draw(const Nv2aSurface *s,const Nv2aBatch *b) {
     }
     store(f,result,"draw",(b->state->depth_test_enable && b->state->depth_write)
         || (b->state->stencil_enable && b->state->stencil_write_mask));
+    if(active->profile.enabled) {t[5]=now_us();profile_draw(t);}
     if(active->host.render_draw) {
         VkResult r=active->host.render_draw(active->host.render_context,s,b);
         if(r!=VK_SUCCESS) fatal(r,"host draw routing");
@@ -219,6 +246,14 @@ static void flip(void) {
      * crossing the submission/display thread boundary. */
     if(!active) fatal(VK_ERROR_INITIALIZATION_FAILED,"flip without backend");
     flush();
+    active->frames++;
+    const char *profile=getenv("CHIHIRO_VULKAN_PROFILE");
+    if(active->textures && profile && atoi(profile) && (active->frames==1 || active->frames%60==0)) {
+        ChVkTextureCacheStats stats;ch_vk_texture_cache_stats(active->textures,&stats);
+        fprintf(stderr,"[Vulkan texture cache] hits=%llu uploads=%llu evictions=%llu live=%.1fMiB\n",
+            (unsigned long long)stats.hits,(unsigned long long)stats.uploads,
+            (unsigned long long)stats.evictions,stats.bytes/(1024.*1024.));
+    }
     uint32_t presented=nv2a_backend_presented_va();
     if(active->host.present_rgba && presented) {
         struct Surface *f=NULL;
@@ -273,7 +308,17 @@ VkResult ch_vk_backend_create(const ChVkBackendConfig *config,ChVkBackend **out)
         return VK_ERROR_INITIALIZATION_FAILED;
     ChVkBackend *b=calloc(1,sizeof(*b));
     if(!b) return VK_ERROR_OUT_OF_HOST_MEMORY;
-    b->host=*config; *out=b; return VK_SUCCESS;
+    b->host=*config;
+    const char *profile=getenv("CHIHIRO_VULKAN_PROFILE");
+    b->profile.enabled=profile && atoi(profile)!=0;
+    if(config->cache_textures) {
+        ChVkTextureCacheConfig texture_config={.physical=config->physical,.device=config->device,
+            .queue=config->queue,.family=config->family,.guest_base=config->guest_base,
+            .guest_bytes=config->guest_bytes,.decode=config->decode};
+        VkResult r=ch_vk_texture_cache_create(&texture_config,&b->textures);
+        if(r!=VK_SUCCESS) {free(b);return r;}
+    }
+    *out=b; return VK_SUCCESS;
 }
 VkResult ch_vk_backend_attach(ChVkBackend *b) {
     if(!b || active) return VK_ERROR_INITIALIZATION_FAILED;
@@ -286,6 +331,7 @@ void ch_vk_backend_destroy(ChVkBackend *b) {
     queue_lock(b);
     if(active==b) { nv2a_backend_register(NULL); active=NULL; }
     for(unsigned i=0;i<b->count;i++) { ch_vk_target_destroy(b->surfaces[i].target); free(b->surfaces[i].rgba); free(b->surfaces[i].observed); free(b->surfaces[i].cpu); free(b->surfaces[i].raw); free(b->surfaces[i].depth); free(b->surfaces[i].stencil); }
+    ch_vk_texture_cache_destroy(b->textures);
     queue_unlock(b);
     free(b);
 }

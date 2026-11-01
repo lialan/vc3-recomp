@@ -98,6 +98,8 @@ static VkResult attach(ChVkBackendConfig config)
     config.decode=nv2a_backend_decode_texture;
     const char *resident=ch_env("VULKAN_RESIDENT_COLOR");
     config.resident_color=!resident || strcmp(resident,"0");
+    const char *cache=ch_env("VULKAN_TEXTURE_CACHE");
+    config.cache_textures=!cache || strcmp(cache,"0");
     fprintf(stderr,"[Vulkan] resident color targets: %s\n",config.resident_color?"enabled":"disabled");
     config.present_rgba=present;
     if(!config.fatal) config.fatal=fatal;

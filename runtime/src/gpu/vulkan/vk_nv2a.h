@@ -65,8 +65,19 @@ VkResult ch_vk_nv2a_clear_panel_read(ChVkTarget *,const Nv2aSurface *,const Nv2a
  * the normal guest decoder; all errors stop the draw. Returned ARGB pixels are
  * borrowed until the next resolver call (upload completes synchronously).
  * Guest UV normalization still uses the original texture dimensions. */
-typedef struct { const uint32_t *argb; uint32_t width,height; } ChVkSampleImage;
+typedef struct {
+    const uint32_t *argb; uint32_t width,height;
+    /* Alternative immutable image with its final sampler already installed.
+     * Pin stays valid across further resolver calls until release after GPU
+     * completion. NULL release means host-owned through the whole draw. */
+    ChVkTexture *gpu;
+    void (*release)(void *,ChVkTexture *);
+    void *release_context;
+} ChVkSampleImage;
 typedef VkResult (*ChVkSampleResolver)(void *,const Nv2aTexture *,ChVkSampleImage *);
 VkResult ch_vk_nv2a_draw_host_read(ChVkTarget *,const Nv2aSurface *,const Nv2aBatch *,
     ChVkDecodeTexture,const ChVkEye *,int coverage_alpha,ChVkSampleResolver,void *,void *,VkDeviceSize);
+/* Guest-surface variant retains visibility queries and guest pixel coordinates. */
+VkResult ch_vk_nv2a_draw_resolved_read(ChVkTarget *,const Nv2aSurface *,const Nv2aBatch *,
+    ChVkDecodeTexture,ChVkSampleResolver,void *,void *,VkDeviceSize);
 #endif

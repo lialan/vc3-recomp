@@ -438,7 +438,7 @@ int ch_test_guest_textures(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,ui
         ChVkBackend *backend=NULL;
         ChVkBackendConfig config={.physical=gpu,.device=device,.queue=queue,.family=family,
             .guest_base=guest.bytes,.guest_bytes=sizeof guest.bytes,.decode=nv2a_backend_decode_texture,
-            .precise_queries=1,.resident_color=1};
+            .precise_queries=1,.resident_color=1,.cache_textures=1};
         Nv2aRenderState rs={.surface_format=0x128,.color_mask=0x01010101};
         Nv2aSurface a=surface,b=surface; a.color_va=2048;b.color_va=2304;
         memset(guest.bytes+2048,0,64);memset(guest.bytes+2304,0,64);
@@ -742,6 +742,10 @@ int ch_test_guest_textures(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,ui
         if(!failed) failed=ch_test_scene(gpu,device,queue,family,nv2a_backend_decode_texture);
         extern int ch_test_submission(VkPhysicalDevice,VkDevice,VkQueue,uint32_t,void *,size_t,ChVkDecodeTexture);
         if(!failed) failed=ch_test_submission(gpu,device,queue,family,guest.bytes,sizeof guest.bytes,nv2a_backend_decode_texture);
+    }
+    if(!failed) {
+        extern int ch_test_texture_cache(VkPhysicalDevice,VkDevice,VkQueue,uint32_t,void *,size_t,ChVkDecodeTexture);
+        failed=ch_test_texture_cache(gpu,device,queue,family,guest.bytes,sizeof guest.bytes,nv2a_backend_decode_texture);
     }
     if(!failed) failed=check_simple_combiner(gpu,device,queue,family);
     if(!failed && getenv("CHIHIRO_VULKAN_BENCH")) failed=bench_guest_draws(gpu,device,queue,family);

@@ -216,9 +216,51 @@ measurement. Do not infer game FPS from the improved synthetic draw cost.
 `fresh-headed-run-excerpt.log` records this transition and pacing evidence;
 the test app was stopped, diagnostic env restored and proximity override disabled.
 
-Remaining performance work includes texture/sampler reuse and keeping a render
+Remaining performance work includes keeping a render
 pass open across draws, with resources retained until explicit completion.
 Each draw currently still ends a render pass and synchronizes; target residency
 does not yet provide command batching. Preserve queries, CPU edits and fences
 while removing those per-draw tile stores/submits/waits. Combat performance
 remains an unfulfilled acceptance gate.
+
+## Immutable texture cache and backend phase profile
+
+Native runtime texture/sampler reuse is now enabled by default; set
+`CHIHIRO_VULKAN_TEXTURE_CACHE=0` for the uncached control. The bounded cache
+checks the exact level-zero encoded storage and P8 palette, with texture and
+sampler metadata in the key. GPU images remain immutable while pinned, so
+editing a guest address cannot change an image already acquired by a draw.
+Unpinned entries are evicted by age; unsupported storage and a full pinned
+budget retain the decoder/upload fallback. Invalid guest bounds fail before
+decoding. Pins currently release after synchronous GPU completion; future
+command batching must retain them until that batch completes.
+
+Quest GPU tests passed cache hits, same-address texel/palette mutation while
+the original image remains pinned, sampler changes, pinned-budget fallback,
+eviction and guest bounds. Existing render-target feedback, queries, CPU edits,
+semaphore visibility, deferred flush modes and overlay comparisons also passed.
+The Mac actual-game run completed 60 startup frames with 3,121 cache hits,
+14 uploads, no evictions and 7.1 MiB live storage. Captures 30-32 are
+byte-identical to the preceding reduced-combiner implementation. This is
+startup/correctness evidence, not combat acceptance. Reports and log excerpts
+are in `validation/direct-vulkan-texture-cache/`.
+
+A fresh locked Quest run of APK `7235efe9fc0f556b72b6cec7e661ab1e98e3bdbb56d0fc90d6e28ffe8ecca366`
+verified its unique log marker. It briefly reached FOCUSED, then lost the
+running/focused session. Subsequent unfocused guest intervals remained about
+400-440 ms. A representative one-second backend bucket had 130 batches:
+surface setup 2.5 ms, CPU color observation 132.1 ms, imports 325.4 ms,
+draw 92.7 ms and writeback 320.3 ms. Texture resolution was only 3.9 ms
+of the draw phase. Fence logs recorded four sleeps totaling about one second;
+the slow consumer still advances semaphore values, so these timeouts alone
+do not establish a broken fence implementation. These are overlapping
+producer/consumer measurements and must not be added together as frame time.
+
+Depth import/writeback and repeated submissions are now the primary performance
+investigation. The GL reference keeps per-surface depth on the GPU. Vulkan's
+strict D32 image path currently converts to/from quantized guest depth around
+draws. Removing those transfers must preserve guest CPU edits, shared zeta
+ownership, depth precision, queries and completion visibility. Tracking loss
+means this run is not a worn combat comparison. The test app was stopped,
+its environment restored and proximity automation disabled before releasing
+the shared lock.

@@ -19,6 +19,7 @@ typedef struct {
      * RGB565 retains strict per-draw quantized writeback. Render routing hooks
      * currently require the strict path (resident_color=0). */
     int resident_color;
+    int cache_textures; /* exact level-zero storage/palette/sampler cache */
     /* Synchronous host rendering hooks, after guest-visible completion.
      * All pointers borrowed until hook returns; never retain decoded pointers.
      * Host routes world/HUD/postprocess explicitly. Errors stop guest progress.
