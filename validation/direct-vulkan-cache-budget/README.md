@@ -34,3 +34,14 @@ the original OpenGL APK hash unchanged. Logs retain the boot header and relevant
 Vulkan frame/cache/draw/capture rows. Full logs and all periodic PPMs remain at
 the report's local output path. Quest immersive correctness and sustained combat
 FPS/frame-time requirements remain open.
+
+## Current local Vulkan follow-up
+
+After shared vertex reuse, persistent pipeline cache and texture write tracking, a same-binary 64/128 MiB A/B completed 2100 frames each. Apple M4 Pro / KosmicKrisp; identical warm starting pipeline cache copies, mono headless, sound disabled, GPU timestamps off. No headset used.
+
+| Budget | Activation FPS | Early held FPS | Later held FPS | Final uploads | Final evictions |
+|---|---:|---:|---:|---:|---:|
+| 64 MiB | 42.14 | 52.04 | 54.78 | 2977 | 3268 |
+| 128 MiB | 41.50 | 52.16 | 54.65 | 2975 | 2905 |
+
+CPU texture uploads did not materially decrease. GPU snapshot reuse increased from 994 to 1340, but the pair showed no sustained throughput benefit. Retained 64 MiB default; no claim from this single pair about other scenes or devices. Provenance: current-measurements.json; raw /tmp/vc3-current-cache-{64,128}/report.json and game.log. Next candidate is reusing unpinned CPU texture allocations, while preserving immutable pinned images and queued-upload lifetime, rather than increasing the memory budget.

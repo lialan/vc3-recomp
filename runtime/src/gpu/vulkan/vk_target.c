@@ -86,6 +86,7 @@ struct ChVkTarget {
     uint64_t timing_start,timing_gpu,timing_cpu,timing_calls;
     ChVkTargetTimingStats timing_stats,batch_report;
     uint64_t batch_report_start;
+    uint64_t depth_uploads,depth_upload_ns,depth_upload_wait_ns;
     int count_requested;
     uint64_t samples;
     struct { uint32_t alpha[3]; ChVkEffect effect; } push;
@@ -137,6 +138,9 @@ static void report_batch_timing(ChVkTarget *t,uint64_t now) {
         t->finish_reasons[i].count=0;
     }
     fputc('\n',stderr);
+    fprintf(stderr,"[Vulkan depth uploads] %ux%u count=%llu inclusive %.2fms own_fence_wait %.2fms\n",
+        t->width,t->height,(unsigned long long)t->depth_uploads,t->depth_upload_ns/1e6,t->depth_upload_wait_ns/1e6);
+    t->depth_uploads=t->depth_upload_ns=t->depth_upload_wait_ns=0;
     t->batch_report=*s;t->batch_report_start=now;
 }
 static int memory_type(VkPhysicalDevice gpu, uint32_t bits,
@@ -1336,6 +1340,7 @@ static VkResult transfer_depth_stencil(ChVkTarget *t,void *depth,void *stencil,s
         float d=((const float *)depth)[i];
         if(!isfinite(d) || d<0 || d>1) return VK_ERROR_INITIALIZATION_FAILED;
     }
+    uint64_t upload_start=t->timing && upload?time_ns():0;
     VkResult result; void *mapped;
     if(rgba) {result=ensure_paired_color(t);if(result!=VK_SUCCESS) return result;}
     VkMappedMemoryRange range={.sType=VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE,.memory=t->read_mem,.size=VK_WHOLE_SIZE};
@@ -1372,7 +1377,9 @@ static VkResult transfer_depth_stencil(ChVkTarget *t,void *depth,void *stencil,s
     TRY(vkEndCommandBuffer(t->command));
     VkSubmitInfo submit={.sType=VK_STRUCTURE_TYPE_SUBMIT_INFO,.commandBufferCount=1,.pCommandBuffers=&t->command};
     TRY(vkQueueSubmit(t->queue,1,&submit,t->fence));
+    uint64_t upload_wait=upload_start?time_ns():0;
     TRY(vkWaitForFences(t->device,1,&t->fence,VK_TRUE,5000000000ULL));
+    if(upload_start) t->depth_upload_wait_ns+=time_ns()-upload_wait;
 readback:
     if(!upload) {
         TRY(vkMapMemory(t->device,t->read_mem,0,VK_WHOLE_SIZE,0,&mapped));
@@ -1401,6 +1408,7 @@ readback:
         vkUnmapMemory(t->device,t->paired_color_mem);
         if(result!=VK_SUCCESS) goto fail;
     }
+    if(upload_start) {t->depth_uploads++;t->depth_upload_ns+=time_ns()-upload_start;}
     return VK_SUCCESS;
 fail:
     t->failed=1; return result;
