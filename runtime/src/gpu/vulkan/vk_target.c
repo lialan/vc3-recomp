@@ -970,8 +970,7 @@ static VkResult create_pipeline(ChVkTarget *t, const VkPipelineColorBlendAttachm
     VkSpecializationInfo vp_specialization={545,vp_entries,545*4,&key->vertex_count};
     if(key->vertex_count) stages[0].pSpecializationInfo=&vp_specialization;
     VkVertexInputBindingDescription binding={0,t->fixed?ch_vk_raw_vertex_stride(t->fixed):sizeof(ChVkColorVertex),VK_VERTEX_INPUT_RATE_VERTEX};
-    VkVertexInputAttributeDescription fixed_attrs[16];
-    for(unsigned i=0;i<16;i++) fixed_attrs[i]=(VkVertexInputAttributeDescription){i,0,VK_FORMAT_R32G32B32A32_UINT,i*16};
+
     VkVertexInputAttributeDescription attrs[]={
         {0,0,VK_FORMAT_R32G32B32A32_SFLOAT,offsetof(ChVkColorVertex,xy)},
         {1,0,VK_FORMAT_R32G32B32A32_SFLOAT,offsetof(ChVkColorVertex,rgba)},
@@ -983,8 +982,8 @@ static VkResult create_pipeline(ChVkTarget *t, const VkPipelineColorBlendAttachm
         {7,0,VK_FORMAT_R32G32B32A32_SFLOAT,19*sizeof(float)},
         {8,0,VK_FORMAT_R32G32B32A32_SFLOAT,23*sizeof(float)}};
     VkPipelineVertexInputStateCreateInfo input={.sType=VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
-        .vertexBindingDescriptionCount=1,.pVertexBindingDescriptions=&binding,
-        .vertexAttributeDescriptionCount=t->fixed?(key->vertex_count?16:8):9,.pVertexAttributeDescriptions=t->fixed?fixed_attrs:attrs};
+        .vertexBindingDescriptionCount=t->fixed?0:1,.pVertexBindingDescriptions=t->fixed?NULL:&binding,
+        .vertexAttributeDescriptionCount=t->fixed?0:9,.pVertexAttributeDescriptions=t->fixed?NULL:attrs};
     VkPipelineInputAssemblyStateCreateInfo assembly={.sType=VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
         .topology=VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST};
     VkViewport viewport={0,0,(float)t->width,(float)t->height,0,1};
@@ -1003,8 +1002,8 @@ static VkResult create_pipeline(ChVkTarget *t, const VkPipelineColorBlendAttachm
         .pushConstantRangeCount=1,.pPushConstantRanges=&alpha_range};
     t->active_pipeline->has_descriptors=texture!=NULL || t->rc!=NULL || t->fixed!=NULL;
     if(t->active_pipeline->has_descriptors) {
-        VkDescriptorSetLayoutBinding bindings[4];unsigned n=0;
-        uint32_t images=t->rc?8:texture?1:0,buffers=(t->rc!=NULL)+(t->fixed!=NULL);
+        VkDescriptorSetLayoutBinding bindings[5];unsigned n=0;
+        uint32_t images=t->rc?8:texture?1:0,buffers=(t->rc!=NULL)+2*(t->fixed!=NULL);
         if(images) bindings[n++]=(VkDescriptorSetLayoutBinding){.binding=0,
             .descriptorType=VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,.descriptorCount=t->rc?4:1,.stageFlags=VK_SHADER_STAGE_FRAGMENT_BIT};
         if(t->rc) {
@@ -1012,6 +1011,8 @@ static VkResult create_pipeline(ChVkTarget *t, const VkPipelineColorBlendAttachm
             bindings[n++]=(VkDescriptorSetLayoutBinding){.binding=2,.descriptorType=VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,.descriptorCount=4,.stageFlags=VK_SHADER_STAGE_FRAGMENT_BIT};
         }
         if(t->fixed) bindings[n++]=(VkDescriptorSetLayoutBinding){.binding=3,
+            .descriptorType=VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,.descriptorCount=1,.stageFlags=VK_SHADER_STAGE_VERTEX_BIT};
+        if(t->fixed) bindings[n++]=(VkDescriptorSetLayoutBinding){.binding=4,
             .descriptorType=VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,.descriptorCount=1,.stageFlags=VK_SHADER_STAGE_VERTEX_BIT};
         VkDescriptorSetLayoutCreateInfo dsl={.sType=VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,.bindingCount=n,.pBindings=bindings};
         TRY(vkCreateDescriptorSetLayout(t->device,&dsl,NULL,&t->active_pipeline->descriptor_layout));
@@ -1082,6 +1083,7 @@ static VkResult draw_full(ChVkTarget *t, const float rgba[4],
     t->rc=rc;t->fixed=fixed;t->stage_images=stage_images;
     t->vertex_offset=fixed?(256+ch_vk_raw_params_size(fixed)+255)/256*256:rc?256:0;
     size_t vertex_stride=fixed?ch_vk_raw_vertex_stride(fixed):sizeof(ChVkColorVertex);
+    VkDeviceSize vertex_bytes=fixed && fixed->stream_bytes?fixed->stream_bytes:(VkDeviceSize)vertex_count*vertex_stride;
     if(rc && !t->dummy) {
         const uint32_t white=0xffffffff;
         VkResult r=ch_vk_target_upload_texture(t,1,1,&white,&t->dummy);
@@ -1177,7 +1179,7 @@ static VkResult draw_full(ChVkTarget *t, const float rgba[4],
     memcpy(t->blend_constants,constants,sizeof constants);
     t->active_pipeline=entry;entry->used=++t->pipeline_clock;
     VkDeviceSize header=t->fixed?(256+ch_vk_raw_params_size(t->fixed)+255)/256*256:t->rc?256:0;
-    VkDeviceSize payload=header+(VkDeviceSize)vertex_count*vertex_stride+(VkDeviceSize)index_count*sizeof(*indices);
+    VkDeviceSize payload=header+vertex_bytes+(VkDeviceSize)index_count*sizeof(*indices);
     VkDeviceSize base=t->pending?(t->geometry_used+255)/256*256:0;
     if(base>UINT64_MAX-payload) {result=VK_ERROR_OUT_OF_HOST_MEMORY;goto fail;}
     if(t->pending && base+payload>t->geometry_capacity) {TRY(finish_batch_named(t,0,__func__));base=0;}
@@ -1191,7 +1193,7 @@ static VkResult draw_full(ChVkTarget *t, const float rgba[4],
     }
     t->vertex_offset=base+header;
     update_images(t,texture);
-    VkDeviceSize offset=t->vertex_offset+(VkDeviceSize)vertex_count*vertex_stride;
+    VkDeviceSize offset=t->vertex_offset+vertex_bytes;
     VkDeviceSize size=offset+(VkDeviceSize)index_count*sizeof(*indices);
     if(size>SIZE_MAX) return VK_ERROR_OUT_OF_HOST_MEMORY;
     TRY(reserve_geometry(t,size));
@@ -1216,8 +1218,11 @@ static VkResult draw_full(ChVkTarget *t, const float rgba[4],
         VkWriteDescriptorSet write={.sType=VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,.dstSet=t->active_pipeline->descriptor_set,
             .dstBinding=3,.descriptorCount=1,.descriptorType=VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,.pBufferInfo=&info};
         vkUpdateDescriptorSets(t->device,1,&write,0,NULL);
+        VkDescriptorBufferInfo stream_info={buffer,t->vertex_offset,vertex_bytes};
+        write.dstBinding=4;write.pBufferInfo=&stream_info;
+        vkUpdateDescriptorSets(t->device,1,&write,0,NULL);
     }
-    memcpy((char *)mapped+t->vertex_offset,vertices,(size_t)vertex_count*vertex_stride);
+    memcpy((char *)mapped+t->vertex_offset,vertices,(size_t)vertex_bytes);
     memcpy((char *)mapped+offset,indices,(size_t)(size-offset));
     if(!t->geometry_coherent) {
         VkPhysicalDeviceProperties properties;vkGetPhysicalDeviceProperties(t->physical,&properties);
@@ -1637,5 +1642,15 @@ VkResult ch_vk_target_draw_fixed_read(ChVkTarget *t,const ChVkFixedParams *fixed
     const Nv2aCombiner *rc,uint32_t fog,const ChVkTexture *const stages[4],void *pixels,VkDeviceSize bytes) {
     if(!fixed || fixed->program_count>136 || !fixed->surface[0] || !fixed->surface[1] || !(fixed->depth[1]>fixed->depth[0]))
         return VK_ERROR_INITIALIZATION_FAILED;
+    if(fixed->stream_bytes) {
+        if(!n || fixed->stream_bytes<4 || (fixed->stream_bytes&3)) return VK_ERROR_INITIALIZATION_FAILED;
+        for(unsigned a=0;a<(fixed->program_count?16u:8u);a++) {
+            uint32_t f=fixed->attribute_format[a],kind=f&255,size=f>>8;
+            unsigned element=kind==0?16:kind==1 || kind==7?4:kind==2 || kind==6?size*2:kind==5?size:kind==3?size*4:0;
+            if(!element || (kind && (size<1 || size>4)) ||
+               (uint64_t)fixed->attribute_offset[a]+(uint64_t)(n-1)*fixed->attribute_stride[a]+element>fixed->stream_bytes-4)
+                return VK_ERROR_INITIALIZATION_FAILED;
+        }
+    }
     return draw_full(t,NULL,v,n,indices,count,state,texture,samples,rc,fog,stages,NULL,0,pixels,bytes,fixed);
 }

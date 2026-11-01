@@ -17,18 +17,21 @@ typedef struct {
     /* Program suffix is omitted from fixed-function uploads. Instruction words
      * specialize the pipeline; only constants are uploaded per draw. */
     uint32_t attribute_format[16];
+    uint32_t stream_bytes,attribute_offset[16],attribute_stride[16];
     float constants[192][4];
     uint32_t program_count,program[136][4];
 } ChVkFixedParams;
 typedef struct {
     ChVkFixedParams params;
-    /* Program vertices contain sixteen 16-byte attributes (256-byte stride).
-     * Fixed vertices retain their original eight-attribute layout. */
+    /* With stream_bytes==0, program vertices have sixteen 16-byte attributes
+     * and fixed vertices have eight. Otherwise this points to encoded streams. */
     ChVkFixedVertex *vertices;
     uint16_t *indices;
     uint32_t vertex_count,index_count;
     unsigned borrowed; /* scratch-owned vertices/index bits; release still required */
 } ChVkFixedGeometry;
+/* Reuse preparation may return compact streams (params.stream_bytes nonzero);
+ * vertices then names that many encoded bytes, not padded vertex records. */
 /* Serialized scratch storage; no prepared geometry may outlive its next use.
  * Inputs must not alias this storage. Retains at most16MiB vertices+1MiB indices. */
 typedef struct {void *vertices,*indices;size_t vertex_bytes,index_bytes;} ChVkFixedScratch;

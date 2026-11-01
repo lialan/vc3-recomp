@@ -5,7 +5,7 @@
 #if !defined(_WIN32)
 #include <unistd.h>
 #endif
-#define CACHE_LIMIT (64u*1024u*1024u)
+#define CACHE_LIMIT (128u*1024u*1024u)
 static const unsigned char magic[8]={'C','H','V','K','P','C',0,1};
 static uint64_t read64(const unsigned char *p) {
     uint64_t n=0;for(unsigned i=0;i<8;i++) n|=(uint64_t)p[i]<<(8*i);return n;
@@ -65,7 +65,11 @@ int ch_vk_pipeline_cache_file_save(VkDevice device,VkPipelineCache cache,const c
 #else
     if(!device || !cache || !path || !*path) return 0;
     size_t size=0;
-    if(vkGetPipelineCacheData(device,cache,&size,NULL)!=VK_SUCCESS || size<32 || size>CACHE_LIMIT) return 0;
+    VkResult query=vkGetPipelineCacheData(device,cache,&size,NULL);
+    if(query!=VK_SUCCESS || size<32 || size>CACHE_LIMIT) {
+        fprintf(stderr,"[Vulkan pipeline cache] save rejected: query=%d bytes=%zu limit=%u\n",query,size,CACHE_LIMIT);
+        return 0;
+    }
     void *blob=malloc(size);if(!blob) return 0;
     if(vkGetPipelineCacheData(device,cache,&size,blob)!=VK_SUCCESS || size<sizeof(VkPipelineCacheHeaderVersionOne)) {free(blob);return 0;}
     unsigned char envelope[24];memcpy(envelope,magic,8);
@@ -84,6 +88,7 @@ int ch_vk_pipeline_cache_file_save(VkDevice device,VkPipelineCache cache,const c
         } else close(fd);
         if(!ok) unlink(pending);
     }
+    if(ok) fprintf(stderr,"[Vulkan pipeline cache] saved_bytes=%zu\n",size);
     free(pending);free(blob);return ok;
 #endif
 }

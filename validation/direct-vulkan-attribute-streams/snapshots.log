@@ -1,0 +1,11 @@
+frame 1320: [Vulkan raw snapshots] compact_batches=185910 snapshot_bytes=328355012 expanded_bytes=1519087744
+frame 1380: [Vulkan raw snapshots] compact_batches=206289 snapshot_bytes=376440120 expanded_bytes=1743893504
+frame 1440: [Vulkan raw snapshots] compact_batches=223609 snapshot_bytes=419461904 expanded_bytes=1944510336
+frame 1500: [Vulkan raw snapshots] compact_batches=240839 snapshot_bytes=462017144 expanded_bytes=2141399936
+frame 1560: [Vulkan raw snapshots] compact_batches=262399 snapshot_bytes=536000184 expanded_bytes=2658541440
+frame 1620: [Vulkan raw snapshots] compact_batches=284999 snapshot_bytes=616156448 expanded_bytes=3237055232
+frame 1680: [Vulkan raw snapshots] compact_batches=307287 snapshot_bytes=694722272 expanded_bytes=3801095424
+frame 1740: [Vulkan raw snapshots] compact_batches=329602 snapshot_bytes=774230076 expanded_bytes=4375214848
+frame 1800: [Vulkan raw snapshots] compact_batches=352282 snapshot_bytes=853898332 expanded_bytes=4949821184
+frame 1860: [Vulkan raw snapshots] compact_batches=375065 snapshot_bytes=933570248 expanded_bytes=5524308224
+frame 1920: [Vulkan raw snapshots] compact_batches=396150 snapshot_bytes=998791836 expanded_bytes=5948494208

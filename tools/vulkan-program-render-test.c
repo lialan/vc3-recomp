@@ -2,6 +2,7 @@
  * complete program cache identity, and guest publication without OpenGL. */
 #include "vk_backend.h"
 #include "vk_fixed.h"
+#include "vk_nv2a.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -24,7 +25,14 @@ static int raw_snapshots(void) {
             float expected[4]={0,0,0,1};
             if(a==15)memcpy(expected,raw.attr[a].value,sizeof expected);
             else memcpy(expected,source[a]+i*raw.attr[a].stride,element);
-            SNAP(!memcmp((unsigned char *)g.vertices+i*256+a*16,expected,16));
+            float gathered[4]={0,0,0,1};
+            if(g.params.stream_bytes) {
+                size_t at=g.params.attribute_offset[a]+(size_t)i*g.params.attribute_stride[a];
+                size_t bytes=a==15?16:element;
+                SNAP(at+bytes<=g.params.stream_bytes);
+                memcpy(gathered,(unsigned char *)g.vertices+at,bytes);
+            } else memcpy(gathered,(unsigned char *)g.vertices+i*256+a*16,16);
+            SNAP(!memcmp(gathered,expected,16));
             SNAP(g.params.attribute_format[a]==(a==15?0:(size<<8)|(types[type]+1)));
         }
         for(unsigned i=0;i<g.index_count;i++) {
@@ -45,6 +53,41 @@ done:
 #undef SNAP
 }
 static int decode(const Nv2aTexture *t,uint32_t *p) {(void)t;(void)p;return 0;}
+static int stream_render_parity(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,uint32_t family) {
+    ChVkTarget *target=NULL;ChVkFixedScratch scratch={0};ChVkFixedGeometry g[2]={{0}};int failed=1;
+    unsigned char pixels[2][16*16*4],source[160];const float black[4]={0};
+    const float position[4][4]={{0,0,.3f,1},{16,0,.3f,1},{16,16,.3f,1},{0,16,.3f,1}};
+    uint16_t indices[]={0,1,2,0,2,3};uint32_t program[2][4]={{0}};float constants[192][4]={{0}};
+    program[0][1]=(1u<<21)|0x1b;program[0][2]=2u<<26;program[0][3]=(15u<<12)|(1u<<11);
+    program[1][1]=(1u<<21)|(3u<<9)|0x1b;program[1][2]=2u<<26;program[1][3]=(15u<<12)|(1u<<11)|(3u<<3)|1u;
+    Nv2aRawGeometry raw={.kind=NV2A_RAW_PROGRAM,.prim=5,.indices=indices,.index_count=6,.min_index=37,.max_index=40,
+        .program=program,.program_len=2,.constants=constants,.aa_sx=1,.aa_sy=1,.uv_scale0={1,1}};
+    Nv2aSurface surface={.width=16,.height=16,.pitch=64,.bytes_per_pixel=4};
+    Nv2aRenderState state={.color_mask=0x01010101,.depth_max=1};Nv2aBatch batch={.raw=&raw,.state=&state};
+    const unsigned types[]={0,1,2,4,5,6};
+#define STREAM(x) do {if(!(x)){fprintf(stderr,"stream parity line%d: %s\n",__LINE__,#x);goto done;}}while(0)
+    STREAM(ch_vk_target_create(gpu,device,queue,family,16,16,&target)==VK_SUCCESS);
+    for(unsigned t=0;t<6;t++) for(unsigned size=1;size<=4;size++) for(unsigned constant=0;constant<2;constant++) {
+        for(unsigned i=0;i<4;i++) {memcpy(source+1+i*33,position[i],16);for(unsigned j=0;j<4;j++) {
+            uint32_t bits=0x3f404142;memcpy(source+18+i*33+j*4,&bits,4);}}
+        unsigned element=types[t]==0 || types[t]==6?4:types[t]==1 || types[t]==5?size*2:types[t]==4?size:size*4;
+        raw.attr[0]=(Nv2aAttrib){.data=source+1,.type=2,.size=4,.stride=33,.bytes=115};
+        raw.attr[3]=(Nv2aAttrib){.data=source+18,.type=types[t],.size=size,.stride=constant?0:33,.bytes=(constant?0:99)+element};
+        STREAM(ch_vk_program_prepare(&raw,&g[0])==VK_SUCCESS);
+        STREAM(ch_vk_raw_prepare_reuse(&raw,&g[1],&scratch)==VK_SUCCESS && g[1].params.stream_bytes && g[1].params.stream_bytes<512);
+        memset(source,0xcc,sizeof source); /* Both paths must own immutable snapshots. */
+        for(unsigned path=0;path<2;path++) {
+            STREAM(ch_vk_target_clear_read(target,black,pixels[path],sizeof pixels[path])==VK_SUCCESS);
+            STREAM(ch_vk_nv2a_draw_fixed_resolved_read(target,&surface,&batch,&g[path],decode,NULL,NULL,pixels[path],sizeof pixels[path])==VK_SUCCESS);
+        }
+        STREAM(!memcmp(pixels[0],pixels[1],sizeof pixels[0]));
+        ch_vk_fixed_release(&g[0]);ch_vk_fixed_release(&g[1]);
+    }
+    puts("PASS: GPU compact/expanded stream parity for every encoded type/size, unaligned interleaving, zero stride and immutable snapshots");failed=0;
+done:
+    ch_vk_fixed_release(&g[0]);ch_vk_fixed_release(&g[1]);ch_vk_fixed_scratch_release(&scratch);ch_vk_target_destroy(target);return failed;
+#undef STREAM
+}
 static int registered_fixed(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,uint32_t family) {
     unsigned char guest[4096]={0};ChVkBackend *backend=NULL;int failed=1;
     ChVkBackendConfig config={.physical=gpu,.device=device,.queue=queue,.family=family,
@@ -88,7 +131,7 @@ done:
     ch_vk_backend_destroy(backend);return failed;
 }
 int ch_test_program_render(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,uint32_t family) {
-    if(raw_snapshots()) return 1;
+    if(raw_snapshots() || stream_render_parity(gpu,device,queue,family)) return 1;
     if(registered_fixed(gpu,device,queue,family)) return 1;
     unsigned char guest[4096]={0};ChVkBackend *backend=NULL;int failed=1;
 #define REQUIRE(x) do {if(!(x)) {fprintf(stderr,"program render line %d: %s\n",__LINE__,#x);goto done;}} while(0)

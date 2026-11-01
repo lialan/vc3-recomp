@@ -14,7 +14,7 @@
 #define MAX_SURFACES 32
 struct Surface { Nv2aSurface guest; ChVkGuestLayout layout; uint32_t zeta; Nv2aRenderState state; float *depth; uint8_t *stencil; ChVkTarget *target; unsigned char *rgba,*observed,*cpu,*raw; ChGuestWriteRange *write_range; size_t raw_span; int observed_valid,resident,color_bgra,color_fallback_reported,color_dirty,native_z24,quantized_z24; size_t bytes; uint64_t color_serial; };
 typedef struct {uint64_t pipeline_ns,batch_wait_ns,batch_gpu_ns,upload_wait_ns;} FrameCosts;
-struct ChVkBackend { ChVkFixedScratch raw_scratch; struct {int enabled;uint64_t completion_us,completion_cpu_ns,completion_calls,prepare_us,prepare_cpu_ns;uint64_t draw_cpu_ns,clear_cpu_ns,flip_cpu_ns,trim_cpu_ns;uint64_t draw_us,clear_us,flip_us,trim_us,surface_us,coherence_us,imports_us,raster_us,store_us,texture_uploads;FrameCosts retired,previous;} costs; VkPipelineCache pipeline_cache; struct {int enabled;uint64_t start,n,surface,coherence,imports,draw,store,no_color,flushes,depth_flushes,paired_flushes;} profile; struct {int enabled;uint64_t previous,us[120];unsigned count;} frame_profile; ChVkBackendConfig host; ChVkTextureCache *textures; ChVkDepthResident *zeta; uint64_t frames,raw_draws,raw_programs,raw_program_vertices,raw_declined,color_clock,cpu_batches,cpu_vertices,cpu_texels,cpu_texture_us,cpu_color_pixels,cpu_color_us,cpu_depth_pixels; struct Surface surfaces[MAX_SURFACES]; unsigned count; };
+struct ChVkBackend { ChVkFixedScratch raw_scratch; struct {int enabled;uint64_t completion_us,completion_cpu_ns,completion_calls,prepare_us,prepare_cpu_ns;uint64_t draw_cpu_ns,clear_cpu_ns,flip_cpu_ns,trim_cpu_ns;uint64_t draw_us,clear_us,flip_us,trim_us,surface_us,coherence_us,imports_us,raster_us,store_us,texture_uploads;FrameCosts retired,previous;} costs; VkPipelineCache pipeline_cache; struct {int enabled;uint64_t start,n,surface,coherence,imports,draw,store,no_color,flushes,depth_flushes,paired_flushes;} profile; struct {int enabled;uint64_t previous,us[120];unsigned count;} frame_profile; ChVkBackendConfig host; ChVkTextureCache *textures; ChVkDepthResident *zeta; uint64_t raw_compact_batches,raw_snapshot_bytes,raw_expanded_bytes; uint64_t frames,raw_draws,raw_programs,raw_program_vertices,raw_declined,color_clock,cpu_batches,cpu_vertices,cpu_texels,cpu_texture_us,cpu_color_pixels,cpu_color_us,cpu_depth_pixels; struct Surface surfaces[MAX_SURFACES]; unsigned count; };
 static ChVkBackend *active;
 static void flush_color(struct Surface *);
 static void observe_guest_colors(void);
@@ -619,6 +619,8 @@ static void flip(void) {
             (unsigned long long)active->raw_program_vertices,(unsigned long long)active->raw_declined);
     const char *profile=getenv("CHIHIRO_VULKAN_PROFILE");
     if(active->profile.enabled && (active->frames==1 || active->frames%60==0)) {
+        fprintf(stderr,"[Vulkan raw snapshots] compact_batches=%llu snapshot_bytes=%llu expanded_bytes=%llu\n",
+            (unsigned long long)active->raw_compact_batches,(unsigned long long)active->raw_snapshot_bytes,(unsigned long long)active->raw_expanded_bytes);
         uint64_t draws=0,submits=0,depth_reads=0,color_reads=0;
         uint64_t depth_ops[8]={0};
         for(unsigned i=0;i<active->count;i++) {ChVkTargetResourceStats stats;ch_vk_target_resource_stats(active->surfaces[i].target,&stats);for(unsigned op=0;op<8;op++) depth_ops[op]+=stats.depth_roundtrips_by_compare[op];draws+=stats.batch_draws;submits+=stats.batch_submissions;depth_reads+=stats.combined_depth_readbacks;color_reads+=stats.combined_color_readbacks;}
@@ -725,6 +727,10 @@ static int locked_draw_raw(const Nv2aSurface *s,const Nv2aBatch *b) {
     if(r==VK_ERROR_FEATURE_NOT_PRESENT) {active->raw_declined++;return 0;}
     if(r!=VK_SUCCESS) fatal(r,"raw fixed attribute upload");
     queue_lock(active);draw_batch(s,b,&fixed);
+    uint64_t expanded=(uint64_t)fixed.vertex_count*ch_vk_raw_vertex_stride(&fixed.params);
+    active->raw_compact_batches+=fixed.params.stream_bytes!=0;
+    active->raw_snapshot_bytes+=fixed.params.stream_bytes?fixed.params.stream_bytes:expanded;
+    active->raw_expanded_bytes+=expanded;
     if(fixed.params.program_count) {active->raw_programs++;active->raw_program_vertices+=fixed.vertex_count;}
     else active->raw_draws++;
     queue_unlock(active);
