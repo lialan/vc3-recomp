@@ -35,6 +35,7 @@ typedef struct {
      * currently require the strict path (resident_color=0). */
     int resident_color;
     int resident_depth; /* Z24: native D24 or opt-in quantized D32; other layouts stay strict */
+    int multiple_depth; /* opt-in disjoint dirty depth owners */
     int reuse_clean_depth; /* retain published depth images across owner switches */
     int strict_depth_switches; /* diagnostic: CPU roundtrips even for identical zeta */
     int strict_depth_clears; /* diagnostic: import depth before full replacement */

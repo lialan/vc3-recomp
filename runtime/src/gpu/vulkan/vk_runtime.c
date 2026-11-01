@@ -231,6 +231,8 @@ static VkResult attach(ChVkBackendConfig config)
     config.strict_depth_switches=depth_copy && !strcmp(depth_copy,"0");
     const char *clean_depth=ch_env("VULKAN_REUSE_CLEAN_DEPTH");
     config.reuse_clean_depth=clean_depth && atoi(clean_depth)!=0;
+    const char *multiple_depth=ch_env("VULKAN_MULTIPLE_DEPTH");
+    config.multiple_depth=multiple_depth && atoi(multiple_depth)!=0;
     const char *clear_skip=ch_env("VULKAN_DEPTH_CLEAR_SKIP");
     config.strict_depth_clears=clear_skip && !strcmp(clear_skip,"0");
     const char *quant=ch_env("VULKAN_QUANTIZED_DEPTH");

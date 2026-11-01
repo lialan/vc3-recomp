@@ -21,6 +21,9 @@ VkResult ch_vk_depth_resident_bind(ChVkDepthResident *,ChVkTarget *,const Nv2aSu
  * before any other owner operation. Reinterpreted old storage still publishes;
  * exact superseded storage and the new target's old pixels need no import. */
 VkResult ch_vk_depth_resident_bind_clear(ChVkDepthResident *,ChVkTarget *,const Nv2aSurface *,const Nv2aRenderState *);
+/* Opt-in disjoint dirty owners. Flush/sample/alias/release remain publication
+ * boundaries. Select before binding; mutually exclusive with clean reuse. */
+void ch_vk_depth_resident_multiple(ChVkDepthResident *,int enabled);
 /* Optional bounded clean-image reuse: four borrowed targets / 16 MiB of raw
  * snapshots. Release before any target destruction or external depth mutation. */
 void ch_vk_depth_resident_reuse_clean(ChVkDepthResident *,int enabled);

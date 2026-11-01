@@ -746,6 +746,7 @@ VkResult ch_vk_backend_create(const ChVkBackendConfig *config,ChVkBackend **out)
         if(r!=VK_SUCCESS) {ch_vk_depth_resident_destroy(b->zeta);free(b);return r;}
         ch_vk_depth_resident_gpu_copies(b->zeta,!config->strict_depth_switches);
         ch_vk_depth_resident_reuse_clean(b->zeta,config->reuse_clean_depth);
+        ch_vk_depth_resident_multiple(b->zeta,config->multiple_depth);
     }
     if(config->cache_textures) {
         ChVkTextureCacheConfig texture_config={.physical=config->physical,.device=config->device,
