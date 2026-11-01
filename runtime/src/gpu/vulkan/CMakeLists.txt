@@ -144,6 +144,10 @@ endif()
 
 option(CHIHIRO_VULKAN_SHADER_TESTS "Build headless Vulkan shader fixtures without EGL/OpenGL" OFF)
 if(CHIHIRO_VULKAN_TESTS OR CHIHIRO_VULKAN_SHADER_TESTS)
+    add_executable(vulkan_command_batch_check "${CH_VK_ROOT}/tools/vulkan-combiner-driver.c" "${CH_VK_ROOT}/tools/vulkan-command-batch-test.c")
+    target_compile_definitions(vulkan_command_batch_check PRIVATE CH_VK_BATCH_TEST=1)
+    target_compile_options(vulkan_command_batch_check PRIVATE -Wall -Wextra -Werror)
+    target_link_libraries(vulkan_command_batch_check PRIVATE chihiro_vulkan)
     add_custom_command(OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/combiner_test.spv"
         COMMAND "${CHIHIRO_GLSLC}" --target-env=vulkan1.0
             "${CMAKE_CURRENT_SOURCE_DIR}/combiner_test.comp"

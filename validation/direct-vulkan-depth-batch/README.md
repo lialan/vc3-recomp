@@ -126,3 +126,28 @@ is the bank attract intro with INSERT COIN(S). Automated inputs were logged,
 but playable combat is still unverified. Later windows fall as low as 11.27
 FPS. cpu-late.txt profiles command recording/render-pass setup and GPU waits;
 this backend is not yet consistently performant. No headset was accessed.
+
+## Larger bounded command batches
+
+The draw-cap is 256 (previously 64). Descriptor sets and pinned sample lifetimes
+remain bounded; all query, guest publication, clear/import, capacity and eviction
+boundaries still finish real GPU work. Larger descriptor pools increase per-target
+resource reservations; sets remain lazily allocated and geometry remains bounded
+by the existing arena policy.
+
+The standalone Vulkan-only command-batch fixture now exercises 514 draws across
+three batches, exact additive pixels, changing texture contents, pinned-budget
+fallback, queries, color/depth edits, growth and LRU retirement. Its LRU pressure
+uses static blend factors because blend constants are now dynamic. It and the
+specialized/backend fixtures pass with validation and synchronization validation
+requested, with no VUID/SYNC diagnostics. Mac main and Android offscreen builds
+pass; no device run was performed.
+
+/tmp/vc3-batch256-profile completed 2160 frames (exit 0), using immutable
+/tmp/vc3-batch256-vc3, with the same write-watch/quantized-depth configuration.
+Frame 1200 matches the preceding 64-draw watch run exactly. Windows 1801..1921
+and 1921..2041 improve from 26.87/26.17 to 31.45/31.30 FPS; frames over 33 ms
+fall from 102/110 to 32/35 per 120-frame window. This is one local comparison;
+loading overlapped a short compilation, but measured intro windows did not.
+Remaining command-recording, GPU depth round-trip costs and first-use compilation
+still prevent smooth 60 FPS. Full playable-combat acceptance remains open.

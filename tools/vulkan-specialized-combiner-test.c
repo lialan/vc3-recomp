@@ -122,7 +122,7 @@ int ch_test_specialized_combiners(VkPhysicalDevice gpu,VkDevice device,VkQueue q
     REQUIRE(ch_vk_target_read_color(t[1],rgba[1],64)==VK_SUCCESS);
     ChVkTargetResourceStats after;ch_vk_target_resource_stats(t[1],&after);
     REQUIRE(after.specialized_pipeline_builds-stats.specialized_pipeline_builds==140 && after.pipeline_evictions>0 &&
-        after.batch_draws-stats.batch_draws==140 && after.batch_submissions-stats.batch_submissions==3);
+        after.batch_draws-stats.batch_draws==140 && after.batch_submissions-stats.batch_submissions==2);
     const unsigned char summed[]={47,47,46,140};
     for(unsigned i=0;i<64;i++) REQUIRE(rgba[1][i]==summed[i%4]);
     /* Reserved control flags cannot create shader variants. */
@@ -201,7 +201,7 @@ int ch_test_specialized_combiners(VkPhysicalDevice gpu,VkDevice device,VkQueue q
     REQUIRE(ch_vk_target_read_depth_stencil(t[1],depth[1],stencil[1],16)==VK_SUCCESS);
     REQUIRE(ch_vk_target_read_color(t[1],rgba[1],64)==VK_SUCCESS);
     REQUIRE(!memcmp(depth[0],depth[1],sizeof depth[0]) && !memcmp(stencil[0],stencil[1],16) && !memcmp(rgba[0],rgba[1],64));
-    puts("PASS: 32 specialized combiner cases match interpreter/CPU across 0..8 stages, dynamic factors/fog, fetch modes/cube/missing samplers and exact alpha/depth/stencil; inactive edits reuse pipelines, NOAT retains projective q, 140 pending factor updates survive bounded LRU eviction and three batches");failed=0;
+    puts("PASS: 32 specialized combiner cases match interpreter/CPU across 0..8 stages, dynamic factors/fog, fetch modes/cube/missing samplers and exact alpha/depth/stencil; inactive edits reuse pipelines, NOAT retains projective q, 140 pending factor updates survive bounded LRU eviction and two batches");failed=0;
 done:
     for(unsigned i=0;i<2;i++) ch_vk_target_destroy(t[i]);
     for(unsigned i=0;i<4;i++) ch_vk_texture_destroy(textures[i]);

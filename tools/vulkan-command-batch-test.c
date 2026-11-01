@@ -33,7 +33,7 @@ int ch_test_command_batches(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,u
         ChVkTargetResourceStats before;ch_vk_target_resource_stats(t,&before);
         ChVkTargetTimingStats timing_before;ch_vk_target_timing_stats(t,&timing_before);
         memset(pixels,0xa5,sizeof pixels);double start=now_ms();
-        for(unsigned i=0;i<130;i++) {
+        for(unsigned i=0;i<514;i++) {
             for(unsigned k=0;k<4;k++) {memset(v[k].rgba,0,sizeof v[k].rgba);v[k].rgba[i%3]=1/255.f;v[k].rgba[3]=1/255.f;}
             REQUIRE(ch_vk_target_draw_state_read(t,NULL,v,4,indices,6,&add,pixels,sizeof pixels)==VK_SUCCESS);
             if(batched) REQUIRE(ch_vk_target_pending(t)>0 && ch_vk_target_completion_fence(t)==VK_NULL_HANDLE);
@@ -43,20 +43,20 @@ int ch_test_command_batches(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,u
         double elapsed=now_ms()-start;
         REQUIRE(vkGetFenceStatus(device,ch_vk_target_completion_fence(t))==VK_SUCCESS);
         ChVkTargetResourceStats stats;ch_vk_target_resource_stats(t,&stats);
-        REQUIRE(stats.batch_draws-before.batch_draws==(batched?130u:0u) && stats.batch_submissions-before.batch_submissions==(batched?3u:0u));
+        REQUIRE(stats.batch_draws-before.batch_draws==(batched?514u:0u) && stats.batch_submissions-before.batch_submissions==(batched?3u:0u));
         ChVkTargetTimingStats timing;ch_vk_target_timing_stats(t,&timing);
         if(timing.available) {
             REQUIRE(timing.batch_submissions-timing_before.batch_submissions==(batched?3u:0u));
-            REQUIRE(timing.batch_draws-timing_before.batch_draws==(batched?130u:0u));
-            REQUIRE(timing.sync_render_submissions-timing_before.sync_render_submissions==(batched?0u:130u));
+            REQUIRE(timing.batch_draws-timing_before.batch_draws==(batched?514u:0u));
+            REQUIRE(timing.sync_render_submissions-timing_before.sync_render_submissions==(batched?0u:514u));
             if(batched) REQUIRE(timing.batch_record_ns>timing_before.batch_record_ns && timing.batch_finish_ns>timing_before.batch_finish_ns &&
                 timing.batch_wait_ns<=timing.batch_finish_ns && timing.batch_retire_ns<=timing.batch_finish_ns);
             puts("PASS: completed GPU timestamp samples cover every synchronous draw or command batch with exact submission/draw counts and host phase totals");
         } else puts("SKIP: queue has no GPU timestamp support");
         REQUIRE(ch_vk_target_read_color(t,pixels,sizeof pixels)==VK_SUCCESS);
-        const unsigned char expected[]={44,43,43,130};
+        const unsigned char expected[]={172,171,171,255};
         for(unsigned i=0;i<sizeof pixels;i++) REQUIRE(pixels[i]==expected[i%4]);
-        printf("PASS: command batch control=%u:130 changing-geometry draws %.2fms, batch submissions=%llu, exact additive pixels and pending fence ownership\n",!batched,elapsed,(unsigned long long)(stats.batch_submissions-before.batch_submissions));
+        printf("PASS: command batch control=%u:514 changing-geometry draws %.2fms, batch submissions=%llu, exact additive pixels and pending fence ownership\n",!batched,elapsed,(unsigned long long)(stats.batch_submissions-before.batch_submissions));
         if(!batched) {ch_vk_target_destroy(t);t=NULL;continue;}
         /* A query is an immediate completion boundary even on a resident target. */
         for(unsigned k=0;k<4;k++) for(unsigned c=0;c<4;c++) v[k].rgba[c]=1;
@@ -77,7 +77,10 @@ int ch_test_command_batches(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,u
         ch_vk_target_resource_stats(t,&stats);REQUIRE(stats.geometry_allocations==2);
         for(unsigned k=0;k<4;k++) for(unsigned c=0;c<4;c++) v[k].rgba[c]=1;
         /* More states than the LRU capacity must finish before eviction. */
-        for(unsigned i=0;i<40;i++) {opaque.blend_color=i;REQUIRE(ch_vk_target_draw_state_read(t,NULL,v,4,indices,6,&opaque,pixels,sizeof pixels)==VK_SUCCESS);}
+        static const uint32_t sources[]={0,1,0x300,0x301,0x302};
+        static const uint32_t destinations[]={0,1,0x300,0x301,0x302,0x303,0x304,0x305};
+        opaque.blend_enable=1;opaque.blend_eq=0x8006;
+        for(unsigned i=0;i<40;i++) {opaque.blend_src=sources[i/8];opaque.blend_dst=destinations[i%8];REQUIRE(ch_vk_target_draw_state_read(t,NULL,v,4,indices,6,&opaque,pixels,sizeof pixels)==VK_SUCCESS);}
         ch_vk_target_resource_stats(t,&stats);REQUIRE(stats.pipeline_evictions>0);
         const float blue[]={0,0,1,1};
         REQUIRE(ch_vk_target_clear_read(t,blue,pixels,sizeof pixels)==VK_SUCCESS && !ch_vk_target_pending(t));
@@ -112,7 +115,7 @@ int ch_test_command_batches(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,u
     Nv2aVertex vertices[6]={{0,0,0,1,0xffffffff,0,0},{16,0,0,1,0xffffffff,0,0},{16,16,0,1,0xffffffff,0,0},
         {0,0,0,1,0xffffffff,0,0},{16,16,0,1,0xffffffff,0,0},{0,16,0,1,0xffffffff,0,0}};
     Nv2aBatch batch={.vertices=vertices,.count=6,.state=&add,.texture=&tx};decodes=0;
-    for(unsigned i=0;i<130;i++) {
+    for(unsigned i=0;i<514;i++) {
         const uint32_t colors[]={0x01010000,0x01000100,0x01000001};memcpy(memory+16,&colors[i%3],4);
         REQUIRE(ch_vk_nv2a_draw_resolved_read(t,&surface,&batch,decode,ch_vk_texture_cache_resolve,cache,pixels,sizeof pixels)==VK_SUCCESS);
         if(i==1) {
@@ -121,7 +124,7 @@ int ch_test_command_batches(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,u
         }
     }
     REQUIRE(ch_vk_target_read_color(t,pixels,sizeof pixels)==VK_SUCCESS && !ch_vk_target_pending(t));
-    const unsigned char expected[]={44,43,43,130};
+    const unsigned char expected[]={172,171,171,255};
     for(unsigned i=0;i<sizeof pixels;i++) REQUIRE(pixels[i]==expected[i%4]);
     ChVkTextureCacheStats stats;ch_vk_texture_cache_stats(cache,&stats);REQUIRE(decodes>stats.uploads);
     ch_vk_target_destroy(t);t=NULL;ch_vk_texture_cache_destroy(cache);cache=NULL;

@@ -21,7 +21,9 @@ typedef struct {
 } PipelineKey;
 #define BASE_PIPELINE_SLOTS 32u
 #define PIPELINE_SLOTS 128u
-#define BATCH_DRAWS 64u
+/* Bound descriptor/snapshot lifetimes without forcing a wait every 64 draws.
+ * Queries, guest publication, resource pressure and target changes still finish. */
+#define BATCH_DRAWS 256u
 typedef struct {
     PipelineKey key;
     uint64_t used;
