@@ -52,7 +52,7 @@ def main():
                 "CHIHIRO_VULKAN_TEXTURE_CACHE_ENTRIES", "VC3_VULKAN_TEXTURE_CACHE_ENTRIES",
                 "CHIHIRO_VULKAN_TEXTURE_CACHE_MIB", "VC3_VULKAN_TEXTURE_CACHE_MIB",
                 "CHIHIRO_VULKAN_WRITE_WATCH", "VC3_VULKAN_WRITE_WATCH",
-                "CHIHIRO_VULKAN_NOAT", "VC3_VULKAN_NOAT", "CHIHIRO_VULKAN_GPU_TIMESTAMPS"):
+                "CHIHIRO_VULKAN_NOAT", "VC3_VULKAN_NOAT", "CHIHIRO_VULKAN_GPU_TIMESTAMPS", "CHIHIRO_VULKAN_SPECIALIZE_RC"):
         if key in os.environ:
             env[key] = os.environ[key]
     report = dict(binary=str(executable), binary_sha256=hashlib.sha256(executable.read_bytes()).hexdigest(),

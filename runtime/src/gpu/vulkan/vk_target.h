@@ -12,6 +12,8 @@ typedef struct {
     uint64_t pipeline_builds,pipeline_hits,pipeline_evictions,geometry_allocations;
     uint64_t batch_draws,batch_submissions;
     uint64_t no_alpha_pipeline_builds,no_alpha_pipeline_hits;
+    uint64_t specialized_pipeline_builds,specialized_pipeline_hits;
+    uint64_t pipeline_create_ns,pipeline_create_max_ns;
     VkDeviceSize geometry_capacity;
 } ChVkTargetResourceStats;
 /* Diagnostic counters. Geometry is persistently mapped

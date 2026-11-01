@@ -1,0 +1,2 @@
+device=Apple M4 Pro vendor=106b deviceID=0064 api=1.4.354
+PASS: 256 GPU combiner arithmetic cases match shared CPU evaluator (tolerance 2e-5)

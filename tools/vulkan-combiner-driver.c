@@ -3,7 +3,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 #define CHECK(call) do { VkResult r=(call); if(r!=VK_SUCCESS) { fprintf(stderr,"%s: %d\n",#call,r); goto done; } } while(0)
+#ifdef CH_VK_SPECIALIZATION_TEST
+int ch_test_specialized_combiners(VkPhysicalDevice,VkDevice,VkQueue,uint32_t);
+#else
 int combiner_check(VkPhysicalDevice,VkDevice,VkQueue,VkCommandPool);
+#endif
 int main(void) {
     int result=1;
     VkInstance instance=VK_NULL_HANDLE;
@@ -37,6 +41,11 @@ int main(void) {
     float priority=1;
     VkDeviceQueueCreateInfo qci={.sType=VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,.queueFamilyIndex=family,.queueCount=1,.pQueuePriorities=&priority};
     VkDeviceCreateInfo dci={.sType=VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,.queueCreateInfoCount=1,.pQueueCreateInfos=&qci};
+#ifdef CH_VK_SPECIALIZATION_TEST
+    VkPhysicalDeviceFeatures available;vkGetPhysicalDeviceFeatures(gpu,&available);
+    if(!available.occlusionQueryPrecise) {fputs("Precise visibility queries required by specialization fixture\n",stderr);goto done;}
+    VkPhysicalDeviceFeatures features={.occlusionQueryPrecise=VK_TRUE};dci.pEnabledFeatures=&features;
+#endif
     CHECK(vkCreateDevice(gpu,&dci,NULL,&device));
     VkQueue queue;
     vkGetDeviceQueue(device,family,0,&queue);
@@ -53,7 +62,11 @@ int main(void) {
     VkSubmitInfo si={.sType=VK_STRUCTURE_TYPE_SUBMIT_INFO,.commandBufferCount=1,.pCommandBuffers=&command};
     CHECK(vkQueueSubmit(queue,1,&si,fence));
     CHECK(vkWaitForFences(device,1,&fence,VK_TRUE,5000000000ULL));
+#ifdef CH_VK_SPECIALIZATION_TEST
+    result=ch_test_specialized_combiners(gpu,device,queue,family);
+#else
     result=combiner_check(gpu,device,queue,pool);
+#endif
 done:
     if(device) { vkDeviceWaitIdle(device); if(fence) vkDestroyFence(device,fence,NULL); if(pool) vkDestroyCommandPool(device,pool,NULL); vkDestroyDevice(device,NULL); }
     if(instance) vkDestroyInstance(instance,NULL);

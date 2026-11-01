@@ -8,15 +8,19 @@
 #include <time.h>
 #include "color_spv.h"
 #include "fixed_layout_assert.h"
+#include "vk_combiner_program.h"
+#include "combiner_program_assert.h"
 typedef struct {
     VkPipelineColorBlendAttachmentState blend;
     float constants[4];
     VkPipelineDepthStencilStateCreateInfo depth;
     VkCullModeFlags cull;
     VkFrontFace front;
-    unsigned shader,fixed,alpha_shader;
+    unsigned shader,fixed,alpha_shader,specialized;
+    ChVkCombinerProgram program;
 } PipelineKey;
-#define PIPELINE_SLOTS 32u
+#define BASE_PIPELINE_SLOTS 32u
+#define PIPELINE_SLOTS 128u
 #define BATCH_DRAWS 64u
 typedef struct {
     PipelineKey key;
@@ -28,6 +32,7 @@ typedef struct {
     VkPipelineLayout pipeline_layout;
     VkPipeline pipeline;
     int has_descriptors;
+    int pending; /* Referenced by the current batch until its fence completes. */
 } PipelineResources;
 struct ChVkTarget {
     uint32_t family;
@@ -45,6 +50,7 @@ struct ChVkTarget {
     uint64_t pipeline_clock;
     int reuse_resources;
     int split_alpha;
+    int specialize_rc;
     VkBuffer geometry;
     VkDeviceMemory geometry_memory;
     void *geometry_map;
@@ -257,6 +263,8 @@ VkResult ch_vk_target_create_depth(VkPhysicalDevice physical, VkDevice device,
     /* Keep opt-in: the first Quest pair regressed and warm repeats show no
      * benefit. A discard-free module is not automatically faster. */
     t->split_alpha=split && atoi(split);
+    const char *specialize=getenv("CHIHIRO_VULKAN_SPECIALIZE_RC");
+    t->specialize_rc=specialize && atoi(specialize);
     t->depth_format=depth_format;
     t->bytes=(VkDeviceSize)width*height*4;
     VkResult result;
@@ -364,7 +372,7 @@ VkResult ch_vk_target_finish(ChVkTarget *t) {
     }
     t->layout=VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;t->resource_stats.batch_submissions++;
     t->pending=0;t->geometry_used=0;
-    for(unsigned i=0;i<PIPELINE_SLOTS;i++) t->pipelines[i].set_used=0;
+    for(unsigned i=0;i<PIPELINE_SLOTS;i++) {t->pipelines[i].set_used=0;t->pipelines[i].pending=0;}
     uint64_t retire_start=t->timing?time_ns():0;
     retire_samples(t);
     if(t->timing) {
@@ -414,6 +422,7 @@ static VkResult record_batch(ChVkTarget *t,VkBuffer geometry,VkDeviceSize index_
     vkCmdBindVertexBuffers(t->command,0,1,&geometry,&vertex_offset);
     vkCmdBindIndexBuffer(t->command,geometry,index_offset,VK_INDEX_TYPE_UINT16);
     vkCmdDrawIndexed(t->command,index_count,1,0,0,0);
+    t->active_pipeline->pending=1;
     t->pending++;t->resource_stats.batch_draws++;
     if(t->timing) t->timing_stats.batch_record_ns+=time_ns()-record_start;
     return VK_SUCCESS;
@@ -536,12 +545,15 @@ static VkResult render_read(ChVkTarget *t, const float rgba[4], uint32_t clear_f
         if(now-t->timing_start>=1000000000) {
             fprintf(stderr,"[Vulkan GPU] %ux%u %llu synchronous submissions (excludes command batches): GPU %.2fms host record/submit/wait %.2fms\n",
                 t->width,t->height,(unsigned long long)t->timing_calls,t->timing_gpu/1e6,t->timing_cpu/1e6);
-            fprintf(stderr,"[Vulkan resources] %ux%u: pipelines builds=%llu hits=%llu evictions=%llu geometry allocations=%llu capacity=%lluKiB alpha-free builds/hits=%llu/%llu\n",
+            fprintf(stderr,"[Vulkan resources] %ux%u: pipelines builds=%llu hits=%llu evictions=%llu geometry allocations=%llu capacity=%lluKiB alpha-free builds/hits=%llu/%llu specialized builds/hits=%llu/%llu pipeline create total/max=%.2f/%.2fms\n",
                 t->width,t->height,(unsigned long long)t->resource_stats.pipeline_builds,
                 (unsigned long long)t->resource_stats.pipeline_hits,(unsigned long long)t->resource_stats.pipeline_evictions,
                 (unsigned long long)t->resource_stats.geometry_allocations,(unsigned long long)(t->geometry_capacity/1024),
                 (unsigned long long)t->resource_stats.no_alpha_pipeline_builds,
-                (unsigned long long)t->resource_stats.no_alpha_pipeline_hits);
+                (unsigned long long)t->resource_stats.no_alpha_pipeline_hits,
+                (unsigned long long)t->resource_stats.specialized_pipeline_builds,
+                (unsigned long long)t->resource_stats.specialized_pipeline_hits,
+                t->resource_stats.pipeline_create_ns/1e6,t->resource_stats.pipeline_create_max_ns/1e6);
             t->timing_start=now;t->timing_gpu=t->timing_cpu=t->timing_calls=0;
         }
     }
@@ -580,7 +592,7 @@ VkResult ch_vk_target_clear_read(ChVkTarget *t, const float rgba[4],
     void *pixels, VkDeviceSize bytes) {
     return render_read(t,rgba,7,1.0f,0,VK_NULL_HANDLE,0,0,pixels,bytes);
 }
-static VkResult create_pipeline(ChVkTarget *t, const VkPipelineColorBlendAttachmentState *blend, const float constants[4], const VkPipelineDepthStencilStateCreateInfo *depth_state, VkCullModeFlags cull, VkFrontFace front, const ChVkTexture *texture,int alpha_shader) {
+static VkResult create_pipeline(ChVkTarget *t, const VkPipelineColorBlendAttachmentState *blend, const float constants[4], const VkPipelineDepthStencilStateCreateInfo *depth_state, VkCullModeFlags cull, VkFrontFace front, const ChVkTexture *texture,const PipelineKey *key) {
     VkResult result;
     VkShaderModule vert=VK_NULL_HANDLE, frag=VK_NULL_HANDLE;
     if(!t->pass) {
@@ -616,7 +628,10 @@ static VkResult create_pipeline(ChVkTarget *t, const VkPipelineColorBlendAttachm
     VkShaderModuleCreateInfo shader={.sType=VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
         .codeSize=t->fixed?sizeof(color_fixed_spv):sizeof(color_vert_spv),.pCode=t->fixed?color_fixed_spv:color_vert_spv};
     TRY(vkCreateShaderModule(t->device,&shader,NULL,&vert));
-    if(alpha_shader) {
+    if(key->specialized) {
+        shader.codeSize=key->alpha_shader?sizeof(color_combiner_specialized_spv):sizeof(color_combiner_specialized_noat_spv);
+        shader.pCode=key->alpha_shader?color_combiner_specialized_spv:color_combiner_specialized_noat_spv;
+    } else if(key->alpha_shader) {
         shader.codeSize=t->effect?sizeof(color_effect_spv):t->rc?sizeof(color_combiner_spv):texture?sizeof(color_textured_spv):sizeof(color_frag_spv);
         shader.pCode=t->effect?color_effect_spv:t->rc?color_combiner_spv:texture?color_textured_spv:color_frag_spv;
     } else {
@@ -627,6 +642,12 @@ static VkResult create_pipeline(ChVkTarget *t, const VkPipelineColorBlendAttachm
     VkPipelineShaderStageCreateInfo stages[]={
         {.sType=VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,.stage=VK_SHADER_STAGE_VERTEX_BIT,.module=vert,.pName="main"},
         {.sType=VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,.stage=VK_SHADER_STAGE_FRAGMENT_BIT,.module=frag,.pName="main"}};
+    VkSpecializationMapEntry entries[sizeof(key->program)/sizeof(uint32_t)];
+    for(unsigned i=0;i<sizeof entries/sizeof entries[0];i++)
+        entries[i]=(VkSpecializationMapEntry){.constantID=i,.offset=i*sizeof(uint32_t),.size=sizeof(uint32_t)};
+    VkSpecializationInfo specialization={.mapEntryCount=sizeof entries/sizeof entries[0],.pMapEntries=entries,
+        .dataSize=sizeof key->program,.pData=&key->program};
+    if(key->specialized) stages[1].pSpecializationInfo=&specialization;
     VkVertexInputBindingDescription binding={0,t->fixed?sizeof(ChVkFixedVertex):sizeof(ChVkColorVertex),VK_VERTEX_INPUT_RATE_VERTEX};
     VkVertexInputAttributeDescription fixed_attrs[8];
     for(unsigned i=0;i<8;i++) fixed_attrs[i]=(VkVertexInputAttributeDescription){i,0,VK_FORMAT_R32G32B32A32_SFLOAT,i*16};
@@ -792,24 +813,32 @@ static VkResult draw_full(ChVkTarget *t, const float rgba[4],
     key.depth=depth_state; key.cull=cull; key.front=front;
     key.shader=effect?3:rc?2:texture?1:0;key.fixed=fixed!=NULL;
     key.alpha_shader=!!state->alpha_test_enable || !t->split_alpha;
+    key.specialized=key.shader==2 && t->specialize_rc;
+    if(key.specialized) ch_vk_combiner_program(rc,&key.program);
     PipelineResources *entry=NULL,*oldest=NULL;
-    unsigned capacity=t->reuse_resources?PIPELINE_SLOTS:1;
+    unsigned capacity=t->reuse_resources?(t->specialize_rc?PIPELINE_SLOTS:BASE_PIPELINE_SLOTS):1;
     for(unsigned i=0;i<capacity;i++) {
         PipelineResources *p=&t->pipelines[i];
         if(p->pipeline && !memcmp(&key,&p->key,sizeof key)) {entry=p;break;}
         if(!oldest || p->used<oldest->used) oldest=p;
     }
-    if(entry) {t->resource_stats.pipeline_hits++;if(!key.alpha_shader) t->resource_stats.no_alpha_pipeline_hits++;}
+    if(entry) {t->resource_stats.pipeline_hits++;if(!key.alpha_shader) t->resource_stats.no_alpha_pipeline_hits++;
+        if(key.specialized) t->resource_stats.specialized_pipeline_hits++;}
     else {
         entry=oldest;
         if(entry->pipeline) {
-            TRY(ch_vk_target_finish(t));t->resource_stats.pipeline_evictions++;
+            if(entry->pending) TRY(ch_vk_target_finish(t));
+            t->resource_stats.pipeline_evictions++;
         }
         destroy_pipeline(t,entry);t->active_pipeline=entry;
-        result=create_pipeline(t,&blend,constants,&depth_state,cull,front,texture,key.alpha_shader);
+        uint64_t create_start=time_ns();
+        result=create_pipeline(t,&blend,constants,&depth_state,cull,front,texture,&key);
         if(result!=VK_SUCCESS) return result;
+        uint64_t create_ns=time_ns()-create_start;t->resource_stats.pipeline_create_ns+=create_ns;
+        if(create_ns>t->resource_stats.pipeline_create_max_ns) t->resource_stats.pipeline_create_max_ns=create_ns;
         entry->key=key;t->resource_stats.pipeline_builds++;
         if(!key.alpha_shader) t->resource_stats.no_alpha_pipeline_builds++;
+        if(key.specialized) t->resource_stats.specialized_pipeline_builds++;
     }
     t->active_pipeline=entry;entry->used=++t->pipeline_clock;
     VkDeviceSize header=t->fixed?(256+sizeof(*t->fixed)+255)/256*256:t->rc?256:0;

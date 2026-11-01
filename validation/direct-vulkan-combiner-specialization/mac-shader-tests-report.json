@@ -1,0 +1,10 @@
+{
+  "vulkan_combiner_check": {
+    "exit_code": 0,
+    "sha256": "5678c313948ed449c99673a7d4ef2a80f2a22b2e6948d7ac56e33a68038a4458"
+  },
+  "vulkan_specialized_combiner_check": {
+    "exit_code": 0,
+    "sha256": "838201b1edc38edefa18353b618e10717185de6859cf27702c0b19a95121edcc"
+  }
+}

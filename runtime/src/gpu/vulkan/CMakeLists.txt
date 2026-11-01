@@ -25,8 +25,15 @@ add_custom_command(OUTPUT "${fixed_layout}" "${fixed_asserts}"
         "${fixed_layout}" "${fixed_asserts}"
     DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/generate_fixed_layout.py" "${CMAKE_CURRENT_SOURCE_DIR}/vk_fixed.h"
         "${XBOXRECOMP_DIR}/src/kernel/nv2a_backend.h" VERBATIM)
+set(combiner_program "${CMAKE_CURRENT_BINARY_DIR}/combiner_program.glsl")
+set(combiner_asserts "${CMAKE_CURRENT_BINARY_DIR}/combiner_program_assert.h")
+add_custom_command(OUTPUT "${combiner_program}" "${combiner_asserts}"
+    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/generate_combiner_program.py"
+        "${CMAKE_CURRENT_SOURCE_DIR}/vk_combiner_program.h" "${combiner_program}" "${combiner_asserts}"
+    DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/generate_combiner_program.py"
+        "${CMAKE_CURRENT_SOURCE_DIR}/vk_combiner_program.h" VERBATIM)
 set(spirv_outputs)
-foreach(stage vert frag textured combiner effect fixed frag_noat textured_noat combiner_noat effect_noat)
+foreach(stage vert frag textured combiner effect fixed frag_noat textured_noat combiner_noat effect_noat combiner_specialized combiner_specialized_noat)
     string(REGEX REPLACE "_noat$" "" base_stage "${stage}")
     if(base_stage STREQUAL "fixed")
         set(input fixed.vert)
@@ -37,6 +44,9 @@ foreach(stage vert frag textured combiner effect fixed frag_noat textured_noat c
     elseif(base_stage STREQUAL "combiner")
         set(input color.frag)
         set(defines -DCOMBINER)
+    elseif(base_stage STREQUAL "combiner_specialized")
+        set(input color.frag)
+        set(defines -DCOMBINER -DSPECIALIZED -O)
     elseif(base_stage STREQUAL "effect")
         set(input color.frag)
         set(defines -DEFFECT)
@@ -51,7 +61,7 @@ foreach(stage vert frag textured combiner effect fixed frag_noat textured_noat c
     add_custom_command(OUTPUT "${output}"
         COMMAND "${CHIHIRO_GLSLC}" --target-env=vulkan1.0 -I "${CMAKE_CURRENT_BINARY_DIR}" ${defines}
                 "${CMAKE_CURRENT_SOURCE_DIR}/${input}" -o "${output}"
-        DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/${input}" "${CMAKE_CURRENT_SOURCE_DIR}/combiner.glsl" "${CMAKE_CURRENT_SOURCE_DIR}/../nv2a_stage_fetch.h" "${CMAKE_CURRENT_SOURCE_DIR}/../nv2a_fixed_shader.h" "${fixed_layout}" VERBATIM)
+        DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/${input}" "${CMAKE_CURRENT_SOURCE_DIR}/combiner.glsl" "${CMAKE_CURRENT_SOURCE_DIR}/../nv2a_stage_fetch.h" "${CMAKE_CURRENT_SOURCE_DIR}/../nv2a_fixed_shader.h" "${fixed_layout}" "${combiner_program}" VERBATIM)
     list(APPEND spirv_outputs "${output}")
 endforeach()
 set(header "${CMAKE_CURRENT_BINARY_DIR}/color_spv.h")
@@ -59,7 +69,7 @@ add_custom_command(OUTPUT "${header}"
     COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/embed_spirv.py"
         "${header}" ${spirv_outputs}
     DEPENDS ${spirv_outputs} "${CMAKE_CURRENT_SOURCE_DIR}/embed_spirv.py" VERBATIM)
-add_library(chihiro_vulkan STATIC vk_fixed.c vk_target.c vk_texture.c vk_texture_cache.c vk_state.c vk_nv2a.c vk_backend.c vk_depth_guest.c vk_depth_resident.c vk_menu.c vk_overlay.c vk_frame_mailbox.c vk_scene.c vk_submission.c "${header}" "${fixed_asserts}")
+add_library(chihiro_vulkan STATIC vk_fixed.c vk_target.c vk_texture.c vk_texture_cache.c vk_state.c vk_nv2a.c vk_backend.c vk_depth_guest.c vk_depth_resident.c vk_menu.c vk_overlay.c vk_frame_mailbox.c vk_scene.c vk_submission.c "${header}" "${fixed_asserts}" "${combiner_asserts}")
 target_sources(chihiro_vulkan PRIVATE ../guest_write_watch.c)
 target_compile_features(chihiro_vulkan PUBLIC c_std_11)
 target_compile_options(chihiro_vulkan PRIVATE -Wall -Wextra -Werror)
@@ -107,6 +117,7 @@ if(CHIHIRO_VULKAN_TESTS)
     target_compile_options(vulkan_offscreen_test PRIVATE -Wall -Wextra -Werror)
     target_sources(vulkan_offscreen_test PRIVATE "${CH_VK_ROOT}/tools/vulkan-write-watch-test.c")
     target_sources(vulkan_offscreen_test PRIVATE "${CH_VK_ROOT}/tools/vulkan-no-alpha-test.c")
+    target_sources(vulkan_offscreen_test PRIVATE "${CH_VK_ROOT}/tools/vulkan-specialized-combiner-test.c")
     target_link_options(vulkan_offscreen_test PRIVATE -Wl,--gc-sections)
     target_include_directories(vulkan_offscreen_test PRIVATE "${CH_VK_ROOT}/runtime/src" "${CMAKE_CURRENT_BINARY_DIR}")
     target_link_libraries(vulkan_offscreen_test PRIVATE chihiro_vulkan EGL GLESv3)
@@ -124,7 +135,8 @@ if(OPENXR_DIR)
     endif()
 endif()
 
-if(CHIHIRO_VULKAN_TESTS)
+option(CHIHIRO_VULKAN_SHADER_TESTS "Build headless Vulkan shader fixtures without EGL/OpenGL" OFF)
+if(CHIHIRO_VULKAN_TESTS OR CHIHIRO_VULKAN_SHADER_TESTS)
     add_custom_command(OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/combiner_test.spv"
         COMMAND "${CHIHIRO_GLSLC}" --target-env=vulkan1.0
             "${CMAKE_CURRENT_SOURCE_DIR}/combiner_test.comp"
@@ -133,8 +145,13 @@ if(CHIHIRO_VULKAN_TESTS)
     add_custom_target(vulkan_combiner_shader DEPENDS "${CMAKE_CURRENT_BINARY_DIR}/combiner_test.spv")
     add_executable(vulkan_combiner_check "${CH_VK_ROOT}/tools/vulkan-combiner-driver.c"
         "${CH_VK_ROOT}/tools/vulkan-combiner-check.c" "${XBOXRECOMP_DIR}/src/kernel/nv2a_combiner.c")
-    target_include_directories(vulkan_combiner_check PRIVATE "${XBOXRECOMP_DIR}/src/kernel")
+    target_include_directories(vulkan_combiner_check PRIVATE "${XBOXRECOMP_DIR}/src/kernel" "${CHIHIRO_VULKAN_INCLUDE_DIR}")
     target_compile_options(vulkan_combiner_check PRIVATE -Wall -Wextra -Werror)
     target_link_libraries(vulkan_combiner_check PRIVATE "${CHIHIRO_VULKAN_LIBRARY}" m)
     add_dependencies(vulkan_combiner_check vulkan_combiner_shader)
+    add_executable(vulkan_specialized_combiner_check "${CH_VK_ROOT}/tools/vulkan-combiner-driver.c"
+        "${CH_VK_ROOT}/tools/vulkan-specialized-combiner-test.c" "${XBOXRECOMP_DIR}/src/kernel/nv2a_combiner.c")
+    target_compile_definitions(vulkan_specialized_combiner_check PRIVATE CH_VK_SPECIALIZATION_TEST=1)
+    target_compile_options(vulkan_specialized_combiner_check PRIVATE -Wall -Wextra -Werror)
+    target_link_libraries(vulkan_specialized_combiner_check PRIVATE chihiro_vulkan)
 endif()

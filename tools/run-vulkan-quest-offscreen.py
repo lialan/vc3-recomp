@@ -35,6 +35,7 @@ def main():
     alpha_group.add_argument("--no-alpha-shader", action="store_true", help="Experimental: use alpha-free modules when alpha testing is disabled (no verified Adreno benefit)")
     alpha_group.add_argument("--force-alpha-shader", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--no-gpu-timestamps", action="store_true", help="Measure instrumentation overhead while retaining CPU and frame-interval diagnostics")
+    parser.add_argument("--specialize-combiners", action="store_true", help="Experimental: compile immutable combiner instructions as pipeline specialization constants")
     parser.add_argument("--simpleperf", action="store_true", help="Profile only this workload with the bundled NDK tool; no system permission changes")
     args = parser.parse_args()
     if args.frames < 1 or not 1 <= args.timeout <= 3600 or args.capture_first < 0 or args.capture_count < 0 or args.capture_every < 0:
@@ -81,6 +82,7 @@ def main():
     env["CHIHIRO_VULKAN_WRITE_WATCH"] = "1" if args.write_watch else "0"
     env["CHIHIRO_VULKAN_NOAT"] = "1" if args.no_alpha_shader else "0"
     env["CHIHIRO_VULKAN_GPU_TIMESTAMPS"] = "0" if args.no_gpu_timestamps else "1"
+    env["CHIHIRO_VULKAN_SPECIALIZE_RC"] = "1" if args.specialize_combiners else "0"
     env["CHIHIRO_VULKAN_DUMP_EVERY"] = str(args.capture_every)
     report = {"serial": "2G97C5ZJ0G02DQ", "binary_hashes": hashes, "environment": env,
               "requested_frames": args.frames, "game": args.game,

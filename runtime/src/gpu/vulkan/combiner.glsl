@@ -1,6 +1,9 @@
 // Register-combiner arithmetic ported from the shared reference GL shader.
 // Texture stage fetch/coordinate generation stays with the caller. Inputs here
 // are the four stage results, matching nv2a_rc_eval (not raw sampler results).
+#ifndef CH_RC_UNROLL
+#define CH_RC_UNROLL
+#endif
 struct ChRc {
     uint color_icw[8]; uint alpha_icw[8]; uint color_ocw[8]; uint alpha_ocw[8];
     uint factor0[8]; uint factor1[8];
@@ -37,15 +40,7 @@ float rd_a(uint b) {
   vec4 r = R[b & 15u];
   return map_in(((b & 0x10u) != 0u) ? r.a : r.b, b);
 }
-vec4 ch_rc_eval(ChRc rc, vec4 diffuse, vec4 specular, vec4 fog, vec4 texels[4]) {
-  uint n = min(rc.control & 0xFFu, 8u), flags = rc.control >> 8;
-  for (int i = 0; i < 16; i++) R[i] = vec4(0.0);
-  R[3] = fog;
-  R[4] = diffuse; R[5] = specular;
-  R[8] = texels[0]; R[9] = texels[1]; R[10] = texels[2]; R[11] = texels[3];
-  R[12].a = ((rc.stage_program & 31u) != 0u) ? texels[0].a : 1.0;
-  for (uint s = 0u; s < 8u; s++) {
-    if (s >= n) break;
+void ch_rc_stage(ChRc rc,uint s,uint flags) {
     uint icw = rc.color_icw[s], ocw = rc.color_ocw[s], aicw = rc.alpha_icw[s], aocw = rc.alpha_ocw[s];
     uint fl = ocw >> 12, afl = aocw >> 12;
     R[1] = rc_unpack(rc.factor0[(flags & 0x010u) != 0u ? s : 0u]);
@@ -80,7 +75,32 @@ vec4 ch_rc_eval(ChRc rc, vec4 diffuse, vec4 specular, vec4 fog, vec4 texels[4]) 
     d = aocw & 15u;        if (d != 0u) R[d].a = acd;
     d = (aocw >> 8) & 15u; if (d != 0u) R[d].a = ams;
     R[0] = vec4(0.0);
-  }
+}
+vec4 ch_rc_eval(ChRc rc, vec4 diffuse, vec4 specular, vec4 fog, vec4 texels[4]) {
+  uint n = min(rc.control & 0xFFu, 8u), flags = rc.control >> 8;
+#ifdef SPECIALIZED
+  // Fixed array indices let specialization fold register addressing before
+  // optimization. A loop can retain the interpreter's dynamic register array.
+  R[0]=R[1]=R[2]=R[3]=R[4]=R[5]=R[6]=R[7]=R[8]=R[9]=R[10]=R[11]=R[12]=R[13]=R[14]=R[15]=vec4(0.0);
+#else
+  for (int i = 0; i < 16; i++) R[i] = vec4(0.0);
+#endif
+  R[3] = fog;
+  R[4] = diffuse; R[5] = specular;
+  R[8] = texels[0]; R[9] = texels[1]; R[10] = texels[2]; R[11] = texels[3];
+  R[12].a = ((rc.stage_program & 31u) != 0u) ? texels[0].a : 1.0;
+#ifdef SPECIALIZED
+  if(n>0u) ch_rc_stage(rc,0u,flags);
+  if(n>1u) ch_rc_stage(rc,1u,flags);
+  if(n>2u) ch_rc_stage(rc,2u,flags);
+  if(n>3u) ch_rc_stage(rc,3u,flags);
+  if(n>4u) ch_rc_stage(rc,4u,flags);
+  if(n>5u) ch_rc_stage(rc,5u,flags);
+  if(n>6u) ch_rc_stage(rc,6u,flags);
+  if(n>7u) ch_rc_stage(rc,7u,flags);
+#else
+  for(uint s=0u;s<n;s++) ch_rc_stage(rc,s,flags);
+#endif
   vec4 o;
   if (rc.final0 != 0u || rc.final1 != 0u) {
     uint ff = rc.final1 & 0xFFu;
