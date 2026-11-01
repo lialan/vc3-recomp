@@ -1,0 +1,13 @@
+# Validated surface-layout cache and inactive depth/color reuse
+
+Local simulator/headless Vulkan,2026-11-01. Base5d0a192. Two shared fixes, one focused native correctness batch and one benchmark pair. No headset/device operation. Dirty pooling remains opt-in.
+
+Surface stores its validated ChVkGuestLayout. Every creation and state/layout update refreshes it. Old color-surface overlap checks, sampled-target overlap checks, GPU render-target matching, and depth/color alias checks use this cached layout instead of recomputing every historical surface layout for each draw. New incoming surfaces still undergo normal validation and bounds checks. Resident and nonresident layouts both get updated; snapshot allocation lifetime is unchanged.
+
+Before color storage reuse, pooled inactive depth owners that overlap it are published and released. Active color/depth overlap remains rejected as before. This restores compatibility with storage no longer owned by the original single-owner backend without allowing stale inactive depth to overwrite color later. Direct inspection check remains nonmutating; new prepare_color is explicitly the mutating transition.
+
+KosmicKrisp synchronization-validation batch passes exact depth owner tests and registered pooled-backend coherence comparisons, including layout changes, resize, guest edits and texture sampling. Extended owner test verifies inactive publication/retirement, final guest words, and continued active-alias rejection. Native build passes. No repeated driver/Android/reverse-pair matrix for this bundle.
+
+Matched starting pipeline cache, prior binary/tmp/vc3-paired-pool-vc3 versus new/tmp/vc3-layout-pool-vc3, identical scene input, pooling enabled in both;2100frames and exit0 each. Control activation55.79FPS versus candidate58.86; early held59.34->59.49; late held60.01->59.92. Activation p95 improves23.42->20.73ms, but max28.17->30.67ms and candidate early-held max47.70ms show remaining tails. No steady60, isolated-GPU, or repeatability claim. Normal~60FPS. No bulk CPU graphics fallback reintroduced. Reports preserve binary/environment/capture hashes; rawlogs/tmp/vc3-layout-pool-{control,candidate}/game.log. Captures were generated; no additional visual acceptance claim for this bookkeeping bundle.
+
+Next scheduling investigation: shared platform SetThreadPriority currently records priority only on POSIX, and nv2a_ack_thread has no explicit latency QoS initialization. The paced timer has a separate HostTimerThreadInit policy; do not apply hard realtime timer policy indiscriminately to a rendering worker. Investigate bounded/shared host scheduling behavior with an opt-in control before changing default priorities. Retain the bundled-fix validation cadence.

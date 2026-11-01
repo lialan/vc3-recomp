@@ -8,7 +8,7 @@
 #include <stdio.h>
 #include <time.h>
 #define MAX_SURFACES 32
-struct Surface { Nv2aSurface guest; uint32_t zeta; Nv2aRenderState state; float *depth; uint8_t *stencil; ChVkTarget *target; unsigned char *rgba,*observed,*cpu,*raw; ChGuestWriteRange *write_range; size_t raw_span; int observed_valid,resident,color_bgra,color_fallback_reported,color_dirty,native_z24,quantized_z24; size_t bytes; uint64_t color_serial; };
+struct Surface { Nv2aSurface guest; ChVkGuestLayout layout; uint32_t zeta; Nv2aRenderState state; float *depth; uint8_t *stencil; ChVkTarget *target; unsigned char *rgba,*observed,*cpu,*raw; ChGuestWriteRange *write_range; size_t raw_span; int observed_valid,resident,color_bgra,color_fallback_reported,color_dirty,native_z24,quantized_z24; size_t bytes; uint64_t color_serial; };
 typedef struct {uint64_t pipeline_ns,batch_wait_ns,batch_gpu_ns,upload_wait_ns;} FrameCosts;
 struct ChVkBackend { struct {int enabled;uint64_t draw_cpu_ns,clear_cpu_ns,flip_cpu_ns,trim_cpu_ns;uint64_t draw_us,clear_us,flip_us,trim_us,surface_us,coherence_us,imports_us,raster_us,store_us,texture_uploads;FrameCosts retired,previous;} costs; VkPipelineCache pipeline_cache; struct {int enabled;uint64_t start,n,surface,coherence,imports,draw,store,no_color,flushes,depth_flushes,paired_flushes;} profile; struct {uint64_t previous,us[120];unsigned count;} frame_profile; ChVkBackendConfig host; ChVkTextureCache *textures; ChVkDepthResident *zeta; uint64_t frames,raw_draws,raw_programs,raw_program_vertices,raw_declined,color_clock,cpu_batches,cpu_vertices,cpu_texels,cpu_texture_us,cpu_color_pixels,cpu_color_us,cpu_depth_pixels; struct Surface surfaces[MAX_SURFACES]; unsigned count; };
 static ChVkBackend *active;
@@ -166,7 +166,7 @@ static struct Surface *surface(const Nv2aSurface *s,const Nv2aRenderState *rs) {
         fatal(layout_result,"color surface layout");
     }
     if(active->zeta) {
-        VkResult r=ch_vk_depth_resident_check_color(active->zeta,s->color_va,(size_t)layout.span);
+        VkResult r=ch_vk_depth_resident_prepare_color(active->zeta,s->color_va,(size_t)layout.span);
         if(r!=VK_SUCCESS) fatal(r,"resident depth/color alias");
     }
     uint64_t span=layout.span;
@@ -179,11 +179,7 @@ static struct Surface *surface(const Nv2aSurface *s,const Nv2aRenderState *rs) {
     for(unsigned i=0;i<active->count;i++) {
         struct Surface *previous=&active->surfaces[i];
         if(previous->guest.color_va==s->color_va) {f=previous;continue;}
-        ChVkGuestLayout old_layout;
-        VkResult old_result=ch_vk_guest_layout(previous->state.surface_format,previous->guest.width,previous->guest.height,
-            previous->guest.pitch,previous->guest.bytes_per_pixel,&old_layout);
-        if(old_result!=VK_SUCCESS) fatal(old_result,"previous color surface layout");
-        uint64_t old_start=previous->guest.color_va,old_end=old_start+old_layout.span;
+        uint64_t old_start=previous->guest.color_va,old_end=old_start+previous->layout.span;
         if(s->color_va<old_end && old_start<(uint64_t)s->color_va+span)
             fatal(VK_ERROR_FEATURE_NOT_PRESENT,"overlapping surfaces");
     }
@@ -200,7 +196,7 @@ static struct Surface *surface(const Nv2aSurface *s,const Nv2aRenderState *rs) {
             f->write_range=ch_guest_write_range_create(active->host.guest_write_watch,
                 (unsigned char *)active->host.guest_base+s->color_va,(size_t)span);
         }
-        f->guest=*s;f->state=*rs;color_encoding(f,layout.swizzled);return f;
+        f->guest=*s;f->state=*rs;f->layout=layout;color_encoding(f,layout.swizzled);return f;
     }
     if(f) {
         fprintf(stderr,"[Vulkan] resizing surface %08X: %ux%u pitch=%u bpp=%u -> %ux%u pitch=%u bpp=%u\n",
@@ -221,7 +217,7 @@ static struct Surface *surface(const Nv2aSurface *s,const Nv2aRenderState *rs) {
         if(active->count==MAX_SURFACES) fatal(VK_ERROR_TOO_MANY_OBJECTS,"surface limit");
         f=&active->surfaces[active->count++];
     }
-    f->guest=*s; f->zeta=rs->zeta_va; f->state=*rs; f->bytes=(size_t)s->width*s->height*4;
+    f->layout=layout; f->guest=*s; f->zeta=rs->zeta_va; f->state=*rs; f->bytes=(size_t)s->width*s->height*4;
     f->rgba=malloc(f->bytes);
     f->resident=active->host.resident_color && s->bytes_per_pixel==4;
     if(active->host.guest_color_changed || f->resident) {
@@ -411,9 +407,7 @@ static int gpu_sample_matches(const struct Surface *f,const Nv2aTexture *tx) {
     if(!active->host.sample_render_targets || !f->resident || tx->cube ||
        tx->offset!=f->guest.color_va || tx->width!=f->guest.width || tx->height!=f->guest.height)
         return 0;
-    ChVkGuestLayout layout;
-    if(ch_vk_guest_layout(f->state.surface_format,f->guest.width,f->guest.height,
-        f->guest.pitch,4,&layout)!=VK_SUCCESS) return 0;
+    const ChVkGuestLayout layout=f->layout;
     if(layout.swizzled) {
         uint32_t wx=(f->state.surface_format>>16)&255,hy=f->state.surface_format>>24;
         if(tx->color!=0x06 || tx->width!=(1u<<wx) || tx->height!=(1u<<hy)) return 0;
@@ -451,10 +445,7 @@ static void flush_sampled_colors(const Nv2aBatch *b) {
         VkResult storage=ch_vk_texture_storage_span(tx,&span,&palette);
         for(unsigned i=0;i<active->count;i++) {
             struct Surface *f=&active->surfaces[i];
-            ChVkGuestLayout layout;
-            VkResult r=ch_vk_guest_layout(f->state.surface_format,f->guest.width,f->guest.height,
-                f->guest.pitch,f->guest.bytes_per_pixel,&layout);
-            if(r!=VK_SUCCESS) fatal(r,"sampled target layout");
+            const ChVkGuestLayout layout=f->layout;
             uint64_t color=f->guest.color_va;
             int overlap=storage!=VK_SUCCESS ||
                 ((uint64_t)tx->offset<=color?color-tx->offset<span:(uint64_t)tx->offset-color<layout.span) ||
@@ -489,10 +480,7 @@ static void import_depth(struct Surface *f,int overwrite) {
         /* Cross color/depth reinterpretation needs a unified image owner.
          * Fail explicitly rather than letting either resident view go stale. */
         for(unsigned i=0;i<active->count;i++) {
-            struct Surface *c=&active->surfaces[i];ChVkGuestLayout color_layout;
-            r=ch_vk_guest_layout(c->state.surface_format,c->guest.width,c->guest.height,
-                c->guest.pitch,c->guest.bytes_per_pixel,&color_layout);
-            if(r!=VK_SUCCESS) fatal(r,"depth alias color layout");
+            struct Surface *c=&active->surfaces[i];const ChVkGuestLayout color_layout=c->layout;
             if((uint64_t)c->guest.color_va<f->state.zeta_va+depth_layout.span &&
                (uint64_t)f->state.zeta_va<c->guest.color_va+color_layout.span)
                 fatal(VK_ERROR_FEATURE_NOT_PRESENT,"color/depth storage alias");

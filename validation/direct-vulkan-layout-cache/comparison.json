@@ -1,0 +1,116 @@
+{
+  "control": [
+    {
+      "first_flip": 1321,
+      "last_flip": 1441,
+      "fps": 60.1,
+      "mean_ms": 16.64,
+      "p95_ms": 22.67,
+      "p99_ms": 25.39,
+      "max_ms": 29.02,
+      "over_20ms": 31,
+      "over_33ms": 0
+    },
+    {
+      "first_flip": 1441,
+      "last_flip": 1561,
+      "fps": 60.03,
+      "mean_ms": 16.66,
+      "p95_ms": 22.2,
+      "p99_ms": 22.59,
+      "max_ms": 24.98,
+      "over_20ms": 38,
+      "over_33ms": 0
+    },
+    {
+      "first_flip": 1561,
+      "last_flip": 1681,
+      "fps": 55.79,
+      "mean_ms": 17.92,
+      "p95_ms": 23.42,
+      "p99_ms": 24.75,
+      "max_ms": 28.17,
+      "over_20ms": 22,
+      "over_33ms": 0
+    },
+    {
+      "first_flip": 1681,
+      "last_flip": 1801,
+      "fps": 59.34,
+      "mean_ms": 16.85,
+      "p95_ms": 20.1,
+      "p99_ms": 22.73,
+      "max_ms": 22.83,
+      "over_20ms": 7,
+      "over_33ms": 0
+    },
+    {
+      "first_flip": 1801,
+      "last_flip": 1921,
+      "fps": 60.01,
+      "mean_ms": 16.66,
+      "p95_ms": 20.08,
+      "p99_ms": 23.41,
+      "max_ms": 24.66,
+      "over_20ms": 7,
+      "over_33ms": 0
+    }
+  ],
+  "candidate": [
+    {
+      "first_flip": 1321,
+      "last_flip": 1441,
+      "fps": 60.01,
+      "mean_ms": 16.66,
+      "p95_ms": 22.62,
+      "p99_ms": 23.29,
+      "max_ms": 23.44,
+      "over_20ms": 47,
+      "over_33ms": 0
+    },
+    {
+      "first_flip": 1441,
+      "last_flip": 1561,
+      "fps": 59.98,
+      "mean_ms": 16.67,
+      "p95_ms": 20.83,
+      "p99_ms": 21.67,
+      "max_ms": 24.94,
+      "over_20ms": 13,
+      "over_33ms": 0
+    },
+    {
+      "first_flip": 1561,
+      "last_flip": 1681,
+      "fps": 58.86,
+      "mean_ms": 16.99,
+      "p95_ms": 20.73,
+      "p99_ms": 25.65,
+      "max_ms": 30.67,
+      "over_20ms": 8,
+      "over_33ms": 0
+    },
+    {
+      "first_flip": 1681,
+      "last_flip": 1801,
+      "fps": 59.49,
+      "mean_ms": 16.81,
+      "p95_ms": 20.27,
+      "p99_ms": 23.88,
+      "max_ms": 47.7,
+      "over_20ms": 8,
+      "over_33ms": 1
+    },
+    {
+      "first_flip": 1801,
+      "last_flip": 1921,
+      "fps": 59.92,
+      "mean_ms": 16.69,
+      "p95_ms": 20.07,
+      "p99_ms": 20.81,
+      "max_ms": 23.72,
+      "over_20ms": 8,
+      "over_33ms": 0
+    }
+  ]
+}

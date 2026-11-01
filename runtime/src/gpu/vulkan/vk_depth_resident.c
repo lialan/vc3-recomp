@@ -398,6 +398,19 @@ VkResult ch_vk_depth_resident_sample(ChVkDepthResident *d,const Nv2aTexture *tx)
     for(unsigned i=0;i<4;i++) if(d->image[i]) {VkResult r=single_sample(d->image[i],tx);if(r!=VK_SUCCESS)return r;}
     return VK_SUCCESS;
 }
+VkResult ch_vk_depth_resident_prepare_color(ChVkDepthResident *d,uint32_t va,size_t span) {
+    if(!d) return VK_ERROR_INITIALIZATION_FAILED;
+    /* Keep the existing active color/depth alias rejection. Inactive pooled
+     * owners, unlike the single-owner path, may still retain reused storage;
+     * publish and retire them before color becomes authoritative there. */
+    VkResult r=single_check_color(d->image[d->current],va,span);
+    if(r!=VK_SUCCESS) return r;
+    if(d->multiple) for(unsigned i=0;i<4;i++) if(i!=d->current && d->image[i] &&
+        single_check_color(d->image[i],va,span)!=VK_SUCCESS) {
+        r=single_release(d->image[i]);if(r!=VK_SUCCESS)return r;
+    }
+    return VK_SUCCESS;
+}
 VkResult ch_vk_depth_resident_check_color(const ChVkDepthResident *d,uint32_t va,size_t span) {
     if(!d)return VK_ERROR_INITIALIZATION_FAILED;
     for(unsigned i=0;i<4;i++) if(d->image[i]) {VkResult r=single_check_color(d->image[i],va,span);if(r!=VK_SUCCESS)return r;}

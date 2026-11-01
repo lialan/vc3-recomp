@@ -50,6 +50,9 @@ VkResult ch_vk_depth_resident_release(ChVkDepthResident *);
 VkResult ch_vk_depth_resident_sample(ChVkDepthResident *,const Nv2aTexture *);
 /* Color/depth reinterpretation requires a unified owner not provided here. */
 VkResult ch_vk_depth_resident_check_color(const ChVkDepthResident *,uint32_t va,size_t span);
+/* Publish and retire inactive pooled views before color reuse; active
+ * color/depth reinterpretation remains unsupported, as in single-owner mode. */
+VkResult ch_vk_depth_resident_prepare_color(ChVkDepthResident *,uint32_t va,size_t span);
 void ch_vk_depth_resident_stats(const ChVkDepthResident *,ChVkDepthResidentStats *);
 /* Release first, while the target and serialized queue are still alive. */
 void ch_vk_depth_resident_destroy(ChVkDepthResident *);

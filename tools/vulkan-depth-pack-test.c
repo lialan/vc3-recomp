@@ -261,8 +261,13 @@ int ch_test_depth_fragment(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,ui
             REQUIRE(ch_vk_target_write_z24s8(peer,output,n)==VK_SUCCESS);
             REQUIRE(ch_vk_depth_resident_dirty(owner,peer)==VK_SUCCESS);
             ch_vk_depth_resident_stats(owner,&stats);REQUIRE(stats.writebacks==writes);
-            REQUIRE(ch_vk_depth_resident_release(owner)==VK_SUCCESS);
+            REQUIRE(ch_vk_depth_resident_bind(owner,target,&surface,&state)==VK_SUCCESS);
+            REQUIRE(ch_vk_depth_resident_prepare_color(owner,other.zeta_va,n*4)==VK_SUCCESS);
+            REQUIRE(ch_vk_depth_resident_check_color(owner,other.zeta_va,n*4)==VK_SUCCESS);
+            REQUIRE(!ch_vk_depth_resident_target_dirty(owner,peer));
             REQUIRE(!memcmp((char *)guest+other.zeta_va,output,n*4));
+            REQUIRE(ch_vk_depth_resident_prepare_color(owner,state.zeta_va,n*4)==VK_ERROR_FEATURE_NOT_PRESENT);
+            REQUIRE(ch_vk_depth_resident_release(owner)==VK_SUCCESS);
         }
         ch_vk_depth_resident_destroy(owner);owner=NULL;free(guest);guest=NULL;
         ch_vk_target_destroy(peer);peer=NULL;
