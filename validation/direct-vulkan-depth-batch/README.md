@@ -538,3 +538,35 @@ binary and the previous31-entry extended autokey sequence, session24082. Do not
 run other GPU workloads until terminal. Check pacing, captures, and failures;
 this scripted run includes play/death/continue/attract, not uninterrupted combat.
 No headset/device use. Default remains legacy compute pending further acceptance.
+
+## Fragment-depth long-run result and remaining pacing work
+
+/tmp/vc3-fragment-depth-extended completed7200 frames, exit0, same immutable
+binary as the2400-frame pair. Session24082 is terminal. All GPU/fixture sessions
+are terminal. Shared fragment mode commit025c714; no headset activity.
+
+The repeat's initial combat windows1321/1441/1561/1681 reached
+56.61/57.97/58.28/55.50 FPS (p95=21.41/21.02/20.36/20.48ms). Later windows
+6601..7081 are~60FPS, p95~21-22ms. But middle windows4081/4201/4321/4441/4561/4681
+were34.43/35.32/42.12/35.68/45.59/47.50FPS. Loading max1.71s; isolated later
+spikes still reach~130-287ms. Zero per-draw quantization conversions throughout.
+This is good throughput progress, NOT completion of the pacing goal.
+
+Capture4560 is the intro conversation/video panel (Janet, "Enter from the door
+on the right"), not active combat. Capture5040 is active combat with3health and
+2credits;5520 shows a shot/hit flash with1health and4credits. Do not reuse the old
+run's scene labels: this run's timeline differs. Around4380..4440 the backend
+reported26k-31k batches per profile interval, texture handling182-221ms, raster
+66-69ms, imports146ms. Texture uploads increased60 over60frames. These are clues,
+not a CPU/GPU bottleneck conclusion. Next action: sample the executing game
+thread during~4080..4680 and inspect pipeline compilation contributions, before
+choosing the next shared optimization (possible texture lookup/submission costs
+or persistent pipeline compilation cache). Keep the opt-in mode's native-D24
+comparison contract explicit; do not silently fold it into the legacy oracle.
+
+The current expanded fixture also passed on KosmicKrisp after the read-only
+cases were added: /tmp/vc3-fragment-readonly-kosmickrisp.log,256 constant-depth
+cases against the CPU incoming-depth oracle, specialized/no-alpha variants,
+64draws/onebatch, exact stencil/query behavior and no post-draw conversions.
+Native lavapipe384 diverse-gradient/constant cases remain passed. Whole-game
+pixel equality and hardware acceptance are not established by these fixtures.
