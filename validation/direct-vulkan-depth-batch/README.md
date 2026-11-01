@@ -408,3 +408,31 @@ A fresh same-binary pair with the isolated constructor is now running sequential
 /tmp/vc3-input-optin-vc3, session 2058. Do not overlap GPU work. This pair changes
 both quantization mode and its required allocation usage, as real configuration
 selection does. Compute remains default. No headset/device activity.
+
+## Isolated-allocation comparison and CPU validation improvement
+
+/tmp/vc3-input-optin-off and -on both completed 2400 frames with identical binary
+SHA256 and exit 0. Late 1921..2041/2041..2161/2161..2281 windows: see reports;
+inline is 29.90/29.52/30.01 FPS, compute is roughly 33 FPS. The same-pass path is
+not promoted. Both GPU alternatives remain explicit experiments; ordinary
+constructors and compute behavior preserve the previous allocation policy.
+All game runs are terminal; no headset/device use.
+
+The shared CPU depth-store validation now reduces an invalid flag across the
+input, allowing vectorization while rejecting the entire store before touching
+guest memory. Actual Z24/Z16 rounding and output loops are unchanged. Clang -O3
+reports width4/interleave4 vectorization for this validation loop. A/B/B/A,
+512 calls at640x480 each, no concurrent game/GPU work:
+reference .223/.215 ms per store, candidate .179/.176; load .110-.112 ms unchanged,
+checksums equal. Sources, binaries, compiler remarks and results are under
+/tmp/vc3-depth-validation-bench. This is a CPU microbenchmark, not a measured
+whole-game FPS improvement. No platform intrinsics or game-specific policy.
+
+vulkan_guest_layout_test passes with NaN, +/-infinity, negative subnormal and
+just-above-one values at every position in the32-element input, each preserving
+all guest bytes; negative zero remains accepted with identical output. Shared
+backend full-memory tests pass with validation/sync validation requested
+(/tmp/vc3-depth-validation-backend.log), plus Mac main and Android offscreen
+builds. Remaining performance work still includes frame pacing and larger GPU
+submission/roundtrip cost; current local evidence does not justify a smooth60FPS
+claim or Quest acceptance.

@@ -71,9 +71,17 @@ int main(void)
     memcpy(before,guest,sizeof guest);
     CHECK(ch_vk_guest_depth_store(&surface,&state,guest,256+127,depth,stencil)!=VK_SUCCESS);
     CHECK(!memcmp(before,guest,sizeof guest));
-    depth[31]=NAN;
-    CHECK(ch_vk_guest_depth_store(&surface,&state,guest,sizeof guest,depth,stencil)!=VK_SUCCESS);
-    CHECK(!memcmp(before,guest,sizeof guest));depth[31]=1;
+    const float invalid_depth[]={NAN,INFINITY,-INFINITY,-0x1p-149f,0x1.000002p0f};
+    for(unsigned bad=0;bad<sizeof invalid_depth/sizeof invalid_depth[0];bad++) {
+        for(unsigned lane=0;lane<32;lane++) {
+            float saved=depth[lane];depth[lane]=invalid_depth[bad];
+            CHECK(ch_vk_guest_depth_store(&surface,&state,guest,sizeof guest,depth,stencil)==VK_ERROR_INITIALIZATION_FAILED);
+            CHECK(!memcmp(before,guest,sizeof guest));depth[lane]=saved;
+        }
+    }
+    depth[0]=-0.0f;
+    CHECK(ch_vk_guest_depth_store(&surface,&state,guest,sizeof guest,depth,stencil)==VK_SUCCESS);
+    CHECK(!memcmp(before,guest,sizeof guest));depth[0]=0.0f;
     state.surface_format=0x110;state.zeta_va=8;state.zeta_pitch=20;
     CHECK(ch_vk_guest_z24s8_load(&surface,&state,guest,sizeof guest,got)==VK_ERROR_FORMAT_NOT_SUPPORTED);
     memset(guest,0xa5,sizeof guest);

@@ -55,7 +55,12 @@ VkResult ch_vk_guest_depth_store(const Nv2aSurface *s,const Nv2aRenderState *rs,
     if(!depth || !stencil) return VK_ERROR_INITIALIZATION_FAILED;
     ChVkGuestLayout layout;
     VkResult r=validate(s,rs,guest,bytes,&layout); if(r!=VK_SUCCESS) return r;
-    for(size_t i=0;i<(size_t)s->width*s->height;i++) if(!isfinite(depth[i]) || depth[i]<0 || depth[i]>1) return VK_ERROR_INITIALIZATION_FAILED;
+    /* Validate the whole input before touching guest memory. Reducing the
+     * invalid flag lets compilers vectorize the normal finite [0,1] case. */
+    unsigned invalid=0;
+    for(size_t i=0;i<(size_t)s->width*s->height;i++)
+        invalid|=!isfinite(depth[i]) || depth[i]<0 || depth[i]>1;
+    if(invalid) return VK_ERROR_INITIALIZATION_FAILED;
     /* Linear guest surfaces are ordinary RAM. Copy unaligned words safely,
      * retaining the scalar double-precision rounding contract. Specializing
      * the format outside the loop permits vectorization and avoids repeated
