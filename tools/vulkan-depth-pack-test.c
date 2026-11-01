@@ -116,13 +116,13 @@ int ch_test_depth_fragment(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,ui
         }
         // Shared owner must preserve per-component guest edits in Morton
         // order, including GPU copies to a second image and back to linear.
-        guest=malloc((size_t)n*4+4);REQUIRE(guest);
+        guest=malloc((size_t)n*8+8);REQUIRE(guest);
         for(unsigned i=0;i<n;i++) {seed=seed*1664525u+1013904223u;input[i]=seed;}
         memcpy((char *)guest+4,input,n*4);
         Nv2aSurface surface={.width=w,.height=h,.pitch=w*4,.bytes_per_pixel=4};
         unsigned wx=0,hy=0;while((1u<<wx)<w)wx++;while((1u<<hy)<h)hy++;
         Nv2aRenderState state={.surface_format=0x228|(wx<<16)|(hy<<24),.zeta_va=4,.zeta_pitch=w*4};
-        REQUIRE(ch_vk_depth_resident_create(guest,(size_t)n*4+4,&owner)==VK_SUCCESS);
+        REQUIRE(ch_vk_depth_resident_create(guest,(size_t)n*8+8,&owner)==VK_SUCCESS);
         ch_vk_depth_resident_gpu_layout(owner,1);
         REQUIRE(ch_vk_depth_resident_bind(owner,target,&surface,&state)==VK_SUCCESS);
         REQUIRE(ch_vk_target_read_z24s8(target,output,n)==VK_SUCCESS && !memcmp(input,output,n*4));
@@ -145,11 +145,54 @@ int ch_test_depth_fragment(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,ui
         REQUIRE(ch_vk_depth_resident_bind(owner,peer,&surface,&state)==VK_SUCCESS);
         REQUIRE(ch_vk_target_read_z24s8(peer,input,n)==VK_SUCCESS && !memcmp(input,output,n*4));
         REQUIRE(ch_vk_depth_resident_release(owner)==VK_SUCCESS);
+        ch_vk_depth_resident_reuse_clean(owner,1);
+        for(unsigned layout=0;layout<2;layout++) {
+            state.surface_format=layout?(0x228|(wx<<16)|(hy<<24)):0x128;
+            Nv2aRenderState other=state;other.zeta_va=4+n*4;
+            for(unsigned i=0;i<n;i++) input[i]=0x40000031;
+            memcpy((char *)guest+4,input,n*4);memcpy((char *)guest+other.zeta_va,input,n*4);
+            REQUIRE(ch_vk_depth_resident_bind(owner,target,&surface,&state)==VK_SUCCESS);
+            for(unsigned i=0;i<n;i++) input[i]=0x60000051;
+            REQUIRE(ch_vk_target_write_z24s8(target,input,n)==VK_SUCCESS);
+            REQUIRE(ch_vk_depth_resident_dirty(owner,target)==VK_SUCCESS);
+            REQUIRE(ch_vk_depth_resident_bind(owner,peer,&surface,&other)==VK_SUCCESS);
+            REQUIRE(!memcmp((char *)guest+4,input,n*4)); // published before dormancy
+            ch_vk_depth_resident_stats(owner,&stats);uint64_t hits=stats.clean_reuses,imports=stats.imports;
+            REQUIRE(ch_vk_depth_resident_bind(owner,target,&surface,&state)==VK_SUCCESS);
+            ch_vk_depth_resident_stats(owner,&stats);REQUIRE(stats.clean_reuses==hits+1 && stats.imports==imports);
+            REQUIRE(ch_vk_target_read_z24s8(target,output,n)==VK_SUCCESS && !memcmp(input,output,n*4));
+            REQUIRE(ch_vk_depth_resident_bind(owner,peer,&surface,&other)==VK_SUCCESS);
+            input[0]^=0x123456ff;memcpy((char *)guest+4,input,4); // dormant CPU edit
+            ch_vk_depth_resident_stats(owner,&stats);imports=stats.imports;hits=stats.clean_reuses;
+            REQUIRE(ch_vk_depth_resident_bind(owner,target,&surface,&state)==VK_SUCCESS);
+            ch_vk_depth_resident_stats(owner,&stats);REQUIRE(stats.imports==imports+1 && stats.clean_reuses==hits);
+            REQUIRE(ch_vk_target_read_z24s8(target,output,n)==VK_SUCCESS && !memcmp(input,output,n*4));
+            // A GPU copy into the dormant target must invalidate its old image key.
+            REQUIRE(ch_vk_depth_resident_bind(owner,peer,&surface,&other)==VK_SUCCESS);
+            REQUIRE(ch_vk_depth_resident_bind(owner,target,&surface,&other)==VK_SUCCESS);
+            ch_vk_depth_resident_stats(owner,&stats);imports=stats.imports;hits=stats.clean_reuses;
+            REQUIRE(ch_vk_depth_resident_bind(owner,target,&surface,&state)==VK_SUCCESS);
+            ch_vk_depth_resident_stats(owner,&stats);REQUIRE(stats.imports==imports+1 && stats.clean_reuses==hits);
+            REQUIRE(ch_vk_target_read_z24s8(target,output,n)==VK_SUCCESS && !memcmp(input,output,n*4));
+            // A publication through partially overlapping storage changes the snapshot.
+            other.zeta_va=8;
+            REQUIRE(ch_vk_depth_resident_bind(owner,peer,&surface,&other)==VK_SUCCESS);
+            for(unsigned i=0;i<n;i++) output[i]=0x200000b7;
+            REQUIRE(ch_vk_target_write_z24s8(peer,output,n)==VK_SUCCESS);
+            REQUIRE(ch_vk_depth_resident_dirty(owner,peer)==VK_SUCCESS);
+            ch_vk_depth_resident_stats(owner,&stats);imports=stats.imports;hits=stats.clean_reuses;
+            REQUIRE(ch_vk_depth_resident_bind(owner,target,&surface,&state)==VK_SUCCESS);
+            ch_vk_depth_resident_stats(owner,&stats);REQUIRE(stats.imports==imports+(n>1) && stats.clean_reuses==hits+(n==1));
+            memcpy(input,(char *)guest+4,n*4);
+            REQUIRE(ch_vk_target_read_z24s8(target,output,n)==VK_SUCCESS && !memcmp(input,output,n*4));
+            REQUIRE(ch_vk_depth_resident_release(owner)==VK_SUCCESS);
+        }
         ch_vk_depth_resident_destroy(owner);owner=NULL;free(guest);guest=NULL;
         ch_vk_target_destroy(peer);peer=NULL;
         REQUIRE(ch_vk_target_color_layout(target,3)==VK_ERROR_FEATURE_NOT_PRESENT);
         ch_vk_target_destroy(target);target=NULL;free(input);input=NULL;free(output);output=NULL;free(depth);depth=NULL;free(stencil);stencil=NULL;free(rgba);rgba=NULL;
     }
+    puts("PASS: bounded clean depth reuse preserves publication, dormant CPU edits, GPU copy invalidation and partial overlap for D32/D24 linear/Morton images");
     puts("PASS: GPU linear/Morton RGBA/BGRA byte roundtrip and D32/D24 linear/Morton Z24S8 exact roundtrip, owner CPU component edits/GPU copies/layout changes, float packing, stencil, odd sizes, repeated staging reuse, combined pending depth/color readback");failed=0;
 done:
     if(owner) ch_vk_depth_resident_release(owner);ch_vk_depth_resident_destroy(owner);free(guest);ch_vk_target_destroy(peer);

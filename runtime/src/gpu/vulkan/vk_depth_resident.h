@@ -3,7 +3,7 @@
 #include "vk_target.h"
 #include "../guest_write_watch.h"
 typedef struct ChVkDepthResident ChVkDepthResident;
-typedef struct {uint64_t imports,writebacks,cpu_merges,binds,gpu_copies,clear_skips;
+typedef struct {uint64_t imports,writebacks,cpu_merges,binds,gpu_copies,clear_skips,clean_reuses;
     /* Index: bit1 different target image, bit0 overlapping guest storage. */
     uint64_t switches[4],dirty_switches[4];
     /* Guest transfer work only; row memcpy and CPU edit comparisons excluded. */
@@ -20,6 +20,9 @@ VkResult ch_vk_depth_resident_bind(ChVkDepthResident *,ChVkTarget *,const Nv2aSu
  * before any other owner operation. Reinterpreted old storage still publishes;
  * exact superseded storage and the new target's old pixels need no import. */
 VkResult ch_vk_depth_resident_bind_clear(ChVkDepthResident *,ChVkTarget *,const Nv2aSurface *,const Nv2aRenderState *);
+/* Optional bounded clean-image reuse: four borrowed targets / 16 MiB of raw
+ * snapshots. Release before any target destruction or external depth mutation. */
+void ch_vk_depth_resident_reuse_clean(ChVkDepthResident *,int enabled);
 /* Diagnostic synchronous roundtrip control. Default is enabled. */
 void ch_vk_depth_resident_gpu_copies(ChVkDepthResident *,int enabled);
 /* Enable before binding; full Morton packed transfers use GPU layout conversion. */

@@ -5,6 +5,8 @@
 #include "vk_texture_cache.h"
 #include <stdlib.h>
 #include <string.h>
+enum { CLEAN_DEPTH_SLOTS=4, CLEAN_DEPTH_BYTES=16*1024*1024 };
+struct CleanDepth {ChVkTarget *target;Nv2aSurface surface;Nv2aRenderState state;uint8_t *raw;size_t span;};
 struct ChVkDepthResident {
     void *guest;size_t bytes;
     ChVkTarget *target;
@@ -12,8 +14,43 @@ struct ChVkDepthResident {
     Nv2aSurface surface;Nv2aRenderState state;ChVkGuestLayout layout;
     float *depth;uint8_t *stencil,*raw,*edits;uint32_t *words;
     int dirty,gpu_copies,packed,gpu_layout,morton;
+    int reuse_clean;unsigned clean_next;size_t clean_bytes;struct CleanDepth clean[CLEAN_DEPTH_SLOTS];
     ChVkDepthResidentStats stats;
 };
+static void drop_clean(ChVkDepthResident *d,unsigned i) {
+    d->clean_bytes-=d->clean[i].span;free(d->clean[i].raw);memset(&d->clean[i],0,sizeof d->clean[i]);
+}
+static void invalidate_clean_target(ChVkDepthResident *d,ChVkTarget *target) {
+    for(unsigned i=0;i<CLEAN_DEPTH_SLOTS;i++) if(d->clean[i].target==target) drop_clean(d,i);
+}
+/* Only published images are cached. RAM remains authoritative while dormant;
+ * exact byte comparison on reuse catches edits and overlapping publications. */
+static void save_clean(ChVkDepthResident *d) {
+    if(!d->reuse_clean || !d->target || d->dirty || d->layout.span>CLEAN_DEPTH_BYTES) return;
+    invalidate_clean_target(d,d->target);
+    while(d->clean_bytes+d->layout.span>CLEAN_DEPTH_BYTES) {
+        drop_clean(d,d->clean_next);d->clean_next=(d->clean_next+1)%CLEAN_DEPTH_SLOTS;
+    }
+    unsigned i=d->clean_next;drop_clean(d,i);d->clean_next=(i+1)%CLEAN_DEPTH_SLOTS;
+    d->clean[i]=(struct CleanDepth){d->target,d->surface,d->state,d->raw,(size_t)d->layout.span};
+    d->clean_bytes+=d->layout.span;d->raw=NULL;
+}
+static uint8_t *take_clean(ChVkDepthResident *d,ChVkTarget *target,const Nv2aSurface *s,const Nv2aRenderState *rs,size_t span) {
+    uint8_t *raw=NULL;
+    for(unsigned i=0;i<CLEAN_DEPTH_SLOTS;i++) if(d->clean[i].target==target) {
+        struct CleanDepth *c=&d->clean[i];
+        if(c->surface.width==s->width && c->surface.height==s->height && c->state.zeta_va==rs->zeta_va &&
+           c->state.zeta_pitch==rs->zeta_pitch && c->state.surface_format==rs->surface_format && c->span==span &&
+           !memcmp(c->raw,(uint8_t *)d->guest+rs->zeta_va,span)) {raw=c->raw;c->raw=NULL;}
+        drop_clean(d,i);break;
+    }
+    return raw;
+}
+void ch_vk_depth_resident_reuse_clean(ChVkDepthResident *d,int enabled) {
+    if(!d || d->target) return;
+    d->reuse_clean=!!enabled;
+    for(unsigned i=0;i<CLEAN_DEPTH_SLOTS;i++) drop_clean(d,i);
+}
 static uint8_t *storage(ChVkDepthResident *d) {return (uint8_t *)d->guest+d->state.zeta_va;}
 static uint32_t word(const uint8_t *p) {
     return (uint32_t)p[0]|((uint32_t)p[1]<<8)|((uint32_t)p[2]<<16)|((uint32_t)p[3]<<24);
@@ -109,12 +146,18 @@ VkResult ch_vk_depth_resident_flush_color(ChVkDepthResident *d,void *rgba,size_t
     if(!d || !d->target || !d->dirty || !rgba) return VK_ERROR_INITIALIZATION_FAILED;
     return flush_depth(d,rgba,bytes);
 }
-VkResult ch_vk_depth_resident_release(ChVkDepthResident *d) {
+static VkResult release_current(ChVkDepthResident *d,int retain) {
     VkResult r=ch_vk_depth_resident_flush(d);
     if(r!=VK_SUCCESS) return r;
+    if(retain) save_clean(d);
     d->target=NULL;free(d->depth);free(d->stencil);free(d->words);free(d->raw);free(d->edits);
     ch_guest_write_range_destroy(d->write_range);d->write_range=NULL;
     d->depth=NULL;d->words=NULL;d->stencil=d->raw=d->edits=NULL;return VK_SUCCESS;
+}
+VkResult ch_vk_depth_resident_release(ChVkDepthResident *d) {
+    VkResult r=release_current(d,0);
+    if(r==VK_SUCCESS) for(unsigned i=0;i<CLEAN_DEPTH_SLOTS;i++) drop_clean(d,i);
+    return r;
 }
 static VkResult bind_depth(ChVkDepthResident *d,ChVkTarget *target,
     const Nv2aSurface *surface,const Nv2aRenderState *state,int overwrite) {
@@ -133,6 +176,7 @@ static VkResult bind_depth(ChVkDepthResident *d,ChVkTarget *target,
        d->state.zeta_pitch==state->zeta_pitch &&
         (d->state.surface_format&0xffffff00u)==(state->surface_format&0xffffff00u);
     if(same && overwrite) {
+        invalidate_clean_target(d,target);
         /* The following full clear supersedes every logical pixel, including
          * intervening CPU edits. Snapshot RAM so those old edits cannot be
          * misidentified as new writes after the clear. Padding is untouched. */
@@ -144,6 +188,7 @@ static VkResult bind_depth(ChVkDepthResident *d,ChVkTarget *target,
     }
     if(same && d->target==target) return observe(d);
     if(same && d->gpu_copies) {
+        invalidate_clean_target(d,target);
         /* RAM remains the last published snapshot. Merge any intervening CPU
          * component edits before transferring the exact GPU depth/stencil.
          * Completion/sample/layout boundaries still publish through flush. */
@@ -161,7 +206,7 @@ static VkResult bind_depth(ChVkDepthResident *d,ChVkTarget *target,
         d->stats.switches[kind]++;
         if(d->dirty) d->stats.dirty_switches[kind]++;
     }
-    r=ch_vk_depth_resident_release(d);
+    r=release_current(d,d->target!=target);
     if(r!=VK_SUCCESS) return r;
     uint32_t wx=(state->surface_format>>16)&255,hy=state->surface_format>>24;
     d->morton=d->gpu_layout && d->packed && layout.swizzled && wx<=15 && hy<=15 &&
@@ -171,9 +216,11 @@ static VkResult bind_depth(ChVkDepthResident *d,ChVkTarget *target,
     size_t count=(size_t)surface->width*surface->height;
     if(d->packed) d->words=malloc(count*4);
     else {d->depth=malloc(count*4);d->stencil=malloc(count);}
-    d->raw=malloc((size_t)layout.span);d->edits=malloc((size_t)layout.span);
+    uint8_t *cached=take_clean(d,target,surface,state,(size_t)layout.span);
+    int reused=cached && !overwrite;
+    d->raw=cached?cached:malloc((size_t)layout.span);d->edits=malloc((size_t)layout.span);
     if((d->packed?!d->words:(!d->depth || !d->stencil)) || !d->raw || !d->edits) return VK_ERROR_OUT_OF_HOST_MEMORY;
-    if(!overwrite) {
+    if(!overwrite && !reused) {
         if(d->morton) memcpy(d->words,(uint8_t *)d->guest+state->zeta_va,count*4);
         else r=d->packed?ch_vk_guest_z24s8_load(surface,state,d->guest,d->bytes,d->words):
             ch_vk_guest_depth_load(surface,state,d->guest,d->bytes,d->depth,d->stencil);
@@ -184,7 +231,7 @@ static VkResult bind_depth(ChVkDepthResident *d,ChVkTarget *target,
     d->surface=*surface;d->state=*state;d->layout=layout;d->target=target;
     memcpy(d->raw,storage(d),(size_t)layout.span);
     d->write_range=ch_guest_write_range_create(d->watch,storage(d),(size_t)layout.span);
-    if(overwrite) d->stats.clear_skips++;else {
+    if(overwrite) d->stats.clear_skips++;else if(reused) d->stats.clean_reuses++;else {
         d->stats.imports++;
         if(layout.swizzled && !d->morton) d->stats.cpu_layout_pixels+=count;
         if(!d->packed) d->stats.cpu_float_pixels+=count;
@@ -225,5 +272,7 @@ void ch_vk_depth_resident_stats(const ChVkDepthResident *d,ChVkDepthResidentStat
 }
 void ch_vk_depth_resident_destroy(ChVkDepthResident *d) {
     if(!d) return;
+    for(unsigned i=0;i<CLEAN_DEPTH_SLOTS;i++) drop_clean(d,i);
+    ch_guest_write_range_destroy(d->write_range);
     free(d->depth);free(d->stencil);free(d->words);free(d->raw);free(d->edits);free(d);
 }

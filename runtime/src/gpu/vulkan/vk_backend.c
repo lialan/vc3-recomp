@@ -620,10 +620,10 @@ static void flip(void) {
     }
     if(active->zeta && active->profile.enabled && (active->frames==1 || active->frames%60==0)) {
         ChVkDepthResidentStats stats;ch_vk_depth_resident_stats(active->zeta,&stats);
-        fprintf(stderr,"[Vulkan depth residency] binds=%llu imports=%llu writebacks=%llu CPU merges=%llu GPU copies=%llu clear skips=%llu\n",
+        fprintf(stderr,"[Vulkan depth residency] binds=%llu imports=%llu writebacks=%llu CPU merges=%llu GPU copies=%llu clear skips=%llu clean reuses=%llu\n",
             (unsigned long long)stats.binds,(unsigned long long)stats.imports,
             (unsigned long long)stats.writebacks,(unsigned long long)stats.cpu_merges,(unsigned long long)stats.gpu_copies,
-            (unsigned long long)stats.clear_skips);
+            (unsigned long long)stats.clear_skips,(unsigned long long)stats.clean_reuses);
         fprintf(stderr,"[Vulkan CPU resident depth] layout_pixels=%llu float_pixels=%llu (cumulative)\n",
             (unsigned long long)stats.cpu_layout_pixels,(unsigned long long)stats.cpu_float_pixels);
         fprintf(stderr,"[Vulkan depth switches] same-image disjoint/overlap=%llu/%llu different-image disjoint/overlap=%llu/%llu dirty=%llu/%llu/%llu/%llu\n",
@@ -745,6 +745,7 @@ VkResult ch_vk_backend_create(const ChVkBackendConfig *config,ChVkBackend **out)
         r=ch_vk_depth_resident_packed(b->zeta,config->gpu_depth_pack && !config->depth_float_transfers);
         if(r!=VK_SUCCESS) {ch_vk_depth_resident_destroy(b->zeta);free(b);return r;}
         ch_vk_depth_resident_gpu_copies(b->zeta,!config->strict_depth_switches);
+        ch_vk_depth_resident_reuse_clean(b->zeta,config->reuse_clean_depth);
     }
     if(config->cache_textures) {
         ChVkTextureCacheConfig texture_config={.physical=config->physical,.device=config->device,
