@@ -89,3 +89,9 @@ function(chihiro_runtime target generated_dir)
         target_link_options(${target} PRIVATE -Wl,-export_dynamic)
     endif()
 endfunction()
+
+# Direct Vulkan remains optional alongside the reference OpenGL runtime.
+option(CHIHIRO_BUILD_VULKAN "Build experimental Vulkan backend library" OFF)
+if(CHIHIRO_BUILD_VULKAN)
+    add_subdirectory(src/gpu/vulkan)
+endif()

@@ -1,0 +1,9 @@
+{
+  "apk": "/tmp/vc3-vulkan-android-probe/VulkanRuntimeProbe.apk",
+  "sha256": "ba8ecd449a46783c653ecf2d075926b363b4cfbc0dd6aa24b87b8ff5cba87d13",
+  "package": "org.vc3recomp.vulkanprobe",
+  "build_and_signature_verified": true,
+  "installed": false,
+  "launched": false,
+  "device_availability": "Asleep, VC3 last focused. No UI takeover performed. Confirm availability before launching."
+}

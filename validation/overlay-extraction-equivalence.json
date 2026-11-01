@@ -1,0 +1,8 @@
+{
+  "preprocessed_reference_unchanged": false,
+  "before_sha256": "fc4831a46ab360df53952297e049e9f9f50aa41c9d2c342d384a88fa46501517",
+  "after_sha256": "70e282210807e51e5226674a3e581cd8fc7237a6864e1ada0a4c9b58079333bb",
+  "scope": "Source extraction equivalence only; no GPU visual parity claim",
+  "preprocessed_nonblank_lines_identical": true,
+  "difference": "Blank lines introduced at shared include boundaries only"
+}

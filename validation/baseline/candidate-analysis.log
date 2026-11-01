@@ -1,0 +1,308 @@
+JSON exported to: /Users/lialan/Downloads/VR/vc3-vulkan/games/vc3/analysis/xbe.json
+  Seed file /Users/lialan/Downloads/VR/vc3-vulkan/games/vc3/seed_functions.json: 14 addresses
+Phase 1: Loading binary image...
+  Loaded: /Users/lialan/Downloads/VR/VC3/extracted/vc3.xbe
+  Base: 0x00010000  Entry: 0x000B6407
+  Sections: 13  Kernel imports: 110
+  Target sections: .text, D3D, D3DX, XGRPH, DSOUND, PSGSFD00, PSGSFD_I, PSGSFD_B, PSGSFD_P, XPP, DOLBY
+
+Phase 2: Populating labels...
+  Kernel import labels: 110
+  String labels: 1588
+  Total labels: 1699
+
+Phase 3: Linear sweep disassembly...
+  .text: 0x00011000 (981.0 KB)...  .text: 0x00011000 (981.0 KB)... 0%  .text: 0x00011000 (981.0 KB)... 11%  .text: 0x00011000 (981.0 KB)... 11%  .text: 0x00011000 (981.0 KB)... 12%  .text: 0x00011000 (981.0 KB)... 25%  .text: 0x00011000 (981.0 KB)... 25%  .text: 0x00011000 (981.0 KB)... 25%  .text: 0x00011000 (981.0 KB)... 25%  .text: 0x00011000 (981.0 KB)... 25%  .text: 0x00011000 (981.0 KB)... 25%  .text: 0x00011000 (981.0 KB)... 27%  .text: 0x00011000 (981.0 KB)... 31%  .text: 0x00011000 (981.0 KB)... 38%  .text: 0x00011000 (981.0 KB)... 46%  .text: 0x00011000 (981.0 KB)... 49%  .text: 0x00011000 (981.0 KB)... 51%  .text: 0x00011000 (981.0 KB)... 51%  .text: 0x00011000 (981.0 KB)... 53%  .text: 0x00011000 (981.0 KB)... 56%  .text: 0x00011000 (981.0 KB)... 59%  .text: 0x00011000 (981.0 KB)... 61%  .text: 0x00011000 (981.0 KB)... 61%  .text: 0x00011000 (981.0 KB)... 63%  .text: 0x00011000 (981.0 KB)... 64%  .text: 0x00011000 (981.0 KB)... 76%  .text: 0x00011000 (981.0 KB)... 85%  .text: 0x00011000 (981.0 KB)... 87%  .text: 0x00011000 (981.0 KB)... 88%  .text: 0x00011000 (981.0 KB)... 88%  .text: 0x00011000 (981.0 KB)... 88%  .text: 0x00011000 (981.0 KB)... 88%  .text: 0x00011000 (981.0 KB)... 91%  .text: 0x00011000 (981.0 KB)... 91%  .text: 0x00011000 (981.0 KB)... 91%  .text: 0x00011000 (981.0 KB)... 91%  .text: 0x00011000 (981.0 KB)... 92%  .text: 0x00011000 (981.0 KB)... 93%  .text: 0x00011000 (981.0 KB)... 93%  .text: 0x00011000 (981.0 KB)... 93%  .text: 0x00011000 (981.0 KB)... 94%  .text: 0x00011000 (981.0 KB)... 94%  .text: 0x00011000 (981.0 KB)... 94%  .text: 0x00011000 (981.0 KB)... 94%  .text: 0x00011000 (981.0 KB)... 94%  .text: 0x00011000 (981.0 KB)... 94%  .text: 0x00011000 (981.0 KB)... 95%  .text: 0x00011000 (981.0 KB)... 99%  .text: 0x00011000 (981.0 KB)... 100%  .text: 0x00011000 (981.0 KB)... 100%  .text: 335,886 instructions
+  D3D: 0x00106420 (78.6 KB)...  D3D: 0x00106420 (78.6 KB)... 92%  D3D: 0x00106420 (78.6 KB)... 92%  D3D: 0x00106420 (78.6 KB)... 93%  D3D: 0x00106420 (78.6 KB)... 94%  D3D: 0x00106420 (78.6 KB)... 95%  D3D: 0x00106420 (78.6 KB)... 95%  D3D: 0x00106420 (78.6 KB)... 95%  D3D: 0x00106420 (78.6 KB)... 99%  D3D: 0x00106420 (78.6 KB)... 100%  D3D: 0x00106420 (78.6 KB)... 100%  D3D: 21,882 instructions
+  D3DX: 0x00119EC0 (48.5 KB)...  D3DX: 0x00119EC0 (48.5 KB)... 97%  D3DX: 0x00119EC0 (48.5 KB)... 99%  D3DX: 0x00119EC0 (48.5 KB)... 100%  D3DX: 18,376 instructions
+  XGRPH: 0x001260E0 (4.6 KB)...  XGRPH: 0x001260E0 (4.6 KB)... 100%  XGRPH: 0x001260E0 (4.6 KB)... 100%  XGRPH: 1,803 instructions
+  DSOUND: 0x00127360 (39.1 KB)...  DSOUND: 0x00127360 (39.1 KB)... 81%  DSOUND: 0x00127360 (39.1 KB)... 81%  DSOUND: 0x00127360 (39.1 KB)... 82%  DSOUND: 0x00127360 (39.1 KB)... 82%  DSOUND: 0x00127360 (39.1 KB)... 82%  DSOUND: 0x00127360 (39.1 KB)... 82%  DSOUND: 0x00127360 (39.1 KB)... 82%  DSOUND: 0x00127360 (39.1 KB)... 83%  DSOUND: 0x00127360 (39.1 KB)... 83%  DSOUND: 0x00127360 (39.1 KB)... 85%  DSOUND: 0x00127360 (39.1 KB)... 85%  DSOUND: 0x00127360 (39.1 KB)... 86%  DSOUND: 0x00127360 (39.1 KB)... 86%  DSOUND: 0x00127360 (39.1 KB)... 88%  DSOUND: 0x00127360 (39.1 KB)... 88%  DSOUND: 0x00127360 (39.1 KB)... 89%  DSOUND: 0x00127360 (39.1 KB)... 89%  DSOUND: 0x00127360 (39.1 KB)... 89%  DSOUND: 0x00127360 (39.1 KB)... 91%  DSOUND: 0x00127360 (39.1 KB)... 91%  DSOUND: 0x00127360 (39.1 KB)... 93%  DSOUND: 0x00127360 (39.1 KB)... 93%  DSOUND: 0x00127360 (39.1 KB)... 93%  DSOUND: 0x00127360 (39.1 KB)... 95%  DSOUND: 0x00127360 (39.1 KB)... 96%  DSOUND: 0x00127360 (39.1 KB)... 96%  DSOUND: 0x00127360 (39.1 KB)... 96%  DSOUND: 0x00127360 (39.1 KB)... 96%  DSOUND: 0x00127360 (39.1 KB)... 96%  DSOUND: 0x00127360 (39.1 KB)... 97%  DSOUND: 0x00127360 (39.1 KB)... 97%  DSOUND: 0x00127360 (39.1 KB)... 97%  DSOUND: 0x00127360 (39.1 KB)... 98%  DSOUND: 0x00127360 (39.1 KB)... 98%  DSOUND: 0x00127360 (39.1 KB)... 98%  DSOUND: 0x00127360 (39.1 KB)... 99%  DSOUND: 0x00127360 (39.1 KB)... 99%  DSOUND: 0x00127360 (39.1 KB)... 99%  DSOUND: 0x00127360 (39.1 KB)... 99%  DSOUND: 0x00127360 (39.1 KB)... 99%  DSOUND: 0x00127360 (39.1 KB)... 100%  DSOUND: 0x00127360 (39.1 KB)... 100%  DSOUND: 13,911 instructions
+  PSGSFD00: 0x00131000 (12.8 KB)...  PSGSFD00: 0x00131000 (12.8 KB)... 100%  PSGSFD00: 0x00131000 (12.8 KB)... 100%  PSGSFD00: 4,439 instructions
+  PSGSFD_I: 0x00134320 (1.0 KB)...  PSGSFD_I: 0x00134320 (1.0 KB)... 100%  PSGSFD_I: 0x00134320 (1.0 KB)... 100%  PSGSFD_I: 355 instructions
+  PSGSFD_B: 0x00134700 (2.2 KB)...  PSGSFD_B: 0x00134700 (2.2 KB)... 100%  PSGSFD_B: 0x00134700 (2.2 KB)... 100%  PSGSFD_B: 790 instructions
+  PSGSFD_P: 0x00134FE0 (1.6 KB)...  PSGSFD_P: 0x00134FE0 (1.6 KB)... 100%  PSGSFD_P: 0x00134FE0 (1.6 KB)... 100%  PSGSFD_P: 545 instructions
+  XPP: 0x00135640 (42.9 KB)...  XPP: 0x00135640 (42.9 KB)... 0%  XPP: 0x00135640 (42.9 KB)... 99%  XPP: 0x00135640 (42.9 KB)... 100%  XPP: 0x00135640 (42.9 KB)... 100%  XPP: 15,185 instructions
+  DOLBY: 0x00524880 (28.4 KB)...  DOLBY: 0x00524880 (28.4 KB)... 0%  DOLBY: 0x00524880 (28.4 KB)... 0%  DOLBY: 0x00524880 (28.4 KB)... 0%  DOLBY: 0x00524880 (28.4 KB)... 1%  DOLBY: 0x00524880 (28.4 KB)... 2%  DOLBY: 0x00524880 (28.4 KB)... 2%  DOLBY: 0x00524880 (28.4 KB)... 2%  DOLBY: 0x00524880 (28.4 KB)... 3%  DOLBY: 0x00524880 (28.4 KB)... 3%  DOLBY: 0x00524880 (28.4 KB)... 4%  DOLBY: 0x00524880 (28.4 KB)... 4%  DOLBY: 0x00524880 (28.4 KB)... 7%  DOLBY: 0x00524880 (28.4 KB)... 7%  DOLBY: 0x00524880 (28.4 KB)... 8%  DOLBY: 0x00524880 (28.4 KB)... 9%  DOLBY: 0x00524880 (28.4 KB)... 9%  DOLBY: 0x00524880 (28.4 KB)... 9%  DOLBY: 0x00524880 (28.4 KB)... 9%  DOLBY: 0x00524880 (28.4 KB)... 9%  DOLBY: 0x00524880 (28.4 KB)... 10%  DOLBY: 0x00524880 (28.4 KB)... 10%  DOLBY: 0x00524880 (28.4 KB)... 10%  DOLBY: 0x00524880 (28.4 KB)... 12%  DOLBY: 0x00524880 (28.4 KB)... 12%  DOLBY: 0x00524880 (28.4 KB)... 12%  DOLBY: 0x00524880 (28.4 KB)... 13%  DOLBY: 0x00524880 (28.4 KB)... 14%  DOLBY: 0x00524880 (28.4 KB)... 14%  DOLBY: 0x00524880 (28.4 KB)... 14%  DOLBY: 0x00524880 (28.4 KB)... 15%  DOLBY: 0x00524880 (28.4 KB)... 15%  DOLBY: 0x00524880 (28.4 KB)... 16%  DOLBY: 0x00524880 (28.4 KB)... 16%  DOLBY: 0x00524880 (28.4 KB)... 16%  DOLBY: 0x00524880 (28.4 KB)... 16%  DOLBY: 0x00524880 (28.4 KB)... 16%  DOLBY: 0x00524880 (28.4 KB)... 17%  DOLBY: 0x00524880 (28.4 KB)... 17%  DOLBY: 0x00524880 (28.4 KB)... 17%  DOLBY: 0x00524880 (28.4 KB)... 17%  DOLBY: 0x00524880 (28.4 KB)... 18%  DOLBY: 0x00524880 (28.4 KB)... 19%  DOLBY: 0x00524880 (28.4 KB)... 19%  DOLBY: 0x00524880 (28.4 KB)... 19%  DOLBY: 0x00524880 (28.4 KB)... 22%  DOLBY: 0x00524880 (28.4 KB)... 23%  DOLBY: 0x00524880 (28.4 KB)... 23%  DOLBY: 0x00524880 (28.4 KB)... 23%  DOLBY: 0x00524880 (28.4 KB)... 24%  DOLBY: 0x00524880 (28.4 KB)... 24%  DOLBY: 0x00524880 (28.4 KB)... 24%  DOLBY: 0x00524880 (28.4 KB)... 24%  DOLBY: 0x00524880 (28.4 KB)... 25%  DOLBY: 0x00524880 (28.4 KB)... 25%  DOLBY: 0x00524880 (28.4 KB)... 25%  DOLBY: 0x00524880 (28.4 KB)... 26%  DOLBY: 0x00524880 (28.4 KB)... 26%  DOLBY: 0x00524880 (28.4 KB)... 27%  DOLBY: 0x00524880 (28.4 KB)... 28%  DOLBY: 0x00524880 (28.4 KB)... 28%  DOLBY: 0x00524880 (28.4 KB)... 29%  DOLBY: 0x00524880 (28.4 KB)... 29%  DOLBY: 0x00524880 (28.4 KB)... 30%  DOLBY: 0x00524880 (28.4 KB)... 30%  DOLBY: 0x00524880 (28.4 KB)... 30%  DOLBY: 0x00524880 (28.4 KB)... 30%  DOLBY: 0x00524880 (28.4 KB)... 30%  DOLBY: 0x00524880 (28.4 KB)... 32%  DOLBY: 0x00524880 (28.4 KB)... 32%  DOLBY: 0x00524880 (28.4 KB)... 34%  DOLBY: 0x00524880 (28.4 KB)... 34%  DOLBY: 0x00524880 (28.4 KB)... 35%  DOLBY: 0x00524880 (28.4 KB)... 35%  DOLBY: 0x00524880 (28.4 KB)... 36%  DOLBY: 0x00524880 (28.4 KB)... 36%  DOLBY: 0x00524880 (28.4 KB)... 37%  DOLBY: 0x00524880 (28.4 KB)... 37%  DOLBY: 0x00524880 (28.4 KB)... 37%  DOLBY: 0x00524880 (28.4 KB)... 37%  DOLBY: 0x00524880 (28.4 KB)... 37%  DOLBY: 0x00524880 (28.4 KB)... 37%  DOLBY: 0x00524880 (28.4 KB)... 38%  DOLBY: 0x00524880 (28.4 KB)... 38%  DOLBY: 0x00524880 (28.4 KB)... 38%  DOLBY: 0x00524880 (28.4 KB)... 38%  DOLBY: 0x00524880 (28.4 KB)... 39%  DOLBY: 0x00524880 (28.4 KB)... 39%  DOLBY: 0x00524880 (28.4 KB)... 40%  DOLBY: 0x00524880 (28.4 KB)... 40%  DOLBY: 0x00524880 (28.4 KB)... 41%  DOLBY: 0x00524880 (28.4 KB)... 41%  DOLBY: 0x00524880 (28.4 KB)... 41%  DOLBY: 0x00524880 (28.4 KB)... 42%  DOLBY: 0x00524880 (28.4 KB)... 42%  DOLBY: 0x00524880 (28.4 KB)... 42%  DOLBY: 0x00524880 (28.4 KB)... 43%  DOLBY: 0x00524880 (28.4 KB)... 43%  DOLBY: 0x00524880 (28.4 KB)... 44%  DOLBY: 0x00524880 (28.4 KB)... 44%  DOLBY: 0x00524880 (28.4 KB)... 44%  DOLBY: 0x00524880 (28.4 KB)... 45%  DOLBY: 0x00524880 (28.4 KB)... 45%  DOLBY: 0x00524880 (28.4 KB)... 45%  DOLBY: 0x00524880 (28.4 KB)... 46%  DOLBY: 0x00524880 (28.4 KB)... 47%  DOLBY: 0x00524880 (28.4 KB)... 50%  DOLBY: 0x00524880 (28.4 KB)... 51%  DOLBY: 0x00524880 (28.4 KB)... 52%  DOLBY: 0x00524880 (28.4 KB)... 52%  DOLBY: 0x00524880 (28.4 KB)... 52%  DOLBY: 0x00524880 (28.4 KB)... 52%  DOLBY: 0x00524880 (28.4 KB)... 52%  DOLBY: 0x00524880 (28.4 KB)... 52%  DOLBY: 0x00524880 (28.4 KB)... 52%  DOLBY: 0x00524880 (28.4 KB)... 53%  DOLBY: 0x00524880 (28.4 KB)... 53%  DOLBY: 0x00524880 (28.4 KB)... 53%  DOLBY: 0x00524880 (28.4 KB)... 53%  DOLBY: 0x00524880 (28.4 KB)... 53%  DOLBY: 0x00524880 (28.4 KB)... 54%  DOLBY: 0x00524880 (28.4 KB)... 54%  DOLBY: 0x00524880 (28.4 KB)... 55%  DOLBY: 0x00524880 (28.4 KB)... 55%  DOLBY: 0x00524880 (28.4 KB)... 55%  DOLBY: 0x00524880 (28.4 KB)... 55%  DOLBY: 0x00524880 (28.4 KB)... 55%  DOLBY: 0x00524880 (28.4 KB)... 55%  DOLBY: 0x00524880 (28.4 KB)... 56%  DOLBY: 0x00524880 (28.4 KB)... 56%  DOLBY: 0x00524880 (28.4 KB)... 56%  DOLBY: 0x00524880 (28.4 KB)... 57%  DOLBY: 0x00524880 (28.4 KB)... 58%  DOLBY: 0x00524880 (28.4 KB)... 59%  DOLBY: 0x00524880 (28.4 KB)... 59%  DOLBY: 0x00524880 (28.4 KB)... 59%  DOLBY: 0x00524880 (28.4 KB)... 59%  DOLBY: 0x00524880 (28.4 KB)... 59%  DOLBY: 0x00524880 (28.4 KB)... 59%  DOLBY: 0x00524880 (28.4 KB)... 59%  DOLBY: 0x00524880 (28.4 KB)... 59%  DOLBY: 0x00524880 (28.4 KB)... 60%  DOLBY: 0x00524880 (28.4 KB)... 60%  DOLBY: 0x00524880 (28.4 KB)... 60%  DOLBY: 0x00524880 (28.4 KB)... 60%  DOLBY: 0x00524880 (28.4 KB)... 60%  DOLBY: 0x00524880 (28.4 KB)... 60%  DOLBY: 0x00524880 (28.4 KB)... 61%  DOLBY: 0x00524880 (28.4 KB)... 61%  DOLBY: 0x00524880 (28.4 KB)... 62%  DOLBY: 0x00524880 (28.4 KB)... 62%  DOLBY: 0x00524880 (28.4 KB)... 62%  DOLBY: 0x00524880 (28.4 KB)... 63%  DOLBY: 0x00524880 (28.4 KB)... 63%  DOLBY: 0x00524880 (28.4 KB)... 63%  DOLBY: 0x00524880 (28.4 KB)... 63%  DOLBY: 0x00524880 (28.4 KB)... 63%  DOLBY: 0x00524880 (28.4 KB)... 63%  DOLBY: 0x00524880 (28.4 KB)... 63%  DOLBY: 0x00524880 (28.4 KB)... 64%  DOLBY: 0x00524880 (28.4 KB)... 64%  DOLBY: 0x00524880 (28.4 KB)... 64%  DOLBY: 0x00524880 (28.4 KB)... 64%  DOLBY: 0x00524880 (28.4 KB)... 64%  DOLBY: 0x00524880 (28.4 KB)... 64%  DOLBY: 0x00524880 (28.4 KB)... 64%  DOLBY: 0x00524880 (28.4 KB)... 64%  DOLBY: 0x00524880 (28.4 KB)... 65%  DOLBY: 0x00524880 (28.4 KB)... 65%  DOLBY: 0x00524880 (28.4 KB)... 65%  DOLBY: 0x00524880 (28.4 KB)... 65%  DOLBY: 0x00524880 (28.4 KB)... 66%  DOLBY: 0x00524880 (28.4 KB)... 66%  DOLBY: 0x00524880 (28.4 KB)... 67%  DOLBY: 0x00524880 (28.4 KB)... 67%  DOLBY: 0x00524880 (28.4 KB)... 67%  DOLBY: 0x00524880 (28.4 KB)... 67%  DOLBY: 0x00524880 (28.4 KB)... 67%  DOLBY: 0x00524880 (28.4 KB)... 68%  DOLBY: 0x00524880 (28.4 KB)... 68%  DOLBY: 0x00524880 (28.4 KB)... 68%  DOLBY: 0x00524880 (28.4 KB)... 68%  DOLBY: 0x00524880 (28.4 KB)... 68%  DOLBY: 0x00524880 (28.4 KB)... 70%  DOLBY: 0x00524880 (28.4 KB)... 70%  DOLBY: 0x00524880 (28.4 KB)... 71%  DOLBY: 0x00524880 (28.4 KB)... 73%  DOLBY: 0x00524880 (28.4 KB)... 73%  DOLBY: 0x00524880 (28.4 KB)... 74%  DOLBY: 0x00524880 (28.4 KB)... 74%  DOLBY: 0x00524880 (28.4 KB)... 74%  DOLBY: 0x00524880 (28.4 KB)... 74%  DOLBY: 0x00524880 (28.4 KB)... 74%  DOLBY: 0x00524880 (28.4 KB)... 74%  DOLBY: 0x00524880 (28.4 KB)... 75%  DOLBY: 0x00524880 (28.4 KB)... 75%  DOLBY: 0x00524880 (28.4 KB)... 75%  DOLBY: 0x00524880 (28.4 KB)... 75%  DOLBY: 0x00524880 (28.4 KB)... 75%  DOLBY: 0x00524880 (28.4 KB)... 76%  DOLBY: 0x00524880 (28.4 KB)... 76%  DOLBY: 0x00524880 (28.4 KB)... 77%  DOLBY: 0x00524880 (28.4 KB)... 77%  DOLBY: 0x00524880 (28.4 KB)... 77%  DOLBY: 0x00524880 (28.4 KB)... 78%  DOLBY: 0x00524880 (28.4 KB)... 78%  DOLBY: 0x00524880 (28.4 KB)... 78%  DOLBY: 0x00524880 (28.4 KB)... 78%  DOLBY: 0x00524880 (28.4 KB)... 78%  DOLBY: 0x00524880 (28.4 KB)... 79%  DOLBY: 0x00524880 (28.4 KB)... 79%  DOLBY: 0x00524880 (28.4 KB)... 80%  DOLBY: 0x00524880 (28.4 KB)... 80%  DOLBY: 0x00524880 (28.4 KB)... 80%  DOLBY: 0x00524880 (28.4 KB)... 81%  DOLBY: 0x00524880 (28.4 KB)... 81%  DOLBY: 0x00524880 (28.4 KB)... 82%  DOLBY: 0x00524880 (28.4 KB)... 82%  DOLBY: 0x00524880 (28.4 KB)... 82%  DOLBY: 0x00524880 (28.4 KB)... 82%  DOLBY: 0x00524880 (28.4 KB)... 82%  DOLBY: 0x00524880 (28.4 KB)... 82%  DOLBY: 0x00524880 (28.4 KB)... 82%  DOLBY: 0x00524880 (28.4 KB)... 82%  DOLBY: 0x00524880 (28.4 KB)... 82%  DOLBY: 0x00524880 (28.4 KB)... 83%  DOLBY: 0x00524880 (28.4 KB)... 83%  DOLBY: 0x00524880 (28.4 KB)... 83%  DOLBY: 0x00524880 (28.4 KB)... 83%  DOLBY: 0x00524880 (28.4 KB)... 83%  DOLBY: 0x00524880 (28.4 KB)... 83%  DOLBY: 0x00524880 (28.4 KB)... 84%  DOLBY: 0x00524880 (28.4 KB)... 84%  DOLBY: 0x00524880 (28.4 KB)... 84%  DOLBY: 0x00524880 (28.4 KB)... 85%  DOLBY: 0x00524880 (28.4 KB)... 86%  DOLBY: 0x00524880 (28.4 KB)... 86%  DOLBY: 0x00524880 (28.4 KB)... 86%  DOLBY: 0x00524880 (28.4 KB)... 86%  DOLBY: 0x00524880 (28.4 KB)... 86%  DOLBY: 0x00524880 (28.4 KB)... 87%  DOLBY: 0x00524880 (28.4 KB)... 87%  DOLBY: 0x00524880 (28.4 KB)... 87%  DOLBY: 0x00524880 (28.4 KB)... 88%  DOLBY: 0x00524880 (28.4 KB)... 88%  DOLBY: 0x00524880 (28.4 KB)... 88%  DOLBY: 0x00524880 (28.4 KB)... 88%  DOLBY: 0x00524880 (28.4 KB)... 89%  DOLBY: 0x00524880 (28.4 KB)... 89%  DOLBY: 0x00524880 (28.4 KB)... 89%  DOLBY: 0x00524880 (28.4 KB)... 90%  DOLBY: 0x00524880 (28.4 KB)... 90%  DOLBY: 0x00524880 (28.4 KB)... 90%  DOLBY: 0x00524880 (28.4 KB)... 90%  DOLBY: 0x00524880 (28.4 KB)... 90%  DOLBY: 0x00524880 (28.4 KB)... 90%  DOLBY: 0x00524880 (28.4 KB)... 91%  DOLBY: 0x00524880 (28.4 KB)... 91%  DOLBY: 0x00524880 (28.4 KB)... 91%  DOLBY: 0x00524880 (28.4 KB)... 91%  DOLBY: 0x00524880 (28.4 KB)... 91%  DOLBY: 0x00524880 (28.4 KB)... 91%  DOLBY: 0x00524880 (28.4 KB)... 91%  DOLBY: 0x00524880 (28.4 KB)... 91%  DOLBY: 0x00524880 (28.4 KB)... 91%  DOLBY: 0x00524880 (28.4 KB)... 91%  DOLBY: 0x00524880 (28.4 KB)... 91%  DOLBY: 0x00524880 (28.4 KB)... 91%  DOLBY: 0x00524880 (28.4 KB)... 92%  DOLBY: 0x00524880 (28.4 KB)... 92%  DOLBY: 0x00524880 (28.4 KB)... 92%  DOLBY: 0x00524880 (28.4 KB)... 92%  DOLBY: 0x00524880 (28.4 KB)... 92%  DOLBY: 0x00524880 (28.4 KB)... 92%  DOLBY: 0x00524880 (28.4 KB)... 92%  DOLBY: 0x00524880 (28.4 KB)... 93%  DOLBY: 0x00524880 (28.4 KB)... 93%  DOLBY: 0x00524880 (28.4 KB)... 93%  DOLBY: 0x00524880 (28.4 KB)... 93%  DOLBY: 0x00524880 (28.4 KB)... 95%  DOLBY: 0x00524880 (28.4 KB)... 95%  DOLBY: 0x00524880 (28.4 KB)... 97%  DOLBY: 0x00524880 (28.4 KB)... 97%  DOLBY: 0x00524880 (28.4 KB)... 98%  DOLBY: 0x00524880 (28.4 KB)... 100%  DOLBY: 0x00524880 (28.4 KB)... 100%  DOLBY: 12,339 instructions
+  Total: 425,511 instructions
+  Resynced past 298 embedded jump table(s)
+
+Phase 4: Building cross-references...
+  Total xrefs: 80,763
+    call: 23,537
+    cond_jump: 29,037
+    data_imm: 6,654
+    data_read: 14,033
+    jump: 6,793
+    kernel_call: 709
+
+Phase 5: Detecting functions...
+  Realigned 5 call targets the sweep stepped over (0 rejected: bytes do not decode as a function)
+  6 function address(es) installed into indirect-call slots
+  conditional-branch orphans recovered as alias entries
+  tail-jump pass: +137 standalone, 8 aliases
+  tail-jump pass: +14 standalone, 8 aliases
+  tail-jump pass: +7 standalone, 8 aliases
+  tail-jump pass: +1 standalone, 8 aliases
+  1046 function address(es) found in data tables
+  474 function address(es) taken as an immediate
+  37 function(s) found right after a switch table
+  functions recovered that follow a ret with no padding
+  conditional-branch orphans recovered as alias entries
+  tail-jump pass: +13 standalone, 1086 aliases
+  conditional-branch orphans recovered as alias entries
+  tail-jump pass: +0 standalone, 1097 aliases
+  Seeded 14 function addresses
+  6 function address(es) installed into indirect-call slots
+  conditional-branch orphans recovered as alias entries
+  tail-jump pass: +138 standalone, 8 aliases
+  tail-jump pass: +14 standalone, 8 aliases
+  tail-jump pass: +7 standalone, 8 aliases
+  tail-jump pass: +1 standalone, 8 aliases
+  1041 function address(es) found in data tables
+  468 function address(es) taken as an immediate
+  37 function(s) found right after a switch table
+  functions recovered that follow a ret with no padding
+  conditional-branch orphans recovered as alias entries
+  tail-jump pass: +12 standalone, 1079 aliases
+  conditional-branch orphans recovered as alias entries
+  tail-jump pass: +0 standalone, 1088 aliases
+  Total functions: 6,706
+    call_target: 4,264
+    cc_boundary: 7
+    entry_point: 1
+    gap_prologue: 570
+    imm_ref_target: 468
+    indirect_call_slot: 4
+    jump_table_follower: 37
+    prologue: 581
+    seed_vtable_thunk: 14
+    tail_jump_alias: 588
+    tail_jump_target: 172
+
+Phase 6: Recursive descent validation...
+  Reachable instructions: 321,765 (75.6%)
+
+============================================================
+  Disassembly Analysis Summary
+============================================================
+  Binary: /Users/lialan/Downloads/VR/VC3/extracted/vc3.xbe
+  Base: 0x00010000  Entry: 0x000B6407
+
+  Instructions:        422,326
+  Functions:             6,706
+    with prologue:         640
+  Cross-references:     80,764
+  Labels:                8,414
+  Strings:               1,588
+  Kernel imports:          110
+
+  Detection methods:
+    call_target             4,264
+    cc_boundary                 7
+    entry_point                 1
+    gap_prologue              570
+    imm_ref_target            468
+    indirect_call_slot          4
+    jump_table_follower        37
+    prologue                  581
+    seed_vtable_thunk          14
+    tail_jump_alias           588
+    tail_jump_target          172
+
+  Functions by section:
+    .text                   5,554
+    D3D                       295
+    D3DX                      213
+    DSOUND                    341
+    PSGSFD00                   30
+    PSGSFD_B                    4
+    PSGSFD_I                    1
+    PSGSFD_P                    1
+    XGRPH                      22
+    XPP                       245
+
+  Cross-references by type:
+    call                   23,537
+    cond_jump              29,037
+    data_imm                6,654
+    data_read              14,034
+    jump                    6,793
+    kernel_call               709
+
+  Top kernel imports (by call count):
+    RtlLeaveCriticalSection                     150 calls
+    RtlEnterCriticalSection                      76 calls
+    KfLowerIrql                                  51 calls
+    KeRaiseIrqlToDpcLevel                        27 calls
+    KeCancelTimer                                27 calls
+    NtClose                                      18 calls
+    KeSetTimer                                   16 calls
+    RtlInitializeCriticalSection                 15 calls
+    KeInitializeDpc                              14 calls
+    KeWaitForSingleObject                        13 calls
+    KeInitializeTimerEx                          12 calls
+    KeSetEvent                                   12 calls
+    MmAllocateContiguousMemoryEx                 12 calls
+    MmFreeContiguousMemory                       10 calls
+    NtWriteFile                                  10 calls
+    ... (83 more)
+
+============================================================
+
+  Elapsed: 97.48s
+
+Phase 7: Writing output to /Users/lialan/Downloads/VR/vc3-vulkan/games/vc3/analysis/disasm/...
+  Writing JSON databases to /Users/lialan/Downloads/VR/vc3-vulkan/games/vc3/analysis/disasm/
+  Writing ASM listings to /Users/lialan/Downloads/VR/vc3-vulkan/games/vc3/analysis/disasm/asm/
+    text.asm...
+    D3D.asm...
+    D3DX.asm...
+    XGRPH.asm...
+    DSOUND.asm...
+    PSGSFD00.asm...
+    PSGSFD_I.asm...
+    PSGSFD_B.asm...
+    PSGSFD_P.asm...
+    XPP.asm...
+    DOLBY.asm...
+
+  Output written to /Users/lialan/Downloads/VR/vc3-vulkan/games/vc3/analysis/disasm/
+Done in 97.48s
+Phase 0: Loading inputs...
+  XBE: 2,174,976 bytes
+  Functions: 6,706
+  Strings: 1,588
+  Xrefs: 80,764
+
+Phase 1: Scanning immediate operands + merging xrefs...
+  Scanning 1,004,560 bytes of .text section...
+  .rdata range: 0x00140200 - 0x001522AD
+  Found 3,049 immediate references to .rdata/.data
+  Unique .rdata/.data addresses referenced: 1,914
+  Mapped to 1,232 unique functions
+  Merged 2,376 data_read xrefs
+  Total unique data addresses after merge: 4,290
+  Done in 0.1s
+
+Phase 2: RenderWare identification...
+  Found 0 RenderWare ID strings
+  Built 0 tight .rdata zones (max 0x400)
+  Seed functions: 0
+  RW data region: 0x00000000 - 0x00000000 (0KB)
+  RW data region identifications: 0 functions
+  Total RW-identified functions: 0
+  Done in 0.0s
+
+Phase 3: CRT identification...
+  Matching 25 CRT signatures against 6706 functions...
+  Identified 9 CRT functions
+    0x00097C90: strcpy
+    0x000D2490: strcmp
+    0x000F8928: _ftol2
+    0x000F9C60: memmove
+    0x000FA110: _allmul
+    0x000FA240: _alldiv
+    0x000FA8A5: _purecall
+    0x0010D7D0: _ftol
+    0x00136D54: fmod
+  Done in 0.0s
+
+Phase 3b: Stub classification...
+  Float copy stubs:    0
+  Float chain stubs:   0
+  Double op stubs:     0
+  Total data_init:     0
+  Done in 0.0s
+
+Phase 4: Label propagation...
+  Iteration 1: 0 new labels
+  RW region propagation: 0 new labels
+  Proximity propagation: 0 new labels (1 passes)
+  RW API consumers: 0 functions
+  XDK section callers: 1002 functions
+  Game sub-classification: 66 functions categorized
+  Done in 0.0s
+
+Phase 5: Vtable scanning...
+  XBE sections: 13 (13 code, 0 data)
+  Raw vtable candidates: 394
+  Validated vtables: 353
+  Total virtual methods: 3516
+  Discovered vtable thunks (new functions): 2401
+    0x00011013
+    0x00011042
+    0x00011047
+    0x00011063
+    0x000110A9
+    0x000110C5
+    0x000110ED
+    0x0001110A
+    0x000111B4
+    0x000111D4
+    ... and 2391 more
+  Constructors found: 246
+  Functions classified by vtable: 3051
+  New classifications from vtable: 3024
+  Done in 0.3s
+  Added 2401 vtable thunks to function list
+
+Phase 6: Writing output...
+
+============================================================
+FUNCTION IDENTIFICATION SUMMARY
+============================================================
+  Total functions:    9,107
+  RenderWare:         0  (0.0%)
+  CRT/MSVC:           9  (0.1%)
+  Data init stubs:    0  (0.0%)
+  Game (classified):  4,092  (44.9%)
+    (vtable methods): 623
+  Unknown:            5,006  (55.0%)
+
+  RW source modules:  0
+
+  By category:
+    unknown                         5,006
+    game_vtable                     3,024
+    game_render                       539
+    game_audio                        304
+    game_input                        175
+    game_debug                         34
+    crt                                 9
+    game_ui                             6
+    game_io                             5
+    game_vehicle                        2
+    game_camera                         1
+    game_network                        1
+    game_physics                        1
+
+  By method:
+    none                            5,006
+    vtable_thunk                    2,401
+    xdk_caller                      1,002
+    vtable_scan                       396
+    vtable_ctor                       227
+    string_keyword                     66
+    crt_signature                       9
+============================================================
+
+Total time: 0.5s
+Output written to: /Users/lialan/Downloads/VR/vc3-vulkan/games/vc3/analysis/func_id/
+Loaded 6706 functions, 9107 classifications
+Loading XBE from /Users/lialan/Downloads/VR/VC3/extracted/vc3.xbe ...
+XBE base=0x00010000, 13 sections
+  <XbeSection '.text' va=0x00011000 vsize=0xF5410 raw=0x00001000 rsize=0xF5410>
+  <XbeSection 'D3D' va=0x00106420 vsize=0x13A84 raw=0x000F7000 rsize=0x10418>
+  <XbeSection 'D3DX' va=0x00119EC0 vsize=0xC205 raw=0x00108000 rsize=0xC204>
+  <XbeSection 'XGRPH' va=0x001260E0 vsize=0x1264 raw=0x00115000 rsize=0x1264>
+  <XbeSection 'DSOUND' va=0x00127360 vsize=0x9C94 raw=0x00117000 rsize=0x9A4C>
+  <XbeSection 'PSGSFD00' va=0x00131000 vsize=0x3310 raw=0x00121000 rsize=0x3310>
+  <XbeSection 'PSGSFD_I' va=0x00134320 vsize=0x3D0 raw=0x00125000 rsize=0x3D0>
+  <XbeSection 'PSGSFD_B' va=0x00134700 vsize=0x8D0 raw=0x00126000 rsize=0x8D0>
+  <XbeSection 'PSGSFD_P' va=0x00134FE0 vsize=0x650 raw=0x00127000 rsize=0x650>
+  <XbeSection 'XPP' va=0x00135640 vsize=0xABA9 raw=0x00128000 rsize=0xABA8>
+  <XbeSection '.rdata' va=0x00140200 vsize=0x120AD raw=0x00133000 rsize=0x120AC>
+  <XbeSection '.data' va=0x001522C0 vsize=0x3D25B0 raw=0x00146000 rsize=0xC4C74>
+  <XbeSection 'DOLBY' va=0x00524880 vsize=0x7180 raw=0x0020B000 rsize=0x716C>
+abi_analysis: analyzed 6706 functions, skipped 0 (no readable bytes)
+Wrote 6706 ABI entries to /Users/lialan/Downloads/VR/vc3-vulkan/games/vc3/analysis/abi/abi_functions.json (64 detected as thiscall)

@@ -1,0 +1,23 @@
+{
+  "scope": "Submission-thread immersive world/HUD component; synthetic fixtures on real Vulkan, not live host or gameplay parity",
+  "source_sha256": {
+    "runtime/src/gpu/vulkan/vk_scene.c": "08fd962895523251563d3ff469b104646c745ac6a3def1c1bfb33b84fdefeecf",
+    "runtime/src/gpu/vulkan/vk_scene.h": "71917f9f8bf1dc2038af6a45681477fbd7defda93e9cd63ad80eccb867eef356",
+    "runtime/src/gpu/vulkan/vk_nv2a.c": "1da779b9d19dd35ec641b5076d0f43151d31c52c3164a60ce64e1128ced2079c",
+    "runtime/src/gpu/vulkan/vk_target.c": "eee1a736aff02db85dae267cdce15e61355a0b2a4d1686b24d98e139b23285ea",
+    "tools/vulkan-scene-test.c": "9bfc4632ad5396dec396f7ba92b54bfc97c9e6be5850909478331b10ffd7d203"
+  },
+  "evidence": "vulkan-scene-20261031.log",
+  "checks": [
+    "Previous-frame 3D/projection latch and movie/menu transition",
+    "Projection cache belongs to surface, auxiliary raw metadata cannot overwrite main surface",
+    "Distinct left/right world images at 37x19 from4x3guest",
+    "Scaled8x6HUD at guest rectangle placement",
+    "Two SRC_ALPHA HUD passes produce RGB/alpha192, next frame resets to128",
+    "Guest depth/stencil cannot reject pixels in reference color-only HUD",
+    "Guest zpass query not repeated in world/HUD targets",
+    "Guest rectangle clear maps into native eye coordinates",
+    "Screen render-target texture samples explicitly rejected pending per-eye resolver",
+    "Full preexisting offscreen suite and48actualGLES/Vulkanoverlaycases pass"
+  ]
+}

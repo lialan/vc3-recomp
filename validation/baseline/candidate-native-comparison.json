@@ -1,0 +1,53 @@
+{
+  "baseline_sha256": "f32348f9f91c7de10ea28f34b08cb0720e231f2dfe9a568351c93ce238f075a7",
+  "candidate": "/Users/lialan/Downloads/VR/vc3-vulkan/validation/baseline/VirtuaCop3VR-candidate-libmain.so",
+  "candidate_sha256": "27e41bff80b46ca585b44b00c9a16e8eec8a4ff1d89428d96266570f1c933cd1",
+  "exact_native_match": false,
+  "scope": "Native artifact comparison only; no APK reproduction or gameplay parity claim",
+  "sections": {
+    ".data": {
+      "baseline": {
+        "bytes": 35180,
+        "sha256": "5636eb9cf9eae9c48b2fc4460baeaf8118193b8761e6cb239efaeb46d44e6628"
+      },
+      "candidate": {
+        "bytes": 35180,
+        "sha256": "5636eb9cf9eae9c48b2fc4460baeaf8118193b8761e6cb239efaeb46d44e6628"
+      },
+      "equal": true
+    },
+    ".note.gnu.build-id": {
+      "baseline": {
+        "bytes": 36,
+        "sha256": "0944a29787ed6a5683ec2aff481aacba859589cf1c7bc16d2bb87ffcc558e817"
+      },
+      "candidate": {
+        "bytes": 36,
+        "sha256": "98f8dc308828492d30daf89c03931cb385d2b9e049c46ed5d5ea30724fda14b5"
+      },
+      "equal": false
+    },
+    ".rodata": {
+      "baseline": {
+        "bytes": 170344,
+        "sha256": "889300bc0b7d0a66c0299eb6145a5b2f3eb2bc30c2e6b10a25780eb37ae48091"
+      },
+      "candidate": {
+        "bytes": 170344,
+        "sha256": "889300bc0b7d0a66c0299eb6145a5b2f3eb2bc30c2e6b10a25780eb37ae48091"
+      },
+      "equal": true
+    },
+    ".text": {
+      "baseline": {
+        "bytes": 8946660,
+        "sha256": "6f98379515981e5adff76bee72ad1bfb416aa039a5390d4e2830b7b58be74577"
+      },
+      "candidate": {
+        "bytes": 8946660,
+        "sha256": "6f98379515981e5adff76bee72ad1bfb416aa039a5390d4e2830b7b58be74577"
+      },
+      "equal": true
+    }
+  }
+}

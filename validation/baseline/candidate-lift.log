@@ -1,0 +1,66 @@
+Loading data files...
+  SEH helpers: __SEH_prolog 0x000F9FA0, __SEH_epilog 0x000F9FDB
+  CRT non-local jumps: setjmp not found, longjmp not found
+Loaded 6735 functions, 6826 labels, 9107 classifications, 6706 ABI entries in 19.9s
+
+Translating 6735 functions...
+Excluding 15 functions defined in /Users/lialan/Downloads/VR/vc3-vulkan/games/vc3/src/recomp_manual.c
+  wrote recomp_types.h (runtime register model)
+
+=== Split Translation Complete (17.7s) ===
+6720/6735 functions (0 failed), 1231820 lines of C, 27 source files
+12 unresolved call targets stubbed (addresses called but not detected as functions)
+63 instruction(s) unimplemented, emitted as no-op comments (21 distinct mnemonics):
+        11  sti          e.g. 0x0005FB89
+        10  aas          e.g. 0x000359D4
+         6  cli          e.g. 0x000359C8
+         4  aad          e.g. 0x0001D6E1
+         4  aam          e.g. 0x0001D6D9
+         3  arpl         e.g. 0x0009B7B4
+         3  iretd        e.g. 0x000ECFAD
+         3  sldt         e.g. 0x000F51F2
+         3  verr         e.g. 0x000F9DB6
+         2  daa          e.g. 0x0009D73C
+         2  lldt         e.g. 0x000F9DB2
+         2  salc         e.g. 0x0001D6E9
+         2  str          e.g. 0x000F9D46
+         1  bound        e.g. 0x000959D4
+         1  enter        e.g. 0x001251E6
+         1  into         e.g. 0x0003566C
+         1  ltr          e.g. 0x000F9EEA
+         1  outsb        e.g. 0x000B0ADC
+         1  syscall      e.g. 0x0005125D
+         1  verw         e.g. 0x000F9EF2
+    ... and 1 more
+  /Users/lialan/Downloads/VR/vc3-vulkan/games/vc3/generated/recomp_funcs.h
+  /Users/lialan/Downloads/VR/vc3-vulkan/games/vc3/generated/recomp_0000.c
+  /Users/lialan/Downloads/VR/vc3-vulkan/games/vc3/generated/recomp_0001.c
+  /Users/lialan/Downloads/VR/vc3-vulkan/games/vc3/generated/recomp_0002.c
+  /Users/lialan/Downloads/VR/vc3-vulkan/games/vc3/generated/recomp_0003.c
+  /Users/lialan/Downloads/VR/vc3-vulkan/games/vc3/generated/recomp_0004.c
+  /Users/lialan/Downloads/VR/vc3-vulkan/games/vc3/generated/recomp_0005.c
+  /Users/lialan/Downloads/VR/vc3-vulkan/games/vc3/generated/recomp_0006.c
+  /Users/lialan/Downloads/VR/vc3-vulkan/games/vc3/generated/recomp_0007.c
+  /Users/lialan/Downloads/VR/vc3-vulkan/games/vc3/generated/recomp_0008.c
+  /Users/lialan/Downloads/VR/vc3-vulkan/games/vc3/generated/recomp_0009.c
+  /Users/lialan/Downloads/VR/vc3-vulkan/games/vc3/generated/recomp_0010.c
+  /Users/lialan/Downloads/VR/vc3-vulkan/games/vc3/generated/recomp_0011.c
+  /Users/lialan/Downloads/VR/vc3-vulkan/games/vc3/generated/recomp_0012.c
+  /Users/lialan/Downloads/VR/vc3-vulkan/games/vc3/generated/recomp_0013.c
+  /Users/lialan/Downloads/VR/vc3-vulkan/games/vc3/generated/recomp_0014.c
+  /Users/lialan/Downloads/VR/vc3-vulkan/games/vc3/generated/recomp_0015.c
+  /Users/lialan/Downloads/VR/vc3-vulkan/games/vc3/generated/recomp_0016.c
+  /Users/lialan/Downloads/VR/vc3-vulkan/games/vc3/generated/recomp_0017.c
+  /Users/lialan/Downloads/VR/vc3-vulkan/games/vc3/generated/recomp_0018.c
+  /Users/lialan/Downloads/VR/vc3-vulkan/games/vc3/generated/recomp_0019.c
+  /Users/lialan/Downloads/VR/vc3-vulkan/games/vc3/generated/recomp_0020.c
+  /Users/lialan/Downloads/VR/vc3-vulkan/games/vc3/generated/recomp_0021.c
+  /Users/lialan/Downloads/VR/vc3-vulkan/games/vc3/generated/recomp_0022.c
+  /Users/lialan/Downloads/VR/vc3-vulkan/games/vc3/generated/recomp_0023.c
+  /Users/lialan/Downloads/VR/vc3-vulkan/games/vc3/generated/recomp_0024.c
+  /Users/lialan/Downloads/VR/vc3-vulkan/games/vc3/generated/recomp_0025.c
+  /Users/lialan/Downloads/VR/vc3-vulkan/games/vc3/generated/recomp_0026.c
+  /Users/lialan/Downloads/VR/vc3-vulkan/games/vc3/generated/recomp_stubs_unresolved.c
+  /Users/lialan/Downloads/VR/vc3-vulkan/games/vc3/generated/recomp_dispatch.c
+
+Summary: /Users/lialan/Downloads/VR/vc3-vulkan/external/xboxrecomp/tools/recomp/output/summary.json

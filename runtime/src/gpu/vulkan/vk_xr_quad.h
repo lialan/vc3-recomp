@@ -1,0 +1,15 @@
+#ifndef CH_VK_XR_QUAD_H
+#define CH_VK_XR_QUAD_H
+#include "vk_xr_swapchain.h"
+typedef struct ChVkXrQuad ChVkXrQuad;
+/* Host renders HUD/menu/screen into a Vulkan target then updates this layer.
+ * Pixel format/layout/alpha semantics stay explicit. Session/space not owned. */
+XrResult ch_vk_xr_quad_create(XrInstance,XrSession,PFN_xrGetInstanceProcAddr,VkDevice,
+    uint32_t width,uint32_t height,XrSpace,const XrPosef *,XrExtent2Df,
+    XrCompositionLayerFlags,ChVkXrQuad **);
+XrResult ch_vk_xr_quad_pose(ChVkXrQuad *,const XrPosef *,XrExtent2Df);
+/* Timeout retains acquired ownership and hides layer until update completes. */
+XrResult ch_vk_xr_quad_update(ChVkXrQuad *,ChVkTarget *,XrDuration,VkResult *);
+const XrCompositionLayerBaseHeader *ch_vk_xr_quad_layer(const ChVkXrQuad *);
+XrResult ch_vk_xr_quad_destroy(ChVkXrQuad *);
+#endif

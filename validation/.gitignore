@@ -1,0 +1,4 @@
+# Retained local binaries and experiments from other work branches.
+**/*.apk
+zink*/
+split-feedback-local/

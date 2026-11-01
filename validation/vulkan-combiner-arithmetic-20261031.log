@@ -1,0 +1,3 @@
+device=Adreno (TM) 740 vendor=5143 deviceID=43050b00 api=1.3.295
+PASS: graphics queue submission and fence completion (no rendering)
+PASS: 256 GPU combiner arithmetic cases match shared CPU evaluator (tolerance 2e-5)

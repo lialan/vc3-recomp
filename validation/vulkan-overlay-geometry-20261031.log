@@ -1,0 +1,9 @@
+device=Adreno (TM) 740 vendor=5143 deviceID=43050b00 api=1.3.295
+PASS: real executor methods -> Vulkan pixels, precise GET_REPORT=16, ordered semaphore release
+PASS: real DMA ring CALL/RETURN/JUMP, increment/nonincrement packets -> Vulkan pixels/report/semaphore/GET
+PASS: registered backend synchronous clear/draw/flip host hooks -> distinct stereo eye targets
+PASS: reference CPU menu painter -> Vulkan target, every RGBA byte including alpha, hover/repaint
+PASS: complete shared overlay geometry: sights, shifted eye, beam/dot/flash, premultiplied alpha
+PASS: shared gun mesh, three sight housings, recoil changes and invalid-pose visibility on Vulkan
+PASS: real executor decoder + Vulkan sampled draws: padded linear ARGB, Morton ARGB, DXT1/3/5, repeat/mirror/clamp, bilinear, guest ARGB8888/RGB565 render-to-texture
+PASS: RGBA8 clears, indexed quad coverage, interpolated triangle, post-draw clear, blend equations/factors/color masks, depth/stencil, persistent batches and selective clears, decoded NV2A adapter, alpha comparisons, face culling, ARGB texture upload/readback and sampled modulation, decoded textured batches, partial-channel clears, precise visibility queries, fragment combiners, guest CPU color imports, depth/stencil transfers, rectangular clears, per-eye projection, overlay effect shading (synthetic fixtures)

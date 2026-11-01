@@ -1,0 +1,6 @@
+cmake_minimum_required(VERSION 3.20)
+project(chihiro_vulkan_probe C)
+set(CHIHIRO_VULKAN_TESTS OFF CACHE BOOL "" FORCE)
+add_subdirectory(../../runtime/src/gpu/vulkan vulkan)
+add_library(ch_vk_probe SHARED probe.c)
+target_link_libraries(ch_vk_probe PRIVATE chihiro_vulkan "${OPENXR_LIB}" android log)

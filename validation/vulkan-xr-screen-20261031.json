@@ -1,0 +1,22 @@
+{
+  "scope": "Vulkan XR screen presenter with injected XR calls and real Vulkan images; no live XR runtime/compositor or gameplay",
+  "source_sha256": {
+    "runtime/src/gpu/vulkan/vk_xr_screen.c": "ad0128397f26acedddbd71e16a8441b1c4e30d38ba82096a64382983ea80732c",
+    "runtime/src/gpu/vulkan/vk_xr_screen.h": "1dfba8eaf4777b73c09646cdd27ad9c589b7cea73c2235a8af65013097946e30",
+    "tools/vulkan-xr-device-test.c": "c0b3eee97406728633eecffceb48758c1089a38bca26b5bcf15c29c936a6cda7"
+  },
+  "evidence": "vulkan-xr-screen-20261031.log",
+  "checks": [
+    "Empty mailbox yields no layer",
+    "Timeout hides layer and preserves acquired ownership",
+    "Destroy rejected while acquisition pending",
+    "New publication cannot replace frame held for retry",
+    "Retry copies original frame with no reacquire",
+    "Readback of actual injected destination image matches every selected RGBA byte",
+    "Next update selects newer frame",
+    "No new frame reuses released image without acquire",
+    "Resize16x16to8x8 updates target and quad extent",
+    "Opaque quad composed via frame begin/flat end-frame",
+    "Previous device/swapchain/frame/quad tests still pass"
+  ]
+}

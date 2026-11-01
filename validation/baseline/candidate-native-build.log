@@ -1,0 +1,762 @@
+CMake Deprecation Warning at /Users/lialan/Library/Android/sdk/ndk/27.3.13750724/build/cmake/android.toolchain.cmake:35 (cmake_minimum_required):
+  Compatibility with CMake < 3.10 will be removed from a future version of
+  CMake.
+
+  Update the VERSION argument <min> value.  Or, use the <min>...<max> syntax
+  to tell CMake that the project requires at least <min> but has been updated
+  to work with policies introduced by <max> or earlier.
+Call Stack (most recent call first):
+  /opt/homebrew/share/cmake/Modules/CMakeDetermineSystem.cmake:146 (include)
+  CMakeLists.txt:15 (project)
+
+
+CMake Deprecation Warning at /Users/lialan/Library/Android/sdk/ndk/27.3.13750724/build/cmake/android-legacy.toolchain.cmake:35 (cmake_minimum_required):
+  Compatibility with CMake < 3.10 will be removed from a future version of
+  CMake.
+
+  Update the VERSION argument <min> value.  Or, use the <min>...<max> syntax
+  to tell CMake that the project requires at least <min> but has been updated
+  to work with policies introduced by <max> or earlier.
+Call Stack (most recent call first):
+  /Users/lialan/Library/Android/sdk/ndk/27.3.13750724/build/cmake/android.toolchain.cmake:55 (include)
+  /opt/homebrew/share/cmake/Modules/CMakeDetermineSystem.cmake:146 (include)
+  CMakeLists.txt:15 (project)
+
+
+CMake Deprecation Warning at /Users/lialan/Library/Android/sdk/ndk/27.3.13750724/build/cmake/android.toolchain.cmake:35 (cmake_minimum_required):
+  Compatibility with CMake < 3.10 will be removed from a future version of
+  CMake.
+
+  Update the VERSION argument <min> value.  Or, use the <min>...<max> syntax
+  to tell CMake that the project requires at least <min> but has been updated
+  to work with policies introduced by <max> or earlier.
+Call Stack (most recent call first):
+  build-quest/CMakeFiles/4.0.2/CMakeSystem.cmake:6 (include)
+  CMakeLists.txt:15 (project)
+
+
+CMake Deprecation Warning at /Users/lialan/Library/Android/sdk/ndk/27.3.13750724/build/cmake/flags.cmake:18 (cmake_minimum_required):
+  Compatibility with CMake < 3.10 will be removed from a future version of
+  CMake.
+
+  Update the VERSION argument <min> value.  Or, use the <min>...<max> syntax
+  to tell CMake that the project requires at least <min> but has been updated
+  to work with policies introduced by <max> or earlier.
+Call Stack (most recent call first):
+  /opt/homebrew/share/cmake/Modules/Platform/Android-Clang.cmake:23 (include)
+  /opt/homebrew/share/cmake/Modules/Platform/Android-Clang-C.cmake:1 (include)
+  /opt/homebrew/share/cmake/Modules/CMakeCInformation.cmake:48 (include)
+  CMakeLists.txt:15 (project)
+
+
+CMake Deprecation Warning at /Users/lialan/Library/Android/sdk/ndk/27.3.13750724/build/cmake/android.toolchain.cmake:35 (cmake_minimum_required):
+  Compatibility with CMake < 3.10 will be removed from a future version of
+  CMake.
+
+  Update the VERSION argument <min> value.  Or, use the <min>...<max> syntax
+  to tell CMake that the project requires at least <min> but has been updated
+  to work with policies introduced by <max> or earlier.
+Call Stack (most recent call first):
+  /Users/lialan/Downloads/VR/vc3-vulkan/build-quest/CMakeFiles/4.0.2/CMakeSystem.cmake:6 (include)
+  /Users/lialan/Downloads/VR/vc3-vulkan/build-quest/CMakeFiles/CMakeScratch/TryCompile-oqEBbJ/CMakeLists.txt:4 (project)
+
+
+CMake Deprecation Warning at /Users/lialan/Library/Android/sdk/ndk/27.3.13750724/build/cmake/android-legacy.toolchain.cmake:35 (cmake_minimum_required):
+  Compatibility with CMake < 3.10 will be removed from a future version of
+  CMake.
+
+  Update the VERSION argument <min> value.  Or, use the <min>...<max> syntax
+  to tell CMake that the project requires at least <min> but has been updated
+  to work with policies introduced by <max> or earlier.
+Call Stack (most recent call first):
+  /Users/lialan/Library/Android/sdk/ndk/27.3.13750724/build/cmake/android.toolchain.cmake:55 (include)
+  /Users/lialan/Downloads/VR/vc3-vulkan/build-quest/CMakeFiles/4.0.2/CMakeSystem.cmake:6 (include)
+  /Users/lialan/Downloads/VR/vc3-vulkan/build-quest/CMakeFiles/CMakeScratch/TryCompile-oqEBbJ/CMakeLists.txt:4 (project)
+
+
+CMake Deprecation Warning at /Users/lialan/Library/Android/sdk/ndk/27.3.13750724/build/cmake/flags.cmake:18 (cmake_minimum_required):
+  Compatibility with CMake < 3.10 will be removed from a future version of
+  CMake.
+
+  Update the VERSION argument <min> value.  Or, use the <min>...<max> syntax
+  to tell CMake that the project requires at least <min> but has been updated
+  to work with policies introduced by <max> or earlier.
+Call Stack (most recent call first):
+  /opt/homebrew/share/cmake/Modules/Platform/Android-Clang.cmake:23 (include)
+  /opt/homebrew/share/cmake/Modules/Platform/Android-Clang-C.cmake:1 (include)
+  /opt/homebrew/share/cmake/Modules/CMakeCInformation.cmake:48 (include)
+  /Users/lialan/Downloads/VR/vc3-vulkan/build-quest/CMakeFiles/CMakeScratch/TryCompile-oqEBbJ/CMakeLists.txt:4 (project)
+
+
+CMake Deprecation Warning at /Users/lialan/Library/Android/sdk/ndk/27.3.13750724/build/cmake/android.toolchain.cmake:35 (cmake_minimum_required):
+  Compatibility with CMake < 3.10 will be removed from a future version of
+  CMake.
+
+  Update the VERSION argument <min> value.  Or, use the <min>...<max> syntax
+  to tell CMake that the project requires at least <min> but has been updated
+  to work with policies introduced by <max> or earlier.
+Call Stack (most recent call first):
+  /Users/lialan/Downloads/VR/vc3-vulkan/build-quest/CMakeFiles/4.0.2/CMakeSystem.cmake:6 (include)
+  /Users/lialan/Downloads/VR/vc3-vulkan/build-quest/CMakeFiles/CMakeScratch/TryCompile-KPSPKX/CMakeLists.txt:4 (project)
+
+
+CMake Deprecation Warning at /Users/lialan/Library/Android/sdk/ndk/27.3.13750724/build/cmake/android-legacy.toolchain.cmake:35 (cmake_minimum_required):
+  Compatibility with CMake < 3.10 will be removed from a future version of
+  CMake.
+
+  Update the VERSION argument <min> value.  Or, use the <min>...<max> syntax
+  to tell CMake that the project requires at least <min> but has been updated
+  to work with policies introduced by <max> or earlier.
+Call Stack (most recent call first):
+  /Users/lialan/Library/Android/sdk/ndk/27.3.13750724/build/cmake/android.toolchain.cmake:55 (include)
+  /Users/lialan/Downloads/VR/vc3-vulkan/build-quest/CMakeFiles/4.0.2/CMakeSystem.cmake:6 (include)
+  /Users/lialan/Downloads/VR/vc3-vulkan/build-quest/CMakeFiles/CMakeScratch/TryCompile-KPSPKX/CMakeLists.txt:4 (project)
+
+
+CMake Deprecation Warning at /Users/lialan/Library/Android/sdk/ndk/27.3.13750724/build/cmake/flags.cmake:18 (cmake_minimum_required):
+  Compatibility with CMake < 3.10 will be removed from a future version of
+  CMake.
+
+  Update the VERSION argument <min> value.  Or, use the <min>...<max> syntax
+  to tell CMake that the project requires at least <min> but has been updated
+  to work with policies introduced by <max> or earlier.
+Call Stack (most recent call first):
+  /opt/homebrew/share/cmake/Modules/Platform/Android-Clang.cmake:23 (include)
+  /opt/homebrew/share/cmake/Modules/Platform/Android-Clang-C.cmake:1 (include)
+  /opt/homebrew/share/cmake/Modules/CMakeCInformation.cmake:48 (include)
+  /Users/lialan/Downloads/VR/vc3-vulkan/build-quest/CMakeFiles/CMakeScratch/TryCompile-KPSPKX/CMakeLists.txt:4 (project)
+
+
+CMake Deprecation Warning at /Users/lialan/Library/Android/sdk/ndk/27.3.13750724/build/cmake/android.toolchain.cmake:35 (cmake_minimum_required):
+  Compatibility with CMake < 3.10 will be removed from a future version of
+  CMake.
+
+  Update the VERSION argument <min> value.  Or, use the <min>...<max> syntax
+  to tell CMake that the project requires at least <min> but has been updated
+  to work with policies introduced by <max> or earlier.
+Call Stack (most recent call first):
+  /Users/lialan/Downloads/VR/vc3-vulkan/build-quest/CMakeFiles/4.0.2/CMakeSystem.cmake:6 (include)
+  /Users/lialan/Downloads/VR/vc3-vulkan/build-quest/CMakeFiles/CMakeScratch/TryCompile-c5xH0E/CMakeLists.txt:4 (project)
+
+
+CMake Deprecation Warning at /Users/lialan/Library/Android/sdk/ndk/27.3.13750724/build/cmake/android-legacy.toolchain.cmake:35 (cmake_minimum_required):
+  Compatibility with CMake < 3.10 will be removed from a future version of
+  CMake.
+
+  Update the VERSION argument <min> value.  Or, use the <min>...<max> syntax
+  to tell CMake that the project requires at least <min> but has been updated
+  to work with policies introduced by <max> or earlier.
+Call Stack (most recent call first):
+  /Users/lialan/Library/Android/sdk/ndk/27.3.13750724/build/cmake/android.toolchain.cmake:55 (include)
+  /Users/lialan/Downloads/VR/vc3-vulkan/build-quest/CMakeFiles/4.0.2/CMakeSystem.cmake:6 (include)
+  /Users/lialan/Downloads/VR/vc3-vulkan/build-quest/CMakeFiles/CMakeScratch/TryCompile-c5xH0E/CMakeLists.txt:4 (project)
+
+
+CMake Deprecation Warning at /Users/lialan/Library/Android/sdk/ndk/27.3.13750724/build/cmake/flags.cmake:18 (cmake_minimum_required):
+  Compatibility with CMake < 3.10 will be removed from a future version of
+  CMake.
+
+  Update the VERSION argument <min> value.  Or, use the <min>...<max> syntax
+  to tell CMake that the project requires at least <min> but has been updated
+  to work with policies introduced by <max> or earlier.
+Call Stack (most recent call first):
+  /opt/homebrew/share/cmake/Modules/Platform/Android-Clang.cmake:23 (include)
+  /opt/homebrew/share/cmake/Modules/Platform/Android-Clang-C.cmake:1 (include)
+  /opt/homebrew/share/cmake/Modules/CMakeCInformation.cmake:48 (include)
+  /Users/lialan/Downloads/VR/vc3-vulkan/build-quest/CMakeFiles/CMakeScratch/TryCompile-c5xH0E/CMakeLists.txt:4 (project)
+
+
+CMake Deprecation Warning at /Users/lialan/Library/Android/sdk/ndk/27.3.13750724/build/cmake/android.toolchain.cmake:35 (cmake_minimum_required):
+  Compatibility with CMake < 3.10 will be removed from a future version of
+  CMake.
+
+  Update the VERSION argument <min> value.  Or, use the <min>...<max> syntax
+  to tell CMake that the project requires at least <min> but has been updated
+  to work with policies introduced by <max> or earlier.
+Call Stack (most recent call first):
+  /Users/lialan/Downloads/VR/vc3-vulkan/build-quest/CMakeFiles/4.0.2/CMakeSystem.cmake:6 (include)
+  /Users/lialan/Downloads/VR/vc3-vulkan/build-quest/CMakeFiles/CMakeScratch/TryCompile-PEaFcl/CMakeLists.txt:4 (project)
+
+
+CMake Deprecation Warning at /Users/lialan/Library/Android/sdk/ndk/27.3.13750724/build/cmake/android-legacy.toolchain.cmake:35 (cmake_minimum_required):
+  Compatibility with CMake < 3.10 will be removed from a future version of
+  CMake.
+
+  Update the VERSION argument <min> value.  Or, use the <min>...<max> syntax
+  to tell CMake that the project requires at least <min> but has been updated
+  to work with policies introduced by <max> or earlier.
+Call Stack (most recent call first):
+  /Users/lialan/Library/Android/sdk/ndk/27.3.13750724/build/cmake/android.toolchain.cmake:55 (include)
+  /Users/lialan/Downloads/VR/vc3-vulkan/build-quest/CMakeFiles/4.0.2/CMakeSystem.cmake:6 (include)
+  /Users/lialan/Downloads/VR/vc3-vulkan/build-quest/CMakeFiles/CMakeScratch/TryCompile-PEaFcl/CMakeLists.txt:4 (project)
+
+
+CMake Deprecation Warning at /Users/lialan/Library/Android/sdk/ndk/27.3.13750724/build/cmake/flags.cmake:18 (cmake_minimum_required):
+  Compatibility with CMake < 3.10 will be removed from a future version of
+  CMake.
+
+  Update the VERSION argument <min> value.  Or, use the <min>...<max> syntax
+  to tell CMake that the project requires at least <min> but has been updated
+  to work with policies introduced by <max> or earlier.
+Call Stack (most recent call first):
+  /opt/homebrew/share/cmake/Modules/Platform/Android-Clang.cmake:23 (include)
+  /opt/homebrew/share/cmake/Modules/Platform/Android-Clang-C.cmake:1 (include)
+  /opt/homebrew/share/cmake/Modules/CMakeCInformation.cmake:48 (include)
+  /Users/lialan/Downloads/VR/vc3-vulkan/build-quest/CMakeFiles/CMakeScratch/TryCompile-PEaFcl/CMakeLists.txt:4 (project)
+
+
+CMake Deprecation Warning at /Users/lialan/Library/Android/sdk/ndk/27.3.13750724/build/cmake/android.toolchain.cmake:35 (cmake_minimum_required):
+  Compatibility with CMake < 3.10 will be removed from a future version of
+  CMake.
+
+  Update the VERSION argument <min> value.  Or, use the <min>...<max> syntax
+  to tell CMake that the project requires at least <min> but has been updated
+  to work with policies introduced by <max> or earlier.
+Call Stack (most recent call first):
+  /Users/lialan/Downloads/VR/vc3-vulkan/build-quest/CMakeFiles/4.0.2/CMakeSystem.cmake:6 (include)
+  /Users/lialan/Downloads/VR/vc3-vulkan/build-quest/CMakeFiles/CMakeScratch/TryCompile-vAH0iD/CMakeLists.txt:4 (project)
+
+
+CMake Deprecation Warning at /Users/lialan/Library/Android/sdk/ndk/27.3.13750724/build/cmake/android-legacy.toolchain.cmake:35 (cmake_minimum_required):
+  Compatibility with CMake < 3.10 will be removed from a future version of
+  CMake.
+
+  Update the VERSION argument <min> value.  Or, use the <min>...<max> syntax
+  to tell CMake that the project requires at least <min> but has been updated
+  to work with policies introduced by <max> or earlier.
+Call Stack (most recent call first):
+  /Users/lialan/Library/Android/sdk/ndk/27.3.13750724/build/cmake/android.toolchain.cmake:55 (include)
+  /Users/lialan/Downloads/VR/vc3-vulkan/build-quest/CMakeFiles/4.0.2/CMakeSystem.cmake:6 (include)
+  /Users/lialan/Downloads/VR/vc3-vulkan/build-quest/CMakeFiles/CMakeScratch/TryCompile-vAH0iD/CMakeLists.txt:4 (project)
+
+
+CMake Deprecation Warning at /Users/lialan/Library/Android/sdk/ndk/27.3.13750724/build/cmake/flags.cmake:18 (cmake_minimum_required):
+  Compatibility with CMake < 3.10 will be removed from a future version of
+  CMake.
+
+  Update the VERSION argument <min> value.  Or, use the <min>...<max> syntax
+  to tell CMake that the project requires at least <min> but has been updated
+  to work with policies introduced by <max> or earlier.
+Call Stack (most recent call first):
+  /opt/homebrew/share/cmake/Modules/Platform/Android-Clang.cmake:23 (include)
+  /opt/homebrew/share/cmake/Modules/Platform/Android-Clang-C.cmake:1 (include)
+  /opt/homebrew/share/cmake/Modules/CMakeCInformation.cmake:48 (include)
+  /Users/lialan/Downloads/VR/vc3-vulkan/build-quest/CMakeFiles/CMakeScratch/TryCompile-vAH0iD/CMakeLists.txt:4 (project)
+
+
+[0/2] Re-checking globbed directories...
+[1/119] Building C object xboxrecomp/src/platform/CMakeFiles/recomp_exit_hook.dir/recomp_exit_hook.c.o
+[2/119] Building C object xboxrecomp/src/platform/CMakeFiles/host_time.dir/host_time.c.o
+[3/119] Building C object xboxrecomp/src/d3d/CMakeFiles/xbox_d3d8.dir/d3d8_none.c.o
+[4/119] Building C object xboxrecomp/src/platform/CMakeFiles/host_time.dir/thread_acct.c.o
+[5/119] Building C object xboxrecomp/src/apu/CMakeFiles/xbox_apu.dir/apu_dsp.c.o
+[6/119] Building C object xboxrecomp/src/input/CMakeFiles/xbox_input.dir/keyboard.c.o
+[7/119] Building C object xboxrecomp/src/apu/CMakeFiles/xbox_apu.dir/apu_xaudio2.c.o
+[8/119] Linking C static library xboxrecomp/src/platform/librecomp_exit_hook.a
+[9/119] Building C object xboxrecomp/src/input/CMakeFiles/xbox_input.dir/keyboard_sdl.c.o
+[10/119] Building C object xboxrecomp/src/input/CMakeFiles/xbox_input.dir/xinput_device.c.o
+[11/119] Linking C static library xboxrecomp/src/platform/libhost_time.a
+[12/119] Building C object xboxrecomp/src/apu/CMakeFiles/xbox_apu.dir/apu_mmio_hook.c.o
+[13/119] Building C object xboxrecomp/src/input/mapping/CMakeFiles/xbox_input_map.dir/__/input_map.c.o
+[14/119] Building C object xboxrecomp/src/nv2a/CMakeFiles/xbox_nv2a.dir/nv2a_mmio_hook.c.o
+/Users/lialan/Downloads/VR/vc3-vulkan/external/xboxrecomp/src/nv2a/nv2a_mmio_hook.c:20:18: warning: unused variable 'g_mem_offset' [-Wunused-variable]
+   20 | static ptrdiff_t g_mem_offset = 0;
+      |                  ^~~~~~~~~~~~
+/Users/lialan/Downloads/VR/vc3-vulkan/external/xboxrecomp/src/nv2a/nv2a_mmio_hook.c:21:17: warning: unused variable 'g_nv2a_vram' [-Wunused-variable]
+   21 | static uint8_t *g_nv2a_vram = NULL;
+      |                 ^~~~~~~~~~~
+/Users/lialan/Downloads/VR/vc3-vulkan/external/xboxrecomp/src/nv2a/nv2a_mmio_hook.c:24:12: warning: unused variable 'g_mmio_read_count' [-Wunused-variable]
+   24 | static int g_mmio_read_count = 0;
+      |            ^~~~~~~~~~~~~~~~~
+/Users/lialan/Downloads/VR/vc3-vulkan/external/xboxrecomp/src/nv2a/nv2a_mmio_hook.c:25:12: warning: unused variable 'g_mmio_write_count' [-Wunused-variable]
+   25 | static int g_mmio_write_count = 0;
+      |            ^~~~~~~~~~~~~~~~~~
+/Users/lialan/Downloads/VR/vc3-vulkan/external/xboxrecomp/src/nv2a/nv2a_mmio_hook.c:26:12: warning: unused variable 'g_mmio_decode_fail' [-Wunused-variable]
+   26 | static int g_mmio_decode_fail = 0;
+      |            ^~~~~~~~~~~~~~~~~~
+5 warnings generated.
+[15/119] Building C object xboxrecomp/src/apu/CMakeFiles/xbox_apu.dir/apu_sdl2.c.o
+[16/119] Building C object xboxrecomp/src/apu/CMakeFiles/xbox_apu.dir/apu_wav.c.o
+[17/119] Building C object xboxrecomp/src/apu/CMakeFiles/xbox_apu.dir/apu_core.c.o
+[18/119] Building C object xboxrecomp/src/nv2a/CMakeFiles/xbox_nv2a.dir/nv2a_pb_test.c.o
+[19/119] Building C object xboxrecomp/src/nv2a/CMakeFiles/xbox_nv2a.dir/nv2a_pb_replay.c.o
+/Users/lialan/Downloads/VR/vc3-vulkan/external/xboxrecomp/src/nv2a/nv2a_pb_replay.c:284:32: warning: array index 7455 is past the end of the array (that has type 'const uint32_t[1]' (aka 'const unsigned int[1]')) [-Warray-bounds]
+  284 |             replay_pushbuffer(&menu_pushbuffer_data[CHYRON_END_DWORD],
+      |                                ^                    ~~~~~~~~~~~~~~~~
+/Users/lialan/Downloads/VR/vc3-vulkan/external/xboxrecomp/src/nv2a/menu_pushbuffer_data.h:11:1: note: array 'menu_pushbuffer_data' declared here
+   11 | static const uint32_t menu_pushbuffer_data[] = { 0 };
+      | ^
+/Users/lialan/Downloads/VR/vc3-vulkan/external/xboxrecomp/src/nv2a/nv2a_pb_replay.c:69:12: warning: unused variable 'g_prev_menu' [-Wunused-variable]
+   69 | static int g_prev_menu = -1;
+      |            ^~~~~~~~~~~
+2 warnings generated.
+[20/119] Building C object xboxrecomp/src/nv2a/CMakeFiles/xbox_nv2a.dir/nv2a_core.c.o
+[21/119] Building C object xboxrecomp/src/nv2a/CMakeFiles/xbox_nv2a.dir/nv2a_pgraph_d3d11.c.o
+/Users/lialan/Downloads/VR/vc3-vulkan/external/xboxrecomp/src/nv2a/nv2a_pgraph_d3d11.c:75:9: warning: 'NV097_SET_BEGIN_END' macro redefined [-Wmacro-redefined]
+   75 | #define NV097_SET_BEGIN_END             0x17FC
+      |         ^
+/Users/lialan/Downloads/VR/vc3-vulkan/external/xboxrecomp/src/nv2a/nv2a_regs.h:1159:12: note: previous definition is here
+ 1159 | #   define NV097_SET_BEGIN_END                                0x000017FC
+      |            ^
+/Users/lialan/Downloads/VR/vc3-vulkan/external/xboxrecomp/src/nv2a/nv2a_pgraph_d3d11.c:76:9: warning: 'NV097_INLINE_ARRAY' macro redefined [-Wmacro-redefined]
+   76 | #define NV097_INLINE_ARRAY              0x1818
+      |         ^
+/Users/lialan/Downloads/VR/vc3-vulkan/external/xboxrecomp/src/nv2a/nv2a_regs.h:1176:12: note: previous definition is here
+ 1176 | #   define NV097_INLINE_ARRAY                                 0x00001818
+      |            ^
+/Users/lialan/Downloads/VR/vc3-vulkan/external/xboxrecomp/src/nv2a/nv2a_pgraph_d3d11.c:77:9: warning: 'NV097_CLEAR_SURFACE' macro redefined [-Wmacro-redefined]
+   77 | #define NV097_CLEAR_SURFACE             0x01D0
+      |         ^
+/Users/lialan/Downloads/VR/vc3-vulkan/external/xboxrecomp/src/nv2a/nv2a_regs.h:1278:12: note: previous definition is here
+ 1278 | #   define NV097_CLEAR_SURFACE                                0x00001D94
+      |            ^
+/Users/lialan/Downloads/VR/vc3-vulkan/external/xboxrecomp/src/nv2a/nv2a_pgraph_d3d11.c:78:9: warning: 'NV097_SET_COLOR_CLEAR_VALUE' macro redefined [-Wmacro-redefined]
+   78 | #define NV097_SET_COLOR_CLEAR_VALUE     0x01D4
+      |         ^
+/Users/lialan/Downloads/VR/vc3-vulkan/external/xboxrecomp/src/nv2a/nv2a_regs.h:1277:12: note: previous definition is here
+ 1277 | #   define NV097_SET_COLOR_CLEAR_VALUE                        0x00001D90
+      |            ^
+/Users/lialan/Downloads/VR/vc3-vulkan/external/xboxrecomp/src/nv2a/nv2a_pgraph_d3d11.c:79:9: warning: 'NV097_SET_CLEAR_RECT_HORIZONTAL' macro redefined [-Wmacro-redefined]
+   79 | #define NV097_SET_CLEAR_RECT_HORIZONTAL 0x01D8
+      |         ^
+/Users/lialan/Downloads/VR/vc3-vulkan/external/xboxrecomp/src/nv2a/nv2a_regs.h:1286:12: note: previous definition is here
+ 1286 | #   define NV097_SET_CLEAR_RECT_HORIZONTAL                    0x00001D98
+      |            ^
+/Users/lialan/Downloads/VR/vc3-vulkan/external/xboxrecomp/src/nv2a/nv2a_pgraph_d3d11.c:80:9: warning: 'NV097_SET_CLEAR_RECT_VERTICAL' macro redefined [-Wmacro-redefined]
+   80 | #define NV097_SET_CLEAR_RECT_VERTICAL   0x01DC
+      |         ^
+/Users/lialan/Downloads/VR/vc3-vulkan/external/xboxrecomp/src/nv2a/nv2a_regs.h:1287:12: note: previous definition is here
+ 1287 | #   define NV097_SET_CLEAR_RECT_VERTICAL                      0x00001D9C
+      |            ^
+/Users/lialan/Downloads/VR/vc3-vulkan/external/xboxrecomp/src/nv2a/nv2a_pgraph_d3d11.c:82:9: warning: 'NV097_SET_DEPTH_TEST_ENABLE' macro redefined [-Wmacro-redefined]
+   82 | #define NV097_SET_DEPTH_TEST_ENABLE     0x0354
+      |         ^
+/Users/lialan/Downloads/VR/vc3-vulkan/external/xboxrecomp/src/nv2a/nv2a_regs.h:937:12: note: previous definition is here
+  937 | #   define NV097_SET_DEPTH_TEST_ENABLE                        0x0000030C
+      |            ^
+/Users/lialan/Downloads/VR/vc3-vulkan/external/xboxrecomp/src/nv2a/nv2a_pgraph_d3d11.c:83:9: warning: 'NV097_SET_BLEND_ENABLE' macro redefined [-Wmacro-redefined]
+   83 | #define NV097_SET_BLEND_ENABLE          0x0304
+      |         ^
+/Users/lialan/Downloads/VR/vc3-vulkan/external/xboxrecomp/src/nv2a/nv2a_regs.h:935:12: note: previous definition is here
+  935 | #   define NV097_SET_BLEND_ENABLE                             0x00000304
+      |            ^
+/Users/lialan/Downloads/VR/vc3-vulkan/external/xboxrecomp/src/nv2a/nv2a_pgraph_d3d11.c:84:9: warning: 'NV097_SET_BLEND_FUNC_SFACTOR' macro redefined [-Wmacro-redefined]
+   84 | #define NV097_SET_BLEND_FUNC_SFACTOR    0x0344
+      |         ^
+/Users/lialan/Downloads/VR/vc3-vulkan/external/xboxrecomp/src/nv2a/nv2a_regs.h:958:12: note: previous definition is here
+  958 | #   define NV097_SET_BLEND_FUNC_SFACTOR                       0x00000344
+      |            ^
+/Users/lialan/Downloads/VR/vc3-vulkan/external/xboxrecomp/src/nv2a/nv2a_pgraph_d3d11.c:85:9: warning: 'NV097_SET_BLEND_FUNC_DFACTOR' macro redefined [-Wmacro-redefined]
+   85 | #define NV097_SET_BLEND_FUNC_DFACTOR    0x0348
+      |         ^
+/Users/lialan/Downloads/VR/vc3-vulkan/external/xboxrecomp/src/nv2a/nv2a_regs.h:974:12: note: previous definition is here
+  974 | #   define NV097_SET_BLEND_FUNC_DFACTOR                       0x00000348
+      |            ^
+/Users/lialan/Downloads/VR/vc3-vulkan/external/xboxrecomp/src/nv2a/nv2a_pgraph_d3d11.c:86:9: warning: 'NV097_SET_CULL_FACE_ENABLE' macro redefined [-Wmacro-redefined]
+   86 | #define NV097_SET_CULL_FACE_ENABLE      0x039C
+      |         ^
+/Users/lialan/Downloads/VR/vc3-vulkan/external/xboxrecomp/src/nv2a/nv2a_regs.h:936:12: note: previous definition is here
+  936 | #   define NV097_SET_CULL_FACE_ENABLE                         0x00000308
+      |            ^
+/Users/lialan/Downloads/VR/vc3-vulkan/external/xboxrecomp/src/nv2a/nv2a_pgraph_d3d11.c:87:9: warning: 'NV097_SET_ALPHA_TEST_ENABLE' macro redefined [-Wmacro-redefined]
+   87 | #define NV097_SET_ALPHA_TEST_ENABLE     0x0300
+      |         ^
+/Users/lialan/Downloads/VR/vc3-vulkan/external/xboxrecomp/src/nv2a/nv2a_regs.h:934:12: note: previous definition is here
+  934 | #   define NV097_SET_ALPHA_TEST_ENABLE                        0x00000300
+      |            ^
+/Users/lialan/Downloads/VR/vc3-vulkan/external/xboxrecomp/src/nv2a/nv2a_pgraph_d3d11.c:88:9: warning: 'NV097_SET_COLOR_MASK' macro redefined [-Wmacro-redefined]
+   88 | #define NV097_SET_COLOR_MASK            0x0358
+      |         ^
+/Users/lialan/Downloads/VR/vc3-vulkan/external/xboxrecomp/src/nv2a/nv2a_regs.h:1000:12: note: previous definition is here
+ 1000 | #   define NV097_SET_COLOR_MASK                               0x00000358
+      |            ^
+/Users/lialan/Downloads/VR/vc3-vulkan/external/xboxrecomp/src/nv2a/nv2a_pgraph_d3d11.c:89:9: warning: 'NV097_SET_SHADE_MODE' macro redefined [-Wmacro-redefined]
+   89 | #define NV097_SET_SHADE_MODE            0x0368
+      |         ^
+/Users/lialan/Downloads/VR/vc3-vulkan/external/xboxrecomp/src/nv2a/nv2a_regs.h:1021:12: note: previous definition is here
+ 1021 | #   define NV097_SET_SHADE_MODE                               0x0000037C
+      |            ^
+/Users/lialan/Downloads/VR/vc3-vulkan/external/xboxrecomp/src/nv2a/nv2a_pgraph_d3d11.c:91:9: warning: 'NV097_SET_VIEWPORT_OFFSET' macro redefined [-Wmacro-redefined]
+   91 | #define NV097_SET_VIEWPORT_OFFSET       0x0A20
+      |         ^
+/Users/lialan/Downloads/VR/vc3-vulkan/external/xboxrecomp/src/nv2a/nv2a_regs.h:1081:12: note: previous definition is here
+ 1081 | #   define NV097_SET_VIEWPORT_OFFSET                          0x00000A20
+      |            ^
+/Users/lialan/Downloads/VR/vc3-vulkan/external/xboxrecomp/src/nv2a/nv2a_pgraph_d3d11.c:92:9: warning: 'NV097_SET_VIEWPORT_SCALE' macro redefined [-Wmacro-redefined]
+   92 | #define NV097_SET_VIEWPORT_SCALE        0x0AF0
+      |         ^
+/Users/lialan/Downloads/VR/vc3-vulkan/external/xboxrecomp/src/nv2a/nv2a_regs.h:1089:12: note: previous definition is here
+ 1089 | #   define NV097_SET_VIEWPORT_SCALE                           0x00000AF0
+      |            ^
+/Users/lialan/Downloads/VR/vc3-vulkan/external/xboxrecomp/src/nv2a/nv2a_pgraph_d3d11.c:93:9: warning: 'NV097_SET_SURFACE_CLIP_HORIZONTAL' macro redefined [-Wmacro-redefined]
+   93 | #define NV097_SET_SURFACE_CLIP_HORIZONTAL 0x0200
+      |         ^
+/Users/lialan/Downloads/VR/vc3-vulkan/external/xboxrecomp/src/nv2a/nv2a_regs.h:863:12: note: previous definition is here
+  863 | #   define NV097_SET_SURFACE_CLIP_HORIZONTAL                  0x00000200
+      |            ^
+/Users/lialan/Downloads/VR/vc3-vulkan/external/xboxrecomp/src/nv2a/nv2a_pgraph_d3d11.c:94:9: warning: 'NV097_SET_SURFACE_CLIP_VERTICAL' macro redefined [-Wmacro-redefined]
+   94 | #define NV097_SET_SURFACE_CLIP_VERTICAL 0x0204
+      |         ^
+/Users/lialan/Downloads/VR/vc3-vulkan/external/xboxrecomp/src/nv2a/nv2a_regs.h:866:12: note: previous definition is here
+  866 | #   define NV097_SET_SURFACE_CLIP_VERTICAL                    0x00000204
+      |            ^
+/Users/lialan/Downloads/VR/vc3-vulkan/external/xboxrecomp/src/nv2a/nv2a_pgraph_d3d11.c:96:9: warning: 'NV097_SET_TEXTURE_OFFSET' macro redefined [-Wmacro-redefined]
+   96 | #define NV097_SET_TEXTURE_OFFSET        0x1B00  /* +0x40 per stage */
+      |         ^
+/Users/lialan/Downloads/VR/vc3-vulkan/external/xboxrecomp/src/nv2a/nv2a_regs.h:1183:12: note: previous definition is here
+ 1183 | #   define NV097_SET_TEXTURE_OFFSET                           0x00001B00
+      |            ^
+/Users/lialan/Downloads/VR/vc3-vulkan/external/xboxrecomp/src/nv2a/nv2a_pgraph_d3d11.c:97:9: warning: 'NV097_SET_TEXTURE_FORMAT' macro redefined [-Wmacro-redefined]
+   97 | #define NV097_SET_TEXTURE_FORMAT        0x1B04  /* +0x40 per stage */
+      |         ^
+/Users/lialan/Downloads/VR/vc3-vulkan/external/xboxrecomp/src/nv2a/nv2a_regs.h:1184:12: note: previous definition is here
+ 1184 | #   define NV097_SET_TEXTURE_FORMAT                           0x00001B04
+      |            ^
+/Users/lialan/Downloads/VR/vc3-vulkan/external/xboxrecomp/src/nv2a/nv2a_pgraph_d3d11.c:98:9: warning: 'NV097_SET_TEXTURE_CONTROL0' macro redefined [-Wmacro-redefined]
+   98 | #define NV097_SET_TEXTURE_CONTROL0      0x1B08  /* +0x40 per stage */
+      |         ^
+/Users/lialan/Downloads/VR/vc3-vulkan/external/xboxrecomp/src/nv2a/nv2a_regs.h:1239:12: note: previous definition is here
+ 1239 | #   define NV097_SET_TEXTURE_CONTROL0                         0x00001B0C
+      |            ^
+/Users/lialan/Downloads/VR/vc3-vulkan/external/xboxrecomp/src/nv2a/nv2a_pgraph_d3d11.c:34:12: warning: unused variable 'g_textures_loaded' [-Wunused-variable]
+   34 | static int g_textures_loaded = 0;
+      |            ^~~~~~~~~~~~~~~~~
+/Users/lialan/Downloads/VR/vc3-vulkan/external/xboxrecomp/src/nv2a/nv2a_pgraph_d3d11.c:44:27: warning: unused function 'create_dxt5_texture' [-Wunused-function]
+   44 | static IDirect3DTexture8 *create_dxt5_texture(IDirect3DDevice8 *dev,
+      |                           ^~~~~~~~~~~~~~~~~~~
+/Users/lialan/Downloads/VR/vc3-vulkan/external/xboxrecomp/src/nv2a/nv2a_pgraph_d3d11.c:116:17: warning: unused function 'nv2a_blend_to_d3d' [-Wunused-function]
+  116 | static uint32_t nv2a_blend_to_d3d(uint32_t nv) {
+      |                 ^~~~~~~~~~~~~~~~~
+24 warnings generated.
+[22/119] Linking C static library xboxrecomp/src/input/mapping/libxbox_input_map.a
+[23/119] Building C object xboxrecomp/src/kernel/CMakeFiles/xbox_kernel.dir/kernel_pool.c.o
+In file included from /Users/lialan/Downloads/VR/vc3-vulkan/external/xboxrecomp/src/kernel/kernel_pool.c:11:
+/Users/lialan/Downloads/VR/vc3-vulkan/external/xboxrecomp/src/kernel/kernel.h:505:63: warning: '/*' within block comment [-Wcomment]
+  505 |  * Set during memory layout init from the XBE header. *xbox_va/*count are
+      |                                                               ^
+1 warning generated.
+[24/119] Building C object xboxrecomp/src/platform/CMakeFiles/platform.dir/win32_compat.c.o
+[25/119] Building C object xboxrecomp/src/kernel/CMakeFiles/xbox_kernel.dir/kernel_memory.c.o
+In file included from /Users/lialan/Downloads/VR/vc3-vulkan/external/xboxrecomp/src/kernel/kernel_memory.c:12:
+/Users/lialan/Downloads/VR/vc3-vulkan/external/xboxrecomp/src/kernel/kernel.h:505:63: warning: '/*' within block comment [-Wcomment]
+  505 |  * Set during memory layout init from the XBE header. *xbox_va/*count are
+      |                                                               ^
+1 warning generated.
+[26/119] Building C object xboxrecomp/src/usb/CMakeFiles/xbox_usb.dir/usb_gamepad.c.o
+[27/119] Building C object xboxrecomp/src/kernel/CMakeFiles/xbox_kernel.dir/kernel_path.c.o
+In file included from /Users/lialan/Downloads/VR/vc3-vulkan/external/xboxrecomp/src/kernel/kernel_path.c:15:
+/Users/lialan/Downloads/VR/vc3-vulkan/external/xboxrecomp/src/kernel/kernel.h:505:63: warning: '/*' within block comment [-Wcomment]
+  505 |  * Set during memory layout init from the XBE header. *xbox_va/*count are
+      |                                                               ^
+1 warning generated.
+[28/119] Building C object xboxrecomp/src/kernel/CMakeFiles/xbox_kernel.dir/kernel_rtl.c.o
+In file included from /Users/lialan/Downloads/VR/vc3-vulkan/external/xboxrecomp/src/kernel/kernel_rtl.c:10:
+/Users/lialan/Downloads/VR/vc3-vulkan/external/xboxrecomp/src/kernel/kernel.h:505:63: warning: '/*' within block comment [-Wcomment]
+  505 |  * Set during memory layout init from the XBE header. *xbox_va/*count are
+      |                                                               ^
+/Users/lialan/Downloads/VR/vc3-vulkan/external/xboxrecomp/src/kernel/kernel_rtl.c:430:21: warning: format specifies type 'unsigned long' but the argument has type 'DWORD' (aka 'unsigned int') [-Wformat]
+  429 |             fprintf(stderr, "  [CSWATCH] t%-6lu %s 0x%08X\n",
+      |                                           ~~~~~
+      |                                           %-6u
+  430 |                     GetCurrentThreadId(), what, va);
+      |                     ^~~~~~~~~~~~~~~~~~~~
+/Users/lialan/Downloads/VR/vc3-vulkan/external/xboxrecomp/src/kernel/kernel_rtl.c:438:17: warning: format specifies type 'unsigned long' but the argument has type 'DWORD' (aka 'unsigned int') [-Wformat]
+  437 |         fprintf(stderr, "  [CSTRACE] t%-6lu %-4s 0x%08X idx %d\n",
+      |                                       ~~~~~
+      |                                       %-6u
+  438 |                 GetCurrentThreadId(), what, va, idx);
+      |                 ^~~~~~~~~~~~~~~~~~~~
+/Users/lialan/Downloads/VR/vc3-vulkan/external/xboxrecomp/src/kernel/kernel_rtl.c:445:13: warning: format specifies type 'unsigned long' but the argument has type 'DWORD' (aka 'unsigned int') [-Wformat]
+  444 |     fprintf(stderr, "  [CSTRACE] t%-6lu %-4s lock %d\n",
+      |                                   ~~~~~
+      |                                   %-6u
+  445 |             GetCurrentThreadId(), what, idx);
+      |             ^~~~~~~~~~~~~~~~~~~~
+/Users/lialan/Downloads/VR/vc3-vulkan/external/xboxrecomp/src/kernel/kernel_rtl.c:486:17: warning: format specifies type 'unsigned long' but the argument has type 'DWORD' (aka 'unsigned int') [-Wformat]
+  484 |         fprintf(stderr, "  [CS] thread %lu waiting on guest lock 0x%08X"
+      |                                        ~~~
+      |                                        %u
+  485 |                         " (held by thread %lu)\n",
+  486 |                 GetCurrentThreadId(),
+      |                 ^~~~~~~~~~~~~~~~~~~~
+/Users/lialan/Downloads/VR/vc3-vulkan/external/xboxrecomp/src/kernel/kernel_rtl.c:508:17: warning: format specifies type 'long' but the argument has type 'LONG' (aka 'int') [-Wformat]
+  507 |         fprintf(stderr, "  [CS] enters=%ld leaves=%ld (outstanding %ld)\n",
+      |                                        ~~~
+      |                                        %d
+  508 |                 g_cs_enters, g_cs_leaves, g_cs_enters - g_cs_leaves);
+      |                 ^~~~~~~~~~~
+/Users/lialan/Downloads/VR/vc3-vulkan/external/xboxrecomp/src/kernel/kernel_rtl.c:508:30: warning: format specifies type 'long' but the argument has type 'LONG' (aka 'int') [-Wformat]
+  507 |         fprintf(stderr, "  [CS] enters=%ld leaves=%ld (outstanding %ld)\n",
+      |                                                   ~~~
+      |                                                   %d
+  508 |                 g_cs_enters, g_cs_leaves, g_cs_enters - g_cs_leaves);
+      |                              ^~~~~~~~~~~
+/Users/lialan/Downloads/VR/vc3-vulkan/external/xboxrecomp/src/kernel/kernel_rtl.c:508:43: warning: format specifies type 'long' but the argument has type 'LONG' (aka 'int') [-Wformat]
+  507 |         fprintf(stderr, "  [CS] enters=%ld leaves=%ld (outstanding %ld)\n",
+      |                                                                    ~~~
+      |                                                                    %d
+  508 |                 g_cs_enters, g_cs_leaves, g_cs_enters - g_cs_leaves);
+      |                                           ^~~~~~~~~~~~~~~~~~~~~~~~~
+/Users/lialan/Downloads/VR/vc3-vulkan/external/xboxrecomp/src/kernel/kernel_rtl.c:519:17: warning: format specifies type 'unsigned long' but the argument has type 'DWORD' (aka 'unsigned int') [-Wformat]
+  518 |         fprintf(stderr, "  [CS] thread %lu acquired 0x%08X\n",
+      |                                        ~~~
+      |                                        %u
+  519 |                 GetCurrentThreadId(),
+      |                 ^~~~~~~~~~~~~~~~~~~~
+9 warnings generated.
+[29/119] Building C object xboxrecomp/src/kernel/CMakeFiles/xbox_kernel.dir/kernel_thread.c.o
+In file included from /Users/lialan/Downloads/VR/vc3-vulkan/external/xboxrecomp/src/kernel/kernel_thread.c:14:
+/Users/lialan/Downloads/VR/vc3-vulkan/external/xboxrecomp/src/kernel/kernel.h:505:63: warning: '/*' within block comment [-Wcomment]
+  505 |  * Set during memory layout init from the XBE header. *xbox_va/*count are
+      |                                                               ^
+1 warning generated.
+[30/119] Building C object xboxrecomp/src/kernel/CMakeFiles/xbox_kernel.dir/kernel_missing.c.o
+In file included from /Users/lialan/Downloads/VR/vc3-vulkan/external/xboxrecomp/src/kernel/kernel_missing.c:24:
+/Users/lialan/Downloads/VR/vc3-vulkan/external/xboxrecomp/src/kernel/kernel.h:505:63: warning: '/*' within block comment [-Wcomment]
+  505 |  * Set during memory layout init from the XBE header. *xbox_va/*count are
+      |                                                               ^
+1 warning generated.
+[31/119] Building C object xboxrecomp/src/kernel/CMakeFiles/xbox_kernel.dir/kernel_sync.c.o
+In file included from /Users/lialan/Downloads/VR/vc3-vulkan/external/xboxrecomp/src/kernel/kernel_sync.c:17:
+/Users/lialan/Downloads/VR/vc3-vulkan/external/xboxrecomp/src/kernel/kernel.h:505:63: warning: '/*' within block comment [-Wcomment]
+  505 |  * Set during memory layout init from the XBE header. *xbox_va/*count are
+      |                                                               ^
+1 warning generated.
+[32/119] Linking C static library xboxrecomp/src/platform/libplatform.a
+[33/119] Building C object xboxrecomp/src/kernel/CMakeFiles/xbox_kernel.dir/kernel_file.c.o
+In file included from /Users/lialan/Downloads/VR/vc3-vulkan/external/xboxrecomp/src/kernel/kernel_file.c:18:
+/Users/lialan/Downloads/VR/vc3-vulkan/external/xboxrecomp/src/kernel/kernel.h:505:63: warning: '/*' within block comment [-Wcomment]
+  505 |  * Set during memory layout init from the XBE header. *xbox_va/*count are
+      |                                                               ^
+1 warning generated.
+[34/119] Building C object xboxrecomp/src/kernel/CMakeFiles/xbox_kernel.dir/kernel_ob.c.o
+In file included from /Users/lialan/Downloads/VR/vc3-vulkan/external/xboxrecomp/src/kernel/kernel_ob.c:14:
+/Users/lialan/Downloads/VR/vc3-vulkan/external/xboxrecomp/src/kernel/kernel.h:505:63: warning: '/*' within block comment [-Wcomment]
+  505 |  * Set during memory layout init from the XBE header. *xbox_va/*count are
+      |                                                               ^
+1 warning generated.
+[35/119] Building C object xboxrecomp/src/kernel/CMakeFiles/xbox_kernel.dir/kernel_io.c.o
+In file included from /Users/lialan/Downloads/VR/vc3-vulkan/external/xboxrecomp/src/kernel/kernel_io.c:12:
+/Users/lialan/Downloads/VR/vc3-vulkan/external/xboxrecomp/src/kernel/kernel.h:505:63: warning: '/*' within block comment [-Wcomment]
+  505 |  * Set during memory layout init from the XBE header. *xbox_va/*count are
+      |                                                               ^
+1 warning generated.
+[36/119] Building C object xboxrecomp/src/kernel/CMakeFiles/xbox_kernel.dir/kernel_xbox.c.o
+In file included from /Users/lialan/Downloads/VR/vc3-vulkan/external/xboxrecomp/src/kernel/kernel_xbox.c:12:
+/Users/lialan/Downloads/VR/vc3-vulkan/external/xboxrecomp/src/kernel/kernel.h:505:63: warning: '/*' within block comment [-Wcomment]
+  505 |  * Set during memory layout init from the XBE header. *xbox_va/*count are
+      |                                                               ^
+1 warning generated.
+[37/119] Building C object xboxrecomp/src/kernel/CMakeFiles/xbox_kernel.dir/kernel_guest_cpu.c.o
+In file included from /Users/lialan/Downloads/VR/vc3-vulkan/external/xboxrecomp/src/kernel/kernel_guest_cpu.c:49:
+/Users/lialan/Downloads/VR/vc3-vulkan/external/xboxrecomp/src/kernel/kernel.h:505:63: warning: '/*' within block comment [-Wcomment]
+  505 |  * Set during memory layout init from the XBE header. *xbox_va/*count are
+      |                                                               ^
+1 warning generated.
+[38/119] Building C object xboxrecomp/src/kernel/CMakeFiles/xbox_kernel.dir/kernel_crypto.c.o
+In file included from /Users/lialan/Downloads/VR/vc3-vulkan/external/xboxrecomp/src/kernel/kernel_crypto.c:19:
+/Users/lialan/Downloads/VR/vc3-vulkan/external/xboxrecomp/src/kernel/kernel.h:505:63: warning: '/*' within block comment [-Wcomment]
+  505 |  * Set during memory layout init from the XBE header. *xbox_va/*count are
+      |                                                               ^
+1 warning generated.
+[39/119] Building C object xboxrecomp/src/usb/CMakeFiles/xbox_usb.dir/ohci.c.o
+In file included from /Users/lialan/Downloads/VR/vc3-vulkan/external/xboxrecomp/src/usb/ohci.c:13:
+/Users/lialan/Downloads/VR/vc3-vulkan/external/xboxrecomp/src/usb/../kernel/kernel.h:505:63: warning: '/*' within block comment [-Wcomment]
+  505 |  * Set during memory layout init from the XBE header. *xbox_va/*count are
+      |                                                               ^
+1 warning generated.
+[40/119] Building C object xboxrecomp/src/kernel/CMakeFiles/xbox_kernel.dir/kernel_thunks.c.o
+In file included from /Users/lialan/Downloads/VR/vc3-vulkan/external/xboxrecomp/src/kernel/kernel_thunks.c:20:
+/Users/lialan/Downloads/VR/vc3-vulkan/external/xboxrecomp/src/kernel/kernel.h:505:63: warning: '/*' within block comment [-Wcomment]
+  505 |  * Set during memory layout init from the XBE header. *xbox_va/*count are
+      |                                                               ^
+1 warning generated.
+[41/119] Building C object xboxrecomp/src/kernel/CMakeFiles/xbox_kernel.dir/kernel_hal.c.o
+In file included from /Users/lialan/Downloads/VR/vc3-vulkan/external/xboxrecomp/src/kernel/kernel_hal.c:14:
+/Users/lialan/Downloads/VR/vc3-vulkan/external/xboxrecomp/src/kernel/kernel.h:505:63: warning: '/*' within block comment [-Wcomment]
+  505 |  * Set during memory layout init from the XBE header. *xbox_va/*count are
+      |                                                               ^
+/Users/lialan/Downloads/VR/vc3-vulkan/external/xboxrecomp/src/kernel/kernel_hal.c:1102:13: warning: unused function 'xbox_update_tick_count' [-Wunused-function]
+ 1102 | static void xbox_update_tick_count(void)
+      |             ^~~~~~~~~~~~~~~~~~~~~~
+2 warnings generated.
+[42/119] Building C object xboxrecomp/src/apu/CMakeFiles/xbox_apu.dir/apu_vp.c.o
+[43/119] Linking C static library xboxrecomp/src/input/libxbox_input.a
+[44/119] Building C object xboxrecomp/src/kernel/CMakeFiles/xbox_kernel.dir/icall_feedback.c.o
+[45/119] Building C object xboxrecomp/src/kernel/CMakeFiles/xbox_kernel.dir/guest_vmem.c.o
+/Users/lialan/Downloads/VR/vc3-vulkan/external/xboxrecomp/src/kernel/guest_vmem.c:91:59: warning: format specifies type 'unsigned long' but the argument has type 'DWORD' (aka 'unsigned int') [-Wformat]
+   90 |         fprintf(stderr, "  Extended VMA: could not reserve host memory at %p (error %lu);"
+      |                                                                                     ~~~
+      |                                                                                     %u
+   91 |                         " the tracker stays off\n", host, GetLastError());
+      |                                                           ^~~~~~~~~~~~~~
+/Users/lialan/Downloads/VR/vc3-vulkan/external/xboxrecomp/src/kernel/guest_vmem.c:123:36: warning: format specifies type 'unsigned long' but the argument has type 'DWORD' (aka 'unsigned int') [-Wformat]
+  122 |         fprintf(stderr, "guest_vmem: failed to commit %p (%u bytes, error %lu)\n",
+      |                                                                           ~~~
+      |                                                                           %u
+  123 |                 host, end - start, GetLastError());
+      |                                    ^~~~~~~~~~~~~~
+2 warnings generated.
+[46/119] Building C object xboxrecomp/src/kernel/CMakeFiles/xbox_kernel.dir/recomp_trace.c.o
+[47/119] Building C object xboxrecomp/src/kernel/CMakeFiles/xbox_kernel.dir/nv2a_flip_hold.c.o
+[48/119] Building C object xboxrecomp/src/kernel/CMakeFiles/xbox_kernel.dir/nv2a_pb_scan.c.o
+[49/119] Building C object xboxrecomp/src/audio/CMakeFiles/xbox_dsound.dir/wma_decoder.c.o
+[50/119] Linking C static library xboxrecomp/src/d3d/libxbox_d3d8.a
+[51/119] Building C object xboxrecomp/src/kernel/CMakeFiles/xbox_kernel.dir/nv2a_vsh_glsl.c.o
+[52/119] Building C object xboxrecomp/src/audio/CMakeFiles/xbox_dsound.dir/dsound_device.c.o
+[53/119] Building C object xboxrecomp/src/kernel/CMakeFiles/xbox_kernel.dir/nv2a_combiner.c.o
+[54/119] Building C object xboxrecomp/src/kernel/CMakeFiles/xbox_kernel.dir/nv2a_pb_defer.c.o
+[55/119] Linking C static library xboxrecomp/src/apu/libxbox_apu.a
+[56/119] Building C object xboxrecomp/src/video/CMakeFiles/xbox_video.dir/video_player.c.o
+[57/119] Building C object xboxrecomp/src/kernel/CMakeFiles/xbox_kernel.dir/nv2a_vsh_interp.c.o
+[58/119] Building C object xboxrecomp/src/video/CMakeFiles/xbox_video.dir/video_pump.c.o
+[59/119] Building C object xboxrecomp/src/video/CMakeFiles/xbox_video.dir/fb_present.c.o
+[60/119] Linking C static library xboxrecomp/src/usb/libxbox_usb.a
+[61/119] Building C object runtime/CMakeFiles/chihiro_rt.dir/src/chihiro/chihiro.c.o
+[62/119] Linking C static library xboxrecomp/src/nv2a/libxbox_nv2a.a
+[63/119] Linking C static library xboxrecomp/src/audio/libxbox_dsound.a
+[64/119] Building C object runtime/CMakeFiles/chihiro_rt.dir/src/chihiro/chihiro_profile.c.o
+[65/119] Building C object runtime/CMakeFiles/chihiro_rt.dir/src/chihiro/storage.c.o
+[66/119] Building C object runtime/CMakeFiles/chihiro_rt.dir/src/chihiro/ch_env.c.o
+[67/119] Building C object runtime/CMakeFiles/chihiro_rt.dir/src/chihiro/baseboard.c.o
+[68/119] Building C object runtime/CMakeFiles/chihiro_rt.dir/src/chihiro/d3d_fence.c.o
+[69/119] Building C object xboxrecomp/src/video/CMakeFiles/xbox_video.dir/fb_present_sdl.c.o
+[70/119] Building C object xboxrecomp/src/kernel/CMakeFiles/xbox_kernel.dir/xbox_memory_layout.c.o
+In file included from /Users/lialan/Downloads/VR/vc3-vulkan/external/xboxrecomp/src/kernel/xbox_memory_layout.c:20:
+/Users/lialan/Downloads/VR/vc3-vulkan/external/xboxrecomp/src/kernel/kernel.h:505:63: warning: '/*' within block comment [-Wcomment]
+  505 |  * Set during memory layout init from the XBE header. *xbox_va/*count are
+      |                                                               ^
+/Users/lialan/Downloads/VR/vc3-vulkan/external/xboxrecomp/src/kernel/xbox_memory_layout.c:2681:17: warning: format specifies type 'unsigned long' but the argument has type 'DWORD' (aka 'unsigned int') [-Wformat]
+ 2680 |         fprintf(stderr, "xbox_MemoryLayoutInit: CreateFileMapping failed (error %lu)\n",
+      |                                                                                 ~~~
+      |                                                                                 %u
+ 2681 |                 GetLastError());
+      |                 ^~~~~~~~~~~~~~
+/Users/lialan/Downloads/VR/vc3-vulkan/external/xboxrecomp/src/kernel/xbox_memory_layout.c:3320:62: warning: format specifies type 'unsigned long' but the argument has type 'DWORD' (aka 'unsigned int') [-Wformat]
+ 3319 |                     "failed (error %lu); pinned physical allocations will fault\n",
+      |                                    ~~~
+      |                                    %u
+ 3320 |                     XBOX_CONTIG_BASE, (void *)contig_native, err);
+      |                                                              ^~~
+/Users/lialan/Downloads/VR/vc3-vulkan/external/xboxrecomp/src/kernel/xbox_memory_layout.c:3364:37: warning: format specifies type 'unsigned long' but the argument has type 'DWORD' (aka 'unsigned int') [-Wformat]
+ 3363 |                     "(error %lu); D3D register access will fault\n",
+      |                             ~~~
+      |                             %u
+ 3364 |                     XBOX_NV2A_BASE, GetLastError());
+      |                                     ^~~~~~~~~~~~~~
+/Users/lialan/Downloads/VR/vc3-vulkan/external/xboxrecomp/src/kernel/xbox_memory_layout.c:3470:37: warning: format specifies type 'unsigned long' but the argument has type 'DWORD' (aka 'unsigned int') [-Wformat]
+ 3469 |                     "(error %lu); USB/audio register access will fault\n",
+      |                             ~~~
+      |                             %u
+ 3470 |                     XBOX_MCPX_BASE, GetLastError());
+      |                                     ^~~~~~~~~~~~~~
+/Users/lialan/Downloads/VR/vc3-vulkan/external/xboxrecomp/src/kernel/xbox_memory_layout.c:3487:38: warning: format specifies type 'unsigned long' but the argument has type 'DWORD' (aka 'unsigned int') [-Wformat]
+ 3486 |                     "(error %lu); a title reading flash will fault\n",
+      |                             ~~~
+      |                             %u
+ 3487 |                     XBOX_FLASH_BASE, GetLastError());
+      |                                      ^~~~~~~~~~~~~~
+/Users/lialan/Downloads/VR/vc3-vulkan/external/xboxrecomp/src/kernel/xbox_memory_layout.c:3617:53: warning: format specifies type 'unsigned long' but the argument has type 'DWORD' (aka 'unsigned int') [-Wformat]
+ 3616 |                 fprintf(stderr, "  Mirror %d: FAILED at %p (error %lu)\n",
+      |                                                                   ~~~
+      |                                                                   %u
+ 3617 |                         m + 1, (void *)mirror_base, GetLastError());
+      |                                                     ^~~~~~~~~~~~~~
+/Users/lialan/Downloads/VR/vc3-vulkan/external/xboxrecomp/src/kernel/xbox_memory_layout.c:3734:38: warning: format specifies type 'unsigned long' but the argument has type 'DWORD' (aka 'unsigned int') [-Wformat]
+ 3733 |                     " (error %lu); rendering writes will fault\n",
+      |                              ~~~
+      |                              %u
+ 3734 |                     XBOX_TILED_BASE, GetLastError());
+      |                                      ^~~~~~~~~~~~~~
+/Users/lialan/Downloads/VR/vc3-vulkan/external/xboxrecomp/src/kernel/xbox_memory_layout.c:2135:13: warning: unused function 'watch_sym' [-Wunused-function]
+ 2135 | static void watch_sym(void *pc, const char *tag, int n)
+      |             ^~~~~~~~~
+9 warnings generated.
+[71/119] Building C object runtime/CMakeFiles/chihiro_rt.dir/src/host/display_settings.c.o
+[72/119] Building C object runtime/CMakeFiles/chihiro_rt.dir/src/chihiro/jvs.c.o
+[73/119] Linking C static library xboxrecomp/src/video/libxbox_video.a
+[74/119] Building C object CMakeFiles/vc3.dir/games/vc3/src/game.c.o
+[75/119] Building C object CMakeFiles/vc3.dir/games/vc3/src/vc3_idle.c.o
+[76/119] Building C object CMakeFiles/vc3.dir/games/vc3/src/recomp_manual.c.o
+[77/119] Building C object runtime/CMakeFiles/chihiro_rt.dir/src/xr/quest_overlay.c.o
+[78/119] Building C object runtime/CMakeFiles/chihiro_rt.dir/src/xr/quest_menu.c.o
+[79/119] Building C object runtime/CMakeFiles/chihiro_rt.dir/src/host/host_input.c.o
+[80/119] Building C object runtime/CMakeFiles/chihiro_rt.dir/src/gpu/gl_texdec.c.o
+[81/119] Building C object xboxrecomp/src/kernel/CMakeFiles/xbox_kernel.dir/kernel_bridge.c.o
+In file included from /Users/lialan/Downloads/VR/vc3-vulkan/external/xboxrecomp/src/kernel/kernel_bridge.c:32:
+/Users/lialan/Downloads/VR/vc3-vulkan/external/xboxrecomp/src/kernel/kernel.h:505:63: warning: '/*' within block comment [-Wcomment]
+  505 |  * Set during memory layout init from the XBE header. *xbox_va/*count are
+      |                                                               ^
+/Users/lialan/Downloads/VR/vc3-vulkan/external/xboxrecomp/src/kernel/kernel_bridge.c:1179:14: warning: unused variable 'zero_bits' [-Wunused-variable]
+ 1179 |     uint32_t zero_bits = STACK_ARG(1);
+      |              ^~~~~~~~~
+/Users/lialan/Downloads/VR/vc3-vulkan/external/xboxrecomp/src/kernel/kernel_bridge.c:5519:14: warning: unused variable 'protect' [-Wunused-variable]
+ 5519 |     uint32_t protect = STACK_ARG(2);
+      |              ^~~~~~~
+/Users/lialan/Downloads/VR/vc3-vulkan/external/xboxrecomp/src/kernel/kernel_bridge.c:5554:14: warning: '/*' within block comment [-Wcomment]
+ 5554 |  * src/kernel/*.c; only the wrapper that moves arguments off the simulated stack
+      |              ^
+/Users/lialan/Downloads/VR/vc3-vulkan/external/xboxrecomp/src/kernel/kernel_bridge.c:9449:38: warning: '/*' within block comment [-Wcomment]
+ 9449 |         /* Division by zero: report 0/*; Real hardware faults here. */
+      |                                      ^
+/Users/lialan/Downloads/VR/vc3-vulkan/external/xboxrecomp/src/kernel/kernel_bridge.c:11342:46: warning: '/*' within block comment [-Wcomment]
+ 11342 |  * values are per-title, not hardcoded. *base/*count are set to 0 if unavailable.
+       |                                              ^
+/Users/lialan/Downloads/VR/vc3-vulkan/external/xboxrecomp/src/kernel/kernel_bridge.c:11418:19: warning: comparison of integers of different signs: 'int' and 'uint32_t' (aka 'unsigned int') [-Wsign-compare]
+ 11418 |     for (i = 0; i < g_thunk_table_count; i++) {
+       |                 ~ ^ ~~~~~~~~~~~~~~~~~~~
+/Users/lialan/Downloads/VR/vc3-vulkan/external/xboxrecomp/src/kernel/kernel_bridge.c:4185:15: warning: unused function 'bridge_read_handle' [-Wunused-function]
+ 4185 | static HANDLE bridge_read_handle(uint32_t va)
+      |               ^~~~~~~~~~~~~~~~~~
+/Users/lialan/Downloads/VR/vc3-vulkan/external/xboxrecomp/src/kernel/kernel_bridge.c:5542:13: warning: unused function 'bridge_generic_stub' [-Wunused-function]
+ 5542 | static void bridge_generic_stub(void)
+      |             ^~~~~~~~~~~~~~~~~~~
+9 warnings generated.
+[82/119] Building C object runtime/CMakeFiles/chihiro_rt.dir/src/xr/quest_host.c.o
+[83/119] Building C object xboxrecomp/src/kernel/CMakeFiles/xbox_kernel.dir/nv2a_pb_exec.c.o
+In file included from /Users/lialan/Downloads/VR/vc3-vulkan/external/xboxrecomp/src/kernel/nv2a_pb_exec.c:33:
+/Users/lialan/Downloads/VR/vc3-vulkan/external/xboxrecomp/src/kernel/kernel.h:505:63: warning: '/*' within block comment [-Wcomment]
+  505 |  * Set during memory layout init from the XBE header. *xbox_va/*count are
+      |                                                               ^
+1 warning generated.
+[84/119] Linking C static library xboxrecomp/src/kernel/libxbox_kernel.a
+[85/119] Building C object runtime/CMakeFiles/chihiro_rt.dir/src/gpu/gl_backend.c.o
+[86/119] Building C object CMakeFiles/vc3.dir/games/vc3/generated/recomp_0008.c.o
+[87/119] Building C object CMakeFiles/vc3.dir/games/vc3/generated/recomp_0010.c.o
+[88/119] Building C object CMakeFiles/vc3.dir/games/vc3/generated/recomp_0007.c.o
+[89/119] Building C object CMakeFiles/vc3.dir/games/vc3/generated/recomp_0001.c.o
+[90/119] Building C object CMakeFiles/vc3.dir/games/vc3/generated/recomp_0011.c.o
+[91/119] Building C object CMakeFiles/vc3.dir/games/vc3/generated/recomp_0009.c.o
+[92/119] Building C object CMakeFiles/vc3.dir/games/vc3/generated/recomp_0000.c.o
+[93/119] Building C object CMakeFiles/vc3.dir/games/vc3/generated/recomp_0005.c.o
+[94/119] Building C object CMakeFiles/vc3.dir/games/vc3/generated/recomp_0002.c.o
+[95/119] Building C object CMakeFiles/vc3.dir/games/vc3/generated/recomp_0012.c.o
+[96/119] Building C object CMakeFiles/vc3.dir/games/vc3/generated/recomp_0006.c.o
+[97/119] Building C object CMakeFiles/vc3.dir/games/vc3/generated/recomp_0014.c.o
+[98/119] Building C object CMakeFiles/vc3.dir/games/vc3/generated/recomp_0004.c.o
+[99/119] Building C object CMakeFiles/vc3.dir/games/vc3/generated/recomp_0013.c.o
+[100/119] Building C object CMakeFiles/vc3.dir/games/vc3/generated/recomp_0015.c.o
+[101/119] Building C object CMakeFiles/vc3.dir/games/vc3/generated/recomp_0017.c.o
+[102/119] Building C object CMakeFiles/vc3.dir/games/vc3/generated/recomp_dispatch.c.o
+[103/119] Building C object CMakeFiles/vc3.dir/games/vc3/generated/recomp_stubs_unresolved.c.o
+[104/119] Building C object CMakeFiles/vc3.dir/runtime/src/host/main.c.o
+In file included from /Users/lialan/Downloads/VR/vc3-vulkan/runtime/src/host/main.c:32:
+In file included from /Users/lialan/Downloads/VR/vc3-vulkan/external/xboxrecomp/include/xbox/xboxrecomp.h:46:
+/Users/lialan/Downloads/VR/vc3-vulkan/external/xboxrecomp/src/kernel/kernel.h:505:63: warning: '/*' within block comment [-Wcomment]
+  505 |  * Set during memory layout init from the XBE header. *xbox_va/*count are
+      |                                                               ^
+1 warning generated.
+[105/119] Building C object CMakeFiles/vc3.dir/runtime/src/xr/android_main.c.o
+[106/119] Linking C static library runtime/libchihiro_rt.a
+[107/119] Building C object CMakeFiles/vc3.dir/games/vc3/generated/recomp_0016.c.o
+[108/119] Building C object CMakeFiles/vc3.dir/games/vc3/generated/recomp_0022.c.o
+[109/119] Building C object CMakeFiles/vc3.dir/games/vc3/generated/recomp_0020.c.o
+[110/119] Building C object CMakeFiles/vc3.dir/games/vc3/generated/recomp_0003.c.o
+[111/119] Building C object CMakeFiles/vc3.dir/games/vc3/generated/recomp_0018.c.o
+[112/119] Building C object CMakeFiles/vc3.dir/games/vc3/generated/recomp_0026.c.o
+[113/119] Building C object CMakeFiles/vc3.dir/games/vc3/generated/recomp_0021.c.o
+[114/119] Building C object CMakeFiles/vc3.dir/games/vc3/generated/recomp_0025.c.o
+[115/119] Building C object CMakeFiles/vc3.dir/games/vc3/generated/recomp_0024.c.o
+[116/119] Building C object CMakeFiles/vc3.dir/games/vc3/generated/recomp_0023.c.o
+[117/119] Building C object CMakeFiles/vc3.dir/games/vc3/generated/recomp_0019.c.o
+[118/119] Linking C shared library libmain.so

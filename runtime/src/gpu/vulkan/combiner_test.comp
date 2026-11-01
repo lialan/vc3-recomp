@@ -1,0 +1,20 @@
+#version 450
+#extension GL_GOOGLE_include_directive : require
+#include "combiner.glsl"
+layout(local_size_x=1) in;
+struct TestCase { uint words[56]; vec4 inputs[7]; vec4 output_color; };
+layout(std430,set=0,binding=0) buffer Cases { TestCase cases[]; };
+void main() {
+    uint i=gl_GlobalInvocationID.x;
+    ChRc rc;
+    for(uint j=0;j<8;j++) {
+        rc.color_icw[j]=cases[i].words[j]; rc.alpha_icw[j]=cases[i].words[8+j];
+        rc.color_ocw[j]=cases[i].words[16+j]; rc.alpha_ocw[j]=cases[i].words[24+j];
+        rc.factor0[j]=cases[i].words[32+j]; rc.factor1[j]=cases[i].words[40+j];
+    }
+    rc.final0=cases[i].words[48]; rc.final1=cases[i].words[49];
+    rc.final_c0=cases[i].words[50]; rc.final_c1=cases[i].words[51];
+    rc.control=cases[i].words[52]; rc.stage_program=cases[i].words[53];
+    vec4 texels[4]; for(uint j=0;j<4;j++) texels[j]=cases[i].inputs[3+j];
+    cases[i].output_color=ch_rc_eval(rc,cases[i].inputs[0],cases[i].inputs[1],cases[i].inputs[2],texels);
+}

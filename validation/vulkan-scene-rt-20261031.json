@@ -1,0 +1,27 @@
+{
+  "scope": "Synthetic native-eye render target sampling on real Quest Vulkan; not whole-scene GLES parity, live XR, gameplay or performance",
+  "source_sha256": {
+    "runtime/src/gpu/vulkan/vk_scene.c": "57cd249e7493d8d6dffbb156aa541f55b468146a2bf9c47db8a4afb01f2ff9bf",
+    "runtime/src/gpu/vulkan/vk_scene.h": "087fda54fd4c4410dc3cc5748a3ff91d551eb559b432270664551abe3005637d",
+    "runtime/src/gpu/vulkan/vk_nv2a.c": "351770ff1b67f69e20cf95bcbbb641407f5e579c4a4ef52ebc79f8521473cd65",
+    "runtime/src/gpu/vulkan/vk_nv2a.h": "781a69b5506e787a37339f3f757d35ee6ad4c0e32123b992032696b1154206c4",
+    "tools/vulkan-scene-test.c": "635e137c51915828f0c2ade0c79e2a224dbab27bb533762be285f568dfa60569"
+  },
+  "evidence": "vulkan-scene-rt-20261031.log",
+  "checks": [
+    "4x3 guest binding resolves37x19native per-eye image",
+    "All bytes of separate eye copies equal their own native source",
+    "Two-stage register combiner samples correct eye",
+    "Self-feedback uses snapshot before overwriting each eye",
+    "Dominant world projection retained when presented auxiliary target has unrelated cached projection",
+    "Interior aliases and pitch reinterpretation return unsupported without guest fallback",
+    "All previous guest/executor/scene/HUD/mailbox/overlay fixtures pass"
+  ],
+  "implemented_formats": "Exact linear ARGB8888/RGB565 bindings; new native RT fixture tests ARGB8888",
+  "limits": [
+    "No live platform integration yet",
+    "Guest CPU edits to stereo host targets need explicit coherence handling",
+    "Reinterpreted/cropped/interior RT bindings unsupported",
+    "No gameplay regression coverage or performance claim"
+  ]
+}

@@ -1,0 +1,9 @@
+{
+  "baseline_size": 10366320,
+  "candidate_size": 10366320,
+  "differing_sections": [
+    ".note.gnu.build-id"
+  ],
+  "differing_byte_count": 20,
+  "exact_native_match": false
+}

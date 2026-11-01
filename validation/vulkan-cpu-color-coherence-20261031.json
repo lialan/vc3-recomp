@@ -1,0 +1,28 @@
+{
+  "scope": "Exact guest CPU color edit detection and scene ownership, synthetic fixtures on real Quest Vulkan; no live gameplay parity",
+  "source_sha256": {
+    "runtime/src/gpu/vulkan/vk_backend.c": "f2e55e6f2bae4aa16bd356a7cfb59e1687ce1d943d24ceceed7bf461be2ad431",
+    "runtime/src/gpu/vulkan/vk_backend.h": "8bdbe9cb57445ddc3fe52b808c3571fa629a3f3ce823ccaf4054a1f39265c8bb",
+    "runtime/src/gpu/vulkan/vk_scene.c": "83569102b327bac059664ef1414d7fb6813fe658e43488eded622c0c9ffbe2e4",
+    "runtime/src/gpu/vulkan/vk_scene.h": "887e5ac611d4181468df5cd61e0825c06a8f0b6d1a0f4e560cf1f7f36b97006d",
+    "tools/vulkan-scene-test.c": "5ae48780bebc84233694e1dd5ae9275f18dd7ffc7023968fa29218917f613433",
+    "tools/vulkan-guest-texture-test.c": "627b4f0da35dce14a23c2bd5518c3e82f8dfaa89ebec7f03df81a1bcd90b55d4"
+  },
+  "evidence": "vulkan-cpu-color-coherence-20261031.log",
+  "checks": [
+    "Canonical ARGB/RGB565 baseline avoids GPU quantization false positives",
+    "Logical pixel edits detected before other surface draw and flip",
+    "Row padding ignored, edits notified once",
+    "CPU-owned RT uses guest decoder rather than native stereo cache",
+    "CPU-owned presented target marked flat",
+    "Later GPU draw restores native per-eye routing while preserving imported background",
+    "Initial guest color seeds newly allocated native targets",
+    "All prior offscreen and48GLES/Vulkanoverlay fixtures pass"
+  ],
+  "limits": [
+    "CPU depth/stencil edits in host stereo cache not handled here",
+    "Live backend/scene/platform host wiring incomplete",
+    "No exact scene-matched baseline gameplay comparison",
+    "No performance claim"
+  ]
+}

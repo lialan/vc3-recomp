@@ -1,0 +1,451 @@
+{
+  "scope": "Synthetic offscreen overlay only; actual GLES qo_draw versus Vulkan on Quest Adreno 740; no XR/gameplay validation",
+  "cases": 48,
+  "pixels_per_case": 81920,
+  "channels_per_pixel": 4,
+  "tolerance_unorm_steps": 3,
+  "observed_max_delta": 1,
+  "pixels_over_tolerance": 0,
+  "reference_profile": "zero profile uses default sight heights",
+  "pose": "identity and rotated quaternion; two eye positions; recoil 0 and .8",
+  "source_sha256": {
+    "tools/vulkan-overlay-parity.c": "4ce2d4286733f0dae560bc8b4111227f6a2893c703016bc18a06eda8efd37f35",
+    "runtime/src/xr/quest_overlay.c": "7b92f8fc29638d0c1c3e0268b9f0c859a2b426fb093d9afd4974a908e9c38bd9",
+    "runtime/src/gpu/vulkan/vk_overlay.c": "8c56af5fcbb35ca2e890052d177b34d344c7f5241e87a05b3f154fa522f1cf5d",
+    "runtime/src/xr/quest_overlay_effects.inc": "c5be332977a06287a10d39ed8d0a6b731de42297fb407a755a5e0b62b0efe650"
+  },
+  "rows": [
+    {
+      "sight": 0,
+      "mode": 0,
+      "eye": 0,
+      "recoil": 0,
+      "covered": 4659,
+      "bad": 0,
+      "max_delta": 0
+    },
+    {
+      "sight": 0,
+      "mode": 0,
+      "eye": 0,
+      "recoil": 1,
+      "covered": 5184,
+      "bad": 0,
+      "max_delta": 0
+    },
+    {
+      "sight": 0,
+      "mode": 0,
+      "eye": 1,
+      "recoil": 0,
+      "covered": 5245,
+      "bad": 0,
+      "max_delta": 0
+    },
+    {
+      "sight": 0,
+      "mode": 0,
+      "eye": 1,
+      "recoil": 1,
+      "covered": 5785,
+      "bad": 0,
+      "max_delta": 0
+    },
+    {
+      "sight": 0,
+      "mode": 1,
+      "eye": 0,
+      "recoil": 0,
+      "covered": 4919,
+      "bad": 0,
+      "max_delta": 1
+    },
+    {
+      "sight": 0,
+      "mode": 1,
+      "eye": 0,
+      "recoil": 1,
+      "covered": 5495,
+      "bad": 0,
+      "max_delta": 1
+    },
+    {
+      "sight": 0,
+      "mode": 1,
+      "eye": 1,
+      "recoil": 0,
+      "covered": 5544,
+      "bad": 0,
+      "max_delta": 1
+    },
+    {
+      "sight": 0,
+      "mode": 1,
+      "eye": 1,
+      "recoil": 1,
+      "covered": 6126,
+      "bad": 0,
+      "max_delta": 1
+    },
+    {
+      "sight": 0,
+      "mode": 2,
+      "eye": 0,
+      "recoil": 0,
+      "covered": 853,
+      "bad": 0,
+      "max_delta": 1
+    },
+    {
+      "sight": 0,
+      "mode": 2,
+      "eye": 0,
+      "recoil": 1,
+      "covered": 916,
+      "bad": 0,
+      "max_delta": 1
+    },
+    {
+      "sight": 0,
+      "mode": 2,
+      "eye": 1,
+      "recoil": 0,
+      "covered": 851,
+      "bad": 0,
+      "max_delta": 1
+    },
+    {
+      "sight": 0,
+      "mode": 2,
+      "eye": 1,
+      "recoil": 1,
+      "covered": 915,
+      "bad": 0,
+      "max_delta": 1
+    },
+    {
+      "sight": 0,
+      "mode": 3,
+      "eye": 0,
+      "recoil": 0,
+      "covered": 81920,
+      "bad": 0,
+      "max_delta": 0
+    },
+    {
+      "sight": 0,
+      "mode": 3,
+      "eye": 0,
+      "recoil": 1,
+      "covered": 81920,
+      "bad": 0,
+      "max_delta": 0
+    },
+    {
+      "sight": 0,
+      "mode": 3,
+      "eye": 1,
+      "recoil": 0,
+      "covered": 81920,
+      "bad": 0,
+      "max_delta": 0
+    },
+    {
+      "sight": 0,
+      "mode": 3,
+      "eye": 1,
+      "recoil": 1,
+      "covered": 81920,
+      "bad": 0,
+      "max_delta": 0
+    },
+    {
+      "sight": 1,
+      "mode": 0,
+      "eye": 0,
+      "recoil": 0,
+      "covered": 4935,
+      "bad": 0,
+      "max_delta": 0
+    },
+    {
+      "sight": 1,
+      "mode": 0,
+      "eye": 0,
+      "recoil": 1,
+      "covered": 5547,
+      "bad": 0,
+      "max_delta": 0
+    },
+    {
+      "sight": 1,
+      "mode": 0,
+      "eye": 1,
+      "recoil": 0,
+      "covered": 5565,
+      "bad": 0,
+      "max_delta": 0
+    },
+    {
+      "sight": 1,
+      "mode": 0,
+      "eye": 1,
+      "recoil": 1,
+      "covered": 6182,
+      "bad": 0,
+      "max_delta": 0
+    },
+    {
+      "sight": 1,
+      "mode": 1,
+      "eye": 0,
+      "recoil": 0,
+      "covered": 5194,
+      "bad": 0,
+      "max_delta": 1
+    },
+    {
+      "sight": 1,
+      "mode": 1,
+      "eye": 0,
+      "recoil": 1,
+      "covered": 5837,
+      "bad": 0,
+      "max_delta": 1
+    },
+    {
+      "sight": 1,
+      "mode": 1,
+      "eye": 1,
+      "recoil": 0,
+      "covered": 5857,
+      "bad": 0,
+      "max_delta": 1
+    },
+    {
+      "sight": 1,
+      "mode": 1,
+      "eye": 1,
+      "recoil": 1,
+      "covered": 6516,
+      "bad": 0,
+      "max_delta": 1
+    },
+    {
+      "sight": 1,
+      "mode": 2,
+      "eye": 0,
+      "recoil": 0,
+      "covered": 853,
+      "bad": 0,
+      "max_delta": 1
+    },
+    {
+      "sight": 1,
+      "mode": 2,
+      "eye": 0,
+      "recoil": 1,
+      "covered": 916,
+      "bad": 0,
+      "max_delta": 1
+    },
+    {
+      "sight": 1,
+      "mode": 2,
+      "eye": 1,
+      "recoil": 0,
+      "covered": 851,
+      "bad": 0,
+      "max_delta": 1
+    },
+    {
+      "sight": 1,
+      "mode": 2,
+      "eye": 1,
+      "recoil": 1,
+      "covered": 915,
+      "bad": 0,
+      "max_delta": 1
+    },
+    {
+      "sight": 1,
+      "mode": 3,
+      "eye": 0,
+      "recoil": 0,
+      "covered": 81920,
+      "bad": 0,
+      "max_delta": 0
+    },
+    {
+      "sight": 1,
+      "mode": 3,
+      "eye": 0,
+      "recoil": 1,
+      "covered": 81920,
+      "bad": 0,
+      "max_delta": 0
+    },
+    {
+      "sight": 1,
+      "mode": 3,
+      "eye": 1,
+      "recoil": 0,
+      "covered": 81920,
+      "bad": 0,
+      "max_delta": 0
+    },
+    {
+      "sight": 1,
+      "mode": 3,
+      "eye": 1,
+      "recoil": 1,
+      "covered": 81920,
+      "bad": 0,
+      "max_delta": 0
+    },
+    {
+      "sight": 2,
+      "mode": 0,
+      "eye": 0,
+      "recoil": 0,
+      "covered": 5527,
+      "bad": 0,
+      "max_delta": 0
+    },
+    {
+      "sight": 2,
+      "mode": 0,
+      "eye": 0,
+      "recoil": 1,
+      "covered": 6308,
+      "bad": 0,
+      "max_delta": 0
+    },
+    {
+      "sight": 2,
+      "mode": 0,
+      "eye": 1,
+      "recoil": 0,
+      "covered": 6239,
+      "bad": 0,
+      "max_delta": 0
+    },
+    {
+      "sight": 2,
+      "mode": 0,
+      "eye": 1,
+      "recoil": 1,
+      "covered": 7011,
+      "bad": 0,
+      "max_delta": 0
+    },
+    {
+      "sight": 2,
+      "mode": 1,
+      "eye": 0,
+      "recoil": 0,
+      "covered": 5779,
+      "bad": 0,
+      "max_delta": 1
+    },
+    {
+      "sight": 2,
+      "mode": 1,
+      "eye": 0,
+      "recoil": 1,
+      "covered": 6582,
+      "bad": 0,
+      "max_delta": 1
+    },
+    {
+      "sight": 2,
+      "mode": 1,
+      "eye": 1,
+      "recoil": 0,
+      "covered": 6511,
+      "bad": 0,
+      "max_delta": 1
+    },
+    {
+      "sight": 2,
+      "mode": 1,
+      "eye": 1,
+      "recoil": 1,
+      "covered": 7319,
+      "bad": 0,
+      "max_delta": 1
+    },
+    {
+      "sight": 2,
+      "mode": 2,
+      "eye": 0,
+      "recoil": 0,
+      "covered": 853,
+      "bad": 0,
+      "max_delta": 1
+    },
+    {
+      "sight": 2,
+      "mode": 2,
+      "eye": 0,
+      "recoil": 1,
+      "covered": 916,
+      "bad": 0,
+      "max_delta": 1
+    },
+    {
+      "sight": 2,
+      "mode": 2,
+      "eye": 1,
+      "recoil": 0,
+      "covered": 851,
+      "bad": 0,
+      "max_delta": 1
+    },
+    {
+      "sight": 2,
+      "mode": 2,
+      "eye": 1,
+      "recoil": 1,
+      "covered": 915,
+      "bad": 0,
+      "max_delta": 1
+    },
+    {
+      "sight": 2,
+      "mode": 3,
+      "eye": 0,
+      "recoil": 0,
+      "covered": 81920,
+      "bad": 0,
+      "max_delta": 0
+    },
+    {
+      "sight": 2,
+      "mode": 3,
+      "eye": 0,
+      "recoil": 1,
+      "covered": 81920,
+      "bad": 0,
+      "max_delta": 0
+    },
+    {
+      "sight": 2,
+      "mode": 3,
+      "eye": 1,
+      "recoil": 0,
+      "covered": 81920,
+      "bad": 0,
+      "max_delta": 0
+    },
+    {
+      "sight": 2,
+      "mode": 3,
+      "eye": 1,
+      "recoil": 1,
+      "covered": 81920,
+      "bad": 0,
+      "max_delta": 0
+    }
+  ]
+}

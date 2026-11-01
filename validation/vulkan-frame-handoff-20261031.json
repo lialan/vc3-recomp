@@ -1,0 +1,23 @@
+{
+  "scope": "Completed flat-frame handoff boundary only; live XR/game host integration incomplete",
+  "source_sha256": {
+    "runtime/src/gpu/vulkan/vk_backend.c": "3a7612483c00a7c1d8e9047a8c077688f137dc8d08c9bc10876f076cb4d0428b",
+    "runtime/src/gpu/vulkan/vk_backend.h": "bd736735072a5f432831df1ec495b87a18ccd47f8ae4c3d5d9eceabbd542a758",
+    "runtime/src/gpu/vulkan/vk_frame_mailbox.c": "0dd11406052017f0247359851c6b386d0fd67dff7796dca0ef31db7de44b2db8",
+    "runtime/src/gpu/vulkan/vk_frame_mailbox.h": "a17c75349cec7cab32afdd01940d67d201f1c5500a56e6846d619f6d8780cef4",
+    "tools/vulkan-frame-mailbox-test.c": "5baa8026cee531b2671f498439b27faa9e528306ebd6b39bd04783e6f8a259b6",
+    "tools/vulkan-guest-texture-test.c": "64c7dff324f9f6d445a3f66fb09c9bbbd54ce6e299982e58d33f767500ca7b7a"
+  },
+  "evidence": "vulkan-frame-handoff-20261031.log",
+  "validation": [
+    "Backend synchronous flip snapshot follows presented VA override",
+    "Guest CPU edits after GPU draw are visible in snapshot",
+    "Two consumed frames retain independent pixel ownership",
+    "Changed AA metadata updates on existing surface",
+    "Malformed byte count rejected",
+    "Host upload/readback matches owned RGBA",
+    "Concurrent 1000-frame publication with immediate producer staging reuse",
+    "Consumer frame survives mailbox destruction",
+    "All prior offscreen and 48 actual GLES/Vulkan overlay comparisons pass"
+  ]
+}

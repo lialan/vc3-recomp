@@ -1,0 +1,1 @@
+PASS: injected OpenXR enable2 call order, real Vulkan creation, XR/Vk failure propagation and cleanup (no XR runtime)

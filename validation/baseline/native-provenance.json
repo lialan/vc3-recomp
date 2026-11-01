@@ -1,0 +1,25 @@
+{
+  "native_libraries": [
+    {
+      "entry": "lib/arm64-v8a/libSDL2.so",
+      "size": 6181760,
+      "sha256": "ea883ab161a9ca9313365915f3b1df955e82487aa8a4433ee72a5ac2072e5bc0",
+      "current_dependency_sha256": "ea883ab161a9ca9313365915f3b1df955e82487aa8a4433ee72a5ac2072e5bc0",
+      "current_dependency_matches_apk": true
+    },
+    {
+      "entry": "lib/arm64-v8a/libmain.so",
+      "size": 10366320,
+      "sha256": "f32348f9f91c7de10ea28f34b08cb0720e231f2dfe9a568351c93ce238f075a7"
+    },
+    {
+      "entry": "lib/arm64-v8a/libopenxr_loader.so",
+      "size": 1590568,
+      "sha256": "5a6853378430b2cbb75ec34a14e7494ed49cb248e516adfa9fe6bd7032eb7750",
+      "current_dependency_sha256": "5a6853378430b2cbb75ec34a14e7494ed49cb248e516adfa9fe6bd7032eb7750",
+      "current_dependency_matches_apk": true
+    }
+  ],
+  "candidate_generated_sources_present": true,
+  "source_provenance": "Rebuilt from candidate source/toolkit: stripped libmain.so differs only in 20-byte GNU build ID. No candidate install or scene validation."
+}

@@ -1,0 +1,20 @@
+{
+  "apk": "VirtuaCop3VR-working.apk",
+  "sha256": "3a0660db0d8a5d8e6d95a555dc087bd8f9351f2f8df91e601599ae2789b53ad6",
+  "user_confirmation": "Full immersive 3D was fine on the last installed 11:34 retained APK, 2026-10-31",
+  "source_candidate": "63d8907",
+  "toolkit_candidate": "9ac3e8b62131756d6cfb5a4c9231ad7c39bf2021",
+  "source_provenance": "Candidate source/toolkit reconstructed successfully. Stripped native libmain.so has identical size and all bytes except the 20-byte GNU build ID; no exact APK reproduction or rebuilt gameplay confirmation.",
+  "required_scenes": [
+    "intro",
+    "combat",
+    "ES slow motion",
+    "zoom and aim",
+    "head rotation and translation",
+    "menus and restart"
+  ],
+  "performance_gate": "Compare scene-matched p50/p95/p99 frame time and frames over 16.67 ms; separate loading; no checker/video for timing",
+  "promotion_gate": "All scenes require visual comparison against this APK and user confirmation; no automatic promotion from build, FPS, or screenshot alone",
+  "installed_apk_readback_verified": true,
+  "native_reconstruction_audit": "candidate-section-audit.json"
+}

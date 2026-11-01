@@ -1,0 +1,3 @@
+device=Adreno (TM) 740 vendor=5143 deviceID=43050b00 api=1.3.295
+PASS: real executor decoder + Vulkan sampled draws: padded linear ARGB, Morton ARGB, DXT1/3/5 color and alpha selectors
+PASS: RGBA8 clears, indexed quad coverage, interpolated triangle, post-draw clear, blend equations/factors/color masks, depth/stencil, persistent batches and selective clears, decoded NV2A adapter, alpha comparisons, face culling, ARGB texture upload/readback and sampled modulation, decoded textured batches (fixture decoder)
