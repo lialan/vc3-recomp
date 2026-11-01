@@ -264,3 +264,25 @@ ownership, depth precision, queries and completion visibility. Tracking loss
 means this run is not a worn combat comparison. The test app was stopped,
 its environment restored and proximity automation disabled before releasing
 the shared lock.
+
+### Depth precision prerequisite
+
+`ch_vk_target_create_depth` now allows an explicit native D24S8 attachment;
+the existing constructor and runtime continue using D32S8. This is a
+prerequisite for depth residency, not an enabled performance optimization.
+The explicit constructor rejects unsupported formats instead of silently
+changing comparison precision. Float depth/stencil transfers convert the D24
+depth aspect's packed storage independently of stencil.
+
+Quest Adreno tests passed exact normalized depth round trips at the endpoints,
+neighboring values and the midpoint, independently varying stencil bytes.
+Resident D24 draws and an otherwise identical path with CPU depth/stencil
+round trips after each draw produce identical color for ALWAYS, EQUAL and
+LESS comparisons, with depth and stencil checked afterward. Invalid NaN input
+is rejected before transfer. The complete existing D32 renderer suite also
+passes. The Mac KosmicKrisp device reports D24S8 unsupported and the standalone
+fixture explicitly skips there; it provides no Mac D24 correctness evidence.
+See `validation/direct-vulkan-depth24/quest-renderer-checks.log`.
+
+No game depth residency has been enabled yet. Its next step must handle CPU
+edits and overlapping/shared zeta ranges before removing strict writeback.

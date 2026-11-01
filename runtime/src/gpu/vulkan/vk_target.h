@@ -15,6 +15,13 @@ typedef struct {
 VkResult ch_vk_target_create(VkPhysicalDevice physical, VkDevice device,
                             VkQueue queue, uint32_t family,
                             uint32_t width, uint32_t height, ChVkTarget **out);
+/* Explicit depth precision for guest target residency. D24S8 retains the
+ * reference renderer's normalized 24-bit depth between draws. The default
+ * constructor remains D32S8 for existing float-depth clients. Unsupported
+ * precision fails rather than silently changing depth comparisons. */
+VkResult ch_vk_target_create_depth(VkPhysicalDevice physical, VkDevice device,
+    VkQueue queue, uint32_t family, uint32_t width, uint32_t height,
+    VkFormat depth_format, ChVkTarget **out);
 VkResult ch_vk_target_clear_read(ChVkTarget *target, const float rgba[4],
                                  void *pixels, VkDeviceSize bytes);
 void ch_vk_target_destroy(ChVkTarget *target);

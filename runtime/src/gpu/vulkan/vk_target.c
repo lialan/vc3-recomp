@@ -37,6 +37,7 @@ struct ChVkTarget {
     VkDevice device;
     VkQueue queue;
     VkImage depth;
+    VkFormat depth_format;
     VkDeviceMemory depth_mem;
     VkImageView depth_view;
     VkImage image;
@@ -104,13 +105,22 @@ void ch_vk_target_destroy(ChVkTarget *t) {
 VkResult ch_vk_target_create(VkPhysicalDevice physical, VkDevice device,
                             VkQueue queue, uint32_t family,
                             uint32_t width, uint32_t height, ChVkTarget **out) {
+    return ch_vk_target_create_depth(physical,device,queue,family,width,height,
+        VK_FORMAT_D32_SFLOAT_S8_UINT,out);
+}
+VkResult ch_vk_target_create_depth(VkPhysicalDevice physical, VkDevice device,
+    VkQueue queue, uint32_t family, uint32_t width, uint32_t height,
+    VkFormat depth_format, ChVkTarget **out) {
     if(!out) return VK_ERROR_INITIALIZATION_FAILED;
     *out=NULL;
+    if(depth_format!=VK_FORMAT_D32_SFLOAT_S8_UINT && depth_format!=VK_FORMAT_D24_UNORM_S8_UINT)
+        return VK_ERROR_FORMAT_NOT_SUPPORTED;
     if(!width || !height || (uint64_t)width*height>SIZE_MAX/5)
         return VK_ERROR_INITIALIZATION_FAILED;
     ChVkTarget *t=calloc(1,sizeof(*t));
     if(!t) return VK_ERROR_OUT_OF_HOST_MEMORY;
     t->family=family; t->physical=physical; t->device=device; t->queue=queue; t->width=width; t->height=height;
+    t->depth_format=depth_format;
     t->bytes=(VkDeviceSize)width*height*4;
     VkResult result;
     VkImageCreateInfo image={.sType=VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
@@ -129,12 +139,12 @@ VkResult ch_vk_target_create(VkPhysicalDevice physical, VkDevice device,
     }
     TRY(vkAllocateMemory(device,&mem,NULL,&t->image_mem));
     TRY(vkBindImageMemory(device,t->image,t->image_mem,0));
-    VkFormatProperties depth_format;
-    vkGetPhysicalDeviceFormatProperties(physical,VK_FORMAT_D32_SFLOAT_S8_UINT,&depth_format);
-    if(!(depth_format.optimalTilingFeatures & VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT)) {
+    VkFormatProperties depth_properties;
+    vkGetPhysicalDeviceFormatProperties(physical,depth_format,&depth_properties);
+    if(!(depth_properties.optimalTilingFeatures & VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT)) {
         result=VK_ERROR_FORMAT_NOT_SUPPORTED; goto fail;
     }
-    image.format=VK_FORMAT_D32_SFLOAT_S8_UINT;
+    image.format=depth_format;
     image.usage=VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT|VK_IMAGE_USAGE_TRANSFER_DST_BIT|VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
     TRY(vkCreateImage(device,&image,NULL,&t->depth));
     vkGetImageMemoryRequirements(device,t->depth,&req);
@@ -351,7 +361,7 @@ static VkResult create_pipeline(ChVkTarget *t, const VkPipelineColorBlendAttachm
         .initialLayout=VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
         .finalLayout=VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL};
     VkAttachmentDescription attachments[2]={attachment,{
-        .format=VK_FORMAT_D32_SFLOAT_S8_UINT,.samples=VK_SAMPLE_COUNT_1_BIT,
+        .format=t->depth_format,.samples=VK_SAMPLE_COUNT_1_BIT,
         .loadOp=VK_ATTACHMENT_LOAD_OP_LOAD,.storeOp=VK_ATTACHMENT_STORE_OP_STORE,
         .stencilLoadOp=VK_ATTACHMENT_LOAD_OP_LOAD,.stencilStoreOp=VK_ATTACHMENT_STORE_OP_STORE,
         .initialLayout=VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,.finalLayout=VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL}};
@@ -744,7 +754,11 @@ static VkResult transfer_depth_stencil(ChVkTarget *t,void *depth,void *stencil,s
     VkMappedMemoryRange range={.sType=VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE,.memory=t->read_mem,.size=VK_WHOLE_SIZE};
     if(upload) {
         TRY(vkMapMemory(t->device,t->read_mem,0,VK_WHOLE_SIZE,0,&mapped));
-        memcpy(mapped,depth,(size_t)t->bytes);
+        if(t->depth_format==VK_FORMAT_D24_UNORM_S8_UINT) {
+            uint32_t *packed=mapped;
+            for(size_t i=0;i<t->bytes/4;i++)
+                packed[i]=(uint32_t)((double)((const float *)depth)[i]*16777215.0+0.5);
+        } else memcpy(mapped,depth,(size_t)t->bytes);
         memcpy((char *)mapped+t->bytes,stencil,(size_t)t->bytes/4);
         result=vkFlushMappedMemoryRanges(t->device,1,&range);
         vkUnmapMemory(t->device,t->read_mem);
@@ -787,7 +801,11 @@ static VkResult transfer_depth_stencil(ChVkTarget *t,void *depth,void *stencil,s
         TRY(vkMapMemory(t->device,t->read_mem,0,VK_WHOLE_SIZE,0,&mapped));
         result=vkInvalidateMappedMemoryRanges(t->device,1,&range);
         if(result==VK_SUCCESS) {
-            memcpy(depth,mapped,(size_t)t->bytes);
+            if(t->depth_format==VK_FORMAT_D24_UNORM_S8_UINT) {
+                const uint32_t *packed=mapped;
+                for(size_t i=0;i<t->bytes/4;i++)
+                    ((float *)depth)[i]=(float)((double)(packed[i]&0xffffffu)/16777215.0);
+            } else memcpy(depth,mapped,(size_t)t->bytes);
             memcpy(stencil,(char *)mapped+t->bytes,(size_t)t->bytes/4);
         }
         vkUnmapMemory(t->device,t->read_mem);
