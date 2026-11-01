@@ -828,3 +828,53 @@ waiting, so target-by-target CPU fence waits do not serialize the submission
 stream. Requires explicit submitted/completed state, staging/resource lifetime,
 and CPU-edit observation rules; never weaken guest semaphore/query publication.
 All current runtime/fixture sessions are terminal. Goal remains open.
+
+## Queued color publication across targets
+
+Candidate shared target API `ch_vk_target_enqueue_color_read` submits pending
+draws with color readback but retains geometry, descriptors, sampling leases
+and staging until completion. Repeated enqueue is idempotent. Subsequent draw,
+readback, reuse or destruction completes submitted work before resource reuse.
+Color import now waits before mapping the staging buffer: a queued copy must
+not race a CPU overwrite. Depth transfers likewise finish queued color work
+before using the shared staging. Completed profiling counts retain their
+existing meaning; submitted work is not reported completed prematurely.
+
+Backend first attempt queued colors after depth publication, which showed
+no material game gain: `/tmp/vc3-queued-color-es`,2100frames exit0,
+held42.42/46.12FPS. Revised path observes independent CPU color edits early
+and queues non-owner color targets before blocking depth publication. Color
+and depth guest-storage aliases are already rejected. Clients with a color
+routing callback retain depth-before-notification order; all paths finish
+publication before returning the guest completion boundary.
+
+Expanded fixture covers four targets, repeated enqueue, reverse-order reads,
+queued destruction, depth reads and CPU color import after queued copies,
+and new drawing after submission. Exact pixels/depth/stencil and submission
+counts are checked. Existing paired-publication/CPU-edit fixtures also pass.
+KosmicKrisp with timestamp profiling+sync validation and lavapipe with sync
+validation pass without VUID/SYNC errors:
+`/tmp/vc3-early-color-final-check.log`, `/tmp/vc3-early-color-lvp-check.log`.
+Mac main/Android offscreen builds pass. No headset/device activity.
+
+First revised run `/tmp/vc3-early-color-es` completed2100frames, exit0:
+held41.92/47.23FPS, p95 29.81/23.41ms. Mixed versus previous42.59/46.11,
+so the matching repeat `/tmp/vc3-early-repeat-control`/`-queued` decides
+whether to retain it. Immutable candidate `/tmp/vc3-early-color-vc3`.
+
+Repeat result: both2100-frame runs completed, exit0, no failure diagnostics.
+Control held41.49/44.05FPS, queued41.09/45.03FPS. p95 control29.13/26.81ms,
+queued31.05/26.10ms. Activation33.88/33.52FPS. The mixed result and worse
+earlier-window pacing do not justify retaining additional submission/lifetime
+state. Removed this experiment completely; committed paired readbacks remain.
+Patch with implementation and regression fixtures:
+`/tmp/vc3-queued-color-rejected.patch`. Final candidate binary remains
+`/tmp/vc3-early-color-vc3`; no queued-color runtime changes retained.
+
+Next investigate depth-owner switching: the current resident class keeps one
+owner and publishes/imports when switching to a different zeta interpretation,
+even if two ranges and target images are disjoint. Before implementing a bounded
+multiple-owner cache, measure disjoint versus overlapping switches and same-target
+image reuse. Any cache must flush aliases, preserve CPU component edits, release
+resized targets, and publish every dirty owner at guest completion boundaries.
+This targets avoiding work rather than merely overlapping the same readbacks.
