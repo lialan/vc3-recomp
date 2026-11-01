@@ -1,0 +1,7 @@
+{
+  "apk": "/tmp/vc3-pipeline-package/VirtuaCop3VR-vulkan-cache-training.apk",
+  "sha256": "af573012cadc296095e48ee7a1eb2cc9a64443f05320bf2b3b5e53f24a6b7baa",
+  "native_sha256": "0207db9abe9bb510f11099a83fff88f268e2c1f1735173ed927f0c10ed54f60f",
+  "quest_seed_present": false,
+  "scope": "cross-built training APK; not installed or headset-tested"
+}

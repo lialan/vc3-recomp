@@ -42,12 +42,7 @@ invalid:
 done:
     fclose(file);return blob;
 }
-VkResult ch_vk_pipeline_cache_file_load(VkPhysicalDevice physical,VkDevice device,
-    const char *path,VkPipelineCache *cache,size_t *loaded) {
-    if(loaded) *loaded=0;
-    if(!physical || !device || !cache) return VK_ERROR_INITIALIZATION_FAILED;
-    *cache=VK_NULL_HANDLE;
-    size_t size=0;void *blob=read_cache(physical,path,&size);
+static VkResult create_cache(VkDevice device,const void *blob,size_t size,VkPipelineCache *cache,size_t *loaded) {
     VkPipelineCacheCreateInfo info={.sType=VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO,
         .initialDataSize=size,.pInitialData=blob};
     VkResult result=vkCreatePipelineCache(device,&info,NULL,cache);
@@ -57,8 +52,36 @@ VkResult ch_vk_pipeline_cache_file_load(VkPhysicalDevice physical,VkDevice devic
         *cache=VK_NULL_HANDLE;info.initialDataSize=0;info.pInitialData=NULL;size=0;
         result=vkCreatePipelineCache(device,&info,NULL,cache);
     }
-    free(blob);if(result==VK_SUCCESS && loaded) *loaded=size;return result;
+    if(result==VK_SUCCESS && loaded) *loaded=size;return result;
 }
+VkResult ch_vk_pipeline_cache_memory_load(VkPhysicalDevice physical,VkDevice device,
+    const void *data,size_t bytes,VkPipelineCache *cache,size_t *loaded) {
+    if(loaded) *loaded=0;
+    if(!physical || !device || !cache) return VK_ERROR_INITIALIZATION_FAILED;
+    *cache=VK_NULL_HANDLE;
+    const unsigned char *p=data;size_t size=0;const void *blob=NULL;
+    if(p && bytes>=24 && !memcmp(p,magic,8)) {
+        uint64_t n=read64(p+8);
+        if(n>=sizeof(VkPipelineCacheHeaderVersionOne) && n<=CACHE_LIMIT && n==bytes-24 && checksum(p+24,(size_t)n)==read64(p+16)) {
+            VkPipelineCacheHeaderVersionOne h;memcpy(&h,p+24,sizeof h);
+            VkPhysicalDeviceProperties props;vkGetPhysicalDeviceProperties(physical,&props);
+            if(h.headerSize==sizeof h && h.headerVersion==VK_PIPELINE_CACHE_HEADER_VERSION_ONE &&
+               h.vendorID==props.vendorID && h.deviceID==props.deviceID && !memcmp(h.pipelineCacheUUID,props.pipelineCacheUUID,VK_UUID_SIZE)) {
+                blob=p+24;size=(size_t)n;
+            }
+        }
+    }
+    return create_cache(device,blob,size,cache,loaded);
+}
+VkResult ch_vk_pipeline_cache_file_load(VkPhysicalDevice physical,VkDevice device,
+    const char *path,VkPipelineCache *cache,size_t *loaded) {
+    if(loaded) *loaded=0;
+    if(!physical || !device || !cache) return VK_ERROR_INITIALIZATION_FAILED;
+    *cache=VK_NULL_HANDLE;
+    size_t size=0;void *blob=read_cache(physical,path,&size);
+    VkResult r=create_cache(device,blob,size,cache,loaded);free(blob);return r;
+}
+
 int ch_vk_pipeline_cache_file_save(VkDevice device,VkPipelineCache cache,const char *path) {
 #if defined(_WIN32)
     (void)device;(void)cache;(void)path;return 0;

@@ -52,13 +52,25 @@ case "$PGO" in
          CPU_FLAGS="$CPU_FLAGS -fprofile-instr-use=$PGO_FILE -Wno-profile-instr-unprofiled -Wno-profile-instr-out-of-date" ;;
 esac
 
+# Pipeline seeds are trained on the target Quest GPU/driver, not the build host.
+# An unset variable preserves the CMake setting; explicitly empty clears it.
+PIPELINE_ARGS=("-DCHIHIRO_VULKAN_PIPELINE_CACHE_VENDOR=0x5143")
+if [ "${CHIHIRO_VULKAN_PIPELINE_CACHE_SEEDS+x}" = x ]; then
+    PIPELINE_ARGS+=("-DCHIHIRO_VULKAN_PIPELINE_CACHE_SEEDS=$CHIHIRO_VULKAN_PIPELINE_CACHE_SEEDS")
+fi
+# Vulkan release packages require a seed; OFF is an explicit training build.
+PIPELINE_ARGS+=("-DCHIHIRO_VULKAN_REQUIRE_PIPELINE_CACHE_SEEDS=${CHIHIRO_VULKAN_REQUIRE_PIPELINE_CACHE_SEEDS:-ON}")
+if [ -n "${CHIHIRO_RENDERER:-}" ]; then
+    PIPELINE_ARGS+=("-DCHIHIRO_RENDERER=$CHIHIRO_RENDERER")
+fi
+
 # one game per build tree (its libmain.so); vc3's is build-quest
 if [ "$GAME" = vc3 ]; then B=$ROOT/build-quest; else B=$ROOT/build-quest-$GAME; fi
 cmake -S "$ROOT" -B "$B" -G Ninja \
     -DCMAKE_TOOLCHAIN_FILE="$NDK/build/cmake/android.toolchain.cmake" \
     -DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM=android-29 -DCMAKE_BUILD_TYPE=Release \
     -DCMAKE_C_FLAGS="$CPU_FLAGS" \
-    -DCHIHIRO_GAMES="$GAME" \
+    -DCHIHIRO_GAMES="$GAME" "${PIPELINE_ARGS[@]}" \
     -DSDL2_DIR="$DEPS/sdl2-android/lib/cmake/SDL2" \
     -DOPENXR_DIR="$DEPS/oxr/prefab/modules/headers/include" \
     -DOPENXR_LIB="$DEPS/oxr/jni/arm64-v8a/libopenxr_loader.so" >/dev/null

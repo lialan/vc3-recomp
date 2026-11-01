@@ -255,16 +255,32 @@ static VkResult attach(ChVkBackendConfig config)
     if(!has_host_config || !host_config.present_rgba) config.present_bgra=present_bgra;
     if(!config.fatal) config.fatal=fatal;
     const char *cache_path=ch_env("VULKAN_PIPELINE_CACHE");
-    if(cache_path && *cache_path && !config.pipeline_cache) {
-        runtime.cache_path=malloc(strlen(cache_path)+1);
-        if(!runtime.cache_path) return VK_ERROR_OUT_OF_HOST_MEMORY;
-        strcpy(runtime.cache_path,cache_path);runtime.cache_device=config.device;
-        size_t loaded=0;
-        VkResult cache_result=ch_vk_pipeline_cache_file_load(config.physical,config.device,
-            runtime.cache_path,&runtime.pipeline_cache,&loaded);
+    if(!config.pipeline_cache) {
+        const char *save_dir=ch_env("SAVE_DIR");
+        if(cache_path && *cache_path) {
+            runtime.cache_path=malloc(strlen(cache_path)+1);
+            if(!runtime.cache_path) return VK_ERROR_OUT_OF_HOST_MEMORY;
+            strcpy(runtime.cache_path,cache_path);
+        } else if(!cache_path && save_dir && *save_dir) {
+            size_t n=strlen(save_dir)+32;runtime.cache_path=malloc(n);
+            if(!runtime.cache_path) return VK_ERROR_OUT_OF_HOST_MEMORY;
+            snprintf(runtime.cache_path,n,"%s/vulkan-pipelines.cache",save_dir);
+        }
+        runtime.cache_device=config.device;
+        size_t packaged=0,loaded=0;
+        VkResult cache_result=ch_vk_pipeline_cache_packaged_load(config.physical,config.device,
+            &runtime.pipeline_cache,&packaged);
         if(cache_result!=VK_SUCCESS) return cache_result;
+        if(runtime.cache_path) {
+            VkPipelineCache disk=VK_NULL_HANDLE;
+            cache_result=ch_vk_pipeline_cache_file_load(config.physical,config.device,runtime.cache_path,&disk,&loaded);
+            if(cache_result==VK_SUCCESS && loaded) cache_result=vkMergePipelineCaches(config.device,runtime.pipeline_cache,1,&disk);
+            if(disk) vkDestroyPipelineCache(config.device,disk,NULL);
+            if(cache_result!=VK_SUCCESS) return cache_result;
+        }
         config.pipeline_cache=runtime.pipeline_cache;
-        fprintf(stderr,"[Vulkan pipeline cache] loaded_bytes=%zu\n",loaded);
+        fprintf(stderr,"[Vulkan pipeline cache] packaged_bytes=%zu loaded_bytes=%zu path=%s\n",packaged,loaded,
+            runtime.cache_path?runtime.cache_path:"(memory only)");
     }
     VkResult result=ch_vk_backend_create(&config,&runtime.backend);
     if(result==VK_SUCCESS) result=ch_vk_backend_attach(runtime.backend);

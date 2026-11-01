@@ -351,6 +351,9 @@ static int cache_roundtrip(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,ui
     long length=ftell(file);CHECK(length>=56 && !fseek(file,0,SEEK_SET));size=(size_t)length;
     saved=malloc(size+1);edit=malloc(size+1);CHECK(saved && edit);
     CHECK(fread(saved,1,size,file)==size);CHECK(!fclose(file));file=NULL;
+    CHECK(ch_vk_pipeline_cache_memory_load(gpu,device,saved,size,&rejected,&loaded)==VK_SUCCESS && loaded>=32);
+    CHECK(vkMergePipelineCaches(device,warm,1,&rejected)==VK_SUCCESS);
+    vkDestroyPipelineCache(device,rejected,NULL);rejected=VK_NULL_HANDLE;
     for(unsigned test=0;test<11;test++) {
         memcpy(edit,saved,size);size_t bytes=size;
         if(test==0) edit[0]^=1; /* envelope version/magic */
@@ -370,6 +373,8 @@ static int cache_roundtrip(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,ui
         CHECK(!fclose(file));file=NULL;
         loaded=123;
         CHECK(ch_vk_pipeline_cache_file_load(gpu,device,path,&rejected,&loaded)==VK_SUCCESS && !loaded);
+        vkDestroyPipelineCache(device,rejected,NULL);rejected=VK_NULL_HANDLE;
+        CHECK(ch_vk_pipeline_cache_memory_load(gpu,device,edit,bytes,&rejected,&loaded)==VK_SUCCESS && !loaded);
         vkDestroyPipelineCache(device,rejected,NULL);rejected=VK_NULL_HANDLE;
     }
     CHECK(!ch_vk_pipeline_cache_file_save(device,cold,directory)); /* atomic rename fails safely */

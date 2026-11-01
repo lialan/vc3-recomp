@@ -1,0 +1,12 @@
+-- The C compiler identification is AppleClang 21.0.0.21000334
+-- Detecting C compiler ABI info
+-- Detecting C compiler ABI info - done
+-- Check for working C compiler: /usr/bin/cc - skipped
+-- Detecting C compile features
+-- Detecting C compile features - done
+-- Found Python3: /Users/lialan/miniconda3/bin/python3.13 (found version "3.13.2") found components: Interpreter
+-- Configuring incomplete, errors occurred!
+CMake Error at CMakeLists.txt:13 (message):
+  This release requires trained Vulkan pipeline cache seeds
+
+
