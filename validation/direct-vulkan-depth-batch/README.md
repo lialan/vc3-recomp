@@ -706,3 +706,27 @@ Candidate frame1740 visibly retains E.S. mode/effect. No whole-game pixel
 equality claim. Both sessions are terminal. Next investigate the remaining
 CPU vertex-program interpretation and synchronous surface/coherence costs;
 normal combat is near60FPS but E.S. remains~42-45FPS.
+
+## Rejected per-vertex operand-demand experiment
+
+A candidate skipped unused A/B/C source reads based on MAC/ILU opcode inside
+the vertex interpreter. It preserved outputs and writable constants in25600
+randomized eight-instruction paired-opcode programs versus the prechange
+interpreter, including context writes. Normal and ASan/UBSan differential runs
+passed, as did the existing VSH epilogue/clamp regression. Artifacts:
+`/tmp/vsh-demand-test.c`, `/tmp/vsh-eager-reference.c`,
+`/tmp/vsh-demand-sanitized`, `/tmp/vsh-demand-bench.c`.
+
+Performance did not justify the change. `/tmp/vc3-vsh-demand-es` completed2100
+frames, exit0, held E.S.39.60/42.69FPS versus previous42.04/45.29. A local
+200000-vertex,16-instruction microbenchmark repeated four times: DP4 about
+15ms eager versus17ms demand; MAD about16ms versus20ms; MOV improved16ms to
+14.6ms. These are synthetic CPU costs, not whole-game speedups. Per-instruction
+branches can cost more than the unused reads. The candidate is removed; shared
+runtime remains at71cdba7 and root queued-upload behavior remains9472b8f.
+Rejected patch: `/tmp/vc3-vsh-demand-rejected.patch`; immutable experiment
+binary `/tmp/vc3-vsh-demand-vc3`. No current runtime change or speedup claimed.
+Next candidate: predecode immutable instruction fields/source descriptors when
+uploaded, avoiding repeated field extraction without per-vertex demand branches.
+Retain paired-unit read-before-write, relative addressing, context writes,
+partial program uploads and all output/constant semantics.
