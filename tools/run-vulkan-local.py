@@ -23,8 +23,9 @@ def main():
     parser.add_argument("--timeout", type=int, default=60)
     parser.add_argument("--capture-first", type=int, default=0)
     parser.add_argument("--capture-count", type=int, default=3)
+    parser.add_argument("--capture-every", type=int, default=0)
     args = parser.parse_args()
-    if args.frames < 1 or args.timeout < 1 or args.capture_first < 0 or args.capture_count < 0:
+    if args.frames < 1 or args.timeout < 1 or args.capture_first < 0 or args.capture_count < 0 or args.capture_every < 0:
         parser.error("invalid frame/capture/timeout range")
     executable, game, output = (p.resolve() for p in (args.executable, args.game, args.output))
     if output.exists() and any(output.iterdir()):
@@ -37,7 +38,8 @@ def main():
                VC3_SAVE_DIR=str(output / "save"), VC3_CONFIG_DIR=str(output / "config"),
                VC3_VULKAN_DUMP_DIR=str(output / "frames"),
                VC3_VULKAN_DUMP_FIRST=str(args.capture_first),
-               VC3_VULKAN_DUMP_COUNT=str(args.capture_count), VC3_VULKAN_FRAME_LIMIT=str(args.frames))
+               VC3_VULKAN_DUMP_COUNT=str(args.capture_count), VC3_VULKAN_DUMP_EVERY=str(args.capture_every),
+               VC3_VULKAN_FRAME_LIMIT=str(args.frames))
     if args.icd:
         env["VK_ICD_FILENAMES"] = str(args.icd.resolve())
     for key in ("VK_INSTANCE_LAYERS", "VK_LAYER_PATH", "VK_LOADER_DEBUG",
@@ -46,7 +48,7 @@ def main():
                 "CHIHIRO_AUTOKEYS", "VC3_AUTOKEYS", "CHIHIRO_AUTOKEYS_CLOCK", "VC3_AUTOKEYS_CLOCK", "CHIHIRO_AUTOFIRE_MS", "VC3_AUTOFIRE_MS",
                 "CHIHIRO_AUTOAIM", "VC3_AUTOAIM", "CHIHIRO_INPUT_SELFTEST", "VC3_INPUT_SELFTEST",
                 "RECOMP_PB_DECODE_THREAD", "CHIHIRO_STRICT_GPU_FENCES", "VC3_STRICT_GPU_FENCES", "CHIHIRO_FENCE_LOG", "VC3_FENCE_LOG",
-                "CHIHIRO_VULKAN_BATCH_DRAWS", "VC3_VULKAN_BATCH_DRAWS", "RECOMP_GPU_XF", "CHIHIRO_VULKAN_GPU_FIXED", "VC3_VULKAN_GPU_FIXED", "CHIHIRO_VULKAN_REUSE_RESOURCES", "CHIHIRO_VULKAN_FORCE_COMBINER", "CHIHIRO_VULKAN_TEXTURE_CACHE", "VC3_VULKAN_TEXTURE_CACHE",
+                "CHIHIRO_VULKAN_COLOR_FAST_IO", "VC3_VULKAN_COLOR_FAST_IO", "CHIHIRO_VULKAN_BATCH_DRAWS", "VC3_VULKAN_BATCH_DRAWS", "RECOMP_GPU_XF", "CHIHIRO_VULKAN_GPU_FIXED", "VC3_VULKAN_GPU_FIXED", "CHIHIRO_VULKAN_REUSE_RESOURCES", "CHIHIRO_VULKAN_FORCE_COMBINER", "CHIHIRO_VULKAN_TEXTURE_CACHE", "VC3_VULKAN_TEXTURE_CACHE",
                 "CHIHIRO_VULKAN_TEXTURE_CACHE_ENTRIES", "VC3_VULKAN_TEXTURE_CACHE_ENTRIES"):
         if key in os.environ:
             env[key] = os.environ[key]

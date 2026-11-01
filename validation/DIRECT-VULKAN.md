@@ -17,6 +17,11 @@ skip importing superseded pixels. Their controls and Quest evidence are in
 falls well below the combat FPS target; these are incremental transfer fixes.
 Resident D24 now transfers exact packed words rather than normalizing through
 float staging; see [`direct-vulkan-packed-depth/`](direct-vulkan-packed-depth/README.md).
+CPU profiling next identified color transfers and coherence comparisons. Linear
+ARGB transfers now use a checked vectorizable path; details, controls and actual
+Quest results are in [`direct-vulkan-color-io/`](direct-vulkan-color-io/README.md).
+The earlier combat reference/unfinished native attempt are recorded in
+[`direct-vulkan-early-combat/`](direct-vulkan-early-combat/README.md).
 
 Android offscreen diagnostics can now boot the real guest on Adreno without
 creating an XR session. Configure `CHIHIRO_VULKAN_OFFSCREEN_CLI=ON` and build

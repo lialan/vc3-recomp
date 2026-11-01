@@ -7,6 +7,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <time.h>
+#include <string.h>
 #include "../d3d/d3d8_swizzle.h"
 static uint64_t profile_us(void) {
     struct timespec t;clock_gettime(CLOCK_MONOTONIC,&t);
@@ -285,6 +286,31 @@ VkResult ch_vk_nv2a_draw_read(ChVkTarget *t, const Nv2aSurface *s,
     return ch_vk_nv2a_draw_decoded_read(t,s,b,NULL,pixels,bytes);
 }
 
+#if defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
+/* The byte swap is its own inverse. Only disjoint planes enter the restricted
+ * loop; aliased loads retain the original scalar access order. memcpy keeps
+ * unaligned guest bases/rows valid. */
+static int fast_color_io(void) {
+    const char *v=getenv("CHIHIRO_VULKAN_COLOR_FAST_IO");
+    if(!v) v=getenv("VC3_VULKAN_COLOR_FAST_IO");
+    return !v || strcmp(v,"0");
+}
+static int separate_color_rows(const void *src,size_t src_pitch,const void *dst,size_t dst_pitch,uint32_t w,uint32_t h) {
+    uintptr_t a=(uintptr_t)src,b=(uintptr_t)dst;
+    size_t aspan=(size_t)(h-1)*src_pitch+(size_t)w*4,bspan=(size_t)(h-1)*dst_pitch+(size_t)w*4;
+    return a<=b?b-a>=aspan:a-b>=bspan;
+}
+static void swap_color_rows(const unsigned char *restrict src,size_t src_pitch,unsigned char *restrict dst,size_t dst_pitch,
+    uint32_t width,uint32_t height) {
+    for(uint32_t y=0;y<height;y++) for(uint32_t x=0;x<width;x++) {
+        /* Bounds are checked before entering. Bypass Android's fortified
+         * wrapper here so these constant-size unaligned copies can vectorize. */
+        uint32_t pixel;__builtin_memcpy(&pixel,src+(size_t)y*src_pitch+(size_t)x*4,4);
+        pixel=(pixel&0xff00ff00u)|((pixel&255)<<16)|((pixel>>16)&255);
+        __builtin_memcpy(dst+(size_t)y*dst_pitch+(size_t)x*4,&pixel,4);
+    }
+}
+#endif
 VkResult ch_vk_nv2a_store_color_state(const Nv2aSurface *s,const Nv2aRenderState *rs,const void *rgba,
     VkDeviceSize rgba_bytes,void *guest_base,size_t guest_bytes) {
     if(!s || !rgba || !guest_base || !s->width || !s->height)
@@ -296,6 +322,13 @@ VkResult ch_vk_nv2a_store_color_state(const Nv2aSurface *s,const Nv2aRenderState
     if((uint64_t)s->width*s->height>rgba_bytes/4 ||
        s->color_va>guest_bytes || layout.span>guest_bytes-s->color_va)
         return VK_ERROR_INITIALIZATION_FAILED;
+#if defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
+    if(s->bytes_per_pixel==4 && !layout.swizzled && fast_color_io() &&
+       separate_color_rows(rgba,(size_t)s->width*4,(unsigned char *)guest_base+s->color_va,layout.pitch,s->width,s->height)) {
+        swap_color_rows(rgba,(size_t)s->width*4,(unsigned char *)guest_base+s->color_va,
+            layout.pitch,s->width,s->height);return VK_SUCCESS;
+    }
+#endif
     const unsigned char *src=rgba;
     volatile unsigned char *dst=(volatile unsigned char *)guest_base+s->color_va;
     for(uint32_t y=0;y<s->height;y++) for(uint32_t x=0;x<s->width;x++) {
@@ -318,6 +351,13 @@ VkResult ch_vk_nv2a_load_color_state(const Nv2aSurface *s,const Nv2aRenderState 
     if(result!=VK_SUCCESS) return result;
     if((uint64_t)s->width*s->height>rgba_bytes/4 ||
        s->color_va>guest_bytes || layout.span>guest_bytes-s->color_va) return VK_ERROR_INITIALIZATION_FAILED;
+#if defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
+    if(s->bytes_per_pixel==4 && !layout.swizzled && fast_color_io() &&
+       separate_color_rows((const unsigned char *)guest_base+s->color_va,layout.pitch,rgba,(size_t)s->width*4,s->width,s->height)) {
+        swap_color_rows((const unsigned char *)guest_base+s->color_va,layout.pitch,rgba,
+            (size_t)s->width*4,s->width,s->height);return VK_SUCCESS;
+    }
+#endif
     const volatile unsigned char *src=(const volatile unsigned char *)guest_base+s->color_va;
     unsigned char *out=rgba;
     for(uint32_t y=0;y<s->height;y++) for(uint32_t x=0;x<s->width;x++) {

@@ -1,0 +1,71 @@
+{
+  "samples": 2071,
+  "memcmp_callers_percent_total_cpu": [
+    [
+      "observe_guest_color",
+      19.41
+    ],
+    [
+      "observe",
+      11.15
+    ],
+    [
+      "ch_vk_texture_cache_resolve",
+      2.51
+    ],
+    [
+      "GetLocalTime",
+      0.05
+    ]
+  ],
+  "memcmp_chains_percent_total_cpu": [
+    [
+      "observe_guest_color -> draw_batch -> locked_draw -> backend_flush -> raster_batch -> draw_primitive -> draw_inline_array",
+      11.15
+    ],
+    [
+      "observe -> bind_depth -> import_depth -> draw_batch -> locked_draw -> backend_flush -> raster_batch",
+      9.61
+    ],
+    [
+      "observe_guest_color -> flush -> locked_flush -> nv2a_defer_write -> nv2a_pb_exec_method -> pb_walk_segment -> nv2a_pb_scan_segment",
+      3.67
+    ],
+    [
+      "ch_vk_texture_cache_resolve -> sample_image -> draw_decoded -> ch_vk_nv2a_draw_resolved_read -> draw_batch -> locked_draw -> backend_flush",
+      2.51
+    ],
+    [
+      "observe_guest_color -> locked_clear -> clear_surface -> nv2a_pb_exec_method -> pb_walk_segment -> nv2a_pb_scan_segment -> nv2a_ack_thread",
+      2.08
+    ],
+    [
+      "observe_guest_color -> flush -> locked_flip -> nv2a_pb_exec_method -> pb_walk_segment -> nv2a_pb_scan_segment -> nv2a_ack_thread",
+      1.3
+    ],
+    [
+      "observe_guest_color -> flush -> locked_flush -> nv2a_defer_write -> nv2a_ack_thread -> thread_trampoline -> __pthread_start(void*)",
+      1.11
+    ],
+    [
+      "observe -> ch_vk_depth_resident_flush -> ch_vk_depth_resident_release -> bind_depth -> import_depth -> locked_clear -> clear_surface",
+      0.48
+    ],
+    [
+      "observe -> ch_vk_depth_resident_flush -> flush -> locked_flush -> nv2a_defer_write -> nv2a_pb_exec_method -> pb_walk_segment",
+      0.34
+    ],
+    [
+      "observe -> ch_vk_depth_resident_flush -> ch_vk_depth_resident_release -> bind_depth -> import_depth -> draw_batch -> locked_draw",
+      0.29
+    ],
+    [
+      "observe -> ch_vk_depth_resident_flush -> flush -> locked_flush -> nv2a_defer_write -> nv2a_ack_thread -> thread_trampoline",
+      0.24
+    ],
+    [
+      "observe -> ch_vk_depth_resident_flush -> flush -> locked_flip -> nv2a_pb_exec_method -> pb_walk_segment -> nv2a_pb_scan_segment",
+      0.19
+    ]
+  ]
+}

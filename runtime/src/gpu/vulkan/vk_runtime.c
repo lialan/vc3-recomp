@@ -16,6 +16,8 @@ static struct {
     ChVkBackend *backend;
     uint32_t *argb;
     size_t capacity;
+    unsigned char *capture_rgb;
+    size_t capture_capacity;
     uint64_t frames;
 } runtime;
 
@@ -50,21 +52,35 @@ static VkResult present(void *unused,const Nv2aSurface *surface,const void *rgba
     }
     const unsigned char *src=rgba;
     const char *dir=ch_env("VULKAN_DUMP_DIR"),*first=ch_env("VULKAN_DUMP_FIRST"),*n=ch_env("VULKAN_DUMP_COUNT");
+    const char *step=ch_env("VULKAN_DUMP_EVERY");
     uint64_t start=first?strtoull(first,NULL,10):0,number=n?strtoull(n,NULL,10):1;
-    if(dir && runtime.frames>=start && runtime.frames-start<number) {
+    uint64_t every=step?strtoull(step,NULL,10):0;
+    if(dir && runtime.frames>=start && (runtime.frames-start<number || (every && (runtime.frames-start)%every==0))) {
+        size_t rgb_bytes=count*3;
+        if(rgb_bytes>runtime.capture_capacity) {
+            void *p=realloc(runtime.capture_rgb,rgb_bytes);
+            if(!p) return VK_ERROR_OUT_OF_HOST_MEMORY;
+            runtime.capture_rgb=p;runtime.capture_capacity=rgb_bytes;
+        }
+        for(size_t i=0;i<count;i++) {
+            runtime.capture_rgb[3*i]=src[4*i];runtime.capture_rgb[3*i+1]=src[4*i+1];runtime.capture_rgb[3*i+2]=src[4*i+2];
+        }
         char path[4096];
         if(snprintf(path,sizeof path,"%s/frame-%06llu.ppm",dir,(unsigned long long)runtime.frames)>=(int)sizeof path)
             return VK_ERROR_INITIALIZATION_FAILED;
-        FILE *file=fopen(path,"wb");
+        char pending[4096];
+        if(snprintf(pending,sizeof pending,"%s.tmp",path)>=(int)sizeof pending) return VK_ERROR_INITIALIZATION_FAILED;
+        FILE *file=fopen(pending,"wb");
         if(!file) {
             fprintf(stderr,"[Vulkan] capture %s: %s\n",path,strerror(errno));
             return VK_ERROR_INITIALIZATION_FAILED;
         }
         fprintf(file,"P6\n%u %u\n255\n",surface->width,surface->height);
-        int failed=0;
-        for(size_t i=0;i<count;i++) if(fwrite(src+4*i,1,3,file)!=3) {failed=1;break;}
+        int failed=fwrite(runtime.capture_rgb,1,rgb_bytes,file)!=rgb_bytes;
         if(fclose(file)) failed=1;
-        if(failed) return VK_ERROR_INITIALIZATION_FAILED;
+        if(failed) {remove(pending);return VK_ERROR_INITIALIZATION_FAILED;}
+        /* A watchdog may interrupt diagnostic runs: expose only complete PPMs. */
+        if(rename(pending,path)) {remove(pending);return VK_ERROR_INITIALIZATION_FAILED;}
         fprintf(stderr,"[Vulkan] captured %s\n",path);
     }
     runtime.frames++;
@@ -210,5 +226,6 @@ void ch_vk_runtime_stop(void)
     if(runtime.device) vkDestroyDevice(runtime.device,NULL);
     if(runtime.instance) vkDestroyInstance(runtime.instance,NULL);
     free(runtime.argb);
+    free(runtime.capture_rgb);
     memset(&runtime,0,sizeof runtime);
 }

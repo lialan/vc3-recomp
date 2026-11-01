@@ -1,0 +1,7 @@
+[Vulkan] completed frame 1: 640x480, guest=80408000
+[Vulkan] completed frame 60: 640x480, guest=80534000
+[Vulkan] completed frame 120: 640x480, guest=80660000
+[Vulkan frame intervals] flips 1..121: 22.28 fps mean 44.88ms p95 54.38ms p99 188.30ms max 304.13ms >20ms=119 >33ms=66 (guest completions, not XR display)
+[Vulkan] completed frame 180: 640x480, guest=80660000
+[Vulkan] completed frame 240: 640x480, guest=80660000
+[Vulkan] diagnostic frame limit reached: 240

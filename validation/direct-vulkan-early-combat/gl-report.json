@@ -1,0 +1,36 @@
+{
+  "binary": "/Users/lialan/Downloads/VR/vc3-vulkan/build-opengl-reference/vc3",
+  "binary_sha256": "3e3a941f405399f29042e53fc40cdc0284a00e7cdc9316f6f5f22895e71da643",
+  "environment": {
+    "RECOMP_HEADLESS": "1",
+    "RECOMP_FB_WINDOW": "0",
+    "VC3_SOUND": "0",
+    "VC3_SCALE": "1",
+    "VC3_ASPECT": "4:3",
+    "VC3_STEREO": "0",
+    "VC3_FPS": "120",
+    "VC3_SAVE_DIR": "/tmp/vc3-opengl-early-combat/save",
+    "VC3_CONFIG_DIR": "/tmp/vc3-opengl-early-combat/config",
+    "CHIHIRO_AUTOKEYS": "12:coin,13:start,15:fire,20:start,22:start,25:start,30:start,35:fire,36:fire,38:fire,40:reload,44:fire",
+    "CHIHIRO_AUTOAIM": "0.2,0.5",
+    "CHIHIRO_AUTOFIRE_MS": "700",
+    "VC3_FPS_DUMP": "/tmp/vc3-opengl-early-combat/frames/frame-",
+    "VC3_FPS_DUMP_FLIPS": "1",
+    "VC3_FPS_DUMP_FIRST": "2400",
+    "VC3_FPS_DUMP_COUNT": "3",
+    "CHIHIRO_AUTOKEYS_CLOCK": "flips",
+    "RECOMP_PB_DECODE_THREAD": "0"
+  },
+  "exit_code": -15,
+  "requested_captures_completed": true,
+  "elapsed_seconds": 43.113174916943535,
+  "captures": [
+    "frame-02400_0.bmp",
+    "frame-02400_1.bmp",
+    "frame-02401_0.bmp",
+    "frame-02401_1.bmp",
+    "frame-02402_0.bmp",
+    "frame-02402_1.bmp"
+  ],
+  "scope": "Local GL source-flip reference capture only; not Quest or performance acceptance"
+}

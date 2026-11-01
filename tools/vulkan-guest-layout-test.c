@@ -2,6 +2,7 @@
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
+#include <stdlib.h>
 #define CHECK(c) do { if(!(c)) {fprintf(stderr,"FAIL line %d: %s\n",__LINE__,#c);return 1;} } while(0)
 
 int main(void)
@@ -63,6 +64,29 @@ int main(void)
     memcpy(before,guest,sizeof guest);
     CHECK(ch_vk_nv2a_store_color_state(&surface,&state,rgba,sizeof rgba,guest,sizeof guest)!=VK_SUCCESS);
     CHECK(!memcmp(before,guest,sizeof guest));
-    puts("PASS: rectangular Morton color/Z24S8/Z16, pitched Z16, padding, bounds and atomic rejection");
+    /* Odd widths, unaligned guest bases and odd row strides must retain the
+     * scalar byte path's exact channel/alpha/padding and alias behavior. */
+    Nv2aSurface color={.color_va=513,.width=17,.height=3,.pitch=75,.bytes_per_pixel=4};
+    Nv2aRenderState linear={.surface_format=0x128};
+    unsigned char input[204],output[204],legacy[1024],alias[1024];
+    const char *old_fast=getenv("CHIHIRO_VULKAN_COLOR_FAST_IO");char *saved_fast=old_fast?strdup(old_fast):NULL;
+    for(unsigned i=0;i<sizeof input;i++) input[i]=(unsigned char)(i*173+19);
+    for(unsigned fast=0;fast<2;fast++) {
+        setenv("CHIHIRO_VULKAN_COLOR_FAST_IO",fast?"1":"0",1);memset(guest,0xa5,sizeof guest);
+        CHECK(ch_vk_nv2a_store_color_state(&color,&linear,input,sizeof input,guest,sizeof guest)==VK_SUCCESS);
+        CHECK(guest[513]==input[2] && guest[514]==input[1] && guest[515]==input[0] && guest[516]==input[3]);
+        if(!fast) memcpy(legacy,guest,sizeof guest);else CHECK(!memcmp(legacy,guest,sizeof guest));
+        CHECK(ch_vk_nv2a_load_color_state(&color,&linear,output,sizeof output,guest,sizeof guest)==VK_SUCCESS && !memcmp(input,output,sizeof input));
+        memset(output,0xcd,sizeof output);memcpy(before,guest,sizeof guest);
+        CHECK(ch_vk_nv2a_store_color_state(&color,&linear,input,sizeof input,guest,730)!=VK_SUCCESS && !memcmp(before,guest,sizeof guest));
+        CHECK(ch_vk_nv2a_load_color_state(&color,&linear,output,sizeof output,guest,730)!=VK_SUCCESS);
+        for(unsigned i=0;i<sizeof output;i++) CHECK(output[i]==0xcd);
+        CHECK(ch_vk_nv2a_load_color_state(&color,&linear,guest+513,sizeof input,guest,sizeof guest)==VK_SUCCESS);
+        CHECK(!memcmp(guest+513,input,sizeof input));
+        if(!fast) memcpy(alias,guest,sizeof guest);else CHECK(!memcmp(alias,guest,sizeof guest));
+    }
+    if(saved_fast) {setenv("CHIHIRO_VULKAN_COLOR_FAST_IO",saved_fast,1);free(saved_fast);}
+    else unsetenv("CHIHIRO_VULKAN_COLOR_FAST_IO");
+    puts("PASS: rectangular Morton color/Z24S8/Z16, packed depth, pitched/unaligned ARGB fast-vs-scalar rows, padding, bounds, alias loads and atomic rejection");
     return 0;
 }

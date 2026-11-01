@@ -1,0 +1,92 @@
+[INPUT] script clock: executor flips at 60 Hz (origin 0)
+[Vulkan texture cache] hits=0 uploads=1 evictions=0 live=0.0MiB entries=1/2048
+[Vulkan] completed frame 1: 640x480, guest=80408000
+[Vulkan texture cache] hits=3121 uploads=14 evictions=0 live=10.6MiB entries=14/2048
+[Vulkan] completed frame 60: 640x480, guest=80534000
+[Vulkan texture cache] hits=6354 uploads=14 evictions=0 live=10.6MiB entries=14/2048
+[Vulkan] completed frame 120: 640x480, guest=80534000
+[Vulkan frame intervals] flips 1..121: 19.51 fps mean 51.26ms p95 64.22ms p99 197.91ms max 320.33ms >20ms=119 >33ms=111 (guest completions, not XR display)
+[Vulkan texture cache] hits=9590 uploads=14 evictions=0 live=10.6MiB entries=14/2048
+[Vulkan] completed frame 180: 640x480, guest=80534000
+[Vulkan texture cache] hits=12828 uploads=15 evictions=0 live=11.4MiB entries=15/2048
+[Vulkan] completed frame 240: 640x480, guest=80534000
+[Vulkan frame intervals] flips 121..241: 21.59 fps mean 46.32ms p95 60.59ms p99 61.14ms max 62.14ms >20ms=120 >33ms=112 (guest completions, not XR display)
+[Vulkan texture cache] hits=16059 uploads=15 evictions=0 live=11.4MiB entries=15/2048
+[Vulkan] completed frame 300: 640x480, guest=80534000
+[Vulkan texture cache] hits=19290 uploads=15 evictions=0 live=11.4MiB entries=15/2048
+[Vulkan] completed frame 360: 640x480, guest=80534000
+[Vulkan frame intervals] flips 241..361: 21.56 fps mean 46.38ms p95 60.42ms p99 62.55ms max 67.36ms >20ms=120 >33ms=115 (guest completions, not XR display)
+[Vulkan texture cache] hits=21104 uploads=16 evictions=0 live=13.9MiB entries=16/2048
+[Vulkan] completed frame 420: 640x480, guest=80534000
+[Vulkan texture cache] hits=22895 uploads=16 evictions=0 live=13.9MiB entries=16/2048
+[Vulkan] completed frame 480: 640x480, guest=80534000
+[Vulkan frame intervals] flips 361..481: 23.84 fps mean 41.94ms p95 55.93ms p99 58.42ms max 67.88ms >20ms=120 >33ms=68 (guest completions, not XR display)
+[Vulkan texture cache] hits=24692 uploads=16 evictions=0 live=13.9MiB entries=16/2048
+[Vulkan] completed frame 540: 640x480, guest=80534000
+[Vulkan texture cache] hits=26855 uploads=23 evictions=0 live=20.8MiB entries=23/2048
+[Vulkan] completed frame 600: 640x480, guest=80534000
+[Vulkan frame intervals] flips 481..601: 11.41 fps mean 87.64ms p95 111.31ms p99 608.43ms max 859.29ms >20ms=120 >33ms=93 (guest completions, not XR display)
+[Vulkan texture cache] hits=29159 uploads=24 evictions=0 live=20.8MiB entries=24/2048
+[Vulkan] completed frame 660: 640x480, guest=80534000
+[Vulkan texture cache] hits=32501 uploads=25 evictions=0 live=21.2MiB entries=25/2048
+[Vulkan] completed frame 720: 640x480, guest=80534000
+[INPUT] auto coin at 12.0s
+[Vulkan frame intervals] flips 601..721: 11.81 fps mean 84.67ms p95 107.85ms p99 112.35ms max 114.41ms >20ms=120 >33ms=120 (guest completions, not XR display)
+[Vulkan texture cache] hits=36360 uploads=25 evictions=0 live=21.2MiB entries=25/2048
+[Vulkan] completed frame 780: 640x480, guest=80534000
+[INPUT] auto start at 13.0s
+[Vulkan texture cache] hits=38024 uploads=160 evictions=137 live=62.5MiB entries=23/2048
+[Vulkan] completed frame 840: 640x480, guest=80534000
+[Vulkan frame intervals] flips 721..841: 10.39 fps mean 96.23ms p95 121.09ms p99 131.25ms max 380.31ms >20ms=120 >33ms=120 (guest completions, not XR display)
+[Vulkan texture cache] hits=39607 uploads=309 evictions=286 live=62.5MiB entries=23/2048
+[Vulkan] completed frame 900: 640x480, guest=80534000
+[INPUT] auto fire at 15.0s
+[Vulkan texture cache] hits=42394 uploads=394 evictions=362 live=62.4MiB entries=32/2048
+[Vulkan] completed frame 960: 640x480, guest=80534000
+[Vulkan frame intervals] flips 841..961: 9.61 fps mean 104.02ms p95 131.63ms p99 137.50ms max 147.87ms >20ms=120 >33ms=120 (guest completions, not XR display)
+[Vulkan texture cache] hits=45576 uploads=396 evictions=362 live=63.5MiB entries=34/2048
+[Vulkan] completed frame 1020: 640x480, guest=80534000
+[Vulkan texture cache] hits=49331 uploads=398 evictions=363 live=63.3MiB entries=35/2048
+[Vulkan] completed frame 1080: 640x480, guest=80534000
+[Vulkan frame intervals] flips 961..1081: 9.12 fps mean 109.69ms p95 135.65ms p99 142.31ms max 150.02ms >20ms=120 >33ms=120 (guest completions, not XR display)
+[Vulkan texture cache] hits=52024 uploads=403 evictions=365 live=63.3MiB entries=38/2048
+[Vulkan] completed frame 1140: 640x480, guest=80534000
+[Vulkan texture cache] hits=84471 uploads=950 evictions=826 live=61.2MiB entries=124/2048
+[Vulkan] completed frame 1200: 640x480, guest=80534000
+[INPUT] auto start at 20.0s
+[Vulkan frame intervals] flips 1081..1201: 4.60 fps mean 217.27ms p95 332.67ms p99 435.46ms max 1236.57ms >20ms=120 >33ms=120 (guest completions, not XR display)
+[Vulkan texture cache] hits=114891 uploads=1266 evictions=1152 live=62.3MiB entries=114/2048
+[Vulkan] completed frame 1260: 640x480, guest=80534000
+[Vulkan texture cache] hits=131928 uploads=1352 evictions=1269 live=63.3MiB entries=83/2048
+[Vulkan] completed frame 1320: 640x480, guest=80534000
+[INPUT] auto start at 22.0s
+[Vulkan frame intervals] flips 1201..1321: 4.20 fps mean 238.17ms p95 310.85ms p99 549.24ms max 551.77ms >20ms=120 >33ms=120 (guest completions, not XR display)
+[Vulkan texture cache] hits=148490 uploads=1376 evictions=1293 live=63.3MiB entries=83/2048
+[Vulkan] completed frame 1380: 640x480, guest=80534000
+[Vulkan texture cache] hits=170069 uploads=1517 evictions=1389 live=63.1MiB entries=128/2048
+[Vulkan] completed frame 1440: 640x480, guest=80534000
+[Vulkan frame intervals] flips 1321..1441: 4.40 fps mean 227.25ms p95 282.20ms p99 290.18ms max 325.39ms >20ms=120 >33ms=120 (guest completions, not XR display)
+[Vulkan texture cache] hits=204084 uploads=1641 evictions=1481 live=63.2MiB entries=160/2048
+[Vulkan] completed frame 1500: 640x480, guest=80534000
+[INPUT] auto start at 25.0s
+[Vulkan texture cache] hits=238002 uploads=2875 evictions=2791 live=62.6MiB entries=84/2048
+[Vulkan] completed frame 1560: 640x480, guest=80534000
+[Vulkan frame intervals] flips 1441..1561: 3.18 fps mean 314.56ms p95 589.67ms p99 628.57ms max 634.09ms >20ms=120 >33ms=120 (guest completions, not XR display)
+[Vulkan texture cache] hits=257522 uploads=2899 evictions=2810 live=62.4MiB entries=89/2048
+[Vulkan] completed frame 1620: 640x480, guest=80534000
+[Vulkan texture cache] hits=278029 uploads=2904 evictions=2816 live=61.6MiB entries=88/2048
+[Vulkan] completed frame 1680: 640x480, guest=80534000
+[Vulkan frame intervals] flips 1561..1681: 5.20 fps mean 192.34ms p95 223.34ms p99 233.98ms max 245.28ms >20ms=120 >33ms=120 (guest completions, not XR display)
+[Vulkan texture cache] hits=300907 uploads=2909 evictions=2820 live=62.3MiB entries=89/2048
+[Vulkan] completed frame 1740: 640x480, guest=80534000
+[Vulkan texture cache] hits=323806 uploads=2911 evictions=2822 live=62.3MiB entries=89/2048
+[Vulkan] completed frame 1800: 640x480, guest=80534000
+[INPUT] auto start at 30.0s
+[Vulkan frame intervals] flips 1681..1801: 4.71 fps mean 212.20ms p95 236.78ms p99 239.91ms max 243.32ms >20ms=120 >33ms=120 (guest completions, not XR display)
+[Vulkan texture cache] hits=346713 uploads=2911 evictions=2822 live=62.3MiB entries=89/2048
+[Vulkan] completed frame 1860: 640x480, guest=80534000
+[Vulkan texture cache] hits=369613 uploads=2911 evictions=2822 live=62.3MiB entries=89/2048
+[Vulkan] completed frame 1920: 640x480, guest=80534000
+[Vulkan frame intervals] flips 1801..1921: 4.73 fps mean 211.46ms p95 237.84ms p99 240.41ms max 242.91ms >20ms=120 >33ms=120 (guest completions, not XR display)
+[Vulkan texture cache] hits=396564 uploads=3548 evictions=3392 live=63.8MiB entries=156/2048
+[Vulkan] completed frame 1980: 640x480, guest=80534000

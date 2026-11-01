@@ -21,14 +21,17 @@ def main():
     parser.add_argument("--timeout", type=int, default=45)
     parser.add_argument("--capture-first", type=int, default=3)
     parser.add_argument("--capture-count", type=int, default=1)
+    parser.add_argument("--capture-every", type=int, default=0, help="Periodic diagnostic captures; adds I/O to frame timings")
     parser.add_argument("--autokeys", default="")
     parser.add_argument("--game", default="/sdcard/VirtuaCop3")
     parser.add_argument("--build-dir", type=Path)
     parser.add_argument("--strict-depth-switches", action="store_true")
     parser.add_argument("--strict-depth-clears", action="store_true")
     parser.add_argument("--float-depth-transfers", action="store_true")
+    parser.add_argument("--generic-color-transfers", action="store_true")
+    parser.add_argument("--simpleperf", action="store_true", help="Profile only this workload with the bundled NDK tool; no system permission changes")
     args = parser.parse_args()
-    if args.frames < 1 or not 1 <= args.timeout <= 3600 or args.capture_first < 0 or args.capture_count < 0:
+    if args.frames < 1 or not 1 <= args.timeout <= 3600 or args.capture_first < 0 or args.capture_count < 0 or args.capture_every < 0:
         parser.error("invalid frame/capture/timeout range")
     output = args.output.resolve()
     if output.exists() and any(output.iterdir()):
@@ -37,6 +40,8 @@ def main():
     build, deps = (args.build_dir or root / "build-quest-vulkan-direct").resolve(), root.parent / "deps"
     files = [build / "vc3_vulkan_offscreen", build / "libmain.so",
              deps / "sdl2-android/lib/libSDL2.so", deps / "oxr/jni/arm64-v8a/libopenxr_loader.so"]
+    if args.simpleperf:
+        files.append(Path.home() / "Library/Android/sdk/ndk/27.3.13750724/simpleperf/bin/android/arm64/simpleperf")
     hashes = {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in files}
     adb = [str(Path.home() / "Library/Android/sdk/platform-tools/adb"), "-s", "2G97C5ZJ0G02DQ"]
     remote = "/data/local/tmp/vc3-offscreen-" + uuid.uuid4().hex
@@ -63,9 +68,12 @@ def main():
     env["CHIHIRO_VULKAN_DEPTH_GPU_COPY"] = "0" if args.strict_depth_switches else "1"
     env["CHIHIRO_VULKAN_DEPTH_CLEAR_SKIP"] = "0" if args.strict_depth_clears else "1"
     env["CHIHIRO_VULKAN_DEPTH_PACKED"] = "0" if args.float_depth_transfers else "1"
+    env["CHIHIRO_VULKAN_COLOR_FAST_IO"] = "0" if args.generic_color_transfers else "1"
+    env["CHIHIRO_VULKAN_DUMP_EVERY"] = str(args.capture_every)
     report = {"serial": "2G97C5ZJ0G02DQ", "binary_hashes": hashes, "environment": env,
               "requested_frames": args.frames, "game": args.game,
               "scope": "Actual Quest guest/Vulkan; no XR session or VR performance acceptance"}
+    report["profiling"] = "cpu-clock:u at199Hz with callchains" if args.simpleperf else None
     report["build_options"] = {line.split(":", 1)[0]: line.split("=", 1)[1]
         for line in (build / "CMakeCache.txt").read_text().splitlines()
         if line.split(":", 1)[0] in ("CHIHIRO_GEN_OPT", "CMAKE_C_FLAGS", "CMAKE_BUILD_TYPE") and "=" in line}
@@ -74,14 +82,23 @@ def main():
         run(["shell", "mkdir", "-p", remote + "/save", remote + "/config", remote + "/frames"])
         for path in files:
             run(["push", str(path), remote + "/" + path.name])
-        run(["shell", "chmod", "700", executable])
+        run(["shell", "chmod", "700", executable] + ([remote + "/simpleperf"] if args.simpleperf else []))
         inner = "echo $$ >" + shlex.quote(remote + "/pid") + "; exec " + shlex.join(
             ["env"] + [k + "=" + v for k, v in env.items()] + [executable, args.game])
-        command = shlex.join(["timeout", "-s", "KILL", str(args.timeout), "sh", "-c", inner])
+        workload = ["sh", "-c", inner]
+        if args.simpleperf:
+            workload = [remote + "/simpleperf", "record", "-e", "cpu-clock:u", "-f", "199", "-g",
+                        "-o", remote + "/perf.data", "--"] + workload
+        command = shlex.join(["timeout", "-s", "KILL", str(args.timeout)] + workload)
         result = subprocess.run(adb + ["shell", command], capture_output=True, timeout=args.timeout + 20)
         text = (result.stdout + result.stderr).decode(errors="replace")
         (output / "game.log").write_text(text)
         run(["pull", remote + "/frames", str(output)])
+        if args.simpleperf and result.returncode == 0:
+            profile = run(["shell", shlex.join([remote + "/simpleperf", "report", "-i", remote + "/perf.data",
+                                               "--sort", "dso,symbol"])], text=True)
+            (output / "profile.txt").write_text(profile.stdout + profile.stderr)
+            run(["pull", remote + "/perf.data", str(output / "perf.data")])
         report.update(exit_code=result.returncode,
                       reached_frame_limit=f"diagnostic frame limit reached: {args.frames}" in text)
         print("\n".join(text.splitlines()[-30:]))
