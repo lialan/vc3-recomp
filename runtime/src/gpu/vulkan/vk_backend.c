@@ -171,6 +171,13 @@ static struct Surface *surface(const Nv2aSurface *s,const Nv2aRenderState *rs) {
     const float blank[]={0,0,0,0};
     r=ch_vk_target_clear_read(f->target,blank,f->rgba,f->bytes);
     if(r!=VK_SUCCESS) fatal(r,"initial target state");
+    if(active->host.depth_quant_inline && !f->native_z24) {
+        /* Prepare the compatible pass before even a color-only draw can build
+         * a pipeline. Actual quantization remains conditional on guest Z24. */
+        r=ch_vk_target_depth_quantization(f->target,4);
+        if(r==VK_SUCCESS) r=ch_vk_target_depth_quantization(f->target,0);
+        if(r!=VK_SUCCESS) fatal(r,"input attachment target setup");
+    }
     ch_vk_target_defer_color_readback(f->target,f->resident);
     return f;
 }
@@ -352,7 +359,7 @@ static void import_depth(struct Surface *f,int overwrite) {
     if(!f->state.zeta_va) return;
     if(active->host.quantized_depth && !f->native_z24) {
         f->quantized_z24=((f->state.surface_format>>4)&15)==2;
-        VkResult q=ch_vk_target_depth_quantization(f->target,f->quantized_z24?(active->host.depth_quant_draw?2:1):0);
+        VkResult q=ch_vk_target_depth_quantization(f->target,f->quantized_z24?(active->host.depth_quant_inline?4:active->host.depth_quant_draw?2:1):0);
         if(q!=VK_SUCCESS) fatal(q,"D32 depth quantization setup");
     }
     if(active->zeta) {
@@ -545,7 +552,8 @@ VkResult ch_vk_backend_create(const ChVkBackendConfig *config,ChVkBackend **out)
        config->batch_draw_limit>CH_VK_MAX_BATCH_DRAWS ||
        (!!config->lock_queue != !!config->unlock_queue) ||
        (config->quantized_depth && !config->resident_depth) ||
-       (config->depth_quant_draw && !config->quantized_depth) ||
+       ((config->depth_quant_draw || config->depth_quant_inline) && !config->quantized_depth) ||
+       (config->depth_quant_draw && config->depth_quant_inline) ||
        (config->sample_render_targets && (!config->resident_color || !config->cache_textures)) ||
        ((config->resident_color || config->resident_depth) && (config->render_clear || config->render_draw ||
         config->render_flip || config->guest_color_changed)))

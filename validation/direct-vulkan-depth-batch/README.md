@@ -350,3 +350,35 @@ experiment needs a compatible color/depth/input subpass with BY_REGION self
 dependencies and must preserve pipeline restoration and guest fence semantics.
 Core attachment reference rules:
 https://docs.vulkan.org/refpages/latest/refpages/source/VkSubpassDescription.html
+
+## Same-subpass depth quantization checkpoint
+
+Target mode 4 now keeps exact input-attachment rounding in the original render
+pass. It uses framebuffer-local self dependencies, color writes disabled,
+stencil disabled, and restores normal draw bindings on the following draw.
+Guest visibility queries end before the helper triangle. Renderpass depth is
+GENERAL within the subpass and returns to DEPTH_STENCIL_ATTACHMENT_OPTIMAL at
+pass boundaries. Backend `depth_quant_inline` (shared environment
+CHIHIRO_VULKAN_DEPTH_QUANT_INLINE) prepares the compatible pass before any
+pipeline exists, including targets first used for color-only draws. It is
+opt-in and mutually exclusive with the buffer-draw experiment. No game policy.
+
+Validation: /tmp/vc3-inline-queued-validation.log covers 32 queued draws/all
+eight comparisons against CPU roundtrips, and an exact 16-sample guest query
+that excludes the quantization triangle. /tmp/vc3-inline-backend-validation.log
+covers exact full guest memory with CPU edits, target switches, resize, clears,
+and sampling. Validation/sync validation requested, no VUID/SYNC diagnostics.
+Mac main and Android offscreen builds pass; no device activity.
+
+The initial /tmp/vc3-inline-bench.log incorrectly called its draw loop queued:
+it did not enable deferred color readback. Do not use those timings as batching
+evidence. The corrected /tmp/vc3-inline-queued-bench.log asserts 128 draws and
+one submission. It passes exact depth/stencil checks but reports 0.377 ms/draw
+compute vs 0.496 ms inline. Isolated timings vary substantially between runs;
+no performance claim follows from this fixture.
+
+/tmp/vc3-inline-on completed 2400 frames, exit 0, late windows
+1921..2041 / 2041..2161 / 2161..2281 = 34.04/33.59/33.32 FPS.
+The same immutable /tmp/vc3-inline-integrated-vc3 control is running in
+/tmp/vc3-inline-off (session 72525). Only INLINE differs; DRAW=0 and timestamps=0.
+Do not overlap another GPU workload. Compute remains default pending comparison.

@@ -53,3 +53,14 @@ correctness and pacing before enabling experimental options. Simulator evidence
 does not establish headset performance or cross-game acceptance.
 
 Standalone target quantization mode 3 uses a direct depth input attachment. It is a validation experiment, not selected by the backend/runtime configuration: isolated KosmicKrisp measurements were slower than compute. Its shader, ownership, and exactness fixtures are game-independent; see `validation/direct-vulkan-depth-batch/README.md`.
+
+Experimental `depth_quant_inline` / `CHIHIRO_VULKAN_DEPTH_QUANT_INLINE=1`
+selects same-subpass depth input rounding. It requires `quantized_depth`, is
+mutually exclusive with `depth_quant_draw`, and leaves native D24 untouched.
+The backend prepares a compatible renderpass before the first pipeline, even
+if the first draw only writes color. Target mode 4 rejects selection after an
+incompatible pipeline has been created. Turning quantization off keeps the
+compatible pass until target destruction. Framebuffer-local barriers surround
+the helper draw; guest query counts exclude it. CPU clears use the separate
+input pass. No guest addresses, game identifiers, or scene heuristics enter
+this policy. It remains opt-in pending a demonstrated real-workload benefit.

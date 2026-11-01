@@ -179,7 +179,16 @@ int ch_test_specialized_combiners(VkPhysicalDevice gpu,VkDevice device,VkQueue q
             REQUIRE(depth[1][i]==expected && stencil[1][i]==stencil[0][i]);
         }
     }
-    for(unsigned quant_mode=1;quant_mode<=3;quant_mode++) {
+    for(unsigned quant_mode=1;quant_mode<=4;quant_mode++) {
+    if(quant_mode==4) {
+        REQUIRE(ch_vk_target_depth_quantization(t[1],4)==VK_ERROR_INITIALIZATION_FAILED);
+        ch_vk_target_destroy(t[1]);t[1]=NULL;
+        REQUIRE(ch_vk_target_create(gpu,device,queue,family,4,4,&t[1])==VK_SUCCESS);
+        REQUIRE(ch_vk_target_clear_read(t[1],black,rgba[1],64)==VK_SUCCESS);
+        REQUIRE(ch_vk_target_batching(t[1],1)==VK_SUCCESS);
+        REQUIRE(ch_vk_target_enable_queries(t[1])==VK_SUCCESS);
+        ch_vk_target_defer_color_readback(t[1],1);
+    }
     REQUIRE(ch_vk_target_depth_quantization(t[1],quant_mode)==VK_SUCCESS);
     for(unsigned mode=0;mode<2;mode++) {
         for(unsigned i=0;i<16;i++){depth[mode][i]=.5f;stencil[mode][i]=0;}
@@ -202,6 +211,13 @@ int ch_test_specialized_combiners(VkPhysicalDevice gpu,VkDevice device,VkQueue q
     REQUIRE(ch_vk_target_read_depth_stencil(t[1],depth[1],stencil[1],16)==VK_SUCCESS);
     REQUIRE(ch_vk_target_read_color(t[1],rgba[1],64)==VK_SUCCESS);
     REQUIRE(!memcmp(depth[0],depth[1],sizeof depth[0]) && !memcmp(stencil[0],stencil[1],16) && !memcmp(rgba[0],rgba[1],64));
+    if(quant_mode==4) {
+        /* Quantization fragments must not inflate the guest visibility query. */
+        zs.depth_func=0x207;
+        uint32_t samples=0;
+        REQUIRE(ch_vk_target_draw_combiner_read(t[1],NULL,v,3,indices,3,&zs,NULL,&samples,&project,0,NULL,rgba[1],64)==VK_SUCCESS);
+        REQUIRE(samples==16);
+    }
     }
     puts("PASS: 32 specialized combiner cases match interpreter/CPU across 0..8 stages, dynamic factors/fog, fetch modes/cube/missing samplers and exact alpha/depth/stencil; inactive edits reuse pipelines, NOAT retains projective q, 140 pending factor updates survive bounded LRU eviction and two batches");failed=0;
 done:

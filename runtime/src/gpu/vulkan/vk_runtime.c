@@ -192,11 +192,13 @@ static VkResult attach(ChVkBackendConfig config)
     config.quantized_depth=quant && !strcmp(quant,"1");
     const char *quant_draw=ch_env("VULKAN_DEPTH_QUANT_DRAW");
     config.depth_quant_draw=quant_draw && !strcmp(quant_draw,"1");
+    const char *quant_inline=ch_env("VULKAN_DEPTH_QUANT_INLINE");
+    config.depth_quant_inline=quant_inline && !strcmp(quant_inline,"1");
     const char *packed=ch_env("VULKAN_DEPTH_PACKED");
     config.depth_float_transfers=packed && !strcmp(packed,"0");
     fprintf(stderr,"[Vulkan] resident color targets: %s\n",config.resident_color?"enabled":"disabled");
     fprintf(stderr,"[Vulkan] immutable GPU render-target sampling: %s\n",config.sample_render_targets?"enabled":"disabled");
-    fprintf(stderr,"[Vulkan] exact quantized D32 depth residency: %s\n",config.quantized_depth?(config.depth_quant_draw?"depth-only draw":"compute"):"disabled");
+    fprintf(stderr,"[Vulkan] exact quantized D32 depth residency: %s\n",config.quantized_depth?(config.depth_quant_inline?"same-subpass input draw":config.depth_quant_draw?"depth-only draw":"compute"):"disabled");
     fprintf(stderr,"[Vulkan] resident D24 depth targets: %s\n",config.resident_depth?"enabled":"disabled");
     config.present_rgba=present;
     if(!config.fatal) config.fatal=fatal;

@@ -17,7 +17,7 @@ void ch_vk_depth_quant_destroy(ChVkDepthQuant *q){
  if(q->dsl)vkDestroyDescriptorSetLayout(q->device,q->dsl,NULL);
  free(q);
 }
-static VkResult create(VkDevice device,VkBuffer buffer,VkDeviceSize bytes,VkImageView view,uint32_t width,uint32_t height,VkImage input,ChVkDepthQuant **out){
+static VkResult create(VkDevice device,VkBuffer buffer,VkDeviceSize bytes,VkImageView view,uint32_t width,uint32_t height,VkImage input,VkRenderPass inline_pass,ChVkDepthQuant **out){
  if(!out || !device || (!input && (!buffer || !bytes)))return VK_ERROR_INITIALIZATION_FAILED;
  *out=NULL;ChVkDepthQuant *q=calloc(1,sizeof *q);if(!q)return VK_ERROR_OUT_OF_HOST_MEMORY;
  q->device=device;q->buffer=buffer;q->width=width;q->height=height;VkResult r;VkShaderModule shader=VK_NULL_HANDLE,vert=VK_NULL_HANDLE;
@@ -51,17 +51,19 @@ static VkResult create(VkDevice device,VkBuffer buffer,VkDeviceSize bytes,VkImag
   VkComputePipelineCreateInfo pi={.sType=VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO,.stage={.sType=VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,.stage=VK_SHADER_STAGE_COMPUTE_BIT,.module=shader,.pName="main"},.layout=q->layout};
   TRY(vkCreateComputePipelines(device,VK_NULL_HANDLE,1,&pi,NULL,&q->pipeline));
  } else {
-  VkAttachmentDescription attachment={.format=VK_FORMAT_D32_SFLOAT_S8_UINT,.samples=VK_SAMPLE_COUNT_1_BIT,
-   .loadOp=VK_ATTACHMENT_LOAD_OP_LOAD,.storeOp=VK_ATTACHMENT_STORE_OP_STORE,
-   .stencilLoadOp=VK_ATTACHMENT_LOAD_OP_LOAD,.stencilStoreOp=VK_ATTACHMENT_STORE_OP_STORE,
-   .initialLayout=VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,.finalLayout=VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL};
-  VkAttachmentReference depth={0,input?VK_IMAGE_LAYOUT_GENERAL:VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL};
-  if(input)attachment.initialLayout=attachment.finalLayout=VK_IMAGE_LAYOUT_GENERAL;
-  VkSubpassDescription sub={.pipelineBindPoint=VK_PIPELINE_BIND_POINT_GRAPHICS,.pDepthStencilAttachment=&depth,.inputAttachmentCount=input?1:0,.pInputAttachments=input?&depth:NULL};
-  VkRenderPassCreateInfo pass={.sType=VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO,.attachmentCount=1,.pAttachments=&attachment,.subpassCount=1,.pSubpasses=&sub};
-  TRY(vkCreateRenderPass(device,&pass,NULL,&q->pass));
-  VkFramebufferCreateInfo fb={.sType=VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,.renderPass=q->pass,.attachmentCount=1,.pAttachments=&view,.width=width,.height=height,.layers=1};
-  TRY(vkCreateFramebuffer(device,&fb,NULL,&q->framebuffer));
+  if(!inline_pass) {
+   VkAttachmentDescription attachment={.format=VK_FORMAT_D32_SFLOAT_S8_UINT,.samples=VK_SAMPLE_COUNT_1_BIT,
+    .loadOp=VK_ATTACHMENT_LOAD_OP_LOAD,.storeOp=VK_ATTACHMENT_STORE_OP_STORE,
+    .stencilLoadOp=VK_ATTACHMENT_LOAD_OP_LOAD,.stencilStoreOp=VK_ATTACHMENT_STORE_OP_STORE,
+    .initialLayout=VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,.finalLayout=VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL};
+   VkAttachmentReference depth={0,input?VK_IMAGE_LAYOUT_GENERAL:VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL};
+   if(input)attachment.initialLayout=attachment.finalLayout=VK_IMAGE_LAYOUT_GENERAL;
+   VkSubpassDescription sub={.pipelineBindPoint=VK_PIPELINE_BIND_POINT_GRAPHICS,.pDepthStencilAttachment=&depth,.inputAttachmentCount=input?1:0,.pInputAttachments=input?&depth:NULL};
+   VkRenderPassCreateInfo pass={.sType=VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO,.attachmentCount=1,.pAttachments=&attachment,.subpassCount=1,.pSubpasses=&sub};
+   TRY(vkCreateRenderPass(device,&pass,NULL,&q->pass));
+   VkFramebufferCreateInfo fb={.sType=VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,.renderPass=q->pass,.attachmentCount=1,.pAttachments=&view,.width=width,.height=height,.layers=1};
+   TRY(vkCreateFramebuffer(device,&fb,NULL,&q->framebuffer));
+  }
   sm.codeSize=sizeof depth_roundtrip_vert_spv;sm.pCode=depth_roundtrip_vert_spv;
   TRY(vkCreateShaderModule(device,&sm,NULL,&vert));
   VkPipelineShaderStageCreateInfo stages[]={
@@ -74,8 +76,9 @@ static VkResult create(VkDevice device,VkBuffer buffer,VkDeviceSize bytes,VkImag
   VkPipelineRasterizationStateCreateInfo raster={.sType=VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,.polygonMode=VK_POLYGON_MODE_FILL,.lineWidth=1};
   VkPipelineMultisampleStateCreateInfo ms={.sType=VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,.rasterizationSamples=VK_SAMPLE_COUNT_1_BIT};
   VkPipelineDepthStencilStateCreateInfo ds={.sType=VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,.depthTestEnable=VK_TRUE,.depthWriteEnable=VK_TRUE,.depthCompareOp=VK_COMPARE_OP_ALWAYS};
-  VkPipelineColorBlendStateCreateInfo cb={.sType=VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO};
-  VkGraphicsPipelineCreateInfo pi={.sType=VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,.stageCount=2,.pStages=stages,.pVertexInputState=&vi,.pInputAssemblyState=&ia,.pViewportState=&vp,.pRasterizationState=&raster,.pMultisampleState=&ms,.pDepthStencilState=&ds,.pColorBlendState=&cb,.layout=q->layout,.renderPass=q->pass};
+  VkPipelineColorBlendAttachmentState color={0}; /* Preserve the caller color attachment. */
+  VkPipelineColorBlendStateCreateInfo cb={.sType=VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,.attachmentCount=inline_pass?1:0,.pAttachments=inline_pass?&color:NULL};
+  VkGraphicsPipelineCreateInfo pi={.sType=VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,.stageCount=2,.pStages=stages,.pVertexInputState=&vi,.pInputAssemblyState=&ia,.pViewportState=&vp,.pRasterizationState=&raster,.pMultisampleState=&ms,.pDepthStencilState=&ds,.pColorBlendState=&cb,.layout=q->layout,.renderPass=inline_pass?inline_pass:q->pass};
   TRY(vkCreateGraphicsPipelines(device,VK_NULL_HANDLE,1,&pi,NULL,&q->pipeline));
  }
  if(vert)vkDestroyShaderModule(device,vert,NULL);
@@ -84,15 +87,31 @@ fail:if(vert)vkDestroyShaderModule(device,vert,NULL);if(shader)vkDestroyShaderMo
 #undef TRY
 }
 VkResult ch_vk_depth_quant_create(VkDevice d,VkBuffer b,VkDeviceSize n,ChVkDepthQuant **out) {
- return create(d,b,n,VK_NULL_HANDLE,0,0,VK_NULL_HANDLE,out);
+ return create(d,b,n,VK_NULL_HANDLE,0,0,VK_NULL_HANDLE,VK_NULL_HANDLE,out);
 }
 VkResult ch_vk_depth_quant_create_draw(VkDevice d,VkBuffer b,VkDeviceSize n,VkImageView view,uint32_t w,uint32_t h,ChVkDepthQuant **out) {
  if(!view || !w || !h || (uint64_t)w*h>n/4)return VK_ERROR_INITIALIZATION_FAILED;
- return create(d,b,n,view,w,h,VK_NULL_HANDLE,out);
+ return create(d,b,n,view,w,h,VK_NULL_HANDLE,VK_NULL_HANDLE,out);
 }
 VkResult ch_vk_depth_quant_create_input(VkDevice d,VkImage image,VkImageView view,uint32_t w,uint32_t h,ChVkDepthQuant **out) {
  if(!image || !view || !w || !h)return VK_ERROR_INITIALIZATION_FAILED;
- return create(d,VK_NULL_HANDLE,0,view,w,h,image,out);
+ return create(d,VK_NULL_HANDLE,0,view,w,h,image,VK_NULL_HANDLE,out);
+}
+VkResult ch_vk_depth_quant_create_inline(VkDevice d,VkImage image,VkImageView view,uint32_t w,uint32_t h,VkRenderPass pass,ChVkDepthQuant **out) {
+ if(!image || !view || !w || !h || !pass)return VK_ERROR_INITIALIZATION_FAILED;
+ return create(d,VK_NULL_HANDLE,0,view,w,h,image,pass,out);
+}
+void ch_vk_depth_quant_record_inline(ChVkDepthQuant *q,VkCommandBuffer cmd) {
+ const VkPipelineStageFlags tests=VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT|VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
+ VkMemoryBarrier b={.sType=VK_STRUCTURE_TYPE_MEMORY_BARRIER,.srcAccessMask=VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
+  .dstAccessMask=VK_ACCESS_INPUT_ATTACHMENT_READ_BIT|VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT|VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT};
+ vkCmdPipelineBarrier(cmd,tests,VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT|tests,VK_DEPENDENCY_BY_REGION_BIT,1,&b,0,NULL,0,NULL);
+ vkCmdBindPipeline(cmd,VK_PIPELINE_BIND_POINT_GRAPHICS,q->pipeline);
+ vkCmdBindDescriptorSets(cmd,VK_PIPELINE_BIND_POINT_GRAPHICS,q->layout,0,1,&q->set,0,NULL);
+ vkCmdDraw(cmd,3,1,0,0);
+ b.srcAccessMask=VK_ACCESS_INPUT_ATTACHMENT_READ_BIT|VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+ b.dstAccessMask=VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT|VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+ vkCmdPipelineBarrier(cmd,VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT|tests,tests,VK_DEPENDENCY_BY_REGION_BIT,1,&b,0,NULL,0,NULL);
 }
 void ch_vk_depth_quant_record(ChVkDepthQuant *q,VkCommandBuffer cmd,VkImage image,uint32_t width,uint32_t height){
  VkImageMemoryBarrier im={.sType=VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,.srcAccessMask=VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT|VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,.dstAccessMask=VK_ACCESS_TRANSFER_READ_BIT,.oldLayout=VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,.newLayout=VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,.srcQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED,.dstQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED,.image=image,.subresourceRange={VK_IMAGE_ASPECT_DEPTH_BIT|VK_IMAGE_ASPECT_STENCIL_BIT,0,1,0,1}};

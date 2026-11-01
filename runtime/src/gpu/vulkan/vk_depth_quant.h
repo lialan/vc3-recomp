@@ -12,6 +12,12 @@ VkResult ch_vk_depth_quant_create(VkDevice,VkBuffer,VkDeviceSize,ChVkDepthQuant 
 VkResult ch_vk_depth_quant_create_draw(VkDevice,VkBuffer,VkDeviceSize,VkImageView,uint32_t,uint32_t,ChVkDepthQuant **);
 /* Direct input-attachment prototype; image needs INPUT_ATTACHMENT usage. */
 VkResult ch_vk_depth_quant_create_input(VkDevice,VkImage,VkImageView,uint32_t,uint32_t,ChVkDepthQuant **);
+/* Compatible caller pass: subpass 0 has one color attachment (preserved),
+ * depth attachment and input index 0 both refer to the same D32S8 in GENERAL.
+ * Caller supplies framebuffer-local self dependencies covering the barriers,
+ * restores graphics bindings after this draw, and ends any guest query first. */
+VkResult ch_vk_depth_quant_create_inline(VkDevice,VkImage,VkImageView,uint32_t,uint32_t,VkRenderPass,ChVkDepthQuant **);
+void ch_vk_depth_quant_record_inline(ChVkDepthQuant *,VkCommandBuffer);
 void ch_vk_depth_quant_record(ChVkDepthQuant *,VkCommandBuffer,VkImage,uint32_t,uint32_t);
 void ch_vk_depth_quant_destroy(ChVkDepthQuant *);
 #endif
