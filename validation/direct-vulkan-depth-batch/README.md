@@ -614,3 +614,43 @@ visible (87 top-of-stack samples), so decoding is not the only remaining cost.
 The earlier intro/video profile completed5400 frames at
 `/tmp/vc3-fragment-depth-profile`; cpu-4080.txt and cpu-4440.txt contain its
 separate samples. Their FPS is likewise unsuitable as a benchmark.
+
+## Shared bulk texture decoding
+
+The E.S. profile justified moving invariant work out of
+`nv2a_backend_decode_texture`'s per-texel loop in the shared xboxrecomp runtime.
+Non-DXT uploads now resolve guest memory, format and layout once and advance
+Morton offsets with masked increments. The existing format conversion is
+shared with the coordinate sampler; DXT keeps its existing cached path.
+No title address, scene detection or Vulkan-specific decode semantics are used.
+
+`nv2a_texture_decode_test` (standalone Vulkan CMake CPU-test option) compares
+bulk output/status with the coordinate sampler across128 format codes, nine
+dimensions including rectangular/tiny mips, padded linear rows and odd sizes,
+and present/missing palettes:2304 cases. Normal and ASan+UBSan runs pass.
+The conversion helper itself is shared, so this primarily verifies bulk layout
+and traversal parity; it is not an independent format-specification oracle.
+512x512 swizzled RGB565/ARGB decode took0.40/0.35ms versus3.97/3.81ms through
+the coordinate sampler in the local CPU fixture. Mac main and Android
+offscreen builds pass (Android build only).
+
+First game run `/tmp/vc3-bulk-decode-es` completed2400 frames, exit0, no failure
+diagnostics; binary `/tmp/vc3-bulk-decode-vc3`, SHA256
+`8ab8d206b739706a899e8e355fdda2bd26ba7563a38483681cf899140158b48c`.
+Same E.S. input sequence/environment as the preceding baseline. Combat windows
+1321/1441:59.98/59.47FPS. Activation1561:32.36FPS, p95 34.43ms, max140.02ms.
+Held E.S.1681/1801:39.67/43.50FPS, p95 30.90/26.40ms, max129.25/27.57ms.
+Frame1740 visibly retains E.S. HUD/effect; game captures are not byte-identical
+to the older run, so they are not an exact rendering-parity claim.
+A fresh immutable old-binary control is running at `/tmp/vc3-bulk-decode-control`.
+
+Fresh control finished2100 frames, exit0, no failure diagnostics. Its normal
+combat1321/1441:57.49/58.82FPS. Activation1561:27.88FPS, p95 40.41ms,
+max139.14ms. Held E.S.1681/1801:35.05/37.01FPS, p95 34.63/31.83ms.
+The bulk decoder improves these held windows by13.2%/17.5%, and activation
+throughput by16.1%. The approximately140ms activation hitch remains in both
+fresh runs; the earlier421ms maximum is not evidence of a stable hitch fix.
+Control captures were less frequent (every120 versus30frames), so this pair
+is not an identical capture-cost control, but agrees with the earlier
+30-frame-capture baseline and the isolated decoder microbenchmark.
+Both runtime sessions are terminal. Sustained E.S. remains below60FPS.

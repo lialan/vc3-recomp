@@ -111,6 +111,18 @@ find_package(Threads REQUIRED)
 target_link_libraries(chihiro_vulkan PUBLIC "${CHIHIRO_VULKAN_LIBRARY}" m Threads::Threads)
 option(CHIHIRO_VULKAN_CPU_TESTS "Build guest storage tests without a graphics context" OFF)
 if(CHIHIRO_VULKAN_CPU_TESTS)
+    # Include the executor in this CPU fixture to compare bulk uploads with
+    # its private coordinate sampler. Dead-strip unrelated runtime entrypoints.
+    add_executable(nv2a_texture_decode_test "${CH_VK_ROOT}/tools/nv2a-texture-decode-test.c")
+    target_include_directories(nv2a_texture_decode_test PRIVATE
+        "${XBOXRECOMP_DIR}/src" "${XBOXRECOMP_DIR}/include" "${XBOXRECOMP_DIR}/templates/runtime")
+    target_compile_options(nv2a_texture_decode_test PRIVATE -O2 -ffunction-sections -fdata-sections -Wno-comment)
+    if(APPLE)
+        target_link_options(nv2a_texture_decode_test PRIVATE -Wl,-dead_strip)
+    else()
+        target_link_options(nv2a_texture_decode_test PRIVATE -Wl,--gc-sections)
+    endif()
+    target_link_libraries(nv2a_texture_decode_test PRIVATE m Threads::Threads)
     add_executable(vulkan_depth_quant_exact_test "${CH_VK_ROOT}/tools/vulkan-depth-quant-exact-test.c")
     target_compile_options(vulkan_depth_quant_exact_test PRIVATE -Wall -Wextra -Werror)
     target_link_libraries(vulkan_depth_quant_exact_test PRIVATE m)
