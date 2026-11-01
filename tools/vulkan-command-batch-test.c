@@ -1,6 +1,7 @@
 /* Real GPU batching/lifetime tests; no headset session or game required. */
 #include "vk_nv2a.h"
 #include "vk_texture_cache.h"
+#include "vk_depth_quant_math.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -132,6 +133,32 @@ int ch_test_command_batches(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,u
         REQUIRE(stats.batch_submissions-clear_before.batch_submissions==(limit==1?4u:1u));
         REQUIRE(!ch_vk_target_pending(t) && vkGetFenceStatus(device,ch_vk_target_completion_fence(t))==VK_SUCCESS);
         puts("PASS: partial resident clears share bounded draw batches with exact color/depth/stencil and completion ownership");
+        if(limit==256) for(unsigned quant=0;quant<2;quant++) {
+            REQUIRE(ch_vk_target_depth_quantization(t,quant?5:0)==VK_SUCCESS);
+            Nv2aSurface extent={.width=16,.height=16,.pitch=64,.bytes_per_pixel=4};
+            for(unsigned channels=0;channels<16;channels++) for(unsigned aspects=0;aspects<4;aspects++) {
+                unsigned flags=(channels<<4)|aspects;
+                REQUIRE(ch_vk_target_clear_read(t,black,pixels,sizeof pixels)==VK_SUCCESS);
+                Nv2aRenderState rectangle={.clear_rect_set=3,.clear_rect_h=65535u<<16,.clear_rect_v=15u<<16};
+                REQUIRE(ch_vk_nv2a_clear_state_read(t,&extent,&rectangle,flags,0xaabbccdd,0x80808042,pixels,sizeof pixels)==VK_SUCCESS);
+                REQUIRE(ch_vk_target_read_depth_color(t,depth,stencil,256,0,pixels,sizeof pixels)==VK_SUCCESS);
+                const unsigned char color[]={0xbb,0xcc,0xdd,0xaa};
+                float z=(float)(0x808080/16777215.0);if(quant) z=ch_vk_depth_unpack(ch_vk_depth_pack_attachment(z));
+                for(unsigned i=0;i<256;i++) {
+                    for(unsigned c=0;c<4;c++) REQUIRE(pixels[i*4+c]==((channels&(1u<<c))?color[c]:0));
+                    REQUIRE(depth[i]==((aspects&1)?z:1) && stencil[i]==((aspects&2)?0x42:0));
+                }
+            }
+            REQUIRE(ch_vk_target_clear_read(t,black,pixels,sizeof pixels)==VK_SUCCESS);
+            ChVkTargetResourceStats before_mask;ch_vk_target_resource_stats(t,&before_mask);
+            REQUIRE(ch_vk_nv2a_clear_read(t,&extent,0x10,0xaabbccdd,0,pixels,sizeof pixels)==VK_SUCCESS);
+            REQUIRE(ch_vk_nv2a_clear_read(t,&extent,0x20,0xaabbccdd,0,pixels,sizeof pixels)==VK_SUCCESS);
+            ch_vk_target_resource_stats(t,&stats);
+            REQUIRE(stats.batch_submissions==before_mask.batch_submissions && ch_vk_target_pending(t)==2);
+            REQUIRE(ch_vk_target_read_color(t,pixels,sizeof pixels)==VK_SUCCESS);
+            for(unsigned i=0;i<256;i++) REQUIRE(pixels[i*4]==0xbb && pixels[i*4+1]==0xcc && !pixels[i*4+2] && !pixels[i*4+3]);
+        }
+        puts("PASS: full/clamped rectangle clears preserve all channel/aspect masks; channel-only clears avoid redundant completion");
         ch_vk_target_destroy(t);t=NULL;
     }
     /* Cache entries stay pinned while descriptors are pending. Slot pressure

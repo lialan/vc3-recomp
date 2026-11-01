@@ -49,7 +49,9 @@ VkResult ch_vk_nv2a_clear_read(ChVkTarget *t, const Nv2aSurface *s,
                          (argb&255)/255.f,(argb>>24)/255.f};
     int partial=(flags & 0xf0) && (flags & 0xf0)!=0xf0;
     uint32_t host_flags=((flags & 0xf0) && !partial?1:0)|((flags & 1)?2:0)|((flags & 2)?4:0);
-    VkResult result=ch_vk_target_clear_aspects_read(t,host_flags,color,
+    /* A color-channel-only clear is already implemented by the masked draw
+     * below. Do not force a read/submit of unchanged aspects before it. */
+    VkResult result=partial && !host_flags?VK_SUCCESS:ch_vk_target_clear_aspects_read(t,host_flags,color,
         (float)((double)(zstencil>>8)/16777215.0),zstencil&255,pixels,bytes);
     if(result!=VK_SUCCESS || !partial) return result;
     /* A masked full-screen draw implements channel clears without affecting
@@ -403,6 +405,13 @@ static VkResult clear_state(ChVkTarget *t,const Nv2aSurface *s,
     if(y1>s->height) y1=s->height;
     if(x0>=x1 || y0>=y1 || !flags)
         return ch_vk_target_clear_aspects_read(t,0,NULL,0,0,pixels,bytes);
+    /* Full extents need no geometry or clear-specific graphics pipeline.
+     * Keep masked color+depth clears as one rectangle draw. */
+    if(!x0 && !y0 && x1==s->width && y1==s->height &&
+       (!(flags&0xf0) || (flags&0xf0)==0xf0)) {
+        Nv2aSurface extent=*s;ch_vk_target_size(t,&extent.width,&extent.height);
+        return ch_vk_nv2a_clear_read(t,&extent,flags,argb,zs,pixels,bytes);
+    }
     float left=x0/(float)s->width*2-1,right=x1/(float)s->width*2-1;
     float top=y0/(float)s->height*2-1,bottom=y1/(float)s->height*2-1;
     float depth=(float)((double)(zs>>8)/16777215.0);
