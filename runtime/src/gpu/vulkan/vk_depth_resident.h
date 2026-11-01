@@ -23,7 +23,12 @@ VkResult ch_vk_depth_resident_packed(ChVkDepthResident *,int enabled);
 VkResult ch_vk_depth_resident_dirty(ChVkDepthResident *,ChVkTarget *);
 /* Merge CPU changes per depth/stencil component, then publish at completion.
  * Padding is excluded from edits and preserved on writeback. */
+/* Current GPU-written owner needing publication; borrowed, serialized access. */
+ChVkTarget *ch_vk_depth_resident_dirty_target(const ChVkDepthResident *);
 VkResult ch_vk_depth_resident_flush(ChVkDepthResident *);
+/* Requires dirty_target != NULL. Also returns that target's RGBA bytes, without
+ * publishing color guest storage; caller retains its own CPU-edit merge rules. */
+VkResult ch_vk_depth_resident_flush_color(ChVkDepthResident *,void *rgba,size_t bytes);
 VkResult ch_vk_depth_resident_release(ChVkDepthResident *);
 VkResult ch_vk_depth_resident_sample(ChVkDepthResident *,const Nv2aTexture *);
 /* Color/depth reinterpretation requires a unified owner not provided here. */

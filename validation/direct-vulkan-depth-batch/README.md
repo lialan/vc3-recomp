@@ -781,3 +781,50 @@ external_completion). Timestamp-enabled render-texture/coherence fixtures pass
 with validation and no VUID/SYNC errors: `/tmp/vc3-boundary-fixture.log`. Mac main
 and Android offscreen builds pass. No headset/device use. This commit adds
 evidence, not a new speedup; retained uninstrumented E.S. remains~42-45FPS.
+
+## Paired depth/color publication experiment
+
+`/tmp/vc3-es-publish-overlap` completed2100 frames, exit0. New profile counters
+show most dirty-depth calls at explicit backend flush boundaries also have
+dirty color on the same target (e.g.98/93,104/99,111/102 depth/paired per
+report interval during early E.S.). Not every readback is from these flushes;
+depth-owner switches and other target readbacks still require separate handling.
+
+Candidate adds an explicit shared target depth+color read with independent,
+lazily allocated color staging. Both copies can append to pending draws and
+complete in one submission. The depth owner merges CPU depth edits, reads both
+aspects and publishes depth. Backend color publication reuses the returned
+pixels only if its color serial is unchanged after CPU observation; CPU edits
+that import a changed color image force a fresh read. No asynchronous guest
+visibility or dropped query/semaphore completion is introduced.
+
+Expanded fixtures verify pending and standalone paired reads, undersized-output
+rejection without completing pending draws, one submission for both aspects,
+exact depth/stencil/color parity, and CPU color/depth edits before publication.
+D32 and available nativeD24 are exercised. KosmicKrisp and lavapipe pass with
+validation requested, no VUID/SYNC diagnostics: `/tmp/vc3-paired-readback-expanded.log`
+and `/tmp/vc3-paired-readback-lvp.log`. Mac main/Android offscreen builds pass.
+One initial partial-byte depth-edit test had different prepublication backing
+bytes between strict and resident controls; the new paired-publication case
+uses an explicit full depth/stencil word edit for equivalent intended input.
+Existing component-merge coverage is retained.
+
+Initial `/tmp/vc3-paired-readback-es` completed2100 frames, exit0: held
+E.S.42.11/45.58FPS, similar to prior42.04/45.29. A matching control/candidate
+repeat is needed before deciding whether this extra path is worthwhile.
+
+Matching repeat finished: `/tmp/vc3-paired-repeat-control` and
+`/tmp/vc3-paired-repeat-paired`,2100 frames each, exit0, no failure diagnostics.
+Held E.S.1681/1801:control41.55/44.84FPS, paired42.59/46.11FPS (+2.5%/+2.8%).
+p95 improves28.70/24.95ms to27.69/24.05ms. Activation33.79/33.86FPS and
+max137.89/129.49ms: activation hitch remains, no strong hitch-fix claim.
+Candidate SHA256 `d2265e8806f01fc35e08b8a1ecef98e7952289e164b6461329d178f5902bdd78`. Capture1740 visibly retains E.S. mode/effect.
+The first run was close to baseline, so treat this as a modest local gain, not
+a precise general speedup. Keep the paired readback path and its tests.
+Readback kind3 in batch-boundary profiles means paired depth+color.
+
+Next larger candidate: stage readbacks for multiple dirty targets before
+waiting, so target-by-target CPU fence waits do not serialize the submission
+stream. Requires explicit submitted/completed state, staging/resource lifetime,
+and CPU-edit observation rules; never weaken guest semaphore/query publication.
+All current runtime/fixture sessions are terminal. Goal remains open.

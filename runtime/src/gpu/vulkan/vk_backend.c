@@ -9,7 +9,7 @@
 #include <time.h>
 #define MAX_SURFACES 32
 struct Surface { Nv2aSurface guest; uint32_t zeta; Nv2aRenderState state; float *depth; uint8_t *stencil; ChVkTarget *target; unsigned char *rgba,*observed,*cpu,*raw; ChGuestWriteRange *write_range; size_t raw_span; int observed_valid,resident,color_dirty,native_z24,quantized_z24; size_t bytes; uint64_t color_serial; };
-struct ChVkBackend { VkPipelineCache pipeline_cache; struct {int enabled;uint64_t start,n,surface,coherence,imports,draw,store,no_color;} profile; struct {uint64_t previous,us[120];unsigned count;} frame_profile; ChVkBackendConfig host; ChVkTextureCache *textures; ChVkDepthResident *zeta; uint64_t frames,raw_draws,raw_declined,color_clock; struct Surface surfaces[MAX_SURFACES]; unsigned count; };
+struct ChVkBackend { VkPipelineCache pipeline_cache; struct {int enabled;uint64_t start,n,surface,coherence,imports,draw,store,no_color,flushes,depth_flushes,paired_flushes;} profile; struct {uint64_t previous,us[120];unsigned count;} frame_profile; ChVkBackendConfig host; ChVkTextureCache *textures; ChVkDepthResident *zeta; uint64_t frames,raw_draws,raw_declined,color_clock; struct Surface surfaces[MAX_SURFACES]; unsigned count; };
 static ChVkBackend *active;
 static void flush_color(struct Surface *);
 static void observe_guest_colors(void);
@@ -29,6 +29,10 @@ static void profile_draw(const uint64_t t[6]) {
         (unsigned long long)active->profile.n,active->profile.surface/1000.,active->profile.coherence/1000.,
         active->profile.imports/1000.,active->profile.draw/1000.,active->profile.store/1000.,
         (unsigned long long)active->profile.no_color);
+    fprintf(stderr,"[Vulkan publication overlap] flushes=%llu dirty_depth=%llu same_target_dirty_color=%llu\n",
+        (unsigned long long)active->profile.flushes,(unsigned long long)active->profile.depth_flushes,
+        (unsigned long long)active->profile.paired_flushes);
+    active->profile.flushes=active->profile.depth_flushes=active->profile.paired_flushes=0;
     active->profile.n=active->profile.surface=active->profile.coherence=active->profile.imports=0;
     active->profile.draw=active->profile.store=active->profile.no_color=0;active->profile.start=t[5];
 }
@@ -207,9 +211,9 @@ static void store(struct Surface *f,VkResult result,const char *operation,int co
         if(result!=VK_SUCCESS) fatal(result,"depth writeback");
     }
 }
-static void flush_color(struct Surface *f) {
+static void publish_color(struct Surface *f,int ready) {
     if(!f->resident || !f->color_dirty) return;
-    VkResult r=ch_vk_target_read_color(f->target,f->rgba,f->bytes);
+    VkResult r=ready?VK_SUCCESS:ch_vk_target_read_color(f->target,f->rgba,f->bytes);
     void *storage=(unsigned char *)active->host.guest_base+f->guest.color_va;
     ch_guest_write_watch_begin(active->host.guest_write_watch,storage,f->raw_span);
     if(r==VK_SUCCESS) r=ch_vk_nv2a_store_color_state(&f->guest,&f->state,f->rgba,f->bytes,
@@ -222,6 +226,7 @@ static void flush_color(struct Surface *f) {
     if(r!=VK_SUCCESS) fatal(r,"resident color writeback");
     f->observed_valid=1; f->color_dirty=0;
 }
+static void flush_color(struct Surface *f) {publish_color(f,0);}
 static void observe_guest_color(struct Surface *f) {
     if(!f->observed) return;
     const unsigned char *raw=(const unsigned char *)active->host.guest_base+f->guest.color_va;
@@ -267,11 +272,29 @@ static void observe_target_color(struct Surface *f) {
     else observe_guest_color(f);
 }
 static void flush(void) {
+    struct Surface *paired=NULL;uint64_t paired_serial=0;
+    ChVkTarget *owner=ch_vk_depth_resident_dirty_target(active->zeta);
+    for(unsigned i=0;owner && i<active->count;i++) {
+        struct Surface *f=&active->surfaces[i];
+        if(f->target==owner && f->resident && f->color_dirty) {paired=f;paired_serial=f->color_serial;break;}
+    }
+    if(active->profile.enabled) {
+        ChVkTarget *owner=ch_vk_depth_resident_dirty_target(active->zeta);
+        active->profile.flushes++;
+        if(owner) {
+            active->profile.depth_flushes++;
+            for(unsigned i=0;i<active->count;i++)
+                if(active->surfaces[i].target==owner && active->surfaces[i].color_dirty) {
+                    active->profile.paired_flushes++;break;
+                }
+        }
+    }
     /* Let resident depth append its readback to pending draws. Finishing every
      * target first would force another submission/fence for the same data.
      * Color/depth guest storage aliases are rejected at bind time. */
     if(active->zeta) {
-        VkResult r=ch_vk_depth_resident_flush(active->zeta);
+        VkResult r=paired?ch_vk_depth_resident_flush_color(active->zeta,paired->rgba,paired->bytes):
+            ch_vk_depth_resident_flush(active->zeta);
         if(r!=VK_SUCCESS) fatal(r,"resident depth completion");
     }
     /* Completion only publishes GPU-written storage. An idle target's RAM
@@ -281,7 +304,12 @@ static void flush(void) {
     if(active->host.guest_color_changed) observe_guest_colors();
     else for(unsigned i=0;i<active->count;i++)
         if(active->surfaces[i].color_dirty) observe_guest_color(&active->surfaces[i]);
-    for(unsigned i=0;i<active->count;i++) flush_color(&active->surfaces[i]);
+    for(unsigned i=0;i<active->count;i++) {
+        struct Surface *f=&active->surfaces[i];
+        /* CPU color observation may have merged edits after the paired read.
+         * Such an import advances the serial and requires a fresh GPU read. */
+        publish_color(f,f==paired && f->color_serial==paired_serial);
+    }
     /* Draws with no dirty resident storage still own resources and must finish
      * before the executor publishes the guest semaphore/query boundary. */
     for(unsigned i=0;i<active->count;i++) {

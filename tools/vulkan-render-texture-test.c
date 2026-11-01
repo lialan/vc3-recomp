@@ -162,6 +162,8 @@ static int scenario(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,uint32_t 
             tx.addr_u=tx.addr_v=1;cb->draw(&dest,&draw_dest); /* Independent sampler key. */
         }
     }
+    if(test>=13) {uint32_t edit=0x7349a1fe;memcpy(memory+dest.color_va+4,&edit,4);}
+    if(test==14) {uint32_t edit=0x40000039;memcpy(memory+8192,&edit,4);}
     cb->flush();
     if(test==8) {
         static const unsigned char expected[]={9,15,12,8}; /* Guest BGRA ordering. */
@@ -202,12 +204,49 @@ done:
 #undef CHECK
     return failed;
 }
+static int paired_readbacks(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,uint32_t family) {
+    ChVkTarget *t=NULL;int failed=1;
+    unsigned char rgba[64],reference[64],stencil[16],stencil_ref[16];float depth[16],depth_ref[16];uint32_t words[16],words_ref[16];
+    const float black[]={0,0,0,1};const uint16_t idx[]={0,1,2};
+    ChVkColorVertex v[]={{{-1,-1,.25f,1},{1,0,0,1}},{{3,-1,.25f,1},{1,0,0,1}},{{-1,3,.25f,1},{1,0,0,1}}};
+    Nv2aRenderState state={.color_mask=0x01010101,.depth_test_enable=1,.depth_write=1,.depth_func=0x207};
+#define CHECK(x) do {if(!(x)) {fprintf(stderr,"paired readback failure line%d: %s\n",__LINE__,#x);goto done;}}while(0)
+    for(unsigned packed=0;packed<2;packed++) {
+        VkResult r=ch_vk_target_create_depth(gpu,device,queue,family,4,4,
+            packed?VK_FORMAT_D24_UNORM_S8_UINT:VK_FORMAT_D32_SFLOAT_S8_UINT,&t);
+        if(packed && r==VK_ERROR_FORMAT_NOT_SUPPORTED) continue;
+        CHECK(r==VK_SUCCESS);
+        CHECK(ch_vk_target_batching(t,1)==VK_SUCCESS);
+        CHECK(ch_vk_target_clear_aspects_read(t,7,black,1,7,rgba,sizeof rgba)==VK_SUCCESS);
+        ch_vk_target_defer_color_readback(t,1);
+        CHECK(ch_vk_target_draw_state_read(t,NULL,v,3,idx,3,&state,rgba,sizeof rgba)==VK_SUCCESS);
+        CHECK(ch_vk_target_pending(t)==1);
+        CHECK(ch_vk_target_read_depth_color(t,packed?(void *)words:(void *)depth,stencil,16,packed,rgba,63)==VK_ERROR_INITIALIZATION_FAILED);
+        CHECK(ch_vk_target_pending(t)==1);
+        ChVkTargetResourceStats before,after;ch_vk_target_resource_stats(t,&before);
+        CHECK(ch_vk_target_read_depth_color(t,packed?(void *)words:(void *)depth,stencil,16,packed,rgba,sizeof rgba)==VK_SUCCESS);
+        ch_vk_target_resource_stats(t,&after);
+        CHECK(after.batch_submissions==before.batch_submissions+1 && after.combined_depth_readbacks==before.combined_depth_readbacks+1 && after.combined_color_readbacks==before.combined_color_readbacks+1);
+        CHECK(ch_vk_target_read_color(t,reference,sizeof reference)==VK_SUCCESS && !memcmp(reference,rgba,sizeof rgba));
+        if(packed) {CHECK(ch_vk_target_read_z24s8(t,words_ref,16)==VK_SUCCESS);CHECK(!memcmp(words,words_ref,sizeof words));}
+        else {CHECK(ch_vk_target_read_depth_stencil(t,depth_ref,stencil_ref,16)==VK_SUCCESS);CHECK(!memcmp(depth,depth_ref,sizeof depth) && !memcmp(stencil,stencil_ref,sizeof stencil));}
+        /* Exercise the no-pending path and staging reuse too. */
+        CHECK(ch_vk_target_read_depth_color(t,packed?(void *)words:(void *)depth,stencil,16,packed,rgba,sizeof rgba)==VK_SUCCESS);
+        CHECK(!memcmp(reference,rgba,sizeof rgba));
+        ch_vk_target_destroy(t);t=NULL;
+    }
+    failed=0;
+done:
+    ch_vk_target_destroy(t);
+#undef CHECK
+    return failed;
+}
 int ch_test_render_textures(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,uint32_t family) {
-    if(queued_uploads(gpu,device,queue,family) || snapshots(gpu,device,queue,family)) return 1;
+    if(paired_readbacks(gpu,device,queue,family) || queued_uploads(gpu,device,queue,family) || snapshots(gpu,device,queue,family)) return 1;
     unsigned char *reference=malloc(sizeof memory),*candidate=malloc(sizeof memory);
     if(!reference || !candidate) {free(reference);free(candidate);return 1;}
     int failed=0;
-    for(unsigned test=0;test<13 && !failed;test++) {
+    for(unsigned test=0;test<15 && !failed;test++) {
         unsigned control=0,fast=0;
         failed=scenario(gpu,device,queue,family,0,test,reference,&control) ||
             scenario(gpu,device,queue,family,1,test,candidate,&fast);

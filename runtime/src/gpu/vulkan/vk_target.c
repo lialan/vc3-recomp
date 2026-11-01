@@ -71,7 +71,8 @@ struct ChVkTarget {
     VkDeviceMemory depth_mem;
     VkImageView depth_view;
     VkImage image;
-    VkDeviceMemory image_mem, read_mem;
+    VkDeviceMemory image_mem, read_mem, paired_color_mem;
+    VkBuffer paired_color;
     VkBuffer read;
     VkCommandPool pool;
     VkCommandBuffer command;
@@ -259,6 +260,8 @@ void ch_vk_target_destroy(ChVkTarget *t) {
     ch_vk_depth_quant_destroy(t->depth_quant_input);
     ch_vk_depth_quant_destroy(t->depth_quant_inline);
     ch_vk_depth_quant_destroy(t->depth_quant);
+    if(t->paired_color) vkDestroyBuffer(t->device,t->paired_color,NULL);
+    if(t->paired_color_mem) vkFreeMemory(t->device,t->paired_color_mem,NULL);
     if(t->read) vkDestroyBuffer(t->device,t->read,NULL);
     if(t->read_mem) vkFreeMemory(t->device,t->read_mem,NULL);
     if(t->depth_view) vkDestroyImageView(t->device,t->depth_view,NULL);
@@ -414,6 +417,35 @@ static void record_depth_transfer(ChVkTarget *t,int upload) {
     }
 }
 /* readback: 0 none, 1 depth/stencil, 2 color. Staging storage is shared. */
+static VkResult ensure_paired_color(ChVkTarget *t) {
+    if(t->paired_color) return VK_SUCCESS;
+    VkResult result;VkBuffer buffer=VK_NULL_HANDLE;VkDeviceMemory memory=VK_NULL_HANDLE;
+    VkBufferCreateInfo info={.sType=VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,.size=t->bytes,
+        .usage=VK_BUFFER_USAGE_TRANSFER_DST_BIT,.sharingMode=VK_SHARING_MODE_EXCLUSIVE};
+    TRY(vkCreateBuffer(t->device,&info,NULL,&buffer));
+    VkMemoryRequirements req;vkGetBufferMemoryRequirements(t->device,buffer,&req);
+    VkMemoryAllocateInfo alloc={.sType=VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,.allocationSize=req.size};
+    if(!memory_type(t->physical,req.memoryTypeBits,VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT,&alloc.memoryTypeIndex)) {
+        result=VK_ERROR_FEATURE_NOT_PRESENT;goto fail;
+    }
+    TRY(vkAllocateMemory(t->device,&alloc,NULL,&memory));
+    TRY(vkBindBufferMemory(t->device,buffer,memory,0));
+    t->paired_color=buffer;t->paired_color_mem=memory;return VK_SUCCESS;
+fail:
+    if(buffer) vkDestroyBuffer(t->device,buffer,NULL);
+    if(memory) vkFreeMemory(t->device,memory,NULL);
+    return result;
+}
+static void record_paired_color(ChVkTarget *t) {
+    VkBufferImageCopy copy={.imageSubresource={VK_IMAGE_ASPECT_COLOR_BIT,0,0,1},
+        .imageExtent={t->width,t->height,1}};
+    vkCmdCopyImageToBuffer(t->command,t->image,VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,t->paired_color,1,&copy);
+    VkBufferMemoryBarrier host={.sType=VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
+        .srcAccessMask=VK_ACCESS_TRANSFER_WRITE_BIT,.dstAccessMask=VK_ACCESS_HOST_READ_BIT,
+        .srcQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED,.dstQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED,
+        .buffer=t->paired_color,.size=VK_WHOLE_SIZE};
+    vkCmdPipelineBarrier(t->command,VK_PIPELINE_STAGE_TRANSFER_BIT,VK_PIPELINE_STAGE_HOST_BIT,0,0,NULL,1,&host,0,NULL);
+}
 static VkResult finish_batch_named(ChVkTarget *t,int readback,const char *caller) {
     if(!t || t->failed) return VK_ERROR_INITIALIZATION_FAILED;
     if(!t->pending) return VK_SUCCESS;
@@ -426,7 +458,8 @@ static VkResult finish_batch_named(ChVkTarget *t,int readback,const char *caller
         .srcQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED,.dstQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED,
         .image=t->image,.subresourceRange={VK_IMAGE_ASPECT_COLOR_BIT,0,1,0,1}};
     vkCmdPipelineBarrier(t->command,VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,VK_PIPELINE_STAGE_TRANSFER_BIT,0,0,NULL,0,NULL,1,&barrier);
-    if(readback==1) record_depth_transfer(t,0);
+    if(readback==1 || readback==3) record_depth_transfer(t,0);
+    if(readback==3) record_paired_color(t);
     if(readback==2) {
         VkBufferImageCopy copy={.imageSubresource={VK_IMAGE_ASPECT_COLOR_BIT,0,0,1},
             .imageExtent={t->width,t->height,1}};
@@ -459,8 +492,8 @@ static VkResult finish_batch_named(ChVkTarget *t,int readback,const char *caller
         }
     }
     t->layout=VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;t->resource_stats.batch_submissions++;
-    if(readback==1) t->resource_stats.combined_depth_readbacks++;
-    if(readback==2) t->resource_stats.combined_color_readbacks++;
+    if(readback==1 || readback==3) t->resource_stats.combined_depth_readbacks++;
+    if(readback==2 || readback==3) t->resource_stats.combined_color_readbacks++;
     t->pending=0;t->geometry_used=0;
     for(unsigned i=0;i<PIPELINE_SLOTS;i++) {t->pipelines[i].set_used=0;t->pipelines[i].pending=0;}
     uint64_t retire_start=t->timing?time_ns():0;
@@ -1294,18 +1327,20 @@ fail:
     t->failed=1; return result;
 }
 
-static VkResult transfer_depth_stencil(ChVkTarget *t,void *depth,void *stencil,size_t pixels,int upload,int packed) {
+static VkResult transfer_depth_stencil(ChVkTarget *t,void *depth,void *stencil,size_t pixels,int upload,int packed,void *rgba,size_t color_bytes) {
     if(!t || t->failed || !t->initialized || !depth || (!packed && !stencil) || pixels<t->bytes/4)
         return VK_ERROR_INITIALIZATION_FAILED;
+    if(rgba && (upload || color_bytes<t->bytes)) return VK_ERROR_INITIALIZATION_FAILED;
     if(packed && t->depth_format!=VK_FORMAT_D24_UNORM_S8_UINT) return VK_ERROR_FORMAT_NOT_SUPPORTED;
     if(upload && !packed) for(size_t i=0;i<t->bytes/4;i++) {
         float d=((const float *)depth)[i];
         if(!isfinite(d) || d<0 || d>1) return VK_ERROR_INITIALIZATION_FAILED;
     }
     VkResult result; void *mapped;
+    if(rgba) {result=ensure_paired_color(t);if(result!=VK_SUCCESS) return result;}
     VkMappedMemoryRange range={.sType=VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE,.memory=t->read_mem,.size=VK_WHOLE_SIZE};
     if(!upload && t->pending) {
-        TRY(finish_batch_named(t,1,__func__));
+        TRY(finish_batch_named(t,rgba?3:1,__func__));
         goto readback;
     }
 
@@ -1333,6 +1368,7 @@ static VkResult transfer_depth_stencil(ChVkTarget *t,void *depth,void *stencil,s
     VkCommandBufferBeginInfo begin={.sType=VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,.flags=VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT};
     TRY(vkBeginCommandBuffer(t->command,&begin));
     record_depth_transfer(t,upload);
+    if(rgba) record_paired_color(t);
     TRY(vkEndCommandBuffer(t->command));
     VkSubmitInfo submit={.sType=VK_STRUCTURE_TYPE_SUBMIT_INFO,.commandBufferCount=1,.pCommandBuffers=&t->command};
     TRY(vkQueueSubmit(t->queue,1,&submit,t->fence));
@@ -1356,21 +1392,35 @@ readback:
         vkUnmapMemory(t->device,t->read_mem);
         if(result!=VK_SUCCESS) goto fail;
     }
+    if(rgba) {
+        TRY(vkMapMemory(t->device,t->paired_color_mem,0,VK_WHOLE_SIZE,0,&mapped));
+        VkMappedMemoryRange color_range={.sType=VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE,
+            .memory=t->paired_color_mem,.size=VK_WHOLE_SIZE};
+        result=vkInvalidateMappedMemoryRanges(t->device,1,&color_range);
+        if(result==VK_SUCCESS) memcpy(rgba,mapped,(size_t)t->bytes);
+        vkUnmapMemory(t->device,t->paired_color_mem);
+        if(result!=VK_SUCCESS) goto fail;
+    }
     return VK_SUCCESS;
 fail:
     t->failed=1; return result;
 }
+VkResult ch_vk_target_read_depth_color(ChVkTarget *t,void *depth,uint8_t *stencil,size_t pixels,
+    int packed,void *rgba,size_t color_bytes) {
+    if(!rgba) return VK_ERROR_INITIALIZATION_FAILED;
+    return transfer_depth_stencil(t,depth,stencil,pixels,0,!!packed,rgba,color_bytes);
+}
 VkResult ch_vk_target_read_depth_stencil(ChVkTarget *t,float *depth,uint8_t *stencil,size_t pixels) {
-    return transfer_depth_stencil(t,depth,stencil,pixels,0,0);
+    return transfer_depth_stencil(t,depth,stencil,pixels,0,0,NULL,0);
 }
 VkResult ch_vk_target_write_depth_stencil(ChVkTarget *t,const float *depth,const uint8_t *stencil,size_t pixels) {
-    return transfer_depth_stencil(t,(void *)depth,(void *)stencil,pixels,1,0);
+    return transfer_depth_stencil(t,(void *)depth,(void *)stencil,pixels,1,0,NULL,0);
 }
 VkResult ch_vk_target_read_z24s8(ChVkTarget *t,uint32_t *words,size_t pixels) {
-    return transfer_depth_stencil(t,words,NULL,pixels,0,1);
+    return transfer_depth_stencil(t,words,NULL,pixels,0,1,NULL,0);
 }
 VkResult ch_vk_target_write_z24s8(ChVkTarget *t,const uint32_t *words,size_t pixels) {
-    return transfer_depth_stencil(t,(void *)words,NULL,pixels,1,1);
+    return transfer_depth_stencil(t,(void *)words,NULL,pixels,1,1,NULL,0);
 }
 
 VkResult ch_vk_target_copy_depth_stencil(ChVkTarget *source,ChVkTarget *destination) {

@@ -76,14 +76,18 @@ VkResult ch_vk_depth_resident_packed(ChVkDepthResident *d,int enabled) {
     if(!d || d->target || d->words || d->depth || d->stencil) return VK_ERROR_INITIALIZATION_FAILED;
     d->packed=!!enabled;return VK_SUCCESS;
 }
-VkResult ch_vk_depth_resident_flush(ChVkDepthResident *d) {
+ChVkTarget *ch_vk_depth_resident_dirty_target(const ChVkDepthResident *d) {
+    return d && d->dirty?d->target:NULL;
+}
+static VkResult flush_depth(ChVkDepthResident *d,void *rgba,size_t bytes) {
     if(!d) return VK_ERROR_INITIALIZATION_FAILED;
     /* With no GPU writes, guest RAM already is authoritative. The next bind
      * observes CPU edits before GPU use; release may discard the idle image. */
     if(!d->target || !d->dirty) return VK_SUCCESS;
     VkResult r=observe(d);
     if(r!=VK_SUCCESS) return r;
-    r=read_target(d);
+    r=rgba?ch_vk_target_read_depth_color(d->target,d->packed?(void *)d->words:(void *)d->depth,
+        d->stencil,(size_t)d->surface.width*d->surface.height,d->packed,rgba,bytes):read_target(d);
     ch_guest_write_watch_begin(d->watch,storage(d),(size_t)d->layout.span);
     if(r==VK_SUCCESS) r=d->packed?ch_vk_guest_z24s8_store(&d->surface,&d->state,d->guest,d->bytes,d->words):
         ch_vk_guest_depth_store(&d->surface,&d->state,d->guest,d->bytes,d->depth,d->stencil);
@@ -91,6 +95,11 @@ VkResult ch_vk_depth_resident_flush(ChVkDepthResident *d) {
     ch_guest_write_watch_end(d->watch,storage(d),(size_t)d->layout.span);
     if(r!=VK_SUCCESS) return r;
     d->dirty=0;d->stats.writebacks++;return VK_SUCCESS;
+}
+VkResult ch_vk_depth_resident_flush(ChVkDepthResident *d) {return flush_depth(d,NULL,0);}
+VkResult ch_vk_depth_resident_flush_color(ChVkDepthResident *d,void *rgba,size_t bytes) {
+    if(!d || !d->target || !d->dirty || !rgba) return VK_ERROR_INITIALIZATION_FAILED;
+    return flush_depth(d,rgba,bytes);
 }
 VkResult ch_vk_depth_resident_release(ChVkDepthResident *d) {
     VkResult r=ch_vk_depth_resident_flush(d);
