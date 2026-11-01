@@ -42,6 +42,11 @@ VkResult ch_vk_texture_copy_image(VkPhysicalDevice,VkDevice,VkQueue,uint32_t fam
     uint32_t width,uint32_t height,VkImage source,uint32_t levels,ChVkTexture **out);
 /* Reuse an existing image only after every previous sampling pin completes.
  * Same source contract; checks device/extent and regenerates existing mips. */
+/* Append copy/mips to a same-queue command outside a render pass. Caller owns
+ * source in TRANSFER_SRC layout and excludes all sampling/reuse/destruction of
+ * both images until that command completes. Prior texture upload is retired. */
+int ch_vk_texture_image_copy_valid(const ChVkTexture *,VkDevice,VkQueue,VkImage,uint32_t,uint32_t);
+VkResult ch_vk_texture_record_image_copy(ChVkTexture *,VkDevice,VkQueue,VkCommandBuffer,VkImage,uint32_t,uint32_t);
 VkResult ch_vk_texture_copy_from_image(ChVkTexture *,VkDevice,VkImage source,uint32_t width,uint32_t height);
 uint32_t ch_vk_texture_levels(const ChVkTexture *);
 int ch_vk_texture_is_cube(const ChVkTexture *);

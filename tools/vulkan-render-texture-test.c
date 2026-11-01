@@ -94,6 +94,25 @@ static int snapshots(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,uint32_t
         REQUIRE(!memcmp(got,expected,bytes));
         if(!level) REQUIRE(!memcmp(got,rgba,sizeof rgba));
     }
+    REQUIRE(ch_vk_target_batching(source,1)==VK_SUCCESS);
+    ch_vk_target_defer_color_readback(source,1);
+    for(unsigned epoch=0;epoch<2;epoch++) {
+        ChVkColorVertex vertices[]={{{-1,-1,0,1},{1,0,0,1}},{{3,-1,0,1},{1,0,0,1}},{{-1,3,0,1},{1,0,0,1}}};
+        const uint16_t tri[]={0,1,2};Nv2aRenderState color={.color_mask=0x01010101};
+        for(unsigned i=0;i<3;i++) {vertices[i].rgba[0]=epoch?0:1;vertices[i].rgba[2]=epoch?1:0;}
+        REQUIRE(ch_vk_target_draw_state_read(source,NULL,vertices,3,tri,3,&color,got,sizeof got)==VK_SUCCESS);
+        REQUIRE(ch_vk_target_pending(source));
+        REQUIRE(ch_vk_target_refresh_texture(source,NULL)==VK_ERROR_INITIALIZATION_FAILED && ch_vk_target_pending(source));
+        REQUIRE(ch_vk_target_refresh_texture(source,copy)==VK_SUCCESS && !ch_vk_target_pending(source));
+        ChVkTargetResourceStats stats;ch_vk_target_resource_stats(source,&stats);
+        REQUIRE(stats.combined_texture_copies==epoch+1);
+        for(unsigned level=0;level<5;level++) {
+            unsigned bytes=(16u>>level)*(16u>>level)*4;
+            REQUIRE(ch_vk_texture_read_level_rgba(copy,level,got,sizeof got)==VK_SUCCESS);
+            for(unsigned n=0;n<bytes;n++) REQUIRE(got[n]==((n%4==3 || n%4==(epoch?2:0))?255:0));
+        }
+    }
+    REQUIRE(ch_vk_target_import_color(source,rgba,sizeof rgba)==VK_SUCCESS);
     ChVkTextureCacheConfig config={.queued_uploads=1,.physical=gpu,.device=device,.queue=queue,.family=family,
         .guest_base=memory,.guest_bytes=sizeof memory,.decode=decode,.max_entries=2,.max_bytes=4096};
     REQUIRE(ch_vk_texture_cache_create(&config,&cache)==VK_SUCCESS);

@@ -1,0 +1,3 @@
+device=Apple M4 Pro vendor=106b deviceID=0064 api=1.4.354
+PASS: exact GPU depth/stencil copy completes pending source/destination, preserves both colors, restores depth/stencil tests and rejects extent mismatch
+PASS: exact GPU depth/stencil copy completes pending source/destination, preserves both colors, restores depth/stencil tests and rejects extent mismatch
