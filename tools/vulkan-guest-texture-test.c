@@ -462,6 +462,7 @@ int ch_test_guest_textures(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,ui
                 {4,4,0,1,0xffffffff,4,4},{0,4,0,1,0xffffffff,0,4}};
             uint32_t visible=0;
             Nv2aBatch draw={.vertices=quad,.count=6,.texture=&tx,.state=&rs,.zpass_out=&visible};
+            uint32_t yellow=0xffffff00;memcpy(guest.bytes+2048+4,&yellow,4);
             cb->draw(&b,&draw);
             if(visible!=16) failed=1;
             /* A backend semaphore must expose the resident target before the
@@ -470,7 +471,16 @@ int ch_test_guest_textures(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,ui
             nv2a_pb_set_semaphore_target(0);
             uint32_t semaphore;memcpy(&semaphore,guest.bytes+3968,4);
             if(semaphore!=0xabcdef01) failed=1;
-            for(unsigned i=0;i<16;i++) {uint32_t actual;memcpy(&actual,guest.bytes+2304+i*4,4);if(actual!=0xff0000ff) failed=1;}
+            for(unsigned i=0;i<16;i++) {uint32_t actual;memcpy(&actual,guest.bytes+2304+i*4,4);if(actual!=(i==1?yellow:0xff0000ff)) failed=1;}
+            /* A wider pitched view can begin before the resident allocation
+             * while sampling its pixels. Range overlap must publish it too. */
+            cb->clear(&a,&rs,0xf0,0xff00ffff,0);
+            tx.offset=2032;tx.width=8;
+            for(unsigned i=0;i<6;i++) quad[i].u+=4;
+            draw.zpass_out=NULL;cb->draw(&b,&draw);cb->flush();
+            for(unsigned i=0;i<16;i++) {uint32_t actual;memcpy(&actual,guest.bytes+2304+i*4,4);if(actual!=0xff00ffff) failed=1;}
+            for(unsigned i=0;i<6;i++) quad[i].u-=4;
+            tx.width=4;
             /* Self-sampling must snapshot pending GPU output before decoding. */
             cb->clear(&b,&rs,0xf0,0xffffffff,0);
             tx.offset=2304;
@@ -480,6 +490,14 @@ int ch_test_guest_textures(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,ui
             cb->clear(&b,&rs,0xf0,0xff00ff00,0);
             nv2a_pb_exec_method(0,0x17d0,3840);
             for(unsigned i=0;i<16;i++) {uint32_t actual;memcpy(&actual,guest.bytes+2304+i*4,4);if(actual!=0xff00ff00) failed=1;}
+            /* Palette reads are source accesses too, even when index storage
+             * does not overlap a render target. */
+            cb->clear(&a,&rs,0xf0,0xff0000ff,0);memset(guest.bytes+256,0,16);
+            tx=(Nv2aTexture){.offset=256,.palette=2048,.width=4,.height=4,.color=0x0b,
+                .filter=0x01010000,.addr_u=3,.addr_v=3};
+            for(unsigned i=0;i<6;i++) quad[i].diffuse=0xffffffff;
+            cb->draw(&b,&draw);cb->flush();
+            for(unsigned i=0;i<16;i++) {uint32_t actual;memcpy(&actual,guest.bytes+2304+i*4,4);if(actual!=0xff0000ff) failed=1;}
         }
         ch_vk_backend_destroy(backend);
         if(!failed) puts("PASS: resident color defers readback; CPU pixel edits preserve GPU neighbors; sampled/self targets, precise queries and executor semaphore/report flushes");

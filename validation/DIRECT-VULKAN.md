@@ -317,3 +317,38 @@ large costs. This is a different unfocused run, not a controlled speedup claim
 or combat/correctness acceptance. The session again left running/focused state;
 the app was stopped, environment restored and automation disabled before lock
 release. Log excerpts and APK identity are preserved alongside the test log.
+
+### Scope color observation to actual accesses
+
+Resident color now checks the destination before each draw/clear and source
+targets before sampling, instead of scanning every allocated target per draw.
+Completion still checks every target. Host routing notifications retain their
+existing full observation. Source checks use the whole encoded level-zero range
+and P8 palette range, including views beginning before a render target; unknown
+storage conservatively reconciles all targets. A cache span fix also includes
+the complete shared chroma pair for odd-width YUY2/UYVY.
+
+Quest tests cover CPU edits to a dirty sampled source, a pitched texture view
+beginning before the source, a dirty target used as a P8 palette, and mutation
+of the last chroma byte of a one-texel YUY2 image while its previous GPU image
+remains pinned. Existing renderer/depth/query/fence tests pass.
+
+Fresh Quest startup captures 0-3 are byte-identical before/after scoped color
+observation. The scoped APK is
+`07fbbf9a6579ca872463297b44c72afef2a51cd4ef7f256943ffceebf7d0efdf`
+(built before the additional odd-YUV span fix). In a representative unfocused
+bucket, 474 batches took 100.1 ms for color observation, 168.1 ms for imports
+and 269.2 ms for draws; guest intervals remained roughly 130-150 ms. This is
+still not acceptable gameplay performance. Both runs lost running/focused
+session state, so no controlled combat speedup is claimed. Mac fallback-to-
+strict-depth startup completed 60 frames, with captures 30-32 byte-identical
+to the earlier cache checkpoint. See `validation/direct-vulkan-scoped-color/`.
+
+Longer local exploration also found a real remaining correctness failure:
+the attract run rejects a surface reinterpretation at guest frame 916.
+The GL reference grows/reuses framebuffer storage when clip dimensions change;
+native Vulkan currently requires identical dimensions. This must be resolved
+before claiming the full game runs. A headless launch cannot use the SDL
+window input self-test; use `AUTOKEYS`/`AUTOAIM` for headless scripted input.
+The local runner now records those controls and depth-residency flags in its
+report so the evidence includes the actual test configuration.

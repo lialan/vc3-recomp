@@ -35,7 +35,13 @@ VkResult ch_vk_texture_storage_span(const Nv2aTexture *t,size_t *span,size_t *pa
         if(d3d8_format_is_swizzled(t->color)) {
             if((t->width&(t->width-1)) || (t->height&(t->height-1))) return VK_NOT_READY;
             n=(uint64_t)t->width*t->height*bpp;
-        } else n=(uint64_t)(t->height-1)*t->pitch+(uint64_t)t->width*bpp;
+        } else {
+            /* Packed 4:2:2 reads shared chroma from the complete four-byte
+             * pair, including the partner of an odd final texel. */
+            uint64_t row=(t->color==0x24 || t->color==0x25)?
+                (((uint64_t)t->width+1)&~1ull)*2:(uint64_t)t->width*bpp;
+            n=(uint64_t)(t->height-1)*t->pitch+row;
+        }
     }
     if(n>SIZE_MAX) return VK_ERROR_INITIALIZATION_FAILED;
     *span=(size_t)n;*palette=t->color==0x0b?1024:0;

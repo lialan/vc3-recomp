@@ -13,6 +13,7 @@ struct ChVkBackend { struct {int enabled;uint64_t start,n,surface,coherence,impo
 static ChVkBackend *active;
 static void flush_color(struct Surface *);
 static void observe_guest_colors(void);
+static void observe_guest_color(struct Surface *);
 static uint64_t now_us(void) {
     struct timespec t;clock_gettime(CLOCK_MONOTONIC,&t);
     return (uint64_t)t.tv_sec*1000000u+t.tv_nsec/1000;
@@ -53,9 +54,14 @@ static struct Surface *surface(const Nv2aSurface *s,const Nv2aRenderState *rs) {
         struct Surface *f=&active->surfaces[i];
         if(f->guest.color_va==s->color_va) {
             if(f->guest.width!=s->width || f->guest.height!=s->height ||
-               f->guest.pitch!=s->pitch || f->guest.bytes_per_pixel!=s->bytes_per_pixel) fatal(VK_ERROR_FEATURE_NOT_PRESENT,"surface reinterpretation");
+               f->guest.pitch!=s->pitch || f->guest.bytes_per_pixel!=s->bytes_per_pixel) {
+                fprintf(stderr,"[Vulkan] surface %08X changed %ux%u pitch=%u bpp=%u format=%08X -> %ux%u pitch=%u bpp=%u format=%08X\n",
+                    s->color_va,f->guest.width,f->guest.height,f->guest.pitch,f->guest.bytes_per_pixel,f->state.surface_format,
+                    s->width,s->height,s->pitch,s->bytes_per_pixel,rs->surface_format);
+                fatal(VK_ERROR_FEATURE_NOT_PRESENT,"surface reinterpretation");
+            }
             if(f->resident && f->state.surface_format!=rs->surface_format) {
-                observe_guest_colors(); flush_color(f); f->observed_valid=0;
+                observe_guest_color(f); flush_color(f); f->observed_valid=0;
             }
             if(f->resident && f->raw_span!=span) {
                 void *raw=realloc(f->raw,(size_t)span);
@@ -143,40 +149,46 @@ static void flush_color(struct Surface *f) {
     memcpy(f->raw,(const unsigned char *)active->host.guest_base+f->guest.color_va,f->raw_span);
     f->observed_valid=1; f->color_dirty=0;
 }
-static void observe_guest_colors(void) {
-    if(!active->host.guest_color_changed && !active->host.resident_color) return;
-    for(unsigned i=0;i<active->count;i++) {
-        struct Surface *f=&active->surfaces[i];
-        if(!f->observed) continue;
-        const unsigned char *raw=(const unsigned char *)active->host.guest_base+f->guest.color_va;
-        /* Fast unchanged-storage check before Morton/pixel decoding. Padding
-         * changes fall through once, then the pixel comparison ignores them. */
-        if(f->resident && f->observed_valid && !memcmp(raw,f->raw,f->raw_span)) continue;
-        unsigned char *cpu=f->resident?f->cpu:f->rgba;
-        VkResult r=ch_vk_nv2a_load_color_state(&f->guest,&f->state,cpu,f->bytes,active->host.guest_base,active->host.guest_bytes);
-        if(r!=VK_SUCCESS) fatal(r,"guest color observation");
-        if(!f->observed_valid || memcmp(cpu,f->observed,f->bytes)) {
-            if(f->resident) {
-                if(!f->observed_valid) memcpy(f->rgba,cpu,f->bytes);
-                else {
-                    r=ch_vk_target_read_color(f->target,f->rgba,f->bytes);
-                    if(r!=VK_SUCCESS) fatal(r,"resident CPU edit merge read");
-                    /* A changed guest pixel replaces that pixel; preserve GPU
-                     * content in pixels the CPU did not change. */
-                    for(size_t p=0;p<f->bytes;p+=4)
-                        if(memcmp(cpu+p,f->observed+p,4)) memcpy(f->rgba+p,cpu+p,4);
-                }
-                r=ch_vk_target_import_color(f->target,f->rgba,f->bytes);
-                if(r!=VK_SUCCESS) fatal(r,"resident CPU edit import");
+static void observe_guest_color(struct Surface *f) {
+    if(!f->observed) return;
+    const unsigned char *raw=(const unsigned char *)active->host.guest_base+f->guest.color_va;
+    /* Fast unchanged-storage check before Morton/pixel decoding. Padding
+     * changes fall through once, then the pixel comparison ignores them. */
+    if(f->resident && f->observed_valid && !memcmp(raw,f->raw,f->raw_span)) return;
+    unsigned char *cpu=f->resident?f->cpu:f->rgba;
+    VkResult r=ch_vk_nv2a_load_color_state(&f->guest,&f->state,cpu,f->bytes,active->host.guest_base,active->host.guest_bytes);
+    if(r!=VK_SUCCESS) fatal(r,"guest color observation");
+    if(!f->observed_valid || memcmp(cpu,f->observed,f->bytes)) {
+        if(f->resident) {
+            if(!f->observed_valid) memcpy(f->rgba,cpu,f->bytes);
+            else {
+                r=ch_vk_target_read_color(f->target,f->rgba,f->bytes);
+                if(r!=VK_SUCCESS) fatal(r,"resident CPU edit merge read");
+                /* A changed guest pixel replaces that pixel; preserve GPU
+                 * content in pixels the CPU did not change. */
+                for(size_t p=0;p<f->bytes;p+=4)
+                    if(memcmp(cpu+p,f->observed+p,4)) memcpy(f->rgba+p,cpu+p,4);
             }
-            if(active->host.guest_color_changed) {
-                r=active->host.guest_color_changed(active->host.render_context,&f->guest,cpu,f->bytes,!f->observed_valid);
-                if(r!=VK_SUCCESS) fatal(r,"host CPU color coherence");
-            }
-            memcpy(f->observed,cpu,f->bytes); f->observed_valid=1;
+            r=ch_vk_target_import_color(f->target,f->rgba,f->bytes);
+            if(r!=VK_SUCCESS) fatal(r,"resident CPU edit import");
         }
-        if(f->resident) memcpy(f->raw,raw,f->raw_span);
+        if(active->host.guest_color_changed) {
+            r=active->host.guest_color_changed(active->host.render_context,&f->guest,cpu,f->bytes,!f->observed_valid);
+            if(r!=VK_SUCCESS) fatal(r,"host CPU color coherence");
+        }
+        memcpy(f->observed,cpu,f->bytes); f->observed_valid=1;
     }
+    if(f->resident) memcpy(f->raw,raw,f->raw_span);
+}
+static void observe_guest_colors(void) {
+    for(unsigned i=0;i<active->count;i++) observe_guest_color(&active->surfaces[i]);
+}
+static void observe_target_color(struct Surface *f) {
+    /* Routing hooks observe all guest edits before publishing host packets.
+     * Pure resident targets only need observation when read or written;
+     * completion still reconciles every pending target. */
+    if(active->host.guest_color_changed) observe_guest_colors();
+    else observe_guest_color(f);
 }
 static void flush(void) {
     observe_guest_colors();
@@ -195,14 +207,22 @@ static void flush_sampled_colors(const Nv2aBatch *b) {
             VkResult r=ch_vk_depth_resident_sample(active->zeta,tx);
             if(r!=VK_SUCCESS) fatal(r,"sampled resident depth");
         }
+        size_t span=0,palette=0;
+        VkResult storage=ch_vk_texture_storage_span(tx,&span,&palette);
         for(unsigned i=0;i<active->count;i++) {
             struct Surface *f=&active->surfaces[i];
             ChVkGuestLayout layout;
             VkResult r=ch_vk_guest_layout(f->state.surface_format,f->guest.width,f->guest.height,
                 f->guest.pitch,f->guest.bytes_per_pixel,&layout);
             if(r!=VK_SUCCESS) fatal(r,"sampled target layout");
-            if(tx->offset>=f->guest.color_va && (uint64_t)tx->offset-f->guest.color_va<layout.span)
+            uint64_t color=f->guest.color_va;
+            int overlap=storage!=VK_SUCCESS ||
+                ((uint64_t)tx->offset<=color?color-tx->offset<span:(uint64_t)tx->offset-color<layout.span) ||
+                (palette && ((uint64_t)tx->palette<=color?color-tx->palette<palette:(uint64_t)tx->palette-color<layout.span));
+            if(overlap) {
+                observe_guest_color(f);
                 flush_color(f);
+            }
         }
     }
 }
@@ -248,7 +268,7 @@ static void import_depth(struct Surface *f) {
 }
 static void clear(const Nv2aSurface *s,const Nv2aRenderState *rs,uint32_t flags,uint32_t argb,uint32_t zs) {
     struct Surface *f=surface(s,rs);
-    observe_guest_colors();
+    observe_target_color(f);
     if((flags & 0xf0)!=0xf0 || rs->clear_rect_set) import_color(f);
     if(flags & 3) import_depth(f);
     store(f,ch_vk_nv2a_clear_state_read(f->target,s,rs,flags,argb,zs,f->rgba,f->bytes),"clear",flags & 3);
@@ -263,7 +283,7 @@ static void draw(const Nv2aSurface *s,const Nv2aBatch *b) {
     if(active->profile.enabled) t[0]=now_us();
     struct Surface *f=surface(s,b->state);
     if(active->profile.enabled) t[1]=now_us();
-    observe_guest_colors();
+    observe_target_color(f);
     if(active->profile.enabled) t[2]=now_us();
     import_color(f);
     flush_sampled_colors(b);

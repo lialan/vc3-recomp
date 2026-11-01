@@ -1,0 +1,77 @@
+[android] CHIHIRO_TEST_RUN_ID=vc3-331ead31efc1469bb7398285ed830cbd
+[Vulkan] resident D24 depth targets: enabled
+[xr] session state 1
+[xr] session state 2
+[xr] session state 3
+[xr] session state 4
+[xr] session state 5
+[xr] session state 4
+[xr] session state 5
+[xr] session state 4
+[xr] session state 3
+[xr] session state 6
+[xr] session state 1
+[xr] session state 2
+[xr] session state 3
+[xr] session state 4
+[xr] session state 5
+[Vulkan depth residency] binds=3 imports=1 writebacks=2 CPU merges=0
+[Vulkan] completed frame 1: 640x480, guest=80408000
+[Vulkan backend] 114 batches: surface 3.5ms CPU edits 31.0ms imports 60.2ms draw 170.5ms writeback 0.0ms
+[pace] headset 101 frames: game frames shown 1x 1, 2x 0, 3x 0, 4+x 3
+[pace] game 4 frames: ms p50 297.8 p95 440.2 max 440.2, >20 ms 4
+[fence] 6 waits/s, 4 slept, 597.57 ms waiting
+[xr] session state 4
+[xr] session state 3
+[xr] session state 6
+[xr] session state 1
+[Vulkan backend] 333 batches: surface 3.7ms CPU edits 82.7ms imports 135.4ms draw 303.1ms writeback 0.1ms
+[pace] game 6 frames: ms p50 158.3 p95 260.8 max 260.8, >20 ms 6
+[fence] 6 waits/s, 6 slept, 942.53 ms waiting
+[Vulkan backend] 462 batches: surface 4.1ms CPU edits 102.2ms imports 160.7ms draw 281.5ms writeback 0.2ms
+[pace] game 8 frames: ms p50 139.9 p95 154.7 max 154.7, >20 ms 8
+[fence] 8 waits/s, 8 slept, 938.17 ms waiting
+[Vulkan backend] 466 batches: surface 4.5ms CPU edits 101.2ms imports 180.3ms draw 261.2ms writeback 0.2ms
+[pace] game 9 frames: ms p50 131.6 p95 151.2 max 151.2, >20 ms 9
+[fence] 9 waits/s, 9 slept, 1026.13 ms waiting
+[Vulkan backend] 488 batches: surface 4.0ms CPU edits 101.7ms imports 171.9ms draw 270.4ms writeback 0.2ms
+[pace] game 9 frames: ms p50 109.6 p95 141.8 max 141.8, >20 ms 9
+[fence] 9 waits/s, 9 slept, 1015.86 ms waiting
+[Vulkan backend] 477 batches: surface 4.1ms CPU edits 99.0ms imports 166.2ms draw 270.2ms writeback 0.3ms
+[pace] game 9 frames: ms p50 134.4 p95 145.5 max 145.5, >20 ms 9
+[fence] 9 waits/s, 9 slept, 1056.16 ms waiting
+[Vulkan backend] 453 batches: surface 4.1ms CPU edits 102.4ms imports 167.0ms draw 260.4ms writeback 0.1ms
+[pace] game 8 frames: ms p50 132.4 p95 146.2 max 146.2, >20 ms 8
+[fence] 8 waits/s, 8 slept, 937.54 ms waiting
+[Vulkan backend] 445 batches: surface 4.8ms CPU edits 106.1ms imports 166.9ms draw 253.7ms writeback 0.2ms
+[Vulkan depth residency] binds=3490 imports=380 writebacks=391 CPU merges=0
+[Vulkan] completed frame 60: 640x480, guest=80408000
+[pace] game 9 frames: ms p50 132.4 p95 141.1 max 141.1, >20 ms 9
+[fence] 10 waits/s, 10 slept, 1048.97 ms waiting
+[Vulkan backend] 343 batches: surface 2.9ms CPU edits 74.9ms imports 120.5ms draw 187.7ms writeback 0.2ms
+[pace] game 6 frames: ms p50 132.6 p95 401.3 max 401.3, >20 ms 6
+[fence] 6 waits/s, 6 slept, 937.49 ms waiting
+[Vulkan backend] 481 batches: surface 4.0ms CPU edits 99.6ms imports 169.9ms draw 257.6ms writeback 0.2ms
+[pace] game 9 frames: ms p50 111.9 p95 137.6 max 137.6, >20 ms 9
+[fence] 9 waits/s, 9 slept, 992.92 ms waiting
+[Vulkan backend] 502 batches: surface 3.8ms CPU edits 101.8ms imports 170.1ms draw 279.0ms writeback 0.2ms
+[pace] game 9 frames: ms p50 130.3 p95 138.2 max 138.2, >20 ms 9
+[fence] 9 waits/s, 9 slept, 1009.94 ms waiting
+[Vulkan backend] 466 batches: surface 5.1ms CPU edits 98.4ms imports 164.9ms draw 262.8ms writeback 0.2ms
+[pace] game 9 frames: ms p50 111.2 p95 142.0 max 142.0, >20 ms 9
+[fence] 9 waits/s, 9 slept, 1021.81 ms waiting
+[Vulkan backend] 465 batches: surface 4.3ms CPU edits 98.8ms imports 170.1ms draw 263.2ms writeback 0.2ms
+[pace] game 8 frames: ms p50 135.5 p95 139.3 max 139.3, >20 ms 8
+[fence] 8 waits/s, 8 slept, 939.36 ms waiting
+[Vulkan backend] 464 batches: surface 4.4ms CPU edits 99.4ms imports 167.5ms draw 270.6ms writeback 0.1ms
+[pace] game 9 frames: ms p50 133.1 p95 151.8 max 151.8, >20 ms 9
+[fence] 9 waits/s, 9 slept, 1062.05 ms waiting
+[Vulkan backend] 474 batches: surface 5.4ms CPU edits 100.1ms imports 168.1ms draw 269.2ms writeback 0.2ms
+[Vulkan depth residency] binds=7121 imports=771 writebacks=795 CPU merges=0
+[Vulkan] completed frame 120: 640x480, guest=80660000
+[pace] game 8 frames: ms p50 142.0 p95 150.3 max 150.3, >20 ms 8
+[fence] 9 waits/s, 9 slept, 931.82 ms waiting
+[Vulkan backend] 454 batches: surface 6.7ms CPU edits 103.2ms imports 169.2ms draw 268.9ms writeback 0.2ms
+[Vulkan backend] 466 batches: surface 6.0ms CPU edits 99.2ms imports 171.6ms draw 259.0ms writeback 0.2ms
+[pace] game 9 frames: ms p50 132.4 p95 139.3 max 139.3, >20 ms 9
+[fence] 9 waits/s, 9 slept, 1014.76 ms waiting

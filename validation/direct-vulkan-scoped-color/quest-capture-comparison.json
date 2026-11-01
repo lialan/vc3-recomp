@@ -1,0 +1,22 @@
+[
+  {
+    "frame": "frame-000000.ppm",
+    "byte_identical": true,
+    "sha256": "c0a0743419c85361d3f56388f67a99f3e84aa0cde53a50e589a77bd854266d65"
+  },
+  {
+    "frame": "frame-000001.ppm",
+    "byte_identical": true,
+    "sha256": "c0a0743419c85361d3f56388f67a99f3e84aa0cde53a50e589a77bd854266d65"
+  },
+  {
+    "frame": "frame-000002.ppm",
+    "byte_identical": true,
+    "sha256": "b1e34c2a0b51069290fd9708d4418561be3b69094d1cc9c96bd1801961a1e39b"
+  },
+  {
+    "frame": "frame-000003.ppm",
+    "byte_identical": true,
+    "sha256": "928af59bba1e04b61cdcdd5164df35b49c5a50bfa5c340e40f5f98860633d40a"
+  }
+]
