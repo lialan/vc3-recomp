@@ -4,6 +4,8 @@
 #include <stdint.h>
 #include <stddef.h>
 #include <math.h>
+#include <stdio.h>
+#include <time.h>
 #include "color_spv.h"
 typedef struct {
     VkPipelineColorBlendAttachmentState blend;
@@ -46,15 +48,23 @@ struct ChVkTarget {
     uint32_t width, height;
     VkDeviceSize bytes;
     VkImageLayout layout;
-    VkQueryPool queries;
+    VkQueryPool queries,timing;
+    float timestamp_period;
+    uint32_t timestamp_bits;
+    uint64_t timing_start,timing_gpu,timing_cpu,timing_calls;
     int count_requested;
     uint64_t samples;
     struct { uint32_t alpha[3]; ChVkEffect effect; } push;
     int effect;
+    int defer_color_readback;
     int initialized;
     int failed;
 };
 #define TRY(expr) do { result=(expr); if(result!=VK_SUCCESS) goto fail; } while(0)
+static uint64_t time_ns(void) {
+    struct timespec t;clock_gettime(CLOCK_MONOTONIC,&t);
+    return (uint64_t)t.tv_sec*1000000000u+t.tv_nsec;
+}
 static int memory_type(VkPhysicalDevice gpu, uint32_t bits,
                        VkMemoryPropertyFlags flags, uint32_t *index) {
     VkPhysicalDeviceMemoryProperties p;
@@ -79,6 +89,7 @@ void ch_vk_target_destroy(ChVkTarget *t) {
     if(t->pass) vkDestroyRenderPass(t->device,t->pass,NULL);
     ch_vk_texture_destroy(t->dummy);
     if(t->queries) vkDestroyQueryPool(t->device,t->queries,NULL);
+    if(t->timing) vkDestroyQueryPool(t->device,t->timing,NULL);
     if(t->fence) vkDestroyFence(t->device,t->fence,NULL);
     if(t->pool) vkDestroyCommandPool(t->device,t->pool,NULL);
     if(t->read) vkDestroyBuffer(t->device,t->read,NULL);
@@ -157,6 +168,22 @@ VkResult ch_vk_target_create(VkPhysicalDevice physical, VkDevice device,
     TRY(vkAllocateCommandBuffers(device,&cmd,&t->command));
     VkFenceCreateInfo fence={.sType=VK_STRUCTURE_TYPE_FENCE_CREATE_INFO};
     TRY(vkCreateFence(device,&fence,NULL,&t->fence));
+    const char *profile=getenv("CHIHIRO_VULKAN_PROFILE");
+    if(profile && atoi(profile)) {
+        uint32_t n=0;vkGetPhysicalDeviceQueueFamilyProperties(physical,&n,NULL);
+        VkQueueFamilyProperties *properties=calloc(n,sizeof *properties);
+        if(!properties) {result=VK_ERROR_OUT_OF_HOST_MEMORY;goto fail;}
+        vkGetPhysicalDeviceQueueFamilyProperties(physical,&n,properties);
+        if(family<n) t->timestamp_bits=properties[family].timestampValidBits;
+        free(properties);
+        if(t->timestamp_bits) {
+            VkPhysicalDeviceProperties properties;vkGetPhysicalDeviceProperties(physical,&properties);
+            t->timestamp_period=properties.limits.timestampPeriod;
+            VkQueryPoolCreateInfo timing={.sType=VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO,
+                .queryType=VK_QUERY_TYPE_TIMESTAMP,.queryCount=2};
+            TRY(vkCreateQueryPool(device,&timing,NULL,&t->timing));
+        }
+    }
     *out=t; return VK_SUCCESS;
 fail:
     ch_vk_target_destroy(t); return result;
@@ -169,11 +196,16 @@ static VkResult render_read(ChVkTarget *t, const float rgba[4], uint32_t clear_f
        (!t->initialized && clear_flags!=7))
         return VK_ERROR_INITIALIZATION_FAILED;
     VkResult result;
+    uint64_t cpu_start=t->timing?time_ns():0;
     TRY(vkResetCommandBuffer(t->command,0));
     TRY(vkResetFences(t->device,1,&t->fence));
     VkCommandBufferBeginInfo begin={.sType=VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
         .flags=VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT};
     TRY(vkBeginCommandBuffer(t->command,&begin));
+    if(t->timing) {
+        vkCmdResetQueryPool(t->command,t->timing,0,2);
+        vkCmdWriteTimestamp(t->command,VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,t->timing,0);
+    }
     VkImageSubresourceRange range={VK_IMAGE_ASPECT_COLOR_BIT,0,1,0,1};
     VkImageMemoryBarrier barrier={.sType=VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
         .srcAccessMask=t->layout==VK_IMAGE_LAYOUT_UNDEFINED?0:VK_ACCESS_TRANSFER_READ_BIT,
@@ -243,25 +275,43 @@ static VkResult render_read(ChVkTarget *t, const float rgba[4], uint32_t clear_f
     barrier.newLayout=VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
     vkCmdPipelineBarrier(t->command,geometry?VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT:VK_PIPELINE_STAGE_TRANSFER_BIT,
         VK_PIPELINE_STAGE_TRANSFER_BIT,0,0,NULL,0,NULL,1,&barrier);
-    VkBufferImageCopy copy={.imageSubresource={VK_IMAGE_ASPECT_COLOR_BIT,0,0,1},
-        .imageExtent={t->width,t->height,1}};
-    vkCmdCopyImageToBuffer(t->command,t->image,VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,t->read,1,&copy);
-    VkBufferMemoryBarrier host={.sType=VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
-        .srcAccessMask=VK_ACCESS_TRANSFER_WRITE_BIT,.dstAccessMask=VK_ACCESS_HOST_READ_BIT,
-        .srcQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED,.dstQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED,
-        .buffer=t->read,.offset=0,.size=VK_WHOLE_SIZE};
-    vkCmdPipelineBarrier(t->command,VK_PIPELINE_STAGE_TRANSFER_BIT,
-        VK_PIPELINE_STAGE_HOST_BIT,0,0,NULL,1,&host,0,NULL);
+    if(!t->defer_color_readback) {
+        VkBufferImageCopy copy={.imageSubresource={VK_IMAGE_ASPECT_COLOR_BIT,0,0,1},
+            .imageExtent={t->width,t->height,1}};
+        vkCmdCopyImageToBuffer(t->command,t->image,VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,t->read,1,&copy);
+        VkBufferMemoryBarrier host={.sType=VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
+            .srcAccessMask=VK_ACCESS_TRANSFER_WRITE_BIT,.dstAccessMask=VK_ACCESS_HOST_READ_BIT,
+            .srcQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED,.dstQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED,
+            .buffer=t->read,.offset=0,.size=VK_WHOLE_SIZE};
+        vkCmdPipelineBarrier(t->command,VK_PIPELINE_STAGE_TRANSFER_BIT,
+            VK_PIPELINE_STAGE_HOST_BIT,0,0,NULL,1,&host,0,NULL);
+    }
+    if(t->timing) vkCmdWriteTimestamp(t->command,VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,t->timing,1);
     TRY(vkEndCommandBuffer(t->command));
     VkSubmitInfo submit={.sType=VK_STRUCTURE_TYPE_SUBMIT_INFO,
         .commandBufferCount=1,.pCommandBuffers=&t->command};
     TRY(vkQueueSubmit(t->queue,1,&submit,t->fence));
     TRY(vkWaitForFences(t->device,1,&t->fence,VK_TRUE,5000000000ULL));
+    if(t->timing) {
+        uint64_t stamps[2];
+        TRY(vkGetQueryPoolResults(t->device,t->timing,0,2,sizeof stamps,stamps,sizeof(uint64_t),VK_QUERY_RESULT_64_BIT));
+        uint64_t mask=t->timestamp_bits==64?UINT64_MAX:((UINT64_C(1)<<t->timestamp_bits)-1);
+        uint64_t now=time_ns();
+        t->timing_gpu+=(uint64_t)(((stamps[1]-stamps[0])&mask)*t->timestamp_period);
+        t->timing_cpu+=now-cpu_start;t->timing_calls++;
+        if(!t->timing_start) t->timing_start=cpu_start;
+        if(now-t->timing_start>=1000000000) {
+            fprintf(stderr,"[Vulkan GPU] %ux%u %llu submissions: GPU %.2fms host record/submit/wait %.2fms\n",
+                t->width,t->height,(unsigned long long)t->timing_calls,t->timing_gpu/1e6,t->timing_cpu/1e6);
+            t->timing_start=now;t->timing_gpu=t->timing_cpu=t->timing_calls=0;
+        }
+    }
     if(geometry && t->count_requested)
         TRY(vkGetQueryPoolResults(t->device,t->queries,0,1,sizeof(t->samples),&t->samples,
             sizeof(t->samples),VK_QUERY_RESULT_64_BIT|VK_QUERY_RESULT_WAIT_BIT));
     t->layout=VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
     t->initialized=1;
+    if(t->defer_color_readback) return VK_SUCCESS;
     void *mapped;
     TRY(vkMapMemory(t->device,t->read_mem,0,VK_WHOLE_SIZE,0,&mapped));
     VkMappedMemoryRange invalidate={.sType=VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE,
@@ -275,6 +325,17 @@ fail:
     t->failed=1; return result;
 }
 
+void ch_vk_target_defer_color_readback(ChVkTarget *t,int enabled) {
+    if(t) t->defer_color_readback=!!enabled;
+}
+VkResult ch_vk_target_read_color(ChVkTarget *t,void *pixels,VkDeviceSize bytes) {
+    if(!t) return VK_ERROR_INITIALIZATION_FAILED;
+    int deferred=t->defer_color_readback;
+    t->defer_color_readback=0;
+    VkResult result=render_read(t,NULL,0,1,0,VK_NULL_HANDLE,0,0,pixels,bytes);
+    t->defer_color_readback=deferred;
+    return result;
+}
 VkResult ch_vk_target_clear_read(ChVkTarget *t, const float rgba[4],
     void *pixels, VkDeviceSize bytes) {
     return render_read(t,rgba,7,1.0f,0,VK_NULL_HANDLE,0,0,pixels,bytes);

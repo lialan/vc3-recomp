@@ -1,0 +1,135 @@
+device=Adreno (TM) 740 vendor=5143 deviceID=43050b00 api=1.3.295
+PASS: real executor methods -> Vulkan pixels, precise GET_REPORT=16, ordered semaphore release
+PASS: guest callbacks and destruction serialize the shared host queue; unpaired hooks rejected
+PASS: resident color defers readback; CPU pixel edits preserve GPU neighbors; sampled/self targets, precise queries and executor semaphore/report flushes
+PASS: real DMA ring CALL/RETURN/JUMP, increment/nonincrement packets -> Vulkan pixels/report/semaphore/GET
+PASS: exact guest color coherence, ARGB/RGB565 CPU edits before sampling/flip, no false edits from quantized GPU writes or padding
+PASS: backend flip -> owned host frame -> Vulkan upload includes CPU writes and retains prior frame ownership
+PASS: registered backend synchronous clear/draw/flip host hooks -> distinct stereo eye targets
+PASS: reference CPU menu painter -> Vulkan target, every RGBA byte including alpha, hover/repaint
+PASS: complete shared overlay geometry: sights, shifted eye, beam/dot/flash, premultiplied alpha
+PASS: shared gun mesh, three sight housings, recoil changes and invalid-pose visibility on Vulkan
+overlay reference GL=OpenGL ES 3.2 V@0837.0.9 (GIT@810c66ceb7, Idb4ff819d7, 1782305085) (Date:06/24/26) renderer=Adreno (TM) 740
+overlay parity sight=0 mode=0 eye=0 recoil=0 covered=4659 bad=0 max=0
+overlay parity sight=0 mode=0 eye=0 recoil=1 covered=5184 bad=0 max=0
+overlay parity sight=0 mode=0 eye=1 recoil=0 covered=5245 bad=0 max=0
+overlay parity sight=0 mode=0 eye=1 recoil=1 covered=5785 bad=0 max=0
+overlay parity sight=0 mode=1 eye=0 recoil=0 covered=4919 bad=0 max=1
+overlay parity sight=0 mode=1 eye=0 recoil=1 covered=5495 bad=0 max=1
+overlay parity sight=0 mode=1 eye=1 recoil=0 covered=5544 bad=0 max=1
+overlay parity sight=0 mode=1 eye=1 recoil=1 covered=6126 bad=0 max=1
+overlay parity sight=0 mode=2 eye=0 recoil=0 covered=853 bad=0 max=1
+overlay parity sight=0 mode=2 eye=0 recoil=1 covered=916 bad=0 max=1
+overlay parity sight=0 mode=2 eye=1 recoil=0 covered=851 bad=0 max=1
+overlay parity sight=0 mode=2 eye=1 recoil=1 covered=915 bad=0 max=1
+overlay parity sight=0 mode=3 eye=0 recoil=0 covered=81920 bad=0 max=0
+overlay parity sight=0 mode=3 eye=0 recoil=1 covered=81920 bad=0 max=0
+overlay parity sight=0 mode=3 eye=1 recoil=0 covered=81920 bad=0 max=0
+overlay parity sight=0 mode=3 eye=1 recoil=1 covered=81920 bad=0 max=0
+overlay parity sight=1 mode=0 eye=0 recoil=0 covered=4935 bad=0 max=0
+overlay parity sight=1 mode=0 eye=0 recoil=1 covered=5547 bad=0 max=0
+overlay parity sight=1 mode=0 eye=1 recoil=0 covered=5565 bad=0 max=0
+overlay parity sight=1 mode=0 eye=1 recoil=1 covered=6182 bad=0 max=0
+overlay parity sight=1 mode=1 eye=0 recoil=0 covered=5194 bad=0 max=1
+overlay parity sight=1 mode=1 eye=0 recoil=1 covered=5837 bad=0 max=1
+overlay parity sight=1 mode=1 eye=1 recoil=0 covered=5857 bad=0 max=1
+overlay parity sight=1 mode=1 eye=1 recoil=1 covered=6516 bad=0 max=1
+overlay parity sight=1 mode=2 eye=0 recoil=0 covered=853 bad=0 max=1
+overlay parity sight=1 mode=2 eye=0 recoil=1 covered=916 bad=0 max=1
+overlay parity sight=1 mode=2 eye=1 recoil=0 covered=851 bad=0 max=1
+overlay parity sight=1 mode=2 eye=1 recoil=1 covered=915 bad=0 max=1
+overlay parity sight=1 mode=3 eye=0 recoil=0 covered=81920 bad=0 max=0
+overlay parity sight=1 mode=3 eye=0 recoil=1 covered=81920 bad=0 max=0
+overlay parity sight=1 mode=3 eye=1 recoil=0 covered=81920 bad=0 max=0
+overlay parity sight=1 mode=3 eye=1 recoil=1 covered=81920 bad=0 max=0
+overlay parity sight=2 mode=0 eye=0 recoil=0 covered=5527 bad=0 max=0
+overlay parity sight=2 mode=0 eye=0 recoil=1 covered=6308 bad=0 max=0
+overlay parity sight=2 mode=0 eye=1 recoil=0 covered=6239 bad=0 max=0
+overlay parity sight=2 mode=0 eye=1 recoil=1 covered=7011 bad=0 max=0
+overlay parity sight=2 mode=1 eye=0 recoil=0 covered=5779 bad=0 max=1
+overlay parity sight=2 mode=1 eye=0 recoil=1 covered=6582 bad=0 max=1
+overlay parity sight=2 mode=1 eye=1 recoil=0 covered=6511 bad=0 max=1
+overlay parity sight=2 mode=1 eye=1 recoil=1 covered=7319 bad=0 max=1
+overlay parity sight=2 mode=2 eye=0 recoil=0 covered=853 bad=0 max=1
+overlay parity sight=2 mode=2 eye=0 recoil=1 covered=916 bad=0 max=1
+overlay parity sight=2 mode=2 eye=1 recoil=0 covered=851 bad=0 max=1
+overlay parity sight=2 mode=2 eye=1 recoil=1 covered=915 bad=0 max=1
+overlay parity sight=2 mode=3 eye=0 recoil=0 covered=81920 bad=0 max=0
+overlay parity sight=2 mode=3 eye=0 recoil=1 covered=81920 bad=0 max=0
+overlay parity sight=2 mode=3 eye=1 recoil=0 covered=81920 bad=0 max=0
+overlay parity sight=2 mode=3 eye=1 recoil=1 covered=81920 bad=0 max=0
+PASS: actual GLES/Vulkan overlay readbacks, 48 cases, all pixels RGBA within 3 UNORM steps
+PASS: concurrent atomic flat/stereo/HUD/pose frame mailbox, 215/1000 latest frames consumed, owned snapshots survive producer reuse/teardown
+PASS: scene routing/projection, native per-eye RT copy, multi-stage combiner sampling, self-feedback snapshots, CPU-owned source decoding/presentation/recovery, scaled HUD coverage and transitions
+PASS: registered submission pipeline -> atomic flat/stereo/HUD/render-pose packet, next-frame latch, CPU edits and retained ownership through teardown
+PASS: proven texture-diffuse combiner reduction matches generic shader: linear/Morton/DXT textures, alpha tests, bilinear/projective UV, swapped inputs/final identity; varying q retains fragment divide
+BENCH: 640x480 combiner, 100 separate textured draws, reduced=0 resident=0 total=966.46ms mean=9.665ms checksum=PASS
+BENCH: 640x480 combiner, 100 separate textured draws, reduced=0 resident=1 total=668.08ms mean=6.681ms checksum=PASS
+BENCH: 640x480 combiner, 100 separate textured draws, reduced=1 resident=0 total=91.51ms mean=0.915ms checksum=PASS
+BENCH: 640x480 combiner, 100 separate textured draws, reduced=1 resident=1 total=57.08ms mean=0.571ms checksum=PASS
+PASS: real executor decoder + Vulkan sampled draws: padded linear ARGB, Morton ARGB, DXT1/3/5, repeat/mirror/clamp, bilinear, guest ARGB8888/RGB565 render-to-texture
+PASS: RGBA8 clears, indexed quad coverage, interpolated triangle, post-draw clear, blend equations/factors/color masks, depth/stencil, persistent batches and selective clears, decoded NV2A adapter, alpha comparisons, face culling, ARGB texture upload/readback and sampled modulation, decoded textured batches, partial-channel clears, precise visibility queries, fragment combiners, guest CPU color imports, depth/stencil transfers, rectangular clears, per-eye projection, overlay effect shading (synthetic fixtures)
+[Vulkan RC] control=00000001 stage=00000021 final=00000000/00000000
+[Vulkan RC] stage0 color=08090000/000000c0 alpha=18190000/000000c0
+[overlay] handgun: 372 triangles
+[Vulkan draw] 49 batches (0 reduced): geometry 0.1ms textures 8.4ms raster 894.9ms
+[Vulkan RC] control=00000001 stage=00000001 final=00000000/00000000
+[Vulkan RC] stage0 color=08040000/000000c0 alpha=18140000/000000c0
+[Vulkan RC] control=00000001 stage=00000002 final=0000000c/00001c00
+[Vulkan RC] stage0 color=08040000/000000c0 alpha=18140000/000000c0
+[Vulkan RC] control=00000001 stage=00000001 final=00000000/00000000
+[Vulkan RC] stage0 color=04080000/000000c0 alpha=14180000/000000c0
+[Vulkan RC] control=00000001 stage=00000002 final=0000000c/00001c00
+[Vulkan RC] stage0 color=04080000/000000c0 alpha=14180000/000000c0
+[Vulkan RC] control=00000001 stage=00000001 final=00000000/00000000
+[Vulkan RC] stage0 color=08040000/00000c00 alpha=18140000/00000c00
+[Vulkan RC] control=00000001 stage=00000002 final=0000000c/00001c00
+[Vulkan RC] stage0 color=08040000/00000c00 alpha=18140000/00000c00
+[Vulkan RC] control=00000001 stage=00000001 final=00000000/00000000
+[Vulkan RC] stage0 color=04080000/00000c00 alpha=14180000/00000c00
+[Vulkan RC] control=00000001 stage=00000002 final=0000000c/00001c00
+[Vulkan RC] stage0 color=04080000/00000c00 alpha=14180000/00000c00
+[Vulkan RC] control=00000004 stage=00000001 final=0000000c/00001c80
+[Vulkan RC] stage0 color=08040000/000000c0 alpha=18140000/000000c0
+[Vulkan RC] stage1 color=0c200000/00000c00 alpha=1c200000/00000c00
+[Vulkan RC] stage2 color=0c200000/00000c00 alpha=1c200000/00000c00
+[Vulkan RC] stage3 color=0c200000/00000c00 alpha=1c200000/00000c00
+[Vulkan RC] control=00000004 stage=00000002 final=0000000c/00001c80
+[Vulkan RC] stage0 color=08040000/000000c0 alpha=18140000/000000c0
+[Vulkan RC] stage1 color=0c200000/00000c00 alpha=1c200000/00000c00
+[Vulkan RC] stage2 color=0c200000/00000c00 alpha=1c200000/00000c00
+[Vulkan RC] stage3 color=0c200000/00000c00 alpha=1c200000/00000c00
+[Vulkan RC] control=00000004 stage=00000001 final=0000000c/00001c80
+[Vulkan RC] stage0 color=04080000/000000c0 alpha=18200000/000000c0
+[Vulkan RC] stage1 color=0c200000/00000c00 alpha=1c200000/00000c00
+[Vulkan RC] stage2 color=0c200000/00000c00 alpha=1c200000/00000c00
+[Vulkan RC] stage3 color=0c200000/00000c00 alpha=1c200000/00000c00
+[Vulkan RC] control=00000004 stage=00000002 final=0000000c/00001c80
+[Vulkan RC] stage0 color=04080000/000000c0 alpha=18200000/000000c0
+[Vulkan RC] stage1 color=0c200000/00000c00 alpha=1c200000/00000c00
+[Vulkan RC] stage2 color=0c200000/00000c00 alpha=1c200000/00000c00
+[Vulkan RC] stage3 color=0c200000/00000c00 alpha=1c200000/00000c00
+[Vulkan RC] control=00000004 stage=00000001 final=0000000c/00001c80
+[Vulkan RC] stage0 color=08040000/00000c00 alpha=18140000/00000c00
+[Vulkan RC] stage1 color=0c200000/00000c00 alpha=1c200000/00000c00
+[Vulkan RC] stage2 color=0c200000/00000c00 alpha=1c200000/00000c00
+[Vulkan RC] stage3 color=0c200000/00000c00 alpha=1c200000/00000c00
+[Vulkan RC] control=00000004 stage=00000002 final=0000000c/00001c80
+[Vulkan RC] stage0 color=08040000/00000c00 alpha=18140000/00000c00
+[Vulkan RC] stage1 color=0c200000/00000c00 alpha=1c200000/00000c00
+[Vulkan RC] stage2 color=0c200000/00000c00 alpha=1c200000/00000c00
+[Vulkan RC] stage3 color=0c200000/00000c00 alpha=1c200000/00000c00
+[Vulkan RC] control=00000004 stage=00000001 final=0000000c/00001c80
+[Vulkan RC] stage0 color=04080000/00000c00 alpha=18200000/00000c00
+[Vulkan RC] stage1 color=0c200000/00000c00 alpha=1c200000/00000c00
+[Vulkan RC] stage2 color=0c200000/00000c00 alpha=1c200000/00000c00
+[Vulkan RC] stage3 color=0c200000/00000c00 alpha=1c200000/00000c00
+[Vulkan RC] control=00000004 stage=00000002 final=0000000c/00001c80
+[Vulkan RC] stage0 color=04080000/00000c00 alpha=18200000/00000c00
+[Vulkan RC] stage1 color=0c200000/00000c00 alpha=1c200000/00000c00
+[Vulkan RC] stage2 color=0c200000/00000c00 alpha=1c200000/00000c00
+[Vulkan RC] stage3 color=0c200000/00000c00 alpha=1c200000/00000c00
+[Vulkan draw] 199 batches (48 reduced): geometry 0.7ms textures 49.9ms raster 888.4ms
+[Vulkan GPU] 640x480 107 submissions: GPU 669.00ms host record/submit/wait 697.08ms
+[Vulkan draw] 144 batches (0 reduced): geometry 0.3ms textures 48.5ms raster 941.3ms
+[Vulkan GPU] 37x19 55 submissions: GPU 1.80ms host record/submit/wait 13.29ms

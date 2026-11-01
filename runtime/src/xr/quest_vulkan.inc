@@ -14,8 +14,37 @@ static struct {
 static XrCompositionLayerProjection s_vk_overlay_layer;
 static XrCompositionLayerProjectionView s_vk_overlay_views[2];
 
-static void vk_queue_lock(void *context) { pthread_mutex_lock(context); }
-static void vk_queue_unlock(void *context) { pthread_mutex_unlock(context); }
+static struct {
+    int enabled;
+    uint64_t acquired,guest_wait,guest_hold,guest_calls,host_begin,host_hold,host_calls,last;
+} s_vk_profile;
+static void vk_queue_lock(void *context) {
+    uint64_t start=s_vk_profile.enabled?pace_now_us():0;
+    pthread_mutex_lock(context);
+    if(s_vk_profile.enabled) {
+        s_vk_profile.acquired=pace_now_us();
+        s_vk_profile.guest_wait+=s_vk_profile.acquired-start;
+    }
+}
+static void vk_queue_unlock(void *context) {
+    if(s_vk_profile.enabled) {
+        s_vk_profile.guest_hold+=pace_now_us()-s_vk_profile.acquired;
+        s_vk_profile.guest_calls++;
+    }
+    pthread_mutex_unlock(context);
+}
+static void vk_profile_host_end(void) {
+    if(!s_vk_profile.enabled) return;
+    uint64_t now=pace_now_us();
+    s_vk_profile.host_hold+=now-s_vk_profile.host_begin;s_vk_profile.host_calls++;
+    if(!s_vk_profile.last) s_vk_profile.last=now;
+    if(now-s_vk_profile.last<1000000) return;
+    fprintf(stderr,"[Vulkan queue] %.2fs: host %llu calls hold %.1fms; guest %llu calls hold %.1fms wait %.1fms\n",
+        (now-s_vk_profile.last)/1e6,(unsigned long long)s_vk_profile.host_calls,s_vk_profile.host_hold/1000.,
+        (unsigned long long)s_vk_profile.guest_calls,s_vk_profile.guest_hold/1000.,s_vk_profile.guest_wait/1000.);
+    s_vk_profile.last=now;s_vk_profile.guest_wait=s_vk_profile.guest_hold=s_vk_profile.guest_calls=0;
+    s_vk_profile.host_hold=s_vk_profile.host_calls=0;
+}
 static void vk_check(VkResult result,const char *operation)
 {
     if(result==VK_SUCCESS) return;
@@ -36,6 +65,8 @@ static VkResult vk_publish(void *context,const Nv2aSurface *surface,const void *
 }
 static int vk_host_init(void)
 {
+    const char *profile=ch_env("VULKAN_PROFILE");
+    s_vk_profile.enabled=profile && atoi(profile)!=0;
     VkResult result=ch_vk_frame_mailbox_create(&s_vk_frames);
     if(result!=VK_SUCCESS) return 0;
     ChVkBackendConfig config={.physical=s_vk.physical,.device=s_vk.device,

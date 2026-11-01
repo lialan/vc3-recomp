@@ -96,6 +96,9 @@ static VkResult attach(ChVkBackendConfig config)
     config.guest_base=(void *)xbox_GetMemoryOffset();
     config.guest_bytes=(size_t)0x80000000u+g_xbox_total_ram;
     config.decode=nv2a_backend_decode_texture;
+    const char *resident=ch_env("VULKAN_RESIDENT_COLOR");
+    config.resident_color=!resident || strcmp(resident,"0");
+    fprintf(stderr,"[Vulkan] resident color targets: %s\n",config.resident_color?"enabled":"disabled");
     config.present_rgba=present;
     if(!config.fatal) config.fatal=fatal;
     VkResult result=ch_vk_backend_create(&config,&runtime.backend);

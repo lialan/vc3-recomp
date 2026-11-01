@@ -102,6 +102,103 @@ static VkResult color_changed(void *context,const Nv2aSurface *surface,const voi
     if(initial) events->initial++; else events->edits++;
     events->va=surface->color_va; memcpy(events->pixel,rgba,4); return VK_SUCCESS;
 }
+static int check_simple_combiner(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,uint32_t family) {
+    ChVkTarget *target=NULL;
+    unsigned char reference[8*8*4],actual[sizeof reference];
+    if(ch_vk_target_create(gpu,device,queue,family,8,8,&target)!=VK_SUCCESS) return 1;
+    Nv2aSurface surface={.width=8,.height=8,.pitch=32,.bytes_per_pixel=4};
+    Nv2aTexture tx={.offset=256,.width=4,.height=4,.pitch=16,.levels=1,.filter=0x02020000,.color=0x12,.addr_u=3,.addr_v=3};
+    for(unsigned i=0;i<16;i++) {uint32_t color=((i*11+50)<<24)|((i*13)<<16)|((i*7)<<8)|180;memcpy(guest.bytes+256+i*4,&color,4);}
+    Nv2aRenderState state={.color_mask=0x01010101,.alpha_test_enable=1,.alpha_func=0x204,.alpha_ref=50};
+    Nv2aVertex v[6]={{0,0,0,1,0xa0f08020,3,2},{8,0,0,1,0xa0f08020,3,2},
+        {8,8,0,1,0xa0f08020,3,2},{0,0,0,1,0xa0f08020,3,2},
+        {8,8,0,1,0xa0f08020,3,2},{0,8,0,1,0xa0f08020,3,2}};
+    Nv2aVertexEx ex[6]={0};
+    Nv2aCombiner rc={.control=1,.stage_program=1};
+    Nv2aBatch batch={.vertices=v,.count=6,.state=&state,.rc=&rc,.ext=ex,.stage={&tx}};
+    int failed=0;
+    const char *env=getenv("CHIHIRO_VULKAN_FORCE_COMBINER");char *saved=env?strdup(env):NULL;
+    for(unsigned kind=0;kind<72 && !failed;kind++) {
+        unsigned phase=kind%12;
+        const uint32_t formats[3]={0x12,0x06,0x0f};
+        tx.color=formats[(kind%36)/12];
+        for(unsigned i=0;i<6;i++) {
+            float q=phase>=8?1+(i%3):2;
+            ex[i].tex[0][0]=v[i].x*.5f*q/((kind%36)/12?4:1);ex[i].tex[0][1]=v[i].y*.5f*q/((kind%36)/12?4:1);ex[i].tex[0][3]=q;
+        }
+        rc.stage_program=phase&1?2:1;
+        rc.color_icw[0]=phase&2?0x04080000:0x08040000;
+        rc.alpha_icw[0]=phase&2?0x14180000:0x18140000;
+        rc.color_ocw[0]=rc.alpha_ocw[0]=phase&4?0xc00:0xc0;
+        rc.final0=phase&1?0x0c:0;rc.final1=phase&1?0x1c00:0;
+        rc.control=kind>=36?4:1;
+        if(kind>=36) {
+            rc.final0=0x0c;rc.final1=0x1c80;
+            if(phase&2) rc.alpha_icw[0]=0x18200000;
+            for(unsigned stage=1;stage<4;stage++) {
+                rc.color_icw[stage]=0x0c200000;rc.alpha_icw[stage]=0x1c200000;
+                rc.color_ocw[stage]=rc.alpha_ocw[stage]=0xc00;
+            }
+        }
+        for(unsigned full=0;full<2;full++) {
+            if(full) unsetenv("CHIHIRO_VULKAN_FORCE_COMBINER");else setenv("CHIHIRO_VULKAN_FORCE_COMBINER","1",1);
+            const float blank[4]={.1,.2,.3,.4};
+            unsigned char *pixels=full?actual:reference;
+            if(ch_vk_target_clear_read(target,blank,pixels,sizeof actual)!=VK_SUCCESS ||
+               ch_vk_nv2a_draw_decoded_read(target,&surface,&batch,nv2a_backend_decode_texture,pixels,sizeof actual)!=VK_SUCCESS) failed=1;
+        }
+        for(size_t i=0;!failed && i<sizeof actual;i++) if(abs((int)reference[i]-actual[i])>1) {
+            fprintf(stderr,"simple combiner case%u byte%zu generic%u reduced%u\n",kind,i,reference[i],actual[i]);failed=1;
+        }
+    }
+    if(saved) {setenv("CHIHIRO_VULKAN_FORCE_COMBINER",saved,1);free(saved);}else unsetenv("CHIHIRO_VULKAN_FORCE_COMBINER");
+    ch_vk_target_destroy(target);
+    if(!failed) puts("PASS: proven texture-diffuse combiner reduction matches generic shader: linear/Morton/DXT textures, alpha tests, bilinear/projective UV, swapped inputs/final identity; varying q retains fragment divide");
+    return failed;
+}
+static int bench_guest_draws(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,uint32_t family) {
+    ChVkTarget *target=NULL;
+    const size_t bytes=640*480*4;
+    unsigned char *pixels=malloc(bytes);
+    if(!pixels || ch_vk_target_create(gpu,device,queue,family,640,480,&target)!=VK_SUCCESS) {free(pixels);return 1;}
+    const float black[4]={0,0,0,1};
+    int failed=ch_vk_target_clear_read(target,black,pixels,bytes)!=VK_SUCCESS;
+    for(unsigned i=0;i<16;i++) {uint32_t color=0xff204080;memcpy(guest.bytes+256+i*4,&color,4);}
+    Nv2aTexture tx={.offset=256,.width=4,.height=4,.pitch=16,.color=0x12,.levels=7,
+        .filter=0x02022000,.addr_u=3,.addr_v=3};
+    Nv2aSurface surface={.width=640,.height=480,.pitch=2560,.bytes_per_pixel=4};
+    Nv2aRenderState state={.color_mask=0x01010101};
+    Nv2aVertex v[6]={{0,0,0,1,0xffffffff,0,0},{640,0,0,1,0xffffffff,4,0},
+        {640,480,0,1,0xffffffff,4,4},{0,0,0,1,0xffffffff,0,0},
+        {640,480,0,1,0xffffffff,4,4},{0,480,0,1,0xffffffff,0,4}};
+    Nv2aVertexEx ex[6]={0};
+    for(unsigned i=0;i<6;i++) {ex[i].tex[0][0]=v[i].u;ex[i].tex[0][1]=v[i].v;ex[i].tex[0][3]=1;}
+    Nv2aCombiner rc={.control=4,.stage_program=1,.final0=0x0c,.final1=0x1c80};
+    rc.color_icw[0]=0x08040000;rc.alpha_icw[0]=0x18140000;
+    rc.color_ocw[0]=rc.alpha_ocw[0]=0xc00;
+    for(unsigned i=1;i<4;i++) {
+        rc.color_icw[i]=0x0c200000;rc.alpha_icw[i]=0x1c200000;
+        rc.color_ocw[i]=rc.alpha_ocw[i]=0xc00;
+    }
+    Nv2aBatch batch={.vertices=v,.count=6,.state=&state,.rc=&rc,.ext=ex,.stage={&tx}};
+    const char *env=getenv("CHIHIRO_VULKAN_FORCE_COMBINER");char *saved=env?strdup(env):NULL;
+    for(unsigned variant=0;variant<4 && !failed;variant++) {
+        unsigned resident=variant&1,reduced=variant>>1;
+        if(reduced) unsetenv("CHIHIRO_VULKAN_FORCE_COMBINER");else setenv("CHIHIRO_VULKAN_FORCE_COMBINER","1",1);
+        ch_vk_target_defer_color_readback(target,resident);
+        uint64_t start=xbox_HostNowNs();
+        for(unsigned n=0;n<100;n++) if(ch_vk_nv2a_draw_decoded_read(target,&surface,&batch,
+            nv2a_backend_decode_texture,pixels,bytes)!=VK_SUCCESS) {failed=1;break;}
+        double elapsed=(xbox_HostNowNs()-start)/1e6;
+        if(ch_vk_target_read_color(target,pixels,bytes)!=VK_SUCCESS) failed=1;
+        const unsigned char expected[4]={0x20,0x40,0x80,0xff};
+        for(size_t p=0;!failed && p<bytes;p+=4) if(memcmp(pixels+p,expected,4)) failed=1;
+        printf("BENCH: 640x480 combiner, 100 separate textured draws, reduced=%u resident=%u total=%.2fms mean=%.3fms checksum=%s\n",
+            reduced,resident,elapsed,elapsed/100,failed?"FAIL":"PASS");
+    }
+    if(saved) {setenv("CHIHIRO_VULKAN_FORCE_COMBINER",saved,1);free(saved);}else unsetenv("CHIHIRO_VULKAN_FORCE_COMBINER");
+    ch_vk_target_destroy(target);free(pixels);return failed;
+}
 int ch_test_guest_textures(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,uint32_t family) {
     ChVkTarget *target=NULL;
     if(ch_vk_target_create(gpu,device,queue,family,4,4,&target)!=VK_SUCCESS) return 1;
@@ -225,6 +322,10 @@ int ch_test_guest_textures(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,ui
                 }
             }
         }
+        texture.levels=7;texture.filter=0x02022000;texture.addr_u=texture.addr_v=3;
+        batch.texture=&texture;
+        if(ch_vk_nv2a_draw_decoded_read(target,&surface,&batch,nv2a_backend_decode_texture,pixels,sizeof pixels)!=VK_SUCCESS) failed=1;
+        texture.levels=1;
         texture.addr_u=4;
         if(ch_vk_nv2a_draw_decoded_read(target,&surface,&batch,nv2a_backend_decode_texture,pixels,sizeof(pixels))!=VK_ERROR_FEATURE_NOT_PRESENT) failed=1;
     }
@@ -332,6 +433,57 @@ int ch_test_guest_textures(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,ui
         ch_vk_backend_destroy(backend);
         if(calls<8 || probe.locks!=calls+1 || probe.held || probe.locks!=probe.unlocks) failed=1;
         if(!failed) puts("PASS: guest callbacks and destruction serialize the shared host queue; unpaired hooks rejected");
+    }
+    if(!failed) {
+        ChVkBackend *backend=NULL;
+        ChVkBackendConfig config={.physical=gpu,.device=device,.queue=queue,.family=family,
+            .guest_base=guest.bytes,.guest_bytes=sizeof guest.bytes,.decode=nv2a_backend_decode_texture,
+            .precise_queries=1,.resident_color=1};
+        Nv2aRenderState rs={.surface_format=0x128,.color_mask=0x01010101};
+        Nv2aSurface a=surface,b=surface; a.color_va=2048;b.color_va=2304;
+        memset(guest.bytes+2048,0,64);memset(guest.bytes+2304,0,64);
+        if(ch_vk_backend_create(&config,&backend)!=VK_SUCCESS || ch_vk_backend_attach(backend)!=VK_SUCCESS) failed=1;
+        else {
+            const Nv2aBackend *cb=ch_vk_backend_callbacks();
+            cb->clear(&a,&rs,0xf0,0xffff0000,0);
+            uint32_t first;memcpy(&first,guest.bytes+2048,4);
+            if(first || !cb->flush) failed=1;
+            uint32_t green=0xff00ff00;memcpy(guest.bytes+2048,&green,4);
+            cb->flush();
+            for(unsigned i=0;i<16;i++) {
+                uint32_t actual;memcpy(&actual,guest.bytes+2048+i*4,4);
+                if(actual!=(i?0xffff0000:green)) failed=1;
+            }
+            cb->clear(&a,&rs,0xf0,0xff0000ff,0);
+            Nv2aTexture tx={.offset=2048,.width=4,.height=4,.pitch=16,.color=0x12,.levels=1,
+                .filter=0x01010000,.addr_u=3,.addr_v=3};
+            Nv2aVertex quad[6]={{0,0,0,1,0xffffffff,0,0},{4,0,0,1,0xffffffff,4,0},
+                {4,4,0,1,0xffffffff,4,4},{0,0,0,1,0xffffffff,0,0},
+                {4,4,0,1,0xffffffff,4,4},{0,4,0,1,0xffffffff,0,4}};
+            uint32_t visible=0;
+            Nv2aBatch draw={.vertices=quad,.count=6,.texture=&tx,.state=&rs,.zpass_out=&visible};
+            cb->draw(&b,&draw);
+            if(visible!=16) failed=1;
+            /* A backend semaphore must expose the resident target before the
+             * completion word. This exercises the actual executor write path. */
+            nv2a_pb_set_semaphore_target(3968);nv2a_pb_exec_method(0,0x1d70,0xabcdef01);
+            nv2a_pb_set_semaphore_target(0);
+            uint32_t semaphore;memcpy(&semaphore,guest.bytes+3968,4);
+            if(semaphore!=0xabcdef01) failed=1;
+            for(unsigned i=0;i<16;i++) {uint32_t actual;memcpy(&actual,guest.bytes+2304+i*4,4);if(actual!=0xff0000ff) failed=1;}
+            /* Self-sampling must snapshot pending GPU output before decoding. */
+            cb->clear(&b,&rs,0xf0,0xffffffff,0);
+            tx.offset=2304;
+            for(unsigned i=0;i<6;i++) quad[i].diffuse=0xffff0000;
+            draw.zpass_out=NULL;cb->draw(&b,&draw);cb->flush();
+            for(unsigned i=0;i<16;i++) {uint32_t actual;memcpy(&actual,guest.bytes+2304+i*4,4);if(actual!=0xffff0000) failed=1;}
+            cb->clear(&b,&rs,0xf0,0xff00ff00,0);
+            nv2a_pb_exec_method(0,0x17d0,3840);
+            for(unsigned i=0;i<16;i++) {uint32_t actual;memcpy(&actual,guest.bytes+2304+i*4,4);if(actual!=0xff00ff00) failed=1;}
+        }
+        ch_vk_backend_destroy(backend);
+        if(!failed) puts("PASS: resident color defers readback; CPU pixel edits preserve GPU neighbors; sampled/self targets, precise queries and executor semaphore/report flushes");
+        else fprintf(stderr,"FAIL: resident color completion/coherence\n");
     }
     if(!failed) {
         const uint32_t colors[]={0x80204080,0x4080c040};
@@ -591,6 +743,8 @@ int ch_test_guest_textures(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,ui
         extern int ch_test_submission(VkPhysicalDevice,VkDevice,VkQueue,uint32_t,void *,size_t,ChVkDecodeTexture);
         if(!failed) failed=ch_test_submission(gpu,device,queue,family,guest.bytes,sizeof guest.bytes,nv2a_backend_decode_texture);
     }
+    if(!failed) failed=check_simple_combiner(gpu,device,queue,family);
+    if(!failed && getenv("CHIHIRO_VULKAN_BENCH")) failed=bench_guest_draws(gpu,device,queue,family);
     ch_vk_target_destroy(target);
     if(!failed) puts("PASS: real executor decoder + Vulkan sampled draws: padded linear ARGB, Morton ARGB, DXT1/3/5, repeat/mirror/clamp, bilinear, guest ARGB8888/RGB565 render-to-texture");
     return failed;

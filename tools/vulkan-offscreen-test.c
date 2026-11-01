@@ -358,6 +358,13 @@ int main(void) {
         tx.color=0xdead;
         if(ch_vk_nv2a_draw_decoded_read(target,&s,&batch,fixture_decode,pixels,sizeof(pixels))!=VK_ERROR_FORMAT_NOT_SUPPORTED) mismatch=1;
         tx.color=0x1234; tx.levels=2;
+        if(ch_vk_nv2a_draw_decoded_read(target,&s,&batch,fixture_decode,pixels,sizeof(pixels))!=VK_SUCCESS) mismatch=1;
+        for(unsigned y=0;!mismatch && y<19;y++) for(unsigned x=0;x<37;x++) {
+            unsigned u=(unsigned)((x+.5f)*3/37),v=(unsigned)((y+.5f)*3/19);
+            unsigned char want[]={u*80,v*80,32,255};
+            if(memcmp(pixels+(y*37+x)*4,want,4)) mismatch=1;
+        }
+        tx.filter=0x01030000; /* Actual mip filter still needs explicit support. */
         if(ch_vk_nv2a_draw_decoded_read(target,&s,&batch,fixture_decode,pixels,sizeof(pixels))!=VK_ERROR_FEATURE_NOT_PRESENT) mismatch=1;
     }
     if(!mismatch) mismatch=ch_test_guest_textures(gpu,device,queue,family);

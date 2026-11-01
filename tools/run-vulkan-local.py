@@ -40,7 +40,9 @@ def main():
                VC3_VULKAN_DUMP_COUNT=str(args.capture_count), VC3_VULKAN_FRAME_LIMIT=str(args.frames))
     if args.icd:
         env["VK_ICD_FILENAMES"] = str(args.icd.resolve())
-    for key in ("VK_INSTANCE_LAYERS", "VK_LAYER_PATH", "VK_LOADER_DEBUG"):
+    for key in ("VK_INSTANCE_LAYERS", "VK_LAYER_PATH", "VK_LOADER_DEBUG",
+                "CHIHIRO_VULKAN_PROFILE", "CHIHIRO_VULKAN_RESIDENT_COLOR", "VC3_VULKAN_RESIDENT_COLOR",
+                "CHIHIRO_VULKAN_FORCE_COMBINER"):
         if key in os.environ:
             env[key] = os.environ[key]
     report = dict(binary=str(executable), binary_sha256=hashlib.sha256(executable.read_bytes()).hexdigest(),

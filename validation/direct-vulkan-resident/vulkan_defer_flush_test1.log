@@ -1,0 +1,2 @@
+PASS: actual deferred ring mode 1 flushes before completion writes and explicit drains on the submission thread
+[DEFER] push-buffer decode and GL submission on two threads (RECOMP_PB_DECODE_THREAD=1)

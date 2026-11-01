@@ -2430,6 +2430,7 @@ static void xr_frame(void)
     ei.environmentBlendMode = XR_ENVIRONMENT_BLEND_MODE_OPAQUE;
 #ifdef CHIHIRO_RENDERER_VULKAN
     pthread_mutex_lock(&s_vk_queue);
+    if(s_vk_profile.enabled) s_vk_profile.host_begin=pace_now_us();
     if(fs.shouldRender) nl=vk_present(f,layers);
 #else
     if (fs.shouldRender && f && (f->direct || chain_fit((uint32_t)f->w, (uint32_t)f->h))) {
@@ -2566,6 +2567,7 @@ static void xr_frame(void)
     xrEndFrame(s_sess, &ei);
 #endif
 #ifdef CHIHIRO_RENDERER_VULKAN
+    vk_profile_host_end();
     pthread_mutex_unlock(&s_vk_queue);
 #endif
 #ifndef CHIHIRO_RENDERER_VULKAN

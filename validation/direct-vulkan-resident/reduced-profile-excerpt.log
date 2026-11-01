@@ -1,0 +1,136 @@
+[Vulkan] resident color targets: enabled
+[Vulkan] direct NV2A backend on Apple M4 Pro; OpenGL excluded from this build
+[Vulkan RC] control=00000004 stage=00000001 final=0000000c/00001c80
+[Vulkan RC] stage0 color=08040000/00000c00 alpha=18140000/00000c00
+[Vulkan RC] stage1 color=0c200000/00000c00 alpha=1c200000/00000c00
+[Vulkan RC] stage2 color=0c200000/00000c00 alpha=1c200000/00000c00
+[Vulkan RC] stage3 color=0c200000/00000c00 alpha=1c200000/00000c00
+[Vulkan] completed frame 1: 640x480, guest=80408000
+[Vulkan RC] control=00000004 stage=00000001 final=0000000c/00001c80
+[Vulkan RC] stage0 color=08040000/00000c00 alpha=18200000/00000c00
+[Vulkan RC] stage1 color=0c200000/00000c00 alpha=1c200000/00000c00
+[Vulkan RC] stage2 color=0c200000/00000c00 alpha=1c200000/00000c00
+[Vulkan RC] stage3 color=0c200000/00000c00 alpha=1c200000/00000c00
+[Vulkan RC] control=00000001 stage=00000001 final=0000000c/00001c80
+[Vulkan RC] stage0 color=08040000/00000c00 alpha=18140000/00000c00
+[Vulkan GPU] 640x480 61 submissions: GPU 7.83ms host record/submit/wait 26.97ms
+[Vulkan draw] 221 batches (221 reduced): geometry 0.1ms textures 195.7ms raster 245.3ms
+[Vulkan GPU] 640x480 61 submissions: GPU 5.50ms host record/submit/wait 20.06ms
+[Vulkan GPU] 640x480 25 submissions: GPU 1.80ms host record/submit/wait 8.05ms
+[Vulkan GPU] 640x480 35 submissions: GPU 3.03ms host record/submit/wait 12.01ms
+[Vulkan GPU] 256x256 13 submissions: GPU 0.88ms host record/submit/wait 4.51ms
+[Vulkan GPU] 640x480 112 submissions: GPU 9.92ms host record/submit/wait 34.83ms
+[Vulkan GPU] 128x128 6 submissions: GPU 0.61ms host record/submit/wait 2.69ms
+[Vulkan GPU] 256x256 6 submissions: GPU 0.66ms host record/submit/wait 2.54ms
+[Vulkan GPU] 128x128 6 submissions: GPU 0.60ms host record/submit/wait 2.44ms
+[Vulkan GPU] 256x256 6 submissions: GPU 0.54ms host record/submit/wait 2.39ms
+[Vulkan draw] 318 batches (318 reduced): geometry 0.1ms textures 271.5ms raster 103.2ms
+[Vulkan GPU] 640x480 110 submissions: GPU 9.35ms host record/submit/wait 33.35ms
+[Vulkan GPU] 640x480 108 submissions: GPU 9.45ms host record/submit/wait 32.89ms
+[Vulkan GPU] 128x128 6 submissions: GPU 0.68ms host record/submit/wait 2.54ms
+[Vulkan GPU] 256x256 6 submissions: GPU 0.63ms host record/submit/wait 2.42ms
+[Vulkan GPU] 640x480 24 submissions: GPU 1.39ms host record/submit/wait 6.89ms
+[Vulkan GPU] 640x480 35 submissions: GPU 2.79ms host record/submit/wait 10.76ms
+[Vulkan GPU] 256x256 12 submissions: GPU 0.44ms host record/submit/wait 3.45ms
+[Vulkan GPU] 640x480 110 submissions: GPU 9.36ms host record/submit/wait 33.17ms
+[Vulkan GPU] 128x128 6 submissions: GPU 0.66ms host record/submit/wait 2.68ms
+[Vulkan GPU] 256x256 6 submissions: GPU 0.69ms host record/submit/wait 2.54ms
+[Vulkan GPU] 128x128 4 submissions: GPU 0.18ms host record/submit/wait 1.10ms
+[Vulkan GPU] 256x256 4 submissions: GPU 0.28ms host record/submit/wait 1.16ms
+[Vulkan draw] 314 batches (314 reduced): geometry 0.1ms textures 272.4ms raster 99.8ms
+[Vulkan GPU] 640x480 110 submissions: GPU 8.97ms host record/submit/wait 32.38ms
+[Vulkan GPU] 640x480 110 submissions: GPU 9.49ms host record/submit/wait 33.69ms
+[Vulkan GPU] 128x128 4 submissions: GPU 0.24ms host record/submit/wait 1.13ms
+[Vulkan GPU] 256x256 4 submissions: GPU 0.18ms host record/submit/wait 1.08ms
+[Vulkan GPU] 640x480 24 submissions: GPU 1.35ms host record/submit/wait 6.75ms
+[Vulkan GPU] 640x480 35 submissions: GPU 2.78ms host record/submit/wait 10.70ms
+[Vulkan GPU] 256x256 12 submissions: GPU 0.48ms host record/submit/wait 3.32ms
+[Vulkan GPU] 640x480 110 submissions: GPU 9.29ms host record/submit/wait 32.96ms
+[Vulkan GPU] 128x128 4 submissions: GPU 0.22ms host record/submit/wait 1.17ms
+[Vulkan GPU] 256x256 4 submissions: GPU 0.23ms host record/submit/wait 1.15ms
+[Vulkan GPU] 128x128 4 submissions: GPU 0.22ms host record/submit/wait 1.14ms
+[Vulkan GPU] 256x256 4 submissions: GPU 0.22ms host record/submit/wait 1.19ms
+[Vulkan draw] 314 batches (314 reduced): geometry 0.1ms textures 272.3ms raster 101.8ms
+[Vulkan GPU] 640x480 110 submissions: GPU 9.34ms host record/submit/wait 34.20ms
+[Vulkan GPU] 640x480 110 submissions: GPU 9.53ms host record/submit/wait 33.95ms
+[Vulkan GPU] 128x128 4 submissions: GPU 0.18ms host record/submit/wait 1.08ms
+[Vulkan GPU] 256x256 4 submissions: GPU 0.20ms host record/submit/wait 1.22ms
+[Vulkan GPU] 640x480 24 submissions: GPU 1.38ms host record/submit/wait 6.75ms
+[Vulkan GPU] 640x480 34 submissions: GPU 2.60ms host record/submit/wait 10.10ms
+[Vulkan GPU] 256x256 12 submissions: GPU 0.44ms host record/submit/wait 3.39ms
+[Vulkan GPU] 640x480 109 submissions: GPU 9.33ms host record/submit/wait 33.02ms
+[Vulkan GPU] 128x128 4 submissions: GPU 0.21ms host record/submit/wait 1.11ms
+[Vulkan GPU] 256x256 4 submissions: GPU 0.20ms host record/submit/wait 1.19ms
+[Vulkan GPU] 128x128 4 submissions: GPU 0.23ms host record/submit/wait 1.13ms
+[Vulkan GPU] 256x256 4 submissions: GPU 0.20ms host record/submit/wait 1.10ms
+[Vulkan draw] 313 batches (313 reduced): geometry 0.1ms textures 272.5ms raster 99.6ms
+[Vulkan GPU] 640x480 110 submissions: GPU 9.48ms host record/submit/wait 33.57ms
+[Vulkan] captured /private/tmp/vc3-vulkan-identity-fold-mac/frames/frame-000030.ppm
+[Vulkan GPU] 640x480 110 submissions: GPU 8.98ms host record/submit/wait 32.48ms
+[Vulkan GPU] 128x128 4 submissions: GPU 0.20ms host record/submit/wait 1.19ms
+[Vulkan GPU] 256x256 4 submissions: GPU 0.17ms host record/submit/wait 1.02ms
+[Vulkan] captured /private/tmp/vc3-vulkan-identity-fold-mac/frames/frame-000031.ppm
+[Vulkan GPU] 640x480 110 submissions: GPU 9.16ms host record/submit/wait 33.09ms
+[Vulkan GPU] 640x480 25 submissions: GPU 1.51ms host record/submit/wait 7.13ms
+[Vulkan GPU] 640x480 35 submissions: GPU 3.05ms host record/submit/wait 10.56ms
+[Vulkan GPU] 256x256 13 submissions: GPU 0.60ms host record/submit/wait 3.43ms
+[Vulkan] captured /private/tmp/vc3-vulkan-identity-fold-mac/frames/frame-000032.ppm
+[Vulkan GPU] 128x128 4 submissions: GPU 0.18ms host record/submit/wait 1.07ms
+[Vulkan GPU] 256x256 4 submissions: GPU 0.20ms host record/submit/wait 1.07ms
+[Vulkan GPU] 128x128 4 submissions: GPU 0.22ms host record/submit/wait 1.13ms
+[Vulkan GPU] 256x256 4 submissions: GPU 0.21ms host record/submit/wait 1.20ms
+[Vulkan draw] 311 batches (311 reduced): geometry 0.1ms textures 267.4ms raster 95.2ms
+[Vulkan GPU] 640x480 110 submissions: GPU 9.42ms host record/submit/wait 31.94ms
+[Vulkan GPU] 640x480 110 submissions: GPU 9.09ms host record/submit/wait 31.69ms
+[Vulkan GPU] 128x128 4 submissions: GPU 0.21ms host record/submit/wait 1.10ms
+[Vulkan GPU] 256x256 4 submissions: GPU 0.22ms host record/submit/wait 1.09ms
+[Vulkan GPU] 640x480 23 submissions: GPU 1.34ms host record/submit/wait 6.42ms
+[Vulkan GPU] 640x480 34 submissions: GPU 2.52ms host record/submit/wait 9.63ms
+[Vulkan GPU] 640x480 110 submissions: GPU 9.21ms host record/submit/wait 31.73ms
+[Vulkan GPU] 256x256 12 submissions: GPU 0.53ms host record/submit/wait 3.33ms
+[Vulkan GPU] 128x128 4 submissions: GPU 0.27ms host record/submit/wait 1.13ms
+[Vulkan GPU] 256x256 4 submissions: GPU 0.25ms host record/submit/wait 1.08ms
+[Vulkan GPU] 128x128 4 submissions: GPU 0.22ms host record/submit/wait 1.08ms
+[Vulkan draw] 320 batches (320 reduced): geometry 0.1ms textures 273.0ms raster 101.5ms
+[Vulkan GPU] 256x256 4 submissions: GPU 0.28ms host record/submit/wait 1.12ms
+[Vulkan GPU] 640x480 110 submissions: GPU 9.11ms host record/submit/wait 32.52ms
+[Vulkan GPU] 640x480 110 submissions: GPU 9.37ms host record/submit/wait 33.18ms
+[Vulkan GPU] 128x128 4 submissions: GPU 0.23ms host record/submit/wait 1.14ms
+[Vulkan GPU] 256x256 4 submissions: GPU 0.20ms host record/submit/wait 1.09ms
+[Vulkan GPU] 640x480 24 submissions: GPU 1.38ms host record/submit/wait 6.76ms
+[Vulkan GPU] 640x480 34 submissions: GPU 2.73ms host record/submit/wait 10.24ms
+[Vulkan GPU] 256x256 11 submissions: GPU 0.40ms host record/submit/wait 3.24ms
+[Vulkan GPU] 640x480 110 submissions: GPU 9.62ms host record/submit/wait 33.67ms
+[Vulkan GPU] 128x128 4 submissions: GPU 0.22ms host record/submit/wait 1.12ms
+[Vulkan GPU] 256x256 4 submissions: GPU 0.24ms host record/submit/wait 1.16ms
+[Vulkan draw] 320 batches (320 reduced): geometry 0.1ms textures 271.3ms raster 102.7ms
+[Vulkan GPU] 128x128 4 submissions: GPU 0.22ms host record/submit/wait 1.17ms
+[Vulkan GPU] 256x256 4 submissions: GPU 0.23ms host record/submit/wait 1.14ms
+[Vulkan GPU] 640x480 110 submissions: GPU 9.38ms host record/submit/wait 33.15ms
+[Vulkan GPU] 640x480 110 submissions: GPU 9.68ms host record/submit/wait 33.02ms
+[Vulkan GPU] 128x128 4 submissions: GPU 0.26ms host record/submit/wait 1.19ms
+[Vulkan GPU] 256x256 4 submissions: GPU 0.22ms host record/submit/wait 1.09ms
+[Vulkan GPU] 640x480 24 submissions: GPU 1.34ms host record/submit/wait 6.57ms
+[Vulkan GPU] 640x480 35 submissions: GPU 2.74ms host record/submit/wait 10.54ms
+[Vulkan GPU] 256x256 12 submissions: GPU 0.44ms host record/submit/wait 3.33ms
+[Vulkan GPU] 640x480 110 submissions: GPU 9.51ms host record/submit/wait 33.73ms
+[Vulkan GPU] 128x128 4 submissions: GPU 0.19ms host record/submit/wait 1.24ms
+[Vulkan GPU] 256x256 4 submissions: GPU 0.20ms host record/submit/wait 1.14ms
+[Vulkan draw] 315 batches (315 reduced): geometry 0.1ms textures 273.1ms raster 101.0ms
+[Vulkan GPU] 128x128 4 submissions: GPU 0.21ms host record/submit/wait 1.15ms
+[Vulkan GPU] 256x256 4 submissions: GPU 0.20ms host record/submit/wait 1.11ms
+[Vulkan GPU] 640x480 110 submissions: GPU 9.40ms host record/submit/wait 33.09ms
+[Vulkan GPU] 640x480 110 submissions: GPU 9.01ms host record/submit/wait 33.29ms
+[Vulkan GPU] 128x128 4 submissions: GPU 0.24ms host record/submit/wait 1.13ms
+[Vulkan GPU] 256x256 4 submissions: GPU 0.22ms host record/submit/wait 1.15ms
+[Vulkan GPU] 640x480 24 submissions: GPU 1.43ms host record/submit/wait 6.83ms
+[Vulkan GPU] 640x480 34 submissions: GPU 2.91ms host record/submit/wait 10.57ms
+[Vulkan GPU] 256x256 12 submissions: GPU 0.49ms host record/submit/wait 3.16ms
+[Vulkan GPU] 640x480 110 submissions: GPU 9.59ms host record/submit/wait 33.32ms
+[Vulkan GPU] 128x128 4 submissions: GPU 0.20ms host record/submit/wait 1.06ms
+[Vulkan GPU] 256x256 4 submissions: GPU 0.21ms host record/submit/wait 1.08ms
+[Vulkan draw] 313 batches (313 reduced): geometry 0.1ms textures 272.5ms raster 100.5ms
+[Vulkan GPU] 128x128 4 submissions: GPU 0.25ms host record/submit/wait 1.13ms
+[Vulkan GPU] 256x256 4 submissions: GPU 0.22ms host record/submit/wait 1.18ms
+[Vulkan] completed frame 60: 640x480, guest=80534000
+[Vulkan] diagnostic frame limit reached: 60

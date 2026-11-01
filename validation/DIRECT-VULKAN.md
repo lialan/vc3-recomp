@@ -131,3 +131,88 @@ there had not been a separate pre-Zink native renderer commit.
 
 A separate four-frame macOS rerun requested VK_LAYER_KHRONOS_validation and
 emitted no validation errors/VUID diagnostics; its request and logs are recorded.
+
+## Shared headset ownership
+
+All access to Quest serial `2G97C5ZJ0G02DQ` must run through
+`python3 /Users/lialan/.local/bin/quest3-lock <whole-test-command>`. The shared
+exclusive `fcntl.flock` file is `/tmp/quest3-2G97C5ZJ0G02DQ.lock`; never delete it.
+Hold the lock for installation, launch, screenshots, logs, stopping the app and
+cleanup. Put cleanup in the test script's finally/trap block before exit. Every
+ADB invocation must target `-s 2G97C5ZJ0G02DQ`. A busy lock returns 75: continue
+local builds/tests/code and retry later. Separate Codex threads do not otherwise
+coordinate device ownership; direct ADB bypasses this lock.
+
+## Combat performance acceptance
+
+The user requires Quest 3 Vulkan performance to avoid regression against the
+existing OpenGL renderer: target steady 60 FPS in combat, allow occasional dips
+but require a sustained high frame rate. The user clarified that frame pacing means no stutter or uneven frame times;
+it does not request removal of artificial caps. Preserve this requirement through future backend work. Startup
+FPS, offscreen tests and compositor refresh rate do not establish combat FPS.
+Record comparable combat scenarios and frame-time distributions on the headset,
+including sustained rate, long frames and regularity, then obtain user acceptance.
+The present 1-2 FPS native startup candidate fails this performance requirement.
+
+## Resident color and measured combiner reduction
+
+The runtime now enables resident ARGB8888 color targets by default. Set
+`CHIHIRO_VULKAN_RESIDENT_COLOR=0` to compare the strict path. Guest storage is
+compared against an owned byte snapshot; changed pixels merge into the GPU
+target without losing untouched GPU pixels. RGB565 and depth/stencil retain
+the strict quantized/synchronous path. Dirty color is copied back at flips,
+before sampling a dirty guest target, and at explicit completion points.
+The toolkit's optional `Nv2aBackend.flush` hook runs before queued/direct guest
+completion writes, kickoff markers and reports. Its deferred proxy replays the
+flush on the submission thread. Standalone tests cover precise queries, CPU
+pixel edits, self-sampling and semaphore/report visibility, plus both deferred
+ring modes. Render routing hooks currently require strict color mode.
+
+A Quest run initially exposed a 64x64 DXT5 texture with 7 guest levels and plain
+LINEAR minification. Multiple stored levels do not imply mip sampling: the
+reference GL path uses level zero for NEAREST/LINEAR. Native Vulkan now accepts
+that metadata while actual mip filters still fail explicitly.
+
+Profiling (enabled only with `CHIHIRO_VULKAN_PROFILE=1`) separates queue ownership,
+vertex conversion, texture upload, draw setup/execute, and GPU timestamp
+measurements. A successful Quest startup trace attributed about 98% of the
+queue time to guest rendering rather than XR presentation. Later launches were
+blocked by tracking and returned stale game logs; those are not fresh results.
+Future headed runs must include a unique per-run env sentinel and verify it in
+the log before recording FPS. Screenshot the system state when the sentinel is
+missing. The game candidate and temporary proximity override were stopped.
+
+The shared pure predicate `nv2a_combiner_simple.h` proves texture0*diffuse
+modulation, optional texture-only alpha, intervening identity stages, and an
+identity final combiner. The adapter uses a plain textured shader only for
+that subset, preserving the general combiner for other expressions or varying
+projective q. Do not broaden this into a heuristic combiner bypass. Seventy-two
+GPU comparisons cover linear/Morton/DXT sampling, bilinear/projective UV, alpha
+testing, swapped inputs, identity/final stages and the varying-q fallback.
+
+The actual Mac VC3 startup trace uses the four-stage identity form; all traced
+startup batches reduce. Native captures 30,31,32 are byte-identical between the
+generic and reduced paths, and both bounded Mac runs completed 60 frames.
+This is startup evidence only. On Quest, a same-process synthetic 640x480
+four-stage draw benchmark measured 100 separate draws per case:
+
+| Shader | Color readback per draw | Mean per draw |
+| --- | --- | --- |
+| General combiner | yes | 9.665 ms |
+| General combiner | deferred | 6.681 ms |
+| Reduced modulation | yes | 0.915 ms |
+| Reduced modulation | deferred | 0.571 ms |
+
+All output checksums and renderer checks passed; see
+`validation/direct-vulkan-resident/`. These numbers are synthetic per-draw
+costs with diagnostics enabled, not combat FPS or pacing acceptance. Set
+`CHIHIRO_VULKAN_FORCE_COMBINER=1` to retain the generic path for A/B tests.
+The most recent real headed startup result remains about 1-2 FPS from before
+this reduction; the latest built candidate still needs fresh headed testing.
+
+Remaining performance work includes texture/sampler reuse and keeping a render
+pass open across draws, with resources retained until explicit completion.
+Each draw currently still ends a render pass and synchronizes; target residency
+does not yet provide command batching. Preserve queries, CPU edits and fences
+while removing those per-draw tile stores/submits/waits. Combat performance
+remains an unfulfilled acceptance gate.

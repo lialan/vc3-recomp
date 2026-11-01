@@ -14,6 +14,11 @@ typedef struct {
     ChVkDecodeTexture decode;
     /* Set only when host enabled VkPhysicalDeviceFeatures.occlusionQueryPrecise. */
     int precise_queries;
+    /* Keep ARGB8888 targets resident between draws. Flush publishes guest
+     * pixels at fences/flip or before texture decoding samples a dirty target.
+     * RGB565 retains strict per-draw quantized writeback. Render routing hooks
+     * currently require the strict path (resident_color=0). */
+    int resident_color;
     /* Synchronous host rendering hooks, after guest-visible completion.
      * All pointers borrowed until hook returns; never retain decoded pointers.
      * Host routes world/HUD/postprocess explicitly. Errors stop guest progress.

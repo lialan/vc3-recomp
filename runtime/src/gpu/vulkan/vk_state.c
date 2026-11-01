@@ -108,7 +108,9 @@ static int address_mode(uint32_t guest,VkSamplerAddressMode *out) {
 VkResult ch_vk_sampler_state(const Nv2aTexture *s,VkSamplerCreateInfo *out) {
     if(!s || !out) return VK_ERROR_INITIALIZATION_FAILED;
     uint32_t min=(s->filter>>16)&255,mag=(s->filter>>24)&15;
-    if(s->cube || s->levels>1 || (min!=1 && min!=2) || (mag!=1 && mag!=2))
+    /* Multiple guest levels do not require mip sampling for NEAREST/LINEAR.
+     * As in the reference GL path, those filters use level zero only. */
+    if(s->cube || (min!=1 && min!=2) || (mag!=1 && mag!=2))
         return VK_ERROR_FEATURE_NOT_PRESENT;
     VkSamplerCreateInfo sampler={.sType=VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
         .magFilter=mag==1?VK_FILTER_NEAREST:VK_FILTER_LINEAR,

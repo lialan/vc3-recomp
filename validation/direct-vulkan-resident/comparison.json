@@ -1,0 +1,20 @@
+{
+  "scope": "Actual Mac guest startup frames, not Quest/combat or immersive acceptance",
+  "frames": {
+    "30": {
+      "identical": true,
+      "ppm_sha256": "3d16d5100d6df17c10253a9cb20ec64c458766d91d583a3b09dd5c8f8c67b85c",
+      "nonzero_rgb_bytes": 921600
+    },
+    "31": {
+      "identical": true,
+      "ppm_sha256": "0a5ce437d96775ab66dc44103ee45d33271d8375c69f650896ea912712a550d9",
+      "nonzero_rgb_bytes": 921600
+    },
+    "32": {
+      "identical": true,
+      "ppm_sha256": "4d40d204b49b0ccc319e0d88467200cb6ab874a32c350fb775546593a598a479",
+      "nonzero_rgb_bytes": 921600
+    }
+  }
+}

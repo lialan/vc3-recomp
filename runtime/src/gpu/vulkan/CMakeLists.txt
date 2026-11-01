@@ -60,6 +60,11 @@ if(CHIHIRO_VULKAN_CPU_TESTS)
 endif()
 option(CHIHIRO_VULKAN_TESTS "Build standalone offscreen tests; never installs an APK" OFF)
 if(CHIHIRO_VULKAN_TESTS)
+    add_executable(vulkan_defer_flush_test "${CH_VK_ROOT}/tools/vulkan-defer-flush-test.c"
+        "${XBOXRECOMP_DIR}/src/kernel/nv2a_pb_defer.c")
+    target_include_directories(vulkan_defer_flush_test PRIVATE "${XBOXRECOMP_DIR}/src/kernel"
+        "${XBOXRECOMP_DIR}/src" "${XBOXRECOMP_DIR}/include" "${XBOXRECOMP_DIR}/templates/runtime")
+    target_link_libraries(vulkan_defer_flush_test PRIVATE Threads::Threads)
     add_library(chihiro_vulkan_test_executor OBJECT
         "${XBOXRECOMP_DIR}/src/kernel/nv2a_pb_exec.c"
         "${XBOXRECOMP_DIR}/src/kernel/nv2a_pb_defer.c" "${XBOXRECOMP_DIR}/src/kernel/nv2a_vsh_interp.c" "${XBOXRECOMP_DIR}/src/kernel/nv2a_flip_hold.c" "${XBOXRECOMP_DIR}/src/kernel/nv2a_pb_scan.c")

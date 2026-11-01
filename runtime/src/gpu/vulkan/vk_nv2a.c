@@ -1,8 +1,34 @@
 #include "vk_nv2a.h"
 #include "vk_guest_layout.h"
+#include "../nv2a_combiner_simple.h"
 #include <math.h>
 #include <stdlib.h>
+#include <stdio.h>
+#include <time.h>
 #include "../d3d/d3d8_swizzle.h"
+static uint64_t profile_us(void) {
+    struct timespec t;clock_gettime(CLOCK_MONOTONIC,&t);
+    return (uint64_t)t.tv_sec*1000000u+t.tv_nsec/1000;
+}
+static void profile_draw(uint64_t start,uint64_t vertices,uint64_t textures,uint64_t raster,int reduced) {
+    static uint64_t first,n,fast,vertex_us,texture_us,raster_us;
+    if(!first) first=start;
+    n++;fast+=!!reduced;vertex_us+=vertices-start;texture_us+=textures-vertices;raster_us+=raster-textures;
+    if(raster-first<1000000) return;
+    fprintf(stderr,"[Vulkan draw] %llu batches (%llu reduced): geometry %.1fms textures %.1fms raster %.1fms\n",
+        (unsigned long long)n,(unsigned long long)fast,vertex_us/1000.,texture_us/1000.,raster_us/1000.);
+    first=raster;n=fast=vertex_us=texture_us=raster_us=0;
+}
+static void profile_rc(const Nv2aCombiner *rc) {
+    static Nv2aCombiner seen[24];static unsigned count;
+    if(!rc) return;
+    for(unsigned i=0;i<count;i++) if(!memcmp(&seen[i],rc,sizeof *rc)) return;
+    if(count==24) return;
+    seen[count++]=*rc;
+    fprintf(stderr,"[Vulkan RC] control=%08x stage=%08x final=%08x/%08x\n",rc->control,rc->stage_program,rc->final0,rc->final1);
+    for(unsigned i=0;i<(rc->control&255) && i<8;i++)
+        fprintf(stderr,"[Vulkan RC] stage%u color=%08x/%08x alpha=%08x/%08x\n",i,rc->color_icw[i],rc->color_ocw[i],rc->alpha_icw[i],rc->alpha_ocw[i]);
+}
 static int matches(ChVkTarget *t, const Nv2aSurface *s) {
     uint32_t w,h;
     ch_vk_target_size(t,&w,&h);
@@ -71,9 +97,18 @@ static VkResult draw_decoded(ChVkTarget *t, const Nv2aSurface *s,
             if(mode>4) return VK_ERROR_FEATURE_NOT_PRESENT;
         }
     }
+    const char *force=getenv("CHIHIRO_VULKAN_FORCE_COMBINER");
+    int modulate=b->ext && b->stage[0] && (!force || !atoi(force))?
+        ch_nv2a_combiner_modulate(b->rc):0;
+    /* Division before interpolation is equivalent only for a constant q.
+     * Varying projective q must retain the general fragment-stage divide. */
+    if(modulate) for(uint32_t i=0;i<b->count;i++)
+        if(!isfinite(b->ext[i].tex[0][3]) || b->ext[i].tex[0][3]!=b->ext[0].tex[0][3]) {modulate=0;break;}
+    const Nv2aCombiner *rc=modulate?NULL:b->rc;
+    const Nv2aTexture *plain=modulate?b->stage[0]:b->texture;
     VkSamplerCreateInfo sampler;
-    if(b->texture && !b->rc) {
-        const Nv2aTexture *tx=b->texture;
+    if(plain && !rc) {
+        const Nv2aTexture *tx=plain;
         if((!decode && !resolve) || ch_vk_sampler_state(tx,&sampler)!=VK_SUCCESS)
             return VK_ERROR_FEATURE_NOT_PRESENT;
         if(!tx->width || !tx->height || (uint64_t)tx->width*tx->height>SIZE_MAX/4)
@@ -81,6 +116,10 @@ static VkResult draw_decoded(ChVkTarget *t, const Nv2aSurface *s,
     }
     /* The initial indexed path is uint16. Do not truncate or draw a prefix. */
     if(b->count>65535) return VK_ERROR_FEATURE_NOT_PRESENT;
+    const char *profile_env=getenv("CHIHIRO_VULKAN_PROFILE");
+    int profile=profile_env && atoi(profile_env)!=0;
+    uint64_t start=profile?profile_us():0;
+    if(profile) profile_rc(b->rc);
     ChVkColorVertex *v=calloc(b->count,sizeof(*v));
     uint16_t *indices=malloc((size_t)b->count*sizeof(*indices));
     if(!v || !indices) { free(v); free(indices); return VK_ERROR_OUT_OF_HOST_MEMORY; }
@@ -108,18 +147,27 @@ static VkResult draw_decoded(ChVkTarget *t, const Nv2aSurface *s,
             v[i].xy[0]=clip[0]; v[i].xy[1]=-clip[1];
             v[i].xy[2]=(clip[2]+clip[3])*.5f; v[i].xy[3]=clip[3];
         }
-        if(b->texture && !b->rc) {
+        if(plain && !rc) {
             if(!isfinite(g->u) || !isfinite(g->v)) goto done;
             /* Nv2aVertex.u/v are texels for this path for all format classes. */
-            v[i].xy[4]=g->u/b->texture->width;
-            v[i].xy[5]=g->v/b->texture->height;
+            if(modulate) {
+                const float *tc=b->ext[i].tex[0];
+                float q=tc[3]==0?1:tc[3];
+                int norm=d3d8_format_is_swizzled(plain->color) || d3d8_format_dxt_block_bytes(plain->color);
+                v[i].xy[4]=tc[0]/q/(norm?1:plain->width);
+                v[i].xy[5]=tc[1]/q/(norm?1:plain->height);
+                if(!isfinite(v[i].xy[4]) || !isfinite(v[i].xy[5])) goto done;
+            } else {
+                v[i].xy[4]=g->u/plain->width;
+                v[i].xy[5]=g->v/plain->height;
+            }
         }
         for(unsigned k=0;k<4;k++) if(!isfinite(v[i].xy[k])) goto done;
         v[i].rgba[0]=((g->diffuse>>16)&255)/255.f;
         v[i].rgba[1]=((g->diffuse>>8)&255)/255.f;
         v[i].rgba[2]=(g->diffuse&255)/255.f;
-        v[i].rgba[3]=(g->diffuse>>24)/255.f;
-        if(b->rc) {
+        v[i].rgba[3]=modulate==2?1:(g->diffuse>>24)/255.f;
+        if(rc) {
             const Nv2aVertexEx *ex=&b->ext[i];
             v[i].xy[6]=((ex->specular>>16)&255)/255.f;
             v[i].xy[7]=((ex->specular>>8)&255)/255.f;
@@ -131,15 +179,16 @@ static VkResult draw_decoded(ChVkTarget *t, const Nv2aSurface *s,
         }
         indices[i]=(uint16_t)i;
     }
-    if(b->texture && !b->rc) {
-        const Nv2aTexture *tx=b->texture;
+    uint64_t vertices_done=profile?profile_us():0;
+    if(plain && !rc) {
+        const Nv2aTexture *tx=plain;
         result=sample_image(t,tx,decode,resolve,context,&texture);
         if(result!=VK_SUCCESS) goto done;
         result=ch_vk_texture_set_sampler(texture,&sampler);
         if(result!=VK_SUCCESS) goto done;
     }
-    if(b->rc) for(unsigned st=0;st<4;st++) {
-        uint32_t mode=(b->rc->stage_program>>(st*5))&31;
+    if(rc) for(unsigned st=0;st<4;st++) {
+        uint32_t mode=(rc->stage_program>>(st*5))&31;
         const Nv2aTexture *tx=b->stage[st];
         if(mode<1 || mode>3 || !tx) continue;
         VkSamplerCreateInfo sm;
@@ -151,11 +200,13 @@ static VkResult draw_decoded(ChVkTarget *t, const Nv2aSurface *s,
         if(!d3d8_format_is_swizzled(tx->color) && !d3d8_format_dxt_block_bytes(tx->color))
             for(uint32_t i=0;i<b->count;i++) { v[i].xy[11+st*4]/=tx->width; v[i].xy[12+st*4]/=tx->height; }
     }
+    uint64_t textures_done=profile?profile_us():0;
     uint32_t samples=0;
     if(panel) result=ch_vk_target_draw_panel_read(t,v,b->count,indices,b->count,b->state,texture,
-        b->rc,b->fog_color,(const ChVkTexture *const *)stage_images,panel==2,pixels,bytes);
+        rc,b->fog_color,(const ChVkTexture *const *)stage_images,panel==2,pixels,bytes);
     else result=ch_vk_target_draw_combiner_read(t,NULL,v,b->count,indices,b->count,b->state,texture,
-        b->zpass_out?&samples:NULL,b->rc,b->fog_color,(const ChVkTexture *const *)stage_images,pixels,bytes);
+        b->zpass_out?&samples:NULL,rc,b->fog_color,(const ChVkTexture *const *)stage_images,pixels,bytes);
+    if(profile) profile_draw(start,vertices_done,textures_done,profile_us(),modulate);
     if(result==VK_SUCCESS && b->zpass_out) *b->zpass_out+=samples;
 done:
     for(unsigned i=0;i<4;i++) ch_vk_texture_destroy(stage_images[i]);

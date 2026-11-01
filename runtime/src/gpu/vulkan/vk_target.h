@@ -18,6 +18,11 @@ VkResult ch_vk_target_create(VkPhysicalDevice physical, VkDevice device,
 VkResult ch_vk_target_clear_read(ChVkTarget *target, const float rgba[4],
                                  void *pixels, VkDeviceSize bytes);
 void ch_vk_target_destroy(ChVkTarget *target);
+/* Opt-in resident color path. Existing draw/clear entry points still finish GPU
+ * execution/query results, but leave their pixel output untouched. Explicit
+ * read_color copies the completed target; depth/stencil APIs stay synchronous. */
+void ch_vk_target_defer_color_readback(ChVkTarget *,int enabled);
+VkResult ch_vk_target_read_color(ChVkTarget *,void *,VkDeviceSize);
 /* Initial untextured indexed triangle path: clip-space xyzw and float RGBA (w=0 is shorthand for 1).
  * Non-NULL rgba clears all attachments (depth=1, stencil=0).
  * NULL rgba preserves all attachments; target must first be initialized with
