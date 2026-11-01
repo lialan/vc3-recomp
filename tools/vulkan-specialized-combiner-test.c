@@ -27,7 +27,7 @@ int ch_test_specialized_combiners(VkPhysicalDevice gpu,VkDevice device,VkQueue q
     setenv("CHIHIRO_VULKAN_NOAT","0",1);
     for(unsigned mode=0;mode<2;mode++) {
         setenv("CHIHIRO_VULKAN_SPECIALIZE_RC",mode?"1":"0",1);
-        REQUIRE(ch_vk_target_create(gpu,device,queue,family,4,4,&t[mode])==VK_SUCCESS);
+        REQUIRE(ch_vk_target_create_input_depth(gpu,device,queue,family,4,4,&t[mode])==VK_SUCCESS);
         REQUIRE(ch_vk_target_pipeline_cache(t[mode],cache)==VK_SUCCESS);
         REQUIRE(ch_vk_target_pipeline_cache(t[mode],cache)==VK_ERROR_INITIALIZATION_FAILED);
         REQUIRE(ch_vk_target_enable_queries(t[mode])==VK_SUCCESS);
@@ -88,7 +88,7 @@ int ch_test_specialized_combiners(VkPhysicalDevice gpu,VkDevice device,VkQueue q
     for(unsigned mode=0;mode<2;mode++) {
         ch_vk_target_destroy(t[mode]);t[mode]=NULL;
         setenv("CHIHIRO_VULKAN_SPECIALIZE_RC",mode?"1":"0",1);
-        REQUIRE(ch_vk_target_create(gpu,device,queue,family,4,4,&t[mode])==VK_SUCCESS);
+        REQUIRE(ch_vk_target_create_input_depth(gpu,device,queue,family,4,4,&t[mode])==VK_SUCCESS);
         REQUIRE(ch_vk_target_pipeline_cache(t[mode],cache)==VK_SUCCESS);
         REQUIRE(ch_vk_target_pipeline_cache(t[mode],cache)==VK_ERROR_INITIALIZATION_FAILED);
         if(mode) REQUIRE(ch_vk_target_batching(t[mode],1)==VK_SUCCESS);
@@ -183,7 +183,7 @@ int ch_test_specialized_combiners(VkPhysicalDevice gpu,VkDevice device,VkQueue q
     if(quant_mode==4) {
         REQUIRE(ch_vk_target_depth_quantization(t[1],4)==VK_ERROR_INITIALIZATION_FAILED);
         ch_vk_target_destroy(t[1]);t[1]=NULL;
-        REQUIRE(ch_vk_target_create(gpu,device,queue,family,4,4,&t[1])==VK_SUCCESS);
+        REQUIRE(ch_vk_target_create_input_depth(gpu,device,queue,family,4,4,&t[1])==VK_SUCCESS);
         REQUIRE(ch_vk_target_clear_read(t[1],black,rgba[1],64)==VK_SUCCESS);
         REQUIRE(ch_vk_target_batching(t[1],1)==VK_SUCCESS);
         REQUIRE(ch_vk_target_enable_queries(t[1])==VK_SUCCESS);

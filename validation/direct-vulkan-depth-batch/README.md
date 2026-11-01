@@ -382,3 +382,29 @@ no performance claim follows from this fixture.
 The same immutable /tmp/vc3-inline-integrated-vc3 control is running in
 /tmp/vc3-inline-off (session 72525). Only INLINE differs; DRAW=0 and timestamps=0.
 Do not overlap another GPU workload. Compute remains default pending comparison.
+
+## Input image usage isolation and repeat
+
+Same-binary /tmp/vc3-inline-off completed 2400 frames (exit 0), late windows
+26.97/26.64/26.35 FPS. /tmp/vc3-inline-repeat also completed 2400 (exit 0),
+27.72/28.20/27.72 FPS. Thus the initial 33-34 FPS inline run is not reliably
+repeatable; do not claim a 25% improvement. Off/repeat frames 1200 and 1680 match
+exactly, 2160 does not. On/off frame1200 exact, 1680 mean channel error .603,
+2160 .169; visually both 1680 frames show the same combat scene. Not whole-game
+parity. All three old-binary runs are terminal.
+
+Review found the prototype set INPUT_ATTACHMENT usage on all D32 images, even
+compute controls. This is now isolated in ch_vk_target_create_input_depth;
+ordinary target constructors keep their previous allocation usage. Modes 3/4
+reject ordinary targets, and only depth_quant_inline opts in at backend creation.
+Native D24 is unchanged. /tmp/vc3-input-optin-validation.log passes exact queued
+roundtrips, guest query count, full guest-memory backend coverage, and capability
+rejection, with validation/sync validation requested and no diagnostics. Mac main
+and Android offscreen builds pass. Corrected microbenchmark remains slower inline
+(0.506 vs .380 ms/draw, 128 draws/one submission); no GPU overlap during fixtures.
+
+A fresh same-binary pair with the isolated constructor is now running sequentially:
+/tmp/vc3-input-optin-off then /tmp/vc3-input-optin-on, immutable
+/tmp/vc3-input-optin-vc3, session 2058. Do not overlap GPU work. This pair changes
+both quantization mode and its required allocation usage, as real configuration
+selection does. Compute remains default. No headset/device activity.

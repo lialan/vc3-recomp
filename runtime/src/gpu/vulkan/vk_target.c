@@ -66,7 +66,7 @@ struct ChVkTarget {
     VkImage depth;
     VkFormat depth_format;
     ChVkDepthQuant *depth_quant,*depth_quant_draw,*depth_quant_input,*depth_quant_inline;
-    int quantized_depth,input_pass;
+    int quantized_depth,input_pass,input_depth;
     VkDeviceMemory depth_mem;
     VkImageView depth_view;
     VkImage image;
@@ -258,6 +258,11 @@ void ch_vk_target_destroy(ChVkTarget *t) {
     if(t->image_mem) vkFreeMemory(t->device,t->image_mem,NULL);
     free(t);
 }
+static VkResult create_depth(VkPhysicalDevice,VkDevice,VkQueue,uint32_t,uint32_t,uint32_t,VkFormat,int,ChVkTarget **);
+VkResult ch_vk_target_create_input_depth(VkPhysicalDevice physical,VkDevice device,VkQueue queue,
+    uint32_t family,uint32_t width,uint32_t height,ChVkTarget **out) {
+    return create_depth(physical,device,queue,family,width,height,VK_FORMAT_D32_SFLOAT_S8_UINT,1,out);
+}
 VkResult ch_vk_target_create(VkPhysicalDevice physical, VkDevice device,
                             VkQueue queue, uint32_t family,
                             uint32_t width, uint32_t height, ChVkTarget **out) {
@@ -267,6 +272,10 @@ VkResult ch_vk_target_create(VkPhysicalDevice physical, VkDevice device,
 VkResult ch_vk_target_create_depth(VkPhysicalDevice physical, VkDevice device,
     VkQueue queue, uint32_t family, uint32_t width, uint32_t height,
     VkFormat depth_format, ChVkTarget **out) {
+    return create_depth(physical,device,queue,family,width,height,depth_format,0,out);
+}
+static VkResult create_depth(VkPhysicalDevice physical,VkDevice device,VkQueue queue,
+    uint32_t family,uint32_t width,uint32_t height,VkFormat depth_format,int input_depth,ChVkTarget **out) {
     if(!out) return VK_ERROR_INITIALIZATION_FAILED;
     *out=NULL;
     if(depth_format!=VK_FORMAT_D32_SFLOAT_S8_UINT && depth_format!=VK_FORMAT_D24_UNORM_S8_UINT)
@@ -286,7 +295,7 @@ VkResult ch_vk_target_create_depth(VkPhysicalDevice physical, VkDevice device,
     t->split_alpha=split && atoi(split);
     const char *specialize=getenv("CHIHIRO_VULKAN_SPECIALIZE_RC");
     t->specialize_rc=specialize && atoi(specialize);
-    t->depth_format=depth_format;
+    t->depth_format=depth_format;t->input_depth=input_depth;
     t->bytes=(VkDeviceSize)width*height*4;
     VkResult result;
     VkImageCreateInfo image={.sType=VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
@@ -312,7 +321,7 @@ VkResult ch_vk_target_create_depth(VkPhysicalDevice physical, VkDevice device,
     }
     image.format=depth_format;
     image.usage=VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT|VK_IMAGE_USAGE_TRANSFER_DST_BIT|VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
-    if(depth_format==VK_FORMAT_D32_SFLOAT_S8_UINT) image.usage|=VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT;
+    if(input_depth) image.usage|=VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT;
     TRY(vkCreateImage(device,&image,NULL,&t->depth));
     vkGetImageMemoryRequirements(device,t->depth,&req);
     mem.allocationSize=req.size;
@@ -452,6 +461,7 @@ VkResult ch_vk_target_finish(ChVkTarget *t) {return finish_batch(t,0);}
 VkResult ch_vk_target_depth_quantization(ChVkTarget *t,int mode) {
     if(!t || mode<0 || mode>4)return VK_ERROR_INITIALIZATION_FAILED;
     if(!mode) {VkResult r=ch_vk_target_finish(t);if(r==VK_SUCCESS)t->quantized_depth=0;return r;}
+    if(mode>=3 && !t->input_depth)return VK_ERROR_FEATURE_NOT_PRESENT;
     if(t->quantized_depth==mode)return VK_SUCCESS;
     if(mode==4 && t->pass && !t->input_pass)return VK_ERROR_INITIALIZATION_FAILED;
     if(t->failed || !t->initialized || t->depth_format!=VK_FORMAT_D32_SFLOAT_S8_UINT)

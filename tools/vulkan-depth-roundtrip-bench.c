@@ -11,7 +11,7 @@ int ch_test_depth_roundtrip(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,u
  for(size_t i=0;i<n;i++){z[i]=(float)((i*65537u)&0xffffffu)*0x1p-24f;st[i]=(unsigned char)i;}
 #define REQUIRE(x) do{if(!(x)){fprintf(stderr,"depth roundtrip benchmark failed line %d\n",__LINE__);goto done;}}while(0)
  for(unsigned draw=0;draw<3;draw++) {
-  REQUIRE(ch_vk_target_create(gpu,device,queue,family,640,480,&t)==VK_SUCCESS);
+  REQUIRE((draw==2?ch_vk_target_create_input_depth:ch_vk_target_create)(gpu,device,queue,family,640,480,&t)==VK_SUCCESS);
   const float color[]={1,0,1,1};
   REQUIRE(ch_vk_target_clear_read(t,color,rgba,n*4)==VK_SUCCESS);
   REQUIRE(ch_vk_target_write_depth_stencil(t,z,st,n)==VK_SUCCESS);
@@ -28,9 +28,10 @@ int ch_test_depth_roundtrip(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,u
  /* Same commands and exact conversion, compare repeated pass breaks with
   * framebuffer-local barriers inside one pass. No per-draw host wait. */
  for(unsigned mode=1;mode<=4;mode+=3) {
-  REQUIRE(ch_vk_target_create(gpu,device,queue,family,640,480,&t)==VK_SUCCESS);
+  REQUIRE((mode==4?ch_vk_target_create_input_depth:ch_vk_target_create)(gpu,device,queue,family,640,480,&t)==VK_SUCCESS);
   const float color[]={1,0,1,1};
   REQUIRE(ch_vk_target_clear_read(t,color,rgba,n*4)==VK_SUCCESS);
+  if(mode==1) REQUIRE(ch_vk_target_depth_quantization(t,4)==VK_ERROR_FEATURE_NOT_PRESENT);
   REQUIRE(ch_vk_target_depth_quantization(t,mode)==VK_SUCCESS);
   REQUIRE(ch_vk_target_batching(t,1)==VK_SUCCESS);
   ch_vk_target_defer_color_readback(t,1);

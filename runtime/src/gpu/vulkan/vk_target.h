@@ -55,6 +55,10 @@ VkResult ch_vk_target_create(VkPhysicalDevice physical, VkDevice device,
  * reference renderer's normalized 24-bit depth between draws. The default
  * constructor remains D32S8 for existing float-depth clients. Unsupported
  * precision fails rather than silently changing depth comparisons. */
+/* Explicit D32S8 target with input-attachment capability for modes 3/4.
+ * Ordinary constructors retain their original image usage/allocation policy. */
+VkResult ch_vk_target_create_input_depth(VkPhysicalDevice,VkDevice,VkQueue,
+    uint32_t family,uint32_t width,uint32_t height,ChVkTarget **out);
 VkResult ch_vk_target_create_depth(VkPhysicalDevice physical, VkDevice device,
     VkQueue queue, uint32_t family, uint32_t width, uint32_t height,
     VkFormat depth_format, ChVkTarget **out);

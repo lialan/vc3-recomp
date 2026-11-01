@@ -64,3 +64,5 @@ compatible pass until target destruction. Framebuffer-local barriers surround
 the helper draw; guest query counts exclude it. CPU clears use the separate
 input pass. No guest addresses, game identifiers, or scene heuristics enter
 this policy. It remains opt-in pending a demonstrated real-workload benefit.
+
+Input-attachment image usage is opt-in through `ch_vk_target_create_input_depth`; ordinary constructors preserve their original usage flags. Modes 3/4 reject ordinary targets. The backend selects this constructor only for `depth_quant_inline` on a D32 fallback.

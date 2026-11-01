@@ -144,7 +144,7 @@ static struct Surface *surface(const Nv2aSurface *s,const Nv2aRenderState *rs) {
             active->host.family,s->width,s->height,VK_FORMAT_D24_UNORM_S8_UINT,&f->target);
         if(r==VK_SUCCESS) f->native_z24=1;
     }
-    if(r==VK_ERROR_FORMAT_NOT_SUPPORTED) r=ch_vk_target_create(active->host.physical,active->host.device,active->host.queue,
+    if(r==VK_ERROR_FORMAT_NOT_SUPPORTED) r=(active->host.depth_quant_inline?ch_vk_target_create_input_depth:ch_vk_target_create)(active->host.physical,active->host.device,active->host.queue,
         active->host.family,s->width,s->height,&f->target);
     if(r!=VK_SUCCESS) fatal(r,"target creation");
     /* Surface creation/draw/destruction already hold the backend queue lock.
