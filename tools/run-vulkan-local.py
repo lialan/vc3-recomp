@@ -77,6 +77,17 @@ def main():
         except subprocess.TimeoutExpired:
             report["exit_code"] = "timeout"
     text = (output / "game.log").read_text(errors="replace")
+    # Keep individual windows: an overall average hides loading/scene changes.
+    interval_pattern = re.compile(
+        r"\[Vulkan frame intervals\] flips (\d+)\.\.(\d+): ([\d.]+) fps mean ([\d.]+)ms "
+        r"p95 ([\d.]+)ms p99 ([\d.]+)ms max ([\d.]+)ms >20ms=(\d+) >33ms=(\d+)")
+    report["frame_windows"] = [dict(
+        first_flip=int(m[1]), last_flip=int(m[2]), fps=float(m[3]),
+        mean_ms=float(m[4]), p95_ms=float(m[5]), p99_ms=float(m[6]), max_ms=float(m[7]),
+        over_20ms=int(m[8]), over_33ms=int(m[9])) for m in interval_pattern.finditer(text)]
+    report["failure_diagnostics"] = [line for line in text.splitlines()
+        if "[Vulkan] fatal" in line or ("[D3D] BlockOnTime" in line and "timed out" in line)
+        or "[PB] bad target" in line]
     report["reached_frame_limit"] = f"diagnostic frame limit reached: {args.frames}" in text
     report["captures"] = {p.name: hashlib.sha256(p.read_bytes()).hexdigest()
                           for p in sorted((output / "frames").glob("*.ppm"))}
