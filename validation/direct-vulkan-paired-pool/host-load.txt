@@ -1,0 +1,8 @@
+  607  52.7 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer
+ 5790  36.0 /Users/lialan/Downloads/VR/gse-recomp-hotd4-steam-frame/build-gse-vulkan/offscreen/ghostsquadevolution
+ 1715  16.9 /Applications/Ghostty.app/Contents/MacOS/ghostty
+  779   2.6 /usr/sbin/coreaudiod
+68971   2.6 /Applications/OrbStack.app/Contents/Frameworks/OrbStack Helper.app/Contents/MacOS/OrbStack Helper
+78641   2.1 codex
+96468   2.0 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/156.0.8078.73/Helpers/Google Chrome Helper (Aperitif Renderer).app/Contents/MacOS/Google Chrome Helper (Aperitif Renderer)
+28929   1.7 /Users/lialan/.codex/packages/app-server-daemon/releases/0.166.0-aarch64-apple-darwin/bin/codex

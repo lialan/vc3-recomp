@@ -368,29 +368,23 @@ static void observe_target_color(struct Surface *f) {
     else observe_guest_color(f);
 }
 static void flush(void) {
-    struct Surface *paired=NULL;uint64_t paired_serial=0;
-    ChVkTarget *owner=ch_vk_depth_resident_dirty_target(active->zeta);
-    for(unsigned i=0;owner && i<active->count;i++) {
+    uint64_t paired_serial[MAX_SURFACES]={0};uint32_t paired=0;
+    if(active->profile.enabled) active->profile.flushes++;
+    /* Pair every retained owner, not just the most recently bound target.
+     * Reading other owners first would force a second color submission. */
+    for(unsigned i=0;active->zeta && i<active->count;i++) {
         struct Surface *f=&active->surfaces[i];
-        if(f->target==owner && f->resident && f->color_dirty) {paired=f;paired_serial=f->color_serial;break;}
-    }
-    if(active->profile.enabled) {
-        ChVkTarget *owner=ch_vk_depth_resident_dirty_target(active->zeta);
-        active->profile.flushes++;
-        if(owner) {
-            active->profile.depth_flushes++;
-            for(unsigned i=0;i<active->count;i++)
-                if(active->surfaces[i].target==owner && active->surfaces[i].color_dirty) {
-                    active->profile.paired_flushes++;break;
-                }
+        if(!ch_vk_depth_resident_target_dirty(active->zeta,f->target)) continue;
+        if(active->profile.enabled) active->profile.depth_flushes++;
+        if(f->resident && f->color_dirty) {
+            VkResult r=ch_vk_depth_resident_flush_target_color(active->zeta,f->target,f->rgba,f->bytes);
+            if(r!=VK_SUCCESS) fatal(r,"paired resident completion");
+            paired|=1u<<i;paired_serial[i]=f->color_serial;
+            if(active->profile.enabled) active->profile.paired_flushes++;
         }
     }
-    /* Let resident depth append its readback to pending draws. Finishing every
-     * target first would force another submission/fence for the same data.
-     * Color/depth guest storage aliases are rejected at bind time. */
     if(active->zeta) {
-        VkResult r=paired?ch_vk_depth_resident_flush_color(active->zeta,paired->rgba,paired->bytes):
-            ch_vk_depth_resident_flush(active->zeta);
+        VkResult r=ch_vk_depth_resident_flush(active->zeta);
         if(r!=VK_SUCCESS) fatal(r,"resident depth completion");
     }
     /* Completion only publishes GPU-written storage. An idle target's RAM
@@ -404,7 +398,7 @@ static void flush(void) {
         struct Surface *f=&active->surfaces[i];
         /* CPU color observation may have merged edits after the paired read.
          * Such an import advances the serial and requires a fresh GPU read. */
-        publish_color(f,f==paired && f->color_serial==paired_serial);
+        publish_color(f,(paired&(1u<<i)) && f->color_serial==paired_serial[i]);
     }
     /* Draws with no dirty resident storage still own resources and must finish
      * before the executor publishes the guest semaphore/query boundary. */

@@ -222,6 +222,13 @@ int ch_test_depth_fragment(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,ui
             first=0x400000a3;memcpy((char *)guest+4,&first,4);input[0]=0x600000a3;
             REQUIRE(ch_vk_depth_resident_bind(owner,target,&surface,&state)==VK_SUCCESS);
             REQUIRE(ch_vk_target_read_z24s8(target,(uint32_t *)depth,n)==VK_SUCCESS && !memcmp(depth,input,n*4));
+            REQUIRE(ch_vk_depth_resident_target_dirty(owner,peer));
+            REQUIRE(ch_vk_target_read_color(peer,rgba,n*4)==VK_SUCCESS);
+            REQUIRE(ch_vk_depth_resident_flush_target_color(owner,peer,depth,n*4)==VK_SUCCESS);
+            REQUIRE(!memcmp(rgba,depth,n*4) && !ch_vk_depth_resident_target_dirty(owner,peer));
+            REQUIRE(ch_vk_depth_resident_target_dirty(owner,target));
+            memcpy(&first,(char *)guest+4,4);REQUIRE(first==0x400000a3);
+            REQUIRE(!memcmp((char *)guest+other.zeta_va,output,n*4));
             REQUIRE(ch_vk_depth_resident_flush(owner)==VK_SUCCESS);
             REQUIRE(!memcmp((char *)guest+4,input,n*4) && !memcmp((char *)guest+other.zeta_va,output,n*4));
             ch_vk_depth_resident_stats(owner,&stats);REQUIRE(stats.writebacks==writes+2);
@@ -234,14 +241,16 @@ int ch_test_depth_fragment(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,ui
             Nv2aTexture texture={.offset=other.zeta_va,.width=w,.height=h,.pitch=w*4,.color=0x12,.levels=1};
             REQUIRE(ch_vk_depth_resident_sample(owner,&texture)==VK_SUCCESS);
             REQUIRE(!memcmp((char *)guest+other.zeta_va,output,n*4));
-            // Reinterpreting another owner's exact bytes also publishes it first.
+            // Exact shared-zeta migration stays on GPU without publishing bytes.
             for(unsigned i=0;i<n;i++) output[i]=0xa00000e2;
             REQUIRE(ch_vk_depth_resident_bind(owner,peer,&surface,&other)==VK_SUCCESS);
             REQUIRE(ch_vk_target_write_z24s8(peer,output,n)==VK_SUCCESS);
             REQUIRE(ch_vk_depth_resident_dirty(owner,peer)==VK_SUCCESS);
+            ch_vk_depth_resident_stats(owner,&stats);imports=stats.imports;uint64_t copies=stats.gpu_copies;
             REQUIRE(ch_vk_depth_resident_bind(owner,target,&surface,&other)==VK_SUCCESS);
             REQUIRE(ch_vk_target_read_z24s8(target,(uint32_t *)depth,n)==VK_SUCCESS && !memcmp(depth,output,n*4));
-            REQUIRE(!memcmp((char *)guest+other.zeta_va,output,n*4));
+            ch_vk_depth_resident_stats(owner,&stats);REQUIRE(stats.imports==imports && stats.gpu_copies==copies+1);
+            memcpy(&first,(char *)guest+other.zeta_va,4);REQUIRE(first==0x200000b7);
             // An exact full clear on a different target supersedes dirty pixels.
             for(unsigned i=0;i<n;i++) output[i]=0xc00000f4;
             REQUIRE(ch_vk_target_write_z24s8(target,output,n)==VK_SUCCESS);

@@ -315,6 +315,20 @@ static VkResult pool_bind(ChVkDepthResident *d,ChVkTarget *target,const Nv2aSurf
     if(rs->zeta_va>base->bytes || layout.span>base->bytes-rs->zeta_va) return VK_ERROR_INITIALIZATION_FAILED;
     unsigned slot=4;
     for(unsigned i=0;i<4;i++) if(d->image[i] && d->image[i]->target==target) {slot=i;break;}
+    /* Preserve the existing exact shared-zeta GPU-copy path. Move the source
+     * owner to the destination image instead of publishing/reimporting it. */
+    if(!clear) for(unsigned i=0;i<4;i++) {
+        DepthImage *source=d->image[i];
+        if(i==slot || !source || !source->target || !source->gpu_copies) continue;
+        if(source->surface.width==s->width && source->surface.height==s->height &&
+           source->state.zeta_va==rs->zeta_va && source->state.zeta_pitch==rs->zeta_pitch &&
+           source->state.surface_format==rs->surface_format) {
+            if(slot<4) {r=single_release(d->image[slot]);if(r!=VK_SUCCESS)return r;}
+            r=bind_depth(source,target,s,rs,0);
+            if(r==VK_SUCCESS) {d->current=i;d->used[i]=++d->clock;}
+            return r;
+        }
+    }
     /* A single physical target cannot carry two interpretations. Aliasing guest
      * storage also needs the previous result published before the new import. */
     for(unsigned i=0;i<4;i++) if(i!=slot && d->image[i] && d->image[i]->target &&
@@ -359,6 +373,15 @@ VkResult ch_vk_depth_resident_flush(ChVkDepthResident *d) {
     if(!d)return VK_ERROR_INITIALIZATION_FAILED;
     for(unsigned i=0;i<4;i++) if(d->image[i]) {VkResult r=single_flush(d->image[i]);if(r!=VK_SUCCESS)return r;}
     return VK_SUCCESS;
+}
+int ch_vk_depth_resident_target_dirty(const ChVkDepthResident *d,ChVkTarget *target) {
+    if(d) for(unsigned i=0;i<4;i++) if(d->image[i] && d->image[i]->target==target) return d->image[i]->dirty;
+    return 0;
+}
+VkResult ch_vk_depth_resident_flush_target_color(ChVkDepthResident *d,ChVkTarget *target,void *rgba,size_t bytes) {
+    if(d) for(unsigned i=0;i<4;i++) if(d->image[i] && d->image[i]->target==target)
+        return single_flush_color(d->image[i],rgba,bytes);
+    return VK_ERROR_INITIALIZATION_FAILED;
 }
 VkResult ch_vk_depth_resident_flush_color(ChVkDepthResident *d,void *rgba,size_t bytes) {
     if(!d)return VK_ERROR_INITIALIZATION_FAILED;
