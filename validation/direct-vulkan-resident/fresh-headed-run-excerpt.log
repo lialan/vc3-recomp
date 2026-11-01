@@ -1,0 +1,33 @@
+[android] CHIHIRO_TEST_RUN_ID=vc3-72a8cfd5289342e98ce445fbd0ed9e1c
+[Vulkan] resident color targets: enabled
+[Vulkan] direct NV2A backend on host-selected Vulkan device; OpenGL excluded from this build
+[xr] session state 1
+[xr] session state 2
+[xr] session state 3
+[xr] session state 4
+[xr] session state 5
+[quest] 0 game frames/s
+[Vulkan] captured /sdcard/Android/data/org.vc3recomp.vulkan.direct/files/frame-000000.ppm
+[Vulkan] completed frame 1: 640x480, guest=80408000
+[xr] session state 4
+[xr] session state 3
+[xr] session state 6
+[xr] session state 1
+[Vulkan] captured /sdcard/Android/data/org.vc3recomp.vulkan.direct/files/frame-000001.ppm
+[quest] 1 game frames/s
+[pace] game 2 frames: ms p50 897.6 p95 897.6 max 897.6, >20 ms 2
+[Vulkan] captured /sdcard/Android/data/org.vc3recomp.vulkan.direct/files/frame-000002.ppm
+[Vulkan] captured /sdcard/Android/data/org.vc3recomp.vulkan.direct/files/frame-000003.ppm
+[pace] game 2 frames: ms p50 589.8 p95 589.8 max 589.8, >20 ms 2
+[pace] game 2 frames: ms p50 612.4 p95 612.4 max 612.4, >20 ms 2
+[pace] game 2 frames: ms p50 604.7 p95 604.7 max 604.7, >20 ms 2
+[pace] game 2 frames: ms p50 580.2 p95 580.2 max 580.2, >20 ms 2
+[pace] game 2 frames: ms p50 554.8 p95 554.8 max 554.8, >20 ms 2
+[pace] game 2 frames: ms p50 561.6 p95 561.6 max 561.6, >20 ms 2
+[pace] game 2 frames: ms p50 571.0 p95 571.0 max 571.0, >20 ms 2
+[pace] game 2 frames: ms p50 554.7 p95 554.7 max 554.7, >20 ms 2
+[pace] game 2 frames: ms p50 552.3 p95 552.3 max 552.3, >20 ms 2
+[pace] game 2 frames: ms p50 555.3 p95 555.3 max 555.3, >20 ms 2
+[pace] game 2 frames: ms p50 567.5 p95 567.5 max 567.5, >20 ms 2
+[pace] game 2 frames: ms p50 563.2 p95 563.2 max 563.2, >20 ms 2
+[pace] game 2 frames: ms p50 558.8 p95 558.8 max 558.8, >20 ms 2

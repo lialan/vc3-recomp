@@ -207,8 +207,14 @@ All output checksums and renderer checks passed; see
 `validation/direct-vulkan-resident/`. These numbers are synthetic per-draw
 costs with diagnostics enabled, not combat FPS or pacing acceptance. Set
 `CHIHIRO_VULKAN_FORCE_COMBINER=1` to retain the generic path for A/B tests.
-The most recent real headed startup result remains about 1-2 FPS from before
-this reduction; the latest built candidate still needs fresh headed testing.
+A subsequent locked run installed the reduced candidate and verified a unique
+`CHIHIRO_TEST_RUN_ID` in its log. It reached FOCUSED then left the running/focused
+session within the first five seconds as tracking became unavailable. The guest
+continued producing frames at roughly 550-610 ms intervals while unfocused.
+This still fails the performance objective and is not a controlled worn/combat
+measurement. Do not infer game FPS from the improved synthetic draw cost.
+`fresh-headed-run-excerpt.log` records this transition and pacing evidence;
+the test app was stopped, diagnostic env restored and proximity override disabled.
 
 Remaining performance work includes texture/sampler reuse and keeping a render
 pass open across draws, with resources retained until explicit completion.
