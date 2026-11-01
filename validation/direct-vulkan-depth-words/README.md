@@ -19,3 +19,12 @@ after over 1000 flips with BlockOnTime(0x14B5), head 0x14C7, semaphore 0x149B.
 No gameplay acceptance follows from this run. Its CPU sample identifies
 substantial guest depth publication work. The optimized follow-up is
 /tmp/vc3-depth-words-profile; inspect its live report before drawing conclusions.
+
+The optimized follow-up terminated at frame 1160 with an invalid color
+surface (address 80001BF0, 0x0, pitch/bpp 0, format FFFFFFFF), exit -6.
+Its 961..1081 window was 13.83 FPS vs 8.60 baseline; loading-only evidence,
+with no synchronized scene match or repeated paired run. A CPU sample near
+the transition shows pipeline compilation; a later sample shows GPU work
+progressing. The two aborts differ and neither establishes a fence bug.
+Frame 640 was visually confirmed as FILE loading. Diagnostic samples are
+cpu-sample.txt and cpu-late.txt in the follow-up directory.

@@ -852,10 +852,18 @@ static VkResult draw_full(ChVkTarget *t, const float rgba[4],
             t->resource_stats.pipeline_evictions++;
         }
         destroy_pipeline(t,entry);t->active_pipeline=entry;
+        const char *pipeline_log=getenv("CHIHIRO_VULKAN_PIPELINE_LOG");
+        int log_pipeline=pipeline_log && atoi(pipeline_log);
+        if(log_pipeline) {
+            fprintf(stderr,"[Vulkan pipeline begin] target=%ux%u shader=%u fixed=%u specialized=%u alpha=%u control=%08x\n",
+                t->width,t->height,key.shader,key.fixed,key.specialized,key.alpha_shader,key.program.control);
+            fflush(stderr);
+        }
         uint64_t create_start=time_ns();
         result=create_pipeline(t,&blend,constants,&depth_state,cull,front,texture,&key);
         if(result!=VK_SUCCESS) return result;
         uint64_t create_ns=time_ns()-create_start;t->resource_stats.pipeline_create_ns+=create_ns;
+        if(log_pipeline) fprintf(stderr,"[Vulkan pipeline end] %.3fms\n",create_ns/1e6);
         if(create_ns>t->resource_stats.pipeline_create_max_ns) t->resource_stats.pipeline_create_max_ns=create_ns;
         entry->key=key;t->resource_stats.pipeline_builds++;
         if(!key.alpha_shader) t->resource_stats.no_alpha_pipeline_builds++;
