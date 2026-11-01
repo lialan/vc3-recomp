@@ -597,7 +597,7 @@ VkResult ch_vk_backend_create(const ChVkBackendConfig *config,ChVkBackend **out)
         return VK_ERROR_INITIALIZATION_FAILED;
     ChVkBackend *b=calloc(1,sizeof(*b));
     if(!b) return VK_ERROR_OUT_OF_HOST_MEMORY;
-    b->host=*config;
+    b->host=*config;b->pipeline_cache=config->pipeline_cache;
     const char *profile=getenv("CHIHIRO_VULKAN_PROFILE");
     b->profile.enabled=profile && atoi(profile)!=0;
     if(config->resident_depth) {
@@ -633,7 +633,7 @@ void ch_vk_backend_destroy(ChVkBackend *b) {
     }
     if(active==b) { nv2a_backend_register(NULL); active=NULL; }
     for(unsigned i=0;i<b->count;i++) release_surface(&b->surfaces[i]);
-    if(b->pipeline_cache) vkDestroyPipelineCache(b->host.device,b->pipeline_cache,NULL);
+    if(b->pipeline_cache && !b->host.pipeline_cache) vkDestroyPipelineCache(b->host.device,b->pipeline_cache,NULL);
     ch_vk_texture_cache_destroy(b->textures);
     ch_vk_depth_resident_destroy(b->zeta);
     queue_unlock(b);

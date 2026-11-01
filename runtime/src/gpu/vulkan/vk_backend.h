@@ -5,6 +5,10 @@
 typedef struct ChVkBackend ChVkBackend;
 typedef struct {
     VkPhysicalDevice physical; VkDevice device; VkQueue queue; uint32_t family;
+    /* Optional host-owned cache, created on device. Host keeps it alive until
+     * backend destruction and serializes external use with backend callbacks.
+     * Null creates a private cache. No ownership is transferred. */
+    VkPipelineCache pipeline_cache;
     /* Optional paired host queue lock. Covers each complete callback, including
      * rendering hooks, and destruction. Hooks must not acquire it again.
      * Use when presentation and guest rendering share a VkQueue. */

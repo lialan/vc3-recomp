@@ -1,5 +1,6 @@
 #include "vk_runtime.h"
 #include "vk_backend.h"
+#include "vk_pipeline_cache_file.h"
 #include "chihiro/ch_env.h"
 #include "xbox_memory_layout.h"
 #include <stdio.h>
@@ -15,6 +16,9 @@ static struct {
     VkInstance instance;
     VkDevice device;
     ChVkBackend *backend;
+    VkPipelineCache pipeline_cache;
+    VkDevice cache_device;
+    char *cache_path;
     ChGuestWriteWatch *write_watch;
     uint32_t *argb;
     size_t capacity;
@@ -41,6 +45,13 @@ static void fatal(VkResult result,const char *operation)
             (unsigned long long)runtime.frames);
     fflush(stderr);
     abort();
+}
+
+static void save_pipeline_cache(void)
+{
+    if(runtime.pipeline_cache && runtime.cache_path)
+        fprintf(stderr,"[Vulkan pipeline cache] save=%s\n",
+            ch_vk_pipeline_cache_file_save(runtime.cache_device,runtime.pipeline_cache,runtime.cache_path)?"ok":"skipped");
 }
 
 static VkResult present(void *unused,const Nv2aSurface *surface,const void *rgba,size_t bytes)
@@ -104,6 +115,7 @@ static VkResult present(void *unused,const Nv2aSurface *surface,const void *rgba
     const char *limit=ch_env("VULKAN_FRAME_LIMIT");
     if(limit && strtoull(limit,NULL,10)>0 && runtime.frames>=strtoull(limit,NULL,10)) {
         fprintf(stderr,"[Vulkan] diagnostic frame limit reached: %llu\n",(unsigned long long)runtime.frames);
+        save_pipeline_cache();
         fflush(NULL);
         exit(EXIT_SUCCESS);
     }
@@ -204,6 +216,18 @@ static VkResult attach(ChVkBackendConfig config)
     fprintf(stderr,"[Vulkan] resident D24 depth targets: %s\n",config.resident_depth?"enabled":"disabled");
     config.present_rgba=present;
     if(!config.fatal) config.fatal=fatal;
+    const char *cache_path=ch_env("VULKAN_PIPELINE_CACHE");
+    if(cache_path && *cache_path && !config.pipeline_cache) {
+        runtime.cache_path=malloc(strlen(cache_path)+1);
+        if(!runtime.cache_path) return VK_ERROR_OUT_OF_HOST_MEMORY;
+        strcpy(runtime.cache_path,cache_path);runtime.cache_device=config.device;
+        size_t loaded=0;
+        VkResult cache_result=ch_vk_pipeline_cache_file_load(config.physical,config.device,
+            runtime.cache_path,&runtime.pipeline_cache,&loaded);
+        if(cache_result!=VK_SUCCESS) return cache_result;
+        config.pipeline_cache=runtime.pipeline_cache;
+        fprintf(stderr,"[Vulkan pipeline cache] loaded_bytes=%zu\n",loaded);
+    }
     VkResult result=ch_vk_backend_create(&config,&runtime.backend);
     if(result==VK_SUCCESS) result=ch_vk_backend_attach(runtime.backend);
     return result;
@@ -286,6 +310,9 @@ fail:
 void ch_vk_runtime_stop(void)
 {
     ch_vk_backend_destroy(runtime.backend);
+    save_pipeline_cache();
+    if(runtime.pipeline_cache) vkDestroyPipelineCache(runtime.cache_device,runtime.pipeline_cache,NULL);
+    free(runtime.cache_path);
     if(runtime.write_watch) {
 #if !defined(_WIN32)
         w32_set_memory_observer(NULL);

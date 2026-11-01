@@ -89,3 +89,14 @@ be refreshed in place. Guest completion boundaries still publish dirty RAM;
 this optimization does not make guest reads depend on a new lazy-read policy.
 Local evidence and device-validation limits are recorded in
 `validation/direct-vulkan-render-textures`.
+
+## Optional persistent pipeline compilation cache
+
+Hosts may supply `ChVkBackendConfig.pipeline_cache`; the host retains ownership
+and serializes access until backend destruction. The common runtime optionally
+loads/saves a local cache with `CHIHIRO_VULKAN_PIPELINE_CACHE=<file>`. It validates
+a versioned integrity envelope and Vulkan device/cache identity, falls back to
+an empty cache for invalid files, and saves atomically at shutdown. Targets
+retain independent pipelines/descriptors. No rendering or guest-memory ordering
+changes are made. See [pipeline cache evidence](../validation/direct-vulkan-pipeline-cache/README.md)
+for the cold/warm measurements, file contract, tests and platform limitations.

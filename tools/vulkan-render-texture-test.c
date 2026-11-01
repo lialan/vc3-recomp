@@ -1,6 +1,8 @@
 /* Real Vulkan copies/cache/coherence, with an isolated scalar ARGB fixture
  * decoder. Headless entry point injects executor registration only. */
 #include "vk_backend.h"
+#include "vk_pipeline_cache_file.h"
+#include <unistd.h>
 #include "vk_texture_cache.h"
 #include "vk_guest_layout.h"
 #include <stdio.h>
@@ -93,10 +95,10 @@ static void vertices(Nv2aVertex v[6],uint32_t color,float texels) {
         .u=xy[i][0]*texels/4,.v=xy[i][1]*texels/4};
 }
 static int scenario(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,uint32_t family,
-    unsigned fast,unsigned test,unsigned char *result,unsigned *decode_count) {
+    unsigned fast,unsigned test,unsigned char *result,unsigned *decode_count,VkPipelineCache pipeline_cache) {
     ChVkBackend *backend=NULL;int failed=1;memset(memory,0xa5,sizeof memory);decodes=0;
     ChVkBackendConfig config={.physical=gpu,.device=device,.queue=queue,.family=family,
-        .guest_base=memory,.guest_bytes=sizeof memory,.decode=decode,.resident_color=1,.cache_textures=1,
+        .pipeline_cache=pipeline_cache,.guest_base=memory,.guest_bytes=sizeof memory,.decode=decode,.resident_color=1,.cache_textures=1,
         .sample_render_targets=fast,.resident_depth=test>=10 && fast,.quantized_depth=test>=10 && fast,.depth_quant_inline=test>=10 && fast==1,.depth_quant_fragment=test>=10 && fast==2,.batch_draws=1,.texture_cache_entries=2,
         .texture_cache_bytes=test==7?64:test==8?256:8192};
 #define REQUIRE(x) do {if(!(x)) {fprintf(stderr,"render texture integration case%u fast%u line%d: %s\n",test,fast,__LINE__,#x);goto done;}}while(0)
@@ -241,21 +243,89 @@ done:
 #undef CHECK
     return failed;
 }
+static int cache_roundtrip(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,uint32_t family) {
+    VkPipelineCache cold=VK_NULL_HANDLE,warm=VK_NULL_HANDLE,rejected=VK_NULL_HANDLE;
+    unsigned char reference[sizeof memory],candidate[sizeof memory];
+    unsigned char *saved=NULL,*edit=NULL;FILE *file=NULL;int failed=1;size_t loaded=0,size=0;
+    char directory[4096]={0},path[4096]={0};unsigned count=0;
+    const char *temporary=getenv("TMPDIR");
+#if defined(__ANDROID__)
+    if(!temporary) temporary="/data/local/tmp";
+#else
+    if(!temporary) temporary="/tmp";
+#endif
+#define CHECK(x) do {if(!(x)) {fprintf(stderr,"pipeline cache failure line%d: %s\n",__LINE__,#x);goto done;}}while(0)
+    CHECK(snprintf(directory,sizeof directory,"%s/ch-vk-cache-XXXXXX",temporary)<(int)sizeof directory);
+    CHECK(mkdtemp(directory));CHECK(snprintf(path,sizeof path,"%s/cache",directory)<(int)sizeof path);
+    CHECK(ch_vk_pipeline_cache_file_load(gpu,device,path,&cold,&loaded)==VK_SUCCESS && !loaded);
+    CHECK(!scenario(gpu,device,queue,family,2,14,reference,&count,cold));
+    /* Backend destroyed its targets but must not destroy the borrowed cache. */
+    CHECK(vkGetPipelineCacheData(device,cold,&size,NULL)==VK_SUCCESS && size>=32);
+    saved=malloc(size);CHECK(saved);
+    CHECK(vkGetPipelineCacheData(device,cold,&size,saved)==VK_SUCCESS);
+    free(saved);saved=NULL;
+    if(size<sizeof(VkPipelineCacheHeaderVersionOne)) {
+        CHECK(!ch_vk_pipeline_cache_file_save(device,cold,path));
+        CHECK(access(path,F_OK)!=0);
+        puts("PASS: driver exports no complete cache header; persistence skipped without creating a file");
+        failed=0;goto done;
+    }
+    CHECK(ch_vk_pipeline_cache_file_save(device,cold,path));
+    CHECK(ch_vk_pipeline_cache_file_load(gpu,device,path,&warm,&loaded)==VK_SUCCESS && loaded>=32);
+    CHECK(!scenario(gpu,device,queue,family,2,14,candidate,&count,warm));
+    CHECK(!memcmp(reference,candidate,sizeof reference));
+    CHECK(!ch_vk_pipeline_cache_file_save(device,VK_NULL_HANDLE,path));
+    file=fopen(path,"rb");CHECK(file && !fseek(file,0,SEEK_END));
+    long length=ftell(file);CHECK(length>=56 && !fseek(file,0,SEEK_SET));size=(size_t)length;
+    saved=malloc(size+1);edit=malloc(size+1);CHECK(saved && edit);
+    CHECK(fread(saved,1,size,file)==size);CHECK(!fclose(file));file=NULL;
+    for(unsigned test=0;test<11;test++) {
+        memcpy(edit,saved,size);size_t bytes=size;
+        if(test==0) edit[0]^=1; /* envelope version/magic */
+        if(test==1) edit[size-1]^=1; /* corrupt opaque driver bytes */
+        if(test==2) bytes=12; /* truncated envelope */
+        if(test==3) bytes=size-1; /* truncated driver data */
+        if(test==4) {edit[size]=0;bytes++;} /* unexpected trailer */
+        if(test==5) memset(edit+8,255,8); /* oversized length */
+        if(test>=6) {
+            const unsigned field[]={16,8,12,0,4};
+            edit[24+field[test-6]]^=1; /* UUID/vendor/device/header size/version; valid envelope hash */
+            uint64_t h=UINT64_C(14695981039346656037);
+            for(size_t i=24;i<size;i++) h=(h^edit[i])*UINT64_C(1099511628211);
+            for(unsigned i=0;i<8;i++) edit[16+i]=(unsigned char)(h>>(8*i));
+        }
+        file=fopen(path,"wb");CHECK(file && fwrite(edit,1,bytes,file)==bytes);
+        CHECK(!fclose(file));file=NULL;
+        loaded=123;
+        CHECK(ch_vk_pipeline_cache_file_load(gpu,device,path,&rejected,&loaded)==VK_SUCCESS && !loaded);
+        vkDestroyPipelineCache(device,rejected,NULL);rejected=VK_NULL_HANDLE;
+    }
+    CHECK(!ch_vk_pipeline_cache_file_save(device,cold,directory)); /* atomic rename fails safely */
+    failed=0;puts("PASS: borrowed pipeline cache survives backend destruction; persisted cache preserves exact guest memory; corrupt/truncated/oversized/incompatible data falls back to empty cache");
+done:
+    if(file) fclose(file);
+    free(saved);free(edit);if(*path) unlink(path);rmdir(directory);
+    if(cold) vkDestroyPipelineCache(device,cold,NULL);
+    if(warm) vkDestroyPipelineCache(device,warm,NULL);
+    if(rejected) vkDestroyPipelineCache(device,rejected,NULL);
+    return failed;
+#undef CHECK
+}
 int ch_test_render_textures(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,uint32_t family) {
-    if(paired_readbacks(gpu,device,queue,family) || queued_uploads(gpu,device,queue,family) || snapshots(gpu,device,queue,family)) return 1;
+    if(cache_roundtrip(gpu,device,queue,family) || paired_readbacks(gpu,device,queue,family) || queued_uploads(gpu,device,queue,family) || snapshots(gpu,device,queue,family)) return 1;
     unsigned char *reference=malloc(sizeof memory),*candidate=malloc(sizeof memory);
     if(!reference || !candidate) {free(reference);free(candidate);return 1;}
     int failed=0;
     for(unsigned test=0;test<15 && !failed;test++) {
         unsigned control=0,fast=0;
-        failed=scenario(gpu,device,queue,family,0,test,reference,&control) ||
-            scenario(gpu,device,queue,family,1,test,candidate,&fast);
+        failed=scenario(gpu,device,queue,family,0,test,reference,&control,VK_NULL_HANDLE) ||
+            scenario(gpu,device,queue,family,1,test,candidate,&fast,VK_NULL_HANDLE);
         if(!failed && (memcmp(reference,candidate,sizeof memory) ||
             (test<10 && ((test==3 || test==4 || test==6 || test==7)?!fast:test==8?fast>=control:fast!=0)))) {
             fprintf(stderr,"render texture integration mismatch case%u decoder counts %u/%u\n",test,control,fast);failed=1;
         }
         if(!failed && test>=10) {
-            failed=scenario(gpu,device,queue,family,2,test,candidate,&fast);
+            failed=scenario(gpu,device,queue,family,2,test,candidate,&fast,VK_NULL_HANDLE);
             if(!failed && memcmp(reference,candidate,sizeof memory)) {
                 fprintf(stderr,"fragment-depth backend storage mismatch case%u\n",test);failed=1;
             }
