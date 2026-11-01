@@ -454,6 +454,27 @@ int ch_test_guest_textures(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,ui
                 uint32_t actual;memcpy(&actual,guest.bytes+2048+i*4,4);
                 if(actual!=(i?0xffff0000:green)) failed=1;
             }
+            /* Idle completion leaves CPU-authoritative RAM alone. A later
+             * partial-channel GPU write must import both intervening edits. */
+            uint32_t blue=0xff0000ff;memcpy(guest.bytes+2048+4,&blue,4);
+            uint32_t cyan=0xff00ffff;memcpy(guest.bytes+2048+8,&cyan,4);
+            Nv2aVertex idle_quad[6]={{0,0,0,1,0xff100000,0,0},{4,0,0,1,0xff100000,0,0},
+                {4,4,0,1,0xff100000,0,0},{0,0,0,1,0xff100000,0,0},
+                {4,4,0,1,0xff100000,0,0},{0,4,0,1,0xff100000,0,0}};
+            Nv2aRenderState red_patch=rs;red_patch.color_mask=0x10000;
+            Nv2aBatch idle_draw={.vertices=idle_quad,.count=6,.state=&red_patch};
+            Nv2aRenderState colorless=rs;colorless.color_mask=0;
+            idle_draw.state=&colorless;cb->draw(&a,&idle_draw);
+            cb->clear(&a,&rs,1,0,0xffffff00);cb->flush();
+            uint32_t after_idle;memcpy(&after_idle,guest.bytes+2048+4,4);
+            if(after_idle!=blue) failed=1;
+            idle_draw.state=&red_patch;
+            cb->draw(&a,&idle_draw);cb->flush();
+            for(unsigned i=0;i<16;i++) {
+                uint32_t actual;memcpy(&actual,guest.bytes+2048+i*4,4);
+                uint32_t want=0xff100000|(i==0?0xff00:i==1?0xff:i==2?0xffff:0);
+                if(actual!=want) {fprintf(stderr,"idle CPU color edit %u: %08X != %08X\n",i,actual,want);failed=1;}
+            }
             cb->clear(&a,&rs,0xf0,0xff0000ff,0);
             Nv2aTexture tx={.offset=2048,.width=4,.height=4,.pitch=16,.color=0x12,.levels=1,
                 .filter=0x01010000,.addr_u=3,.addr_v=3};

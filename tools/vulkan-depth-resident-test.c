@@ -158,6 +158,20 @@ static int depth_resident_mode(VkPhysicalDevice gpu,VkDevice device,VkQueue queu
     REQUIRE(depth[8]==(float)(4194304.0/16777215.0) && stencil[8]==0x2a && stencil[2]==7);
     REQUIRE(ch_vk_depth_resident_flush(z)==VK_SUCCESS && read_word(ram+256+8*4)==0x4000002a);
     REQUIRE(ch_vk_depth_resident_release(z)==VK_SUCCESS);
+    /* CPU edits to a clean target need no GPU transfer at completion. They
+     * must be observed before its next bind, including a shared-target copy. */
+    REQUIRE(ch_vk_depth_resident_bind(z,a,&surface,&state)==VK_SUCCESS);
+    ch_vk_depth_resident_stats(z,&stats);
+    uint64_t idle_merges=stats.cpu_merges,idle_writebacks=stats.writebacks;
+    put_word(ram+1024,0x6000005a);
+    REQUIRE(ch_vk_depth_resident_flush(z)==VK_SUCCESS && read_word(ram+1024)==0x6000005a);
+    ch_vk_depth_resident_stats(z,&stats);
+    REQUIRE(stats.cpu_merges==idle_merges && stats.writebacks==idle_writebacks);
+    REQUIRE(ch_vk_depth_resident_bind(z,b,&surface,&state)==VK_SUCCESS);
+    REQUIRE(ch_vk_target_read_depth_stencil(b,depth,stencil,N)==VK_SUCCESS);
+    REQUIRE(depth[0]==(float)(6291456.0/16777215.0) && stencil[0]==0x5a);
+    ch_vk_depth_resident_stats(z,&stats);REQUIRE(stats.cpu_merges==idle_merges+1);
+    REQUIRE(ch_vk_depth_resident_release(z)==VK_SUCCESS);
     /* An all-component/full-extent clear supersedes dirty GPU data and CPU
      * edits. It must not import old pixels or publish superseded contents. */
     ram[1040]=0xcd;ram[1041]=0xab; /* prior shifted-zeta case used these bytes */

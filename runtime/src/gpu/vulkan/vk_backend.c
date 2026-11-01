@@ -9,7 +9,7 @@
 #include <time.h>
 #define MAX_SURFACES 32
 struct Surface { Nv2aSurface guest; uint32_t zeta; Nv2aRenderState state; float *depth; uint8_t *stencil; ChVkTarget *target; unsigned char *rgba,*observed,*cpu,*raw; size_t raw_span; int observed_valid,resident,color_dirty,native_z24; size_t bytes; };
-struct ChVkBackend { struct {int enabled;uint64_t start,n,surface,coherence,imports,draw,store;} profile; struct {uint64_t previous,us[120];unsigned count;} frame_profile; ChVkBackendConfig host; ChVkTextureCache *textures; ChVkDepthResident *zeta; uint64_t frames,raw_draws,raw_declined; struct Surface surfaces[MAX_SURFACES]; unsigned count; };
+struct ChVkBackend { struct {int enabled;uint64_t start,n,surface,coherence,imports,draw,store,no_color;} profile; struct {uint64_t previous,us[120];unsigned count;} frame_profile; ChVkBackendConfig host; ChVkTextureCache *textures; ChVkDepthResident *zeta; uint64_t frames,raw_draws,raw_declined; struct Surface surfaces[MAX_SURFACES]; unsigned count; };
 static ChVkBackend *active;
 static void flush_color(struct Surface *);
 static void observe_guest_colors(void);
@@ -25,11 +25,12 @@ static void profile_draw(const uint64_t t[6]) {
     active->profile.surface+=t[1]-t[0];active->profile.coherence+=t[2]-t[1];
     active->profile.imports+=t[3]-t[2];active->profile.draw+=t[4]-t[3];active->profile.store+=t[5]-t[4];
     if(t[5]-active->profile.start<1000000) return;
-    fprintf(stderr,"[Vulkan backend] %llu batches: surface %.1fms CPU edits %.1fms imports %.1fms draw %.1fms writeback %.1fms\n",
+    fprintf(stderr,"[Vulkan backend] %llu batches: surface %.1fms CPU edits %.1fms imports %.1fms draw %.1fms writeback %.1fms (color disabled=%llu)\n",
         (unsigned long long)active->profile.n,active->profile.surface/1000.,active->profile.coherence/1000.,
-        active->profile.imports/1000.,active->profile.draw/1000.,active->profile.store/1000.);
+        active->profile.imports/1000.,active->profile.draw/1000.,active->profile.store/1000.,
+        (unsigned long long)active->profile.no_color);
     active->profile.n=active->profile.surface=active->profile.coherence=active->profile.imports=0;
-    active->profile.draw=active->profile.store=0;active->profile.start=t[5];
+    active->profile.draw=active->profile.store=active->profile.no_color=0;active->profile.start=t[5];
 }
 static int compare_us(const void *a,const void *b) {
     uint64_t x=*(const uint64_t *)a,y=*(const uint64_t *)b;return (x>y)-(x<y);
@@ -156,9 +157,9 @@ static struct Surface *surface(const Nv2aSurface *s,const Nv2aRenderState *rs) {
     ch_vk_target_defer_color_readback(f->target,f->resident);
     return f;
 }
-static void store(struct Surface *f,VkResult result,const char *operation,int depth_dirty) {
+static void store(struct Surface *f,VkResult result,const char *operation,int color_dirty,int depth_dirty) {
     if(result!=VK_SUCCESS) fatal(result,operation);
-    if(f->resident) f->color_dirty=1;
+    if(f->resident) f->color_dirty|=!!color_dirty;
     else {
         result=ch_vk_nv2a_store_color_state(&f->guest,&f->state,f->rgba,f->bytes,active->host.guest_base,active->host.guest_bytes);
         if(result!=VK_SUCCESS) fatal(result,"color writeback");
@@ -237,7 +238,13 @@ static void flush(void) {
         VkResult r=ch_vk_target_finish(active->surfaces[i].target);
         if(r!=VK_SUCCESS) fatal(r,"pending guest command completion");
     }
-    observe_guest_colors();
+    /* Completion only publishes GPU-written storage. An idle target's RAM
+     * already contains its authoritative CPU edits; observe those when the
+     * target is next drawn, cleared, sampled or reinterpreted. Routing hooks
+     * still require notifications for every surface at this boundary. */
+    if(active->host.guest_color_changed) observe_guest_colors();
+    else for(unsigned i=0;i<active->count;i++)
+        if(active->surfaces[i].color_dirty) observe_guest_color(&active->surfaces[i]);
     for(unsigned i=0;i<active->count;i++) flush_color(&active->surfaces[i]);
     if(active->zeta) {
         VkResult r=ch_vk_depth_resident_flush(active->zeta);
@@ -315,10 +322,10 @@ static void import_depth(struct Surface *f,int overwrite) {
 }
 static void clear(const Nv2aSurface *s,const Nv2aRenderState *rs,uint32_t flags,uint32_t argb,uint32_t zs) {
     struct Surface *f=surface(s,rs);
-    observe_target_color(f);
+    if(!f->resident || (flags&0xf0)) observe_target_color(f);
     if((flags & 0xf0)!=0xf0 || rs->clear_rect_set) import_color(f);
     if(flags & 3) import_depth(f,!active->host.strict_depth_clears && ch_vk_nv2a_clear_depth_full(s,rs,flags));
-    store(f,ch_vk_nv2a_clear_state_read(f->target,s,rs,flags,argb,zs,f->rgba,f->bytes),"clear",flags & 3);
+    store(f,ch_vk_nv2a_clear_state_read(f->target,s,rs,flags,argb,zs,f->rgba,f->bytes),"clear",flags&0xf0,flags&3);
     if(active->host.render_clear) {
         VkResult r=active->host.render_clear(active->host.render_context,s,rs,flags,argb,zs);
         if(r!=VK_SUCCESS) fatal(r,"host clear routing");
@@ -330,7 +337,11 @@ static void draw_batch(const Nv2aSurface *s,const Nv2aBatch *b,const ChVkFixedGe
     if(active->profile.enabled) t[0]=now_us();
     struct Surface *f=surface(s,b->state);
     if(active->profile.enabled) t[1]=now_us();
-    observe_target_color(f);
+    int color_write=!!(b->state->color_mask&0x01010101);
+    /* A depth/stencil-only pass cannot consume or overwrite destination
+     * color. Preserve pending CPU edits until color is actually used. */
+    if(!f->resident || color_write) observe_target_color(f);
+    if(active->profile.enabled && !color_write) active->profile.no_color++;
     if(active->profile.enabled) t[2]=now_us();
     import_color(f);
     flush_sampled_colors(b);
@@ -356,7 +367,7 @@ static void draw_batch(const Nv2aSurface *s,const Nv2aBatch *b,const ChVkFixedGe
                 texture->addr_u,texture->addr_v,texture->cube);
         }
     }
-    store(f,result,"draw",(b->state->depth_test_enable && b->state->depth_write)
+    store(f,result,"draw",color_write,(b->state->depth_test_enable && b->state->depth_write)
         || (b->state->stencil_enable && b->state->stencil_write_mask));
     if(active->profile.enabled) {t[5]=now_us();profile_draw(t);}
     if(active->host.render_draw) {
