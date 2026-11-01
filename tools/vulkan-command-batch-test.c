@@ -57,6 +57,9 @@ int ch_test_command_batches(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,u
         ChVkTargetResourceStats stats;ch_vk_target_resource_stats(t,&stats);
         REQUIRE(stats.batch_draws-before.batch_draws==(batched?514u:0u) && stats.batch_submissions-before.batch_submissions==(batched?submissions:0u));
         REQUIRE(stats.combined_color_readbacks-before.combined_color_readbacks==(batched?1u:0u));
+        REQUIRE(stats.batch_pipeline_binds-before.batch_pipeline_binds==(batched?submissions:0u));
+        REQUIRE(stats.batch_blend_updates-before.batch_blend_updates==(batched?submissions:0u));
+        REQUIRE(stats.batch_push_updates-before.batch_push_updates==(batched?submissions:0u));
         ChVkTargetTimingStats timing;ch_vk_target_timing_stats(t,&timing);
         if(timing.available) {
             REQUIRE(timing.batch_submissions-timing_before.batch_submissions==(batched?submissions:0u));
@@ -71,6 +74,18 @@ int ch_test_command_batches(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,u
         for(unsigned i=0;i<sizeof pixels;i++) REQUIRE(pixels[i]==expected[i%4]);
         printf("PASS: command batch control=%u limit=%u:514 changing-geometry draws %.2fms, batch submissions=%llu, exact additive pixels and pending fence ownership\n",!batched,limit,elapsed,(unsigned long long)(stats.batch_submissions-before.batch_submissions));
         if(!batched) {ch_vk_target_destroy(t);t=NULL;continue;}
+        /* Same pipeline/layout, changing dynamic blend and alpha push data. */
+        REQUIRE(ch_vk_target_clear_read(t,black,pixels,sizeof pixels)==VK_SUCCESS);
+        Nv2aRenderState dynamic={.color_mask=0x01010101,.blend_enable=1,.blend_src=0x8001,.blend_dst=0,
+            .blend_eq=0x8006,.alpha_test_enable=1,.alpha_func=0x204};
+        for(unsigned k=0;k<4;k++) for(unsigned c=0;c<4;c++) v[k].rgba[c]=1;
+        const uint32_t colors[]={0xffff0000,0xff00ff00,0xff0000ff};
+        for(unsigned i=0;i<3;i++) {
+            dynamic.blend_color=colors[i];dynamic.alpha_ref=i==2?255:0;
+            REQUIRE(ch_vk_target_draw_state_read(t,NULL,v,4,indices,6,&dynamic,pixels,sizeof pixels)==VK_SUCCESS);
+        }
+        REQUIRE(ch_vk_target_read_color(t,pixels,sizeof pixels)==VK_SUCCESS);
+        for(unsigned i=0;i<sizeof pixels;i++) REQUIRE(pixels[i]==((i%4==1 || i%4==3)?255:0));
         /* A query is an immediate completion boundary even on a resident target. */
         for(unsigned k=0;k<4;k++) for(unsigned c=0;c<4;c++) v[k].rgba[c]=1;
         Nv2aRenderState opaque={.color_mask=0x01010101};uint32_t samples=0;
@@ -157,6 +172,17 @@ int ch_test_command_batches(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,u
             REQUIRE(stats.batch_submissions==before_mask.batch_submissions && ch_vk_target_pending(t)==2);
             REQUIRE(ch_vk_target_read_color(t,pixels,sizeof pixels)==VK_SUCCESS);
             for(unsigned i=0;i<256;i++) REQUIRE(pixels[i*4]==0xbb && pixels[i*4+1]==0xcc && !pixels[i*4+2] && !pixels[i*4+3]);
+        }
+        if(limit==256) for(unsigned mode=1;mode<=2;mode++) {
+            REQUIRE(ch_vk_target_depth_quantization(t,mode)==VK_SUCCESS);
+            REQUIRE(ch_vk_target_clear_read(t,black,pixels,sizeof pixels)==VK_SUCCESS);
+            Nv2aRenderState zwrite={.color_mask=0x01010101,.depth_test_enable=1,.depth_write=1,.depth_func=0x207};
+            for(unsigned k=0;k<4;k++) for(unsigned c=0;c<4;c++) v[k].rgba[c]=1;
+            ChVkTargetResourceStats before_quant;ch_vk_target_resource_stats(t,&before_quant);
+            for(unsigned i=0;i<2;i++) REQUIRE(ch_vk_target_draw_state_read(t,NULL,v,4,indices,6,&zwrite,pixels,sizeof pixels)==VK_SUCCESS);
+            REQUIRE(ch_vk_target_read_depth_color(t,depth,stencil,256,0,pixels,sizeof pixels)==VK_SUCCESS);
+            for(unsigned i=0;i<256;i++) REQUIRE(depth[i]==0 && pixels[i*4]==255 && pixels[i*4+1]==255 && pixels[i*4+2]==255 && pixels[i*4+3]==255);
+            ch_vk_target_resource_stats(t,&stats);REQUIRE(stats.batch_pipeline_binds-before_quant.batch_pipeline_binds==2);
         }
         puts("PASS: full/clamped rectangle clears preserve all channel/aspect masks; channel-only clears avoid redundant completion");
         ch_vk_target_destroy(t);t=NULL;

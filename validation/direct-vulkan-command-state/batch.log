@@ -1,0 +1,16 @@
+device=Apple M4 Pro vendor=106b deviceID=0064 api=1.4.354
+PASS: completed GPU timestamp samples cover every synchronous draw or command batch with exact submission/draw counts and host phase totals
+PASS: command batch control=1 limit=256:514 changing-geometry draws 135.22ms, batch submissions=0, exact additive pixels and pending fence ownership
+PASS: completed GPU timestamp samples cover every synchronous draw or command batch with exact submission/draw counts and host phase totals
+PASS: command batch control=0 limit=1:514 changing-geometry draws 125.91ms, batch submissions=514, exact additive pixels and pending fence ownership
+PASS: partial resident clears share bounded draw batches with exact color/depth/stencil and completion ownership
+PASS: full/clamped rectangle clears preserve all channel/aspect masks; channel-only clears avoid redundant completion
+PASS: completed GPU timestamp samples cover every synchronous draw or command batch with exact submission/draw counts and host phase totals
+PASS: command batch control=0 limit=64:514 changing-geometry draws 2.56ms, batch submissions=9, exact additive pixels and pending fence ownership
+PASS: partial resident clears share bounded draw batches with exact color/depth/stencil and completion ownership
+PASS: full/clamped rectangle clears preserve all channel/aspect masks; channel-only clears avoid redundant completion
+PASS: completed GPU timestamp samples cover every synchronous draw or command batch with exact submission/draw counts and host phase totals
+PASS: command batch control=0 limit=256:514 changing-geometry draws 1.11ms, batch submissions=3, exact additive pixels and pending fence ownership
+PASS: partial resident clears share bounded draw batches with exact color/depth/stencil and completion ownership
+PASS: full/clamped rectangle clears preserve all channel/aspect masks; channel-only clears avoid redundant completion
+PASS: batched texture descriptors/immutable same-VA edits, pinned-budget fallback uploads, query/clear/CPU color/depth boundaries and LRU retirement
