@@ -324,3 +324,29 @@ attachment/self-dependency rules must be checked carefully, especially depth/
 stencil aspects, per-pixel ordering and BY_REGION barriers. Do not substitute
 sampled-image feedback without the required features/layouts/pipeline flags.
 Reference: https://docs.vulkan.org/spec/latest/chapters/renderpass.html
+
+## Direct input-attachment experiment (2026-11-01)
+
+Shared target mode 3 and ch_vk_target_quantize_depth_input implement exact D32
+rounding through a depth-only input attachment. The depth-only descriptor view
+is owned by the helper; D32 images include INPUT_ATTACHMENT usage. The pass uses
+GENERAL for the depth/input reference and explicit barriers before/after. One
+fullscreen triangle reads each pixel before its late depth write; stencil writes
+are disabled. It needs no sampled-image feedback extension. Normal rendering
+continues to use compute; no runtime/backend configuration selects this experiment.
+
+/tmp/vc3-input-validation.log passes random and boundary depth/stencil checks and
+32 queued draws across all eight depth comparisons against CPU roundtrips for
+all three modes, with validation and synchronization validation requested and no
+VUID/SYNC diagnostics. /tmp/vc3-input-bench-validation.log passes full 640x480
+exact depth/stencil and untouched-color checks. Its 128 synchronous calls report
+compute 0.227 ms, buffer draw 0.196 ms, direct input draw 0.280 ms. These are
+isolated timings, not guest FPS; the input path is not a measured speedup. Mac
+main and Android offscreen builds pass (build only; no headset access).
+
+This supersedes the prior "not implemented" note for the separate-pass input
+prototype only. Same-renderpass quantization is still unimplemented. That next
+experiment needs a compatible color/depth/input subpass with BY_REGION self
+dependencies and must preserve pipeline restoration and guest fence semantics.
+Core attachment reference rules:
+https://docs.vulkan.org/refpages/latest/refpages/source/VkSubpassDescription.html

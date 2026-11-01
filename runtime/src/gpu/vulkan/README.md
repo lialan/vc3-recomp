@@ -51,3 +51,5 @@ runtime defaults. See `validation/direct-vulkan-depth-batch/README.md` for local
 results and limitations. Other games must validate their own formats, scenes,
 correctness and pacing before enabling experimental options. Simulator evidence
 does not establish headset performance or cross-game acceptance.
+
+Standalone target quantization mode 3 uses a direct depth input attachment. It is a validation experiment, not selected by the backend/runtime configuration: isolated KosmicKrisp measurements were slower than compute. Its shader, ownership, and exactness fixtures are game-independent; see `validation/direct-vulkan-depth-batch/README.md`.

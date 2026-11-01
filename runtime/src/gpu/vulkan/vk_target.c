@@ -65,7 +65,7 @@ struct ChVkTarget {
     VkQueue queue;
     VkImage depth;
     VkFormat depth_format;
-    ChVkDepthQuant *depth_quant,*depth_quant_draw;
+    ChVkDepthQuant *depth_quant,*depth_quant_draw,*depth_quant_input;
     int quantized_depth;
     VkDeviceMemory depth_mem;
     VkImageView depth_view;
@@ -246,6 +246,7 @@ void ch_vk_target_destroy(ChVkTarget *t) {
     if(t->fence) vkDestroyFence(t->device,t->fence,NULL);
     if(t->pool) vkDestroyCommandPool(t->device,t->pool,NULL);
     ch_vk_depth_quant_destroy(t->depth_quant_draw);
+    ch_vk_depth_quant_destroy(t->depth_quant_input);
     ch_vk_depth_quant_destroy(t->depth_quant);
     if(t->read) vkDestroyBuffer(t->device,t->read,NULL);
     if(t->read_mem) vkFreeMemory(t->device,t->read_mem,NULL);
@@ -310,6 +311,7 @@ VkResult ch_vk_target_create_depth(VkPhysicalDevice physical, VkDevice device,
     }
     image.format=depth_format;
     image.usage=VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT|VK_IMAGE_USAGE_TRANSFER_DST_BIT|VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
+    if(depth_format==VK_FORMAT_D32_SFLOAT_S8_UINT) image.usage|=VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT;
     TRY(vkCreateImage(device,&image,NULL,&t->depth));
     vkGetImageMemoryRequirements(device,t->depth,&req);
     mem.allocationSize=req.size;
@@ -447,13 +449,13 @@ fail:
 }
 VkResult ch_vk_target_finish(ChVkTarget *t) {return finish_batch(t,0);}
 VkResult ch_vk_target_depth_quantization(ChVkTarget *t,int mode) {
-    if(!t || mode<0 || mode>2)return VK_ERROR_INITIALIZATION_FAILED;
+    if(!t || mode<0 || mode>3)return VK_ERROR_INITIALIZATION_FAILED;
     if(!mode) {VkResult r=ch_vk_target_finish(t);if(r==VK_SUCCESS)t->quantized_depth=0;return r;}
     if(t->quantized_depth==mode)return VK_SUCCESS;
     if(t->failed || !t->initialized || t->depth_format!=VK_FORMAT_D32_SFLOAT_S8_UINT)
         return VK_ERROR_FORMAT_NOT_SUPPORTED;
     VkPhysicalDeviceProperties props;vkGetPhysicalDeviceProperties(t->physical,&props);
-    if(t->bytes>props.limits.maxStorageBufferRange) return VK_ERROR_FEATURE_NOT_PRESENT;
+    if(mode!=3 && t->bytes>props.limits.maxStorageBufferRange) return VK_ERROR_FEATURE_NOT_PRESENT;
     if(mode==1) {
         if(t->bytes/4>UINT32_MAX-63 || (t->bytes/4+63)/64>props.limits.maxComputeWorkGroupCount[0] ||
            props.limits.maxComputeWorkGroupInvocations<64 || props.limits.maxComputeWorkGroupSize[0]<64)
@@ -467,22 +469,24 @@ VkResult ch_vk_target_depth_quantization(ChVkTarget *t,int mode) {
     }
     VkResult result;
     TRY(ch_vk_target_finish(t));
-    if(mode==2) {
+    if(mode==3) {
+        if(!t->depth_quant_input) TRY(ch_vk_depth_quant_create_input(t->device,t->depth,t->depth_view,t->width,t->height,&t->depth_quant_input));
+    } else if(mode==2) {
         if(!t->depth_quant_draw) TRY(ch_vk_depth_quant_create_draw(t->device,t->read,t->bytes,t->depth_view,t->width,t->height,&t->depth_quant_draw));
     } else if(!t->depth_quant) TRY(ch_vk_depth_quant_create(t->device,t->read,t->bytes,&t->depth_quant));
     t->quantized_depth=mode;return VK_SUCCESS;
 fail:return result;
 }
-static VkResult quantize_depth(ChVkTarget *t,int draw) {
+static VkResult quantize_depth(ChVkTarget *t,int mode) {
     if(!t)return VK_ERROR_INITIALIZATION_FAILED;
     VkResult result;int enabled=t?t->quantized_depth:0;
-    TRY(ch_vk_target_depth_quantization(t,draw?2:1));
+    TRY(ch_vk_target_depth_quantization(t,mode));
     t->quantized_depth=enabled;
     TRY(ch_vk_target_finish(t));
     TRY(vkResetCommandBuffer(t->command,0));TRY(vkResetFences(t->device,1,&t->fence));
     VkCommandBufferBeginInfo begin={.sType=VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,.flags=VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT};
     TRY(vkBeginCommandBuffer(t->command,&begin));
-    ch_vk_depth_quant_record(draw?t->depth_quant_draw:t->depth_quant,t->command,t->depth,t->width,t->height);
+    ch_vk_depth_quant_record(mode==3?t->depth_quant_input:mode==2?t->depth_quant_draw:t->depth_quant,t->command,t->depth,t->width,t->height);
     TRY(vkEndCommandBuffer(t->command));
     VkSubmitInfo submit={.sType=VK_STRUCTURE_TYPE_SUBMIT_INFO,.commandBufferCount=1,.pCommandBuffers=&t->command};
     TRY(vkQueueSubmit(t->queue,1,&submit,t->fence));
@@ -490,8 +494,9 @@ static VkResult quantize_depth(ChVkTarget *t,int draw) {
     return VK_SUCCESS;
 fail:t->failed=1;return result;
 }
-VkResult ch_vk_target_quantize_depth(ChVkTarget *t) {return quantize_depth(t,0);}
-VkResult ch_vk_target_quantize_depth_draw(ChVkTarget *t) {return quantize_depth(t,1);}
+VkResult ch_vk_target_quantize_depth(ChVkTarget *t) {return quantize_depth(t,1);}
+VkResult ch_vk_target_quantize_depth_draw(ChVkTarget *t) {return quantize_depth(t,2);}
+VkResult ch_vk_target_quantize_depth_input(ChVkTarget *t) {return quantize_depth(t,3);}
 static VkResult record_batch(ChVkTarget *t,VkBuffer geometry,VkDeviceSize index_offset,uint32_t index_count) {
     VkResult result;
     uint64_t record_start=t->timing?time_ns():0;
@@ -534,7 +539,7 @@ static VkResult record_batch(ChVkTarget *t,VkBuffer geometry,VkDeviceSize index_
     if(t->quantized_depth && t->active_pipeline->key.depth.depthTestEnable &&
        t->active_pipeline->key.depth.depthWriteEnable) {
         vkCmdEndRenderPass(t->command);
-        ch_vk_depth_quant_record(t->quantized_depth==2?t->depth_quant_draw:t->depth_quant,t->command,t->depth,t->width,t->height);
+        ch_vk_depth_quant_record(t->quantized_depth==3?t->depth_quant_input:t->quantized_depth==2?t->depth_quant_draw:t->depth_quant,t->command,t->depth,t->width,t->height);
         VkMemoryBarrier color={.sType=VK_STRUCTURE_TYPE_MEMORY_BARRIER,.srcAccessMask=VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
             .dstAccessMask=VK_ACCESS_COLOR_ATTACHMENT_READ_BIT|VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT};
         vkCmdPipelineBarrier(t->command,VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,0,1,&color,0,NULL,0,NULL);
@@ -634,7 +639,7 @@ static VkResult render_read(ChVkTarget *t, const float rgba[4], uint32_t clear_f
     }
     if(t->quantized_depth && ((clear_flags&2) || (geometry &&
        t->active_pipeline->key.depth.depthTestEnable && t->active_pipeline->key.depth.depthWriteEnable)))
-        ch_vk_depth_quant_record(t->quantized_depth==2?t->depth_quant_draw:t->depth_quant,t->command,t->depth,t->width,t->height);
+        ch_vk_depth_quant_record(t->quantized_depth==3?t->depth_quant_input:t->quantized_depth==2?t->depth_quant_draw:t->depth_quant,t->command,t->depth,t->width,t->height);
     barrier.srcAccessMask=geometry?VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT:VK_ACCESS_TRANSFER_WRITE_BIT;
     barrier.dstAccessMask=VK_ACCESS_TRANSFER_READ_BIT;
     barrier.oldLayout=geometry?VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL:VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;

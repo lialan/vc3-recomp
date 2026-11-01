@@ -10,6 +10,8 @@ VkResult ch_vk_depth_quant_create(VkDevice,VkBuffer,VkDeviceSize,ChVkDepthQuant 
 /* Alternative exact depth-only draw. Borrowed D32S8 attachment view and buffer
  * must survive completion; no input attachment or feedback-loop feature needed. */
 VkResult ch_vk_depth_quant_create_draw(VkDevice,VkBuffer,VkDeviceSize,VkImageView,uint32_t,uint32_t,ChVkDepthQuant **);
+/* Direct input-attachment prototype; image needs INPUT_ATTACHMENT usage. */
+VkResult ch_vk_depth_quant_create_input(VkDevice,VkImage,VkImageView,uint32_t,uint32_t,ChVkDepthQuant **);
 void ch_vk_depth_quant_record(ChVkDepthQuant *,VkCommandBuffer,VkImage,uint32_t,uint32_t);
 void ch_vk_depth_quant_destroy(ChVkDepthQuant *);
 #endif

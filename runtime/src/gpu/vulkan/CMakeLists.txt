@@ -83,7 +83,13 @@ foreach(stage vert frag)
   COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/embed_binary_spirv.py" "${CMAKE_CURRENT_BINARY_DIR}/depth_roundtrip_${stage}.spv" "${CMAKE_CURRENT_BINARY_DIR}/depth_roundtrip_${stage}.h" "depth_roundtrip_${stage}_spv"
   DEPENDS "${CMAKE_CURRENT_BINARY_DIR}/depth_roundtrip_${stage}.spv" embed_binary_spirv.py VERBATIM)
 endforeach()
-add_library(chihiro_vulkan STATIC "${CMAKE_CURRENT_BINARY_DIR}/depth_roundtrip_vert.h" "${CMAKE_CURRENT_BINARY_DIR}/depth_roundtrip_frag.h" vk_depth_quant.c "${CMAKE_CURRENT_BINARY_DIR}/depth_roundtrip_spv.h" vk_fixed.c vk_target.c vk_texture.c vk_texture_cache.c vk_state.c vk_nv2a.c vk_backend.c vk_depth_guest.c vk_depth_resident.c vk_menu.c vk_overlay.c vk_frame_mailbox.c vk_scene.c vk_submission.c "${header}" "${fixed_asserts}" "${combiner_asserts}")
+add_custom_command(OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/depth_input.spv"
+ COMMAND "${CHIHIRO_GLSLC}" --target-env=vulkan1.0 "${CMAKE_CURRENT_SOURCE_DIR}/depth_input.frag" -o "${CMAKE_CURRENT_BINARY_DIR}/depth_input.spv"
+ DEPENDS depth_input.frag depth_quant.glsl VERBATIM)
+add_custom_command(OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/depth_input.h"
+ COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/embed_binary_spirv.py" "${CMAKE_CURRENT_BINARY_DIR}/depth_input.spv" "${CMAKE_CURRENT_BINARY_DIR}/depth_input.h" "depth_input_spv"
+ DEPENDS "${CMAKE_CURRENT_BINARY_DIR}/depth_input.spv" embed_binary_spirv.py VERBATIM)
+add_library(chihiro_vulkan STATIC "${CMAKE_CURRENT_BINARY_DIR}/depth_input.h" "${CMAKE_CURRENT_BINARY_DIR}/depth_roundtrip_vert.h" "${CMAKE_CURRENT_BINARY_DIR}/depth_roundtrip_frag.h" vk_depth_quant.c "${CMAKE_CURRENT_BINARY_DIR}/depth_roundtrip_spv.h" vk_fixed.c vk_target.c vk_texture.c vk_texture_cache.c vk_state.c vk_nv2a.c vk_backend.c vk_depth_guest.c vk_depth_resident.c vk_menu.c vk_overlay.c vk_frame_mailbox.c vk_scene.c vk_submission.c "${header}" "${fixed_asserts}" "${combiner_asserts}")
 target_sources(chihiro_vulkan PRIVATE ../guest_write_watch.c)
 target_compile_features(chihiro_vulkan PUBLIC c_std_11)
 target_compile_options(chihiro_vulkan PRIVATE -Wall -Wextra -Werror)
