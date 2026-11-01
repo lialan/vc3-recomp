@@ -28,6 +28,7 @@ typedef struct {
     int strict_depth_switches; /* diagnostic: CPU roundtrips even for identical zeta */
     int strict_depth_clears; /* diagnostic: import depth before full replacement */
     int quantized_depth; /* opt-in exact GPU Z24 roundtrip on D32 fallback */
+    int depth_quant_draw; /* opt-in graphics roundtrip; requires quantized_depth */
     int depth_float_transfers; /* diagnostic: normalized-float staging instead of exact packed D24 */
     int batch_draws; /* resident no-query draws, complete before guest fences */
     uint32_t batch_draw_limit; /* zero: shared default; otherwise 1..CH_VK_MAX_BATCH_DRAWS */

@@ -284,3 +284,24 @@ Final windows: 34.24, 34.47, 35.33, 35.16 FPS. CPU sample cpu-late.txt still sho
 substantial depth completion/wait cost. This is not a same-binary on/off timestamp
 comparison, so do not attribute the entire difference to instrumentation. No
 headset used. All runs are terminal; performance goal remains open.
+
+## Opt-in depth-draw integration
+
+`ChVkBackendConfig.depth_quant_draw` / `CHIHIRO_VULKAN_DEPTH_QUANT_DRAW=1`
+selects the graphics roundtrip when quantized D32 residency is enabled. Native
+D24 remains native. The target mode API accepts 0/off, 1/compute, 2/draw; changes
+finish pending work. Compute queue/dispatch limits apply only to compute mode.
+Normal draw recording restores graphics pipeline/descriptors/push constants and
+vertex/index buffers after the depth-only pass.
+
+The queued 32-draw exact comparison against per-draw CPU roundtrips now runs both
+modes across all eight depth comparisons. Backend exact guest-memory tests use
+graphics mode, covering CPU depth/stencil edits, sampling, target switching,
+resize and clears. Both pass with validation and sync validation requested, no
+VUID/SYNC diagnostics in /tmp/vc3-depth-draw-{batch,backend}-validation.log. Mac
+main and Android offscreen builds pass. No new game performance claim yet.
+
+/tmp/vc3-depth-draw-on is running 2400 frames with immutable
+/tmp/vc3-depth-draw-integrated-vc3, session 95115. GPU timestamps are disabled,
+matching the prior 2400-frame profile. Run the compute control with the SAME
+binary after this run completes; do not overlap benchmarks or restart a live run.

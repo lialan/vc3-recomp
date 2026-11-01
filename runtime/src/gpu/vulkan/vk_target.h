@@ -13,8 +13,9 @@ typedef struct ChVkTarget ChVkTarget;
 VkResult ch_vk_target_quantize_depth(ChVkTarget *);
 /* Synchronous validation path: buffer-to-depth fullscreen draw alternative. */
 VkResult ch_vk_target_quantize_depth_draw(ChVkTarget *);
-/* Opt-in per-draw round-trip without an additional host submission/wait. */
-VkResult ch_vk_target_depth_quantization(ChVkTarget *,int);
+/* Opt-in per-draw round-trip without an additional host submission/wait.
+ * mode: 0 off, 1 compute, 2 depth-only draw. Switching finishes pending work. */
+VkResult ch_vk_target_depth_quantization(ChVkTarget *,int mode);
 /* Before the first pipeline creation, borrow a same-device driver cache.
  * Caller serializes ALL accesses to it and retains it until targets die. */
 VkResult ch_vk_target_pipeline_cache(ChVkTarget *,VkPipelineCache);
