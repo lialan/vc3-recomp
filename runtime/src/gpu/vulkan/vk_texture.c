@@ -9,7 +9,7 @@ struct ChVkTexture {
     VkBuffer staging; VkDeviceMemory staging_memory;
     VkCommandPool pool; VkCommandBuffer command; VkFence fence;
     uint32_t width,height,levels,layers; VkDeviceSize bytes;
-    int failed;
+    int failed, pending, deferred_upload;
 };
 #define TRY(x) do { result=(x); if(result!=VK_SUCCESS) goto fail; } while(0)
 static int memory_type(VkPhysicalDevice gpu,uint32_t bits,VkMemoryPropertyFlags flags,uint32_t *out) {
@@ -20,9 +20,16 @@ static int memory_type(VkPhysicalDevice gpu,uint32_t bits,VkMemoryPropertyFlags 
     }
     return 0;
 }
+static VkResult wait_transfer(ChVkTexture *t) {
+    if(!t->pending) return VK_SUCCESS;
+    VkResult r=vkWaitForFences(t->device,1,&t->fence,VK_TRUE,5000000000ULL);
+    if(r==VK_SUCCESS) t->pending=0;
+    else t->failed=1;
+    return r;
+}
 void ch_vk_texture_destroy(ChVkTexture *t) {
     if(!t) return;
-    if(t->failed) vkQueueWaitIdle(t->queue);
+    if(wait_transfer(t)!=VK_SUCCESS || t->failed) vkQueueWaitIdle(t->queue);
     if(t->fence) vkDestroyFence(t->device,t->fence,NULL);
     if(t->pool) vkDestroyCommandPool(t->device,t->pool,NULL);
     if(t->sampler) vkDestroySampler(t->device,t->sampler,NULL);
@@ -88,6 +95,7 @@ static void finish_upload(ChVkTexture *t) {
 }
 static VkResult transfer(ChVkTexture *t,int upload,uint32_t level) {
     VkResult result;
+    TRY(wait_transfer(t));
     TRY(vkResetCommandBuffer(t->command,0));
     TRY(vkResetFences(t->device,1,&t->fence));
     VkCommandBufferBeginInfo begin={.sType=VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
@@ -126,7 +134,8 @@ static VkResult transfer(ChVkTexture *t,int upload,uint32_t level) {
     TRY(vkEndCommandBuffer(t->command));
     VkSubmitInfo submit={.sType=VK_STRUCTURE_TYPE_SUBMIT_INFO,.commandBufferCount=1,.pCommandBuffers=&t->command};
     TRY(vkQueueSubmit(t->queue,1,&submit,t->fence));
-    TRY(vkWaitForFences(t->device,1,&t->fence,VK_TRUE,5000000000ULL));
+    t->pending=1;
+    if(!upload || !t->deferred_upload) TRY(wait_transfer(t));
     return VK_SUCCESS;
 fail:
     t->failed=1; return result;
@@ -136,14 +145,21 @@ VkResult ch_vk_texture_upload(VkPhysicalDevice gpu,VkDevice device,VkQueue queue
     return ch_vk_texture_upload_mips(gpu,device,queue,family,width,height,argb,1,out);
 }
 static VkResult upload(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,
-    uint32_t family,uint32_t width,uint32_t height,const uint32_t *argb,uint32_t levels,uint32_t layers,ChVkTexture **out);
+    uint32_t family,uint32_t width,uint32_t height,const uint32_t *argb,uint32_t levels,uint32_t layers,int deferred,ChVkTexture **out);
 VkResult ch_vk_texture_upload_mips(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,
     uint32_t family,uint32_t width,uint32_t height,const uint32_t *argb,uint32_t levels,ChVkTexture **out) {
-    return upload(gpu,device,queue,family,width,height,argb,levels,1,out);
+    return upload(gpu,device,queue,family,width,height,argb,levels,1,0,out);
 }
 VkResult ch_vk_texture_upload_cube(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,
     uint32_t family,uint32_t size,const uint32_t *faces,ChVkTexture **out) {
-    return upload(gpu,device,queue,family,size,size,faces,1,6,out);
+    return upload(gpu,device,queue,family,size,size,faces,1,6,0,out);
+}
+VkResult ch_vk_texture_upload_queued(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,
+    uint32_t family,uint32_t width,uint32_t height,const uint32_t *argb,uint32_t levels,int cube,ChVkTexture **out) {
+    if(!out) return VK_ERROR_INITIALIZATION_FAILED;
+    *out=NULL;
+    if(cube && (width!=height || levels!=1)) return VK_ERROR_INITIALIZATION_FAILED;
+    return upload(gpu,device,queue,family,width,height,argb,levels,cube?6:1,1,out);
 }
 static VkResult allocate_texture(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,
     uint32_t family,uint32_t width,uint32_t height,uint32_t levels,uint32_t layers,ChVkTexture **out) {
@@ -196,12 +212,13 @@ fail:
     ch_vk_texture_destroy(t); return result;
 }
 static VkResult upload(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,
-    uint32_t family,uint32_t width,uint32_t height,const uint32_t *argb,uint32_t levels,uint32_t layers,ChVkTexture **out) {
+    uint32_t family,uint32_t width,uint32_t height,const uint32_t *argb,uint32_t levels,uint32_t layers,int deferred,ChVkTexture **out) {
     if(!out) return VK_ERROR_INITIALIZATION_FAILED;
     *out=NULL;if(!argb) return VK_ERROR_INITIALIZATION_FAILED;
     ChVkTexture *t=NULL;
     VkResult result=allocate_texture(gpu,device,queue,family,width,height,levels,layers,&t);
     if(result!=VK_SUCCESS) return result;
+    t->deferred_upload=deferred;
     TRY(ensure_staging(t));
     void *mapped;
     TRY(vkMapMemory(device,t->staging_memory,0,VK_WHOLE_SIZE,0,&mapped));
@@ -222,6 +239,7 @@ VkResult ch_vk_texture_copy_from_image(ChVkTexture *t,VkDevice device,VkImage so
     if(!t || t->failed || !source || source==t->image || device!=t->device ||
         width!=t->width || height!=t->height || t->layers!=1) return VK_ERROR_INITIALIZATION_FAILED;
     VkResult result;uint32_t levels=t->levels;
+    TRY(wait_transfer(t));
     TRY(vkResetCommandBuffer(t->command,0));
     TRY(vkResetFences(t->device,1,&t->fence));
     VkCommandBufferBeginInfo begin={.sType=VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
@@ -242,7 +260,8 @@ VkResult ch_vk_texture_copy_from_image(ChVkTexture *t,VkDevice device,VkImage so
     TRY(vkEndCommandBuffer(t->command));
     VkSubmitInfo submit={.sType=VK_STRUCTURE_TYPE_SUBMIT_INFO,.commandBufferCount=1,.pCommandBuffers=&t->command};
     TRY(vkQueueSubmit(t->queue,1,&submit,t->fence));
-    TRY(vkWaitForFences(t->device,1,&t->fence,VK_TRUE,5000000000ULL));
+    t->pending=1;
+    TRY(wait_transfer(t));
     return VK_SUCCESS;
 fail:
     t->failed=1;return result;

@@ -7,6 +7,7 @@ typedef struct {
     VkPhysicalDevice physical; VkDevice device; VkQueue queue; uint32_t family;
     const void *guest_base; size_t guest_bytes;
     ChVkDecodeTexture decode;
+    int queued_uploads; /* opt-in: all sampling follows on the configured queue */
     size_t max_bytes; uint32_t max_entries; /* zero: 64 MiB / 2048 entries */
 } ChVkTextureCacheConfig;
 typedef struct { uint64_t hits,misses,uploads,evictions,gpu_copies,gpu_hits,gpu_reuses; size_t bytes; uint32_t entries,capacity; } ChVkTextureCacheStats;
@@ -16,7 +17,8 @@ VkResult ch_vk_texture_cache_create(const ChVkTextureCacheConfig *,ChVkTextureCa
  * Metadata only; does not dereference guest memory. VK_NOT_READY means the
  * caller must conservatively handle aliasing or retain its decoder fallback. */
 VkResult ch_vk_texture_storage_span(const Nv2aTexture *,size_t *span,size_t *palette);
-/* Resolver for synchronous guest/host draws. Exact encoded level-zero bytes
+/* Resolver for serialized guest/host draws. With queued_uploads, subsequent
+ * sampling must use the configured queue. Exact encoded level-zero bytes
  * and palette are checked on every acquire. Sampler metadata is part of key.
  * A hit returns an immutable pinned image; caller releases only after its GPU
  * use completes. Pinned entries cannot be evicted or overwritten by CPU edits.

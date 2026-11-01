@@ -4,7 +4,7 @@
 /* Texture immutable throughout every sampling lease, optionally with a mip chain. Host owns
  * device/queue; calls are serialized.
  * CPU Nv2a decoder output is native uint32 ARGB, not byte-order-dependent RGBA.
- * Upload completes before return. Destroy only after all sampling has completed. */
+ * Synchronous upload completes before return (except the explicit queued API). Destroy only after all sampling has completed. */
 typedef struct ChVkTexture ChVkTexture;
 VkResult ch_vk_texture_upload(VkPhysicalDevice gpu, VkDevice device, VkQueue queue,
     uint32_t family, uint32_t width, uint32_t height, const uint32_t *argb,
@@ -13,6 +13,13 @@ VkResult ch_vk_texture_upload(VkPhysicalDevice gpu, VkDevice device, VkQueue que
  * levels must be one or the full chain length for the given dimensions. */
 VkResult ch_vk_texture_upload_mips(VkPhysicalDevice,VkDevice,VkQueue,uint32_t family,
     uint32_t width,uint32_t height,const uint32_t *argb,uint32_t levels,ChVkTexture **out);
+/* Queue an immutable upload without a host wait. All sampling must be submitted
+ * later on the same queue, with externally serialized queue access. Input bytes
+ * are copied before return; staging and commands remain owned until completion.
+ * Readback/reuse/destroy wait for the upload; destroy still requires completed
+ * sampling leases. cube requests six square planes and levels==1. */
+VkResult ch_vk_texture_upload_queued(VkPhysicalDevice,VkDevice,VkQueue,uint32_t family,
+    uint32_t width,uint32_t height,const uint32_t *argb,uint32_t levels,int cube,ChVkTexture **out);
 /* Immutable RGBA8 snapshot of a completed, same-device single-layer source in
  * TRANSFER_SRC_OPTIMAL. No CPU readback/upload. Source layout is unchanged;
  * optional mips use the same generation policy as CPU uploads. */

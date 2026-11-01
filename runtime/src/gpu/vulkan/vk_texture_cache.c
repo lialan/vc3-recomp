@@ -170,7 +170,9 @@ VkResult ch_vk_texture_cache_resolve(void *context,const Nv2aTexture *t,ChVkSamp
     struct Entry snapshot={.raw=raw,.span=span,.palette=palette};
     if(!unchanged(c,&snapshot,t)) {free(raw);free(argb);return VK_NOT_READY;}
     ChVkTexture *image=NULL;
-    if(t->cube) r=ch_vk_texture_upload_cube(c->config.physical,c->config.device,c->config.queue,c->config.family,t->width,argb,&image);
+    if(c->config.queued_uploads) r=ch_vk_texture_upload_queued(c->config.physical,c->config.device,c->config.queue,c->config.family,
+        t->width,t->height,argb,levels,t->cube,&image);
+    else if(t->cube) r=ch_vk_texture_upload_cube(c->config.physical,c->config.device,c->config.queue,c->config.family,t->width,argb,&image);
     else r=ch_vk_texture_upload_mips(c->config.physical,c->config.device,c->config.queue,c->config.family,
         t->width,t->height,argb,levels,&image);
     free(argb);

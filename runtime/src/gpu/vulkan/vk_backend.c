@@ -579,7 +579,7 @@ VkResult ch_vk_backend_create(const ChVkBackendConfig *config,ChVkBackend **out)
         ChVkTextureCacheConfig texture_config={.physical=config->physical,.device=config->device,
             .queue=config->queue,.family=config->family,.guest_base=config->guest_base,
             .guest_bytes=config->guest_bytes,.decode=config->decode,.max_entries=config->texture_cache_entries,
-            .max_bytes=config->texture_cache_bytes};
+            .max_bytes=config->texture_cache_bytes,.queued_uploads=1};
         VkResult r=ch_vk_texture_cache_create(&texture_config,&b->textures);
         if(r!=VK_SUCCESS) {ch_vk_depth_resident_destroy(b->zeta);free(b);return r;}
     }

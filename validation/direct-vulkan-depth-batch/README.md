@@ -654,3 +654,55 @@ Control captures were less frequent (every120 versus30frames), so this pair
 is not an identical capture-cost control, but agrees with the earlier
 30-frame-capture baseline and the isolated decoder microbenchmark.
 Both runtime sessions are terminal. Sustained E.S. remains below60FPS.
+
+## E.S. profile after bulk decoding and queued-upload experiment
+
+`/tmp/vc3-bulk-es-profile/run` completed2100 frames, exit0. Its three-second
+CPU sample `/tmp/vc3-bulk-es-profile/cpu-es.txt`, started after frame1620,
+contains1139 executor-thread samples. Bulk texture decoding accounts for
+about46 samples (~4%, down from167/1108 in the prior profile); uploads106,
+including67 at the transfer wait. CPU vertex-program interpretation remains
+visible at102 samples. Sampling is intrusive; no FPS claim uses this run.
+
+The shared texture API now has an explicit queued immutable-upload operation.
+Transfer staging, commands and fence remain texture-owned. Sampling must be
+submitted later on the same serialized queue; existing transfer-to-shader
+barriers establish visibility. Readback, copy reuse and destruction wait for
+pending transfers before resetting or freeing resources. Existing synchronous
+upload APIs retain their contract. Cache clients opt in through queued_uploads;
+the shared backend enables it because all its texture consumers use its queue.
+
+Expanded render-texture fixtures compare synchronous/queued mip and cube
+readbacks and immediately destroy32 queued uploads without a consumer. Existing
+backend fixtures exercise pending sampling, pinning, eviction, CPU edits and
+render-target alias behavior. Final fixtures pass on KosmicKrisp and lavapipe
+with validation/synchronization validation requested and no VUID/SYNC errors:
+`/tmp/vc3-queued-upload-final-check.log`, `/tmp/vc3-queued-upload-lvp-check.log`.
+Mac main and Android offscreen builds pass; no device use.
+
+Initial game experiment `/tmp/vc3-queued-upload-es` completed2400 frames, exit0.
+Held E.S.1681/1801 reached40.95/44.70FPS versus bulk-only39.67/43.50.
+Activation32.08FPS, max140.48ms: no hitch fix. Because this throughput change
+is small, matching2100-frame control/candidate repeats are required before
+claiming a gain. They use the same inputs and capture every30frames from1500.
+
+Matching-capture repeats `/tmp/vc3-upload-repeat-control` and
+`/tmp/vc3-upload-repeat-queued` both completed2100 frames, exit0, no failure
+diagnostics. Control is the committed bulk decoder; candidate has the final
+queued API, cache opt-in and backend enablement. Candidate immutable binary:
+`/tmp/vc3-queued-upload-final-vc3`, SHA256 `840ad49106a5229444edcf78d838de05c2d15c8b163aa14ae47278465d0f786b`.
+
+| Window | Bulk-only FPS | Queued FPS | Bulk p95 ms | Queued p95 ms |
+|---|---:|---:|---:|---:|
+| Activation1561 | 33.65 | 34.01 | 32.69 | 33.53 |
+| Held E.S.1681 | 39.81 | 42.04 | 29.46 | 28.96 |
+| Held E.S.1801 | 41.82 | 45.29 | 26.72 | 24.38 |
+| Recovery1921 | 54.12 | 55.80 | 25.86 | 23.94 |
+
+Held-window improvements are5.6%/8.3% in this repeat, versus~3% in the first
+pair. These short runs establish a modest local gain, not a precise universal
+speedup. Activation maximum136.49/129.08ms still indicates a hitch; not fixed.
+Candidate frame1740 visibly retains E.S. mode/effect. No whole-game pixel
+equality claim. Both sessions are terminal. Next investigate the remaining
+CPU vertex-program interpretation and synchronous surface/coherence costs;
+normal combat is near60FPS but E.S. remains~42-45FPS.

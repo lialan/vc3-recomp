@@ -48,7 +48,7 @@ static int snapshots(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,uint32_t
         REQUIRE(!memcmp(got,expected,bytes));
         if(!level) REQUIRE(!memcmp(got,rgba,sizeof rgba));
     }
-    ChVkTextureCacheConfig config={.physical=gpu,.device=device,.queue=queue,.family=family,
+    ChVkTextureCacheConfig config={.queued_uploads=1,.physical=gpu,.device=device,.queue=queue,.family=family,
         .guest_base=memory,.guest_bytes=sizeof memory,.decode=decode,.max_entries=2,.max_bytes=4096};
     REQUIRE(ch_vk_texture_cache_create(&config,&cache)==VK_SUCCESS);
     Nv2aTexture tx={.offset=256,.width=16,.height=16,.pitch=64,.color=0x12,.levels=1,.filter=0x01010000,.addr_u=3,.addr_v=3};
@@ -173,8 +173,37 @@ done:
     ch_vk_backend_destroy(backend);return failed;
 #undef REQUIRE
 }
+static int queued_uploads(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,uint32_t family) {
+    uint32_t argb[16*16*6];unsigned char expected[sizeof argb],got[sizeof argb];
+    ChVkTexture *sync=NULL,*queued=NULL;int failed=1;
+#define CHECK(x) do {if(!(x)) {fprintf(stderr,"queued upload failure line%d: %s\n",__LINE__,#x);goto done;}}while(0)
+    for(unsigned i=0;i<sizeof argb/sizeof *argb;i++) argb[i]=0xff000000u|(i*7919u);
+    for(int cube=0;cube<2;cube++) {
+        if(cube) CHECK(ch_vk_texture_upload_cube(gpu,device,queue,family,16,argb,&sync)==VK_SUCCESS);
+        else CHECK(ch_vk_texture_upload_mips(gpu,device,queue,family,16,16,argb,5,&sync)==VK_SUCCESS);
+        CHECK(ch_vk_texture_upload_queued(gpu,device,queue,family,16,16,argb,cube?1:5,cube,&queued)==VK_SUCCESS);
+        for(unsigned level=0;level<(cube?1u:5u);level++) {
+            size_t bytes=(16u>>level)*(16u>>level)*4*(cube?6:1);
+            CHECK(ch_vk_texture_read_level_rgba(sync,level,expected,bytes)==VK_SUCCESS);
+            CHECK(ch_vk_texture_read_level_rgba(queued,level,got,bytes)==VK_SUCCESS);
+            CHECK(!memcmp(expected,got,bytes));
+        }
+        ch_vk_texture_destroy(sync);sync=NULL;ch_vk_texture_destroy(queued);queued=NULL;
+    }
+    /* No consumer/readback to incidentally complete the upload: destruction
+     * must retain the staging buffer and command pool until its fence signals. */
+    for(unsigned i=0;i<32;i++) {
+        CHECK(ch_vk_texture_upload_queued(gpu,device,queue,family,16,16,argb,1,0,&queued)==VK_SUCCESS);
+        ch_vk_texture_destroy(queued);queued=NULL;
+    }
+    failed=0;
+done:
+    ch_vk_texture_destroy(sync);ch_vk_texture_destroy(queued);
+#undef CHECK
+    return failed;
+}
 int ch_test_render_textures(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,uint32_t family) {
-    if(snapshots(gpu,device,queue,family)) return 1;
+    if(queued_uploads(gpu,device,queue,family) || snapshots(gpu,device,queue,family)) return 1;
     unsigned char *reference=malloc(sizeof memory),*candidate=malloc(sizeof memory);
     if(!reference || !candidate) {free(reference);free(candidate);return 1;}
     int failed=0;
