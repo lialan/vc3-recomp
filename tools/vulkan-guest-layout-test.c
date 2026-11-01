@@ -1,4 +1,5 @@
 #include "vk_depth_guest.h"
+#include "vk_guest_layout.h"
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
@@ -7,6 +8,31 @@
 
 int main(void)
 {
+    /* Compare every coordinate in small allocations and deterministic edge/
+     * random coordinates in all 256 supported exponent pairs against the
+     * shared GL-side mask-deposit definition. Include clipped rectangles:
+     * their allocation dimensions, not the clip, determine the layout. */
+    uint32_t seed=0x7153a9bdu;
+    for(unsigned wx=0;wx<=15;wx++) for(unsigned hy=0;hy<=15;hy++) {
+        uint32_t aw=1u<<wx,ah=1u<<hy,mx,my;
+        xbox_swizzle_masks(aw,ah,&mx,&my);
+        for(unsigned bpp=2;bpp<=4;bpp+=2) for(unsigned clip=0;clip<2;clip++) {
+            uint32_t w=clip?(aw+1)/2:aw,h=clip?(ah+1)/2:ah;
+            ChVkGuestLayout layout;
+            CHECK(ch_vk_guest_layout((hy<<24)|(wx<<16)|0x200,w,h,0,bpp,&layout)==VK_SUCCESS);
+            uint64_t reference_last=(uint64_t)(swizzle_deposit(w-1,mx)|swizzle_deposit(h-1,my))*bpp;
+            CHECK(layout.span==reference_last+bpp);
+            uint32_t count=wx+hy<=12?w*h:512;
+            for(uint32_t i=0;i<count;i++) {
+                seed=seed*1664525u+1013904223u;uint32_t x=seed%w;
+                seed=seed*1664525u+1013904223u;uint32_t y=seed%h;
+                if(wx+hy<=12) {x=i%w;y=i/w;}
+                else if(i<4) {x=(i&1)?w-1:0;y=(i&2)?h-1:0;}
+                CHECK(ch_vk_guest_offset(&layout,x,y)==
+                    (uint64_t)(swizzle_deposit(x,mx)|swizzle_deposit(y,my))*bpp);
+            }
+        }
+    }
     unsigned char guest[1024],before[1024],rgba[128],loaded[128];
     Nv2aSurface surface={.color_va=16,.width=8,.height=4,.pitch=2560,.bytes_per_pixel=4};
     Nv2aRenderState state={.surface_format=0x02030228,.zeta_va=256,.zeta_pitch=2560};
