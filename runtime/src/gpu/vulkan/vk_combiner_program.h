@@ -20,6 +20,8 @@ static inline void ch_vk_combiner_program(const Nv2aCombiner *rc,ChVkCombinerPro
     memcpy(p->color_icw,rc->color_icw,n*4);memcpy(p->alpha_icw,rc->alpha_icw,n*4);
     memcpy(p->color_ocw,rc->color_ocw,n*4);memcpy(p->alpha_ocw,rc->alpha_ocw,n*4);
     p->final0=rc->final0;p->final1=rc->final1;
-    p->control=rc->control;p->stage_program=rc->stage_program;
+    /* Only these flag bits are consumed by ch_rc_stage. Clamp the count
+     * exactly as ch_rc_eval does; reserved bits cannot change the program. */
+    p->control=n|(rc->control&0x11100u);p->stage_program=rc->stage_program;
 }
 #endif

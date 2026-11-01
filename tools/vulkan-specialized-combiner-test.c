@@ -99,7 +99,7 @@ int ch_test_specialized_combiners(VkPhysicalDevice gpu,VkDevice device,VkQueue q
         REQUIRE(ch_vk_target_draw_combiner_read(t[mode],black,v,3,indices,3,&state,NULL,NULL,&project,0,projected,rgba[mode],64)==VK_SUCCESS);
     for(unsigned i=0;i<64;i++) REQUIRE(abs((int)rgba[0][i]-rgba[1][i])<=1);
     ch_vk_target_resource_stats(t[1],&stats);REQUIRE(stats.no_alpha_pipeline_builds==1 && stats.specialized_pipeline_builds==1);
-    /* Distinct instruction keys with ignored high control flags stress the
+    /* Distinct active instruction keys with discarded stage outputs stress the
      * bounded program LRU. Dynamic factors are copied for each pending draw. */
     REQUIRE(ch_vk_target_clear_read(t[1],black,rgba[1],64)==VK_SUCCESS);
     ch_vk_target_defer_color_readback(t[1],1);
@@ -108,7 +108,8 @@ int ch_test_specialized_combiners(VkPhysicalDevice gpu,VkDevice device,VkQueue q
     ch_vk_target_resource_stats(t[1],&stats);
     for(unsigned i=0;i<140;i++) {
         static const uint32_t factors[]={0x01010000,0x01000100,0x01000001};
-        project.control=1|((i+1)<<20);project.factor0[0]=factors[i%3];
+        project.control=2;project.color_icw[1]=i+1;
+        project.factor0[0]=factors[i%3];
         REQUIRE(ch_vk_target_draw_combiner_read(t[1],NULL,v,3,indices,3,&add,NULL,NULL,&project,0,NULL,rgba[1],64)==VK_SUCCESS);
     }
     REQUIRE(ch_vk_target_read_color(t[1],rgba[1],64)==VK_SUCCESS);
@@ -117,6 +118,15 @@ int ch_test_specialized_combiners(VkPhysicalDevice gpu,VkDevice device,VkQueue q
         after.batch_draws-stats.batch_draws==140 && after.batch_submissions-stats.batch_submissions==3);
     const unsigned char summed[]={47,47,46,140};
     for(unsigned i=0;i<64;i++) REQUIRE(rgba[1][i]==summed[i%4]);
+    /* Reserved control flags cannot create shader variants. */
+    ch_vk_target_resource_stats(t[1],&stats);
+    for(unsigned i=1;i<=8;i++) {
+        project.control=2|(i<<20);
+        REQUIRE(ch_vk_target_draw_combiner_read(t[1],NULL,v,3,indices,3,&add,NULL,NULL,&project,0,NULL,rgba[1],64)==VK_SUCCESS);
+    }
+    REQUIRE(ch_vk_target_finish(t[1])==VK_SUCCESS);
+    ch_vk_target_resource_stats(t[1],&after);
+    REQUIRE(after.pipeline_builds==stats.pipeline_builds && after.pipeline_hits-stats.pipeline_hits==8);
     /* Blend color changes must retain one pipeline and per-draw values even
      * while multiple draws share a command buffer. */
     REQUIRE(ch_vk_target_clear_read(t[1],black,rgba[1],64)==VK_SUCCESS);
