@@ -32,6 +32,32 @@ VkResult ch_vk_guest_depth_store(const Nv2aSurface *s,const Nv2aRenderState *rs,
     ChVkGuestLayout layout;
     VkResult r=validate(s,rs,guest,bytes,&layout); if(r!=VK_SUCCESS) return r;
     for(size_t i=0;i<(size_t)s->width*s->height;i++) if(!isfinite(depth[i]) || depth[i]<0 || depth[i]>1) return VK_ERROR_INITIALIZATION_FAILED;
+    /* Linear guest surfaces are ordinary RAM. Copy unaligned words safely,
+     * retaining the scalar double-precision rounding contract. Specializing
+     * the format outside the loop permits vectorization and avoids repeated
+     * layout calculation and volatile byte stores for every pixel. */
+#if defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
+    if(!layout.swizzled) {
+        uint8_t *base=(uint8_t *)guest+rs->zeta_va;
+        for(uint32_t y=0;y<s->height;y++) {
+            uint8_t *row=base+(size_t)y*layout.pitch;
+            size_t start=(size_t)y*s->width;
+            if(layout.bytes_per_pixel==4) {
+                for(uint32_t x=0;x<s->width;x++) {
+                    uint32_t z=(uint32_t)((double)depth[start+x]*16777215.0+0.5);
+                    uint32_t word=(z<<8)|stencil[start+x];
+                    memcpy(row+(size_t)x*4,&word,4);
+                }
+            } else {
+                for(uint32_t x=0;x<s->width;x++) {
+                    uint16_t z=(uint16_t)((double)depth[start+x]*65535.0+0.5);
+                    memcpy(row+(size_t)x*2,&z,2);
+                }
+            }
+        }
+        return VK_SUCCESS;
+    }
+#endif
     volatile uint8_t *base=(volatile uint8_t *)guest+rs->zeta_va;
     for(uint32_t y=0;y<s->height;y++) for(uint32_t x=0;x<s->width;x++) {
         size_t at=(size_t)ch_vk_guest_offset(&layout,x,y),i=(size_t)y*s->width+x;

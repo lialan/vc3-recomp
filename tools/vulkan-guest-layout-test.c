@@ -113,6 +113,22 @@ int main(void)
     }
     if(saved_fast) {setenv("CHIHIRO_VULKAN_COLOR_FAST_IO",saved_fast,1);free(saved_fast);}
     else unsetenv("CHIHIRO_VULKAN_COLOR_FAST_IO");
+    /* Exact scalar oracle for unaligned, padded linear depth publication. */
+    for(unsigned bpp=2;bpp<=4;bpp+=2) {
+        Nv2aSurface ds={.width=17,.height=3};
+        Nv2aRenderState dr={.surface_format=bpp==2?0x110:0x120,.zeta_va=7,.zeta_pitch=17*bpp+3};
+        float dz[51];uint8_t st[51],expected[1024];
+        memset(guest,0xa5,sizeof guest);memset(expected,0xa5,sizeof expected);
+        for(unsigned i=0;i<51;i++) {
+            dz[i]=(float)i/50;st[i]=(uint8_t)(i*37);
+            uint32_t z=(uint32_t)((double)dz[i]*(bpp==2?65535.0:16777215.0)+0.5);
+            uint32_t w=bpp==2?z:(z<<8)|st[i];
+            size_t off=7+(i/17)*dr.zeta_pitch+(i%17)*bpp;
+            for(unsigned b=0;b<bpp;b++) expected[off+b]=(uint8_t)(w>>(8*b));
+        }
+        CHECK(ch_vk_guest_depth_store(&ds,&dr,guest,sizeof guest,dz,st)==VK_SUCCESS);
+        CHECK(!memcmp(guest,expected,sizeof guest));
+    }
     puts("PASS: rectangular Morton color/Z24S8/Z16, packed depth, pitched/unaligned ARGB fast-vs-scalar rows, padding, bounds, alias loads and atomic rejection");
     return 0;
 }
