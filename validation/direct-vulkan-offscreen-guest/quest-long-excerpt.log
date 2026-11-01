@@ -1,0 +1,622 @@
+[Vulkan] Android offscreen diagnostic: no XR session or VR performance acceptance
+[Vulkan] direct NV2A backend on Adreno (TM) 740; OpenGL excluded from this build
+[INPUT] script clock: executor flips at 60 Hz (origin 0)
+[GPU] raw draws (RECOMP_GPU_XF=ff): the back end transforms fixed-function batches
+[Vulkan raw vertices] GPU fixed batches=0 CPU declined batches=0
+[Vulkan command batches] live targets: draws=3 submissions=2
+[Vulkan depth residency] binds=3 imports=1 writebacks=2 CPU merges=0
+[Vulkan] completed frame 1: 640x480, guest=80408000
+[Vulkan raw vertices] GPU fixed batches=0 CPU declined batches=0
+[Vulkan command batches] live targets: draws=3592 submissions=552
+[Vulkan depth residency] binds=3275 imports=375 writebacks=386 CPU merges=0
+[Vulkan] completed frame 60: 640x480, guest=808D0000
+[GPU] surface 0x00534000 pitch 2560 clip 640x480+0+0 clears 751 | 82701 unhandled methods (147 distinct), 18483 words as register runs
+[GPU] draws 5073 (5073 with coordinates), 20292 indices; x -0.5..415.5  y -0.5..454.5
+[GPU] brightest pixel written 0x00000000
+[GPU] 0 pixels written; draw surface 0x00660000 -> 0x80660000, clear surface 0x00534000 -> 0x80534000
+[GPU] rasterised 10146 triangles; 0 batches skipped as not screen-space, 0 triangles fully off-surface
+[GPU] vertex programs: 5073 batches, 20292 vertices; 0 triangles dropped behind the eye
+[GPU]   CPU-transformed triangles: 0 zero-area/NaN (no pixels; dropped), 10146 to the back end; software rasteriser: 0 off-surface, 0 drawn; pixels 0 written, 0 depth-failed; x 0..0 y 0..0 z 0..0
+[GPU]   blend pairs (src/dst): 302/303 302/1
+[GPU]   program attribute formats (slot:type/size): v0:2/4 v3:0/4 v9:2/2 v10:2/2 v11:2/2 v12:2/2
+[GPU] batches: 0 textured, 0 with no texcoords, 0 with texcoords but no usable stage
+  [GPU]   0x0100 x21511    last=0x00000000 (0.0000)
+  [GPU]   0x0110 x10756    last=0x00000000 (0.0000)
+  [GPU]   0x0394 x8726     last=0x00000000 (0.0000)
+  [GPU]   0x0398 x8726     last=0x4B7FFFFF (16777215.0000)
+  [GPU]   0x0308 x4115     last=0x00000001 (0.0000)
+  [GPU]   0x039C x3456     last=0x00000405 (0.0000)
+  [GPU]   0x1E78 x2892     last=0x00210000 (0.0000)
+  [GPU]   0x1D78 x2801     last=0x00000001 (0.0000)
+  [GPU]   0x03A0 x2799     last=0x00000901 (0.0000)
+  [GPU]   0x02B4 x2617     last=0x00000000 (0.0000)
+[Vulkan raw vertices] GPU fixed batches=0 CPU declined batches=0
+[Vulkan command batches] live targets: draws=7302 submissions=1098
+[Vulkan depth residency] binds=6662 imports=763 writebacks=785 CPU merges=0
+[Vulkan] completed frame 120: 640x480, guest=80534000
+[Vulkan raw vertices] GPU fixed batches=0 CPU declined batches=0
+[Vulkan command batches] live targets: draws=11026 submissions=1662
+[Vulkan depth residency] binds=10053 imports=1154 writebacks=1184 CPU merges=0
+[Vulkan] completed frame 180: 640x480, guest=80408000
+[GPU] 13.05 fps (228 flips)
+[GPU] surface 0x008D0000 pitch 2560 clip 640x480+0+0 clears 1806 | 196023 unhandled methods (147 distinct), 44327 words as register runs
+[GPU] draws 12200 (12200 with coordinates), 48800 indices; x -0.5..415.5  y -0.5..454.5
+[GPU] brightest pixel written 0x00000000
+[GPU] 0 pixels written; draw surface 0x00C28000 -> 0x80C28000, clear surface 0x008D0000 -> 0x808D0000
+[GPU] rasterised 24400 triangles; 0 batches skipped as not screen-space, 0 triangles fully off-surface
+[GPU] vertex programs: 12200 batches, 48800 vertices; 0 triangles dropped behind the eye
+[GPU]   CPU-transformed triangles: 0 zero-area/NaN (no pixels; dropped), 24400 to the back end; software rasteriser: 0 off-surface, 0 drawn; pixels 0 written, 0 depth-failed; x 0..0 y 0..0 z 0..0
+[GPU]   blend pairs (src/dst): 302/303 302/1
+[GPU]   program attribute formats (slot:type/size): v0:2/4 v3:0/4 v9:2/2 v10:2/2 v11:2/2 v12:2/2
+[GPU] batches: 0 textured, 0 with no texcoords, 0 with texcoords but no usable stage
+  [GPU]   0x0100 x51811    last=0x00000000 (0.0000)
+  [GPU]   0x0110 x25906    last=0x00000000 (0.0000)
+  [GPU]   0x0394 x20989    last=0x00000000 (0.0000)
+  [GPU]   0x0398 x20989    last=0x4B7FFFFF (16777215.0000)
+  [GPU]   0x0308 x9911     last=0x00000001 (0.0000)
+  [GPU]   0x039C x8331     last=0x00000405 (0.0000)
+  [GPU]   0x1E78 x6976     last=0x00210000 (0.0000)
+  [GPU]   0x1D78 x6755     last=0x00000001 (0.0000)
+  [GPU]   0x03A0 x6753     last=0x00000901 (0.0000)
+  [GPU]   0x02B4 x6305     last=0x00000000 (0.0000)
+[Vulkan raw vertices] GPU fixed batches=0 CPU declined batches=0
+[Vulkan command batches] live targets: draws=14745 submissions=2235
+[Vulkan depth residency] binds=13442 imports=1544 writebacks=1585 CPU merges=0
+[Vulkan] completed frame 240: 640x480, guest=80660000
+[Vulkan raw vertices] GPU fixed batches=0 CPU declined batches=0
+[Vulkan command batches] live targets: draws=18468 submissions=2811
+[Vulkan depth residency] binds=16832 imports=1935 writebacks=1988 CPU merges=0
+[Vulkan] completed frame 300: 640x480, guest=80534000
+[Vulkan raw vertices] GPU fixed batches=0 CPU declined batches=0
+[Vulkan command batches] live targets: draws=22045 submissions=3352
+[Vulkan depth residency] binds=20083 imports=2320 writebacks=2380 CPU merges=0
+[Vulkan] completed frame 360: 640x480, guest=80534000
+[GPU] 13.09 fps (360 flips)
+[GPU] surface 0x00408000 pitch 2560 clip 640x480+0+0 clears 2854 | 308604 unhandled methods (147 distinct), 69849 words as register runs
+[GPU] draws 19191 (19191 with coordinates), 76764 indices; x -0.5..415.5  y -16.5..454.5
+[GPU] brightest pixel written 0x00000000
+[GPU] 0 pixels written; draw surface 0x00534000 -> 0x80534000, clear surface 0x00408000 -> 0x80408000
+[GPU] rasterised 38382 triangles; 0 batches skipped as not screen-space, 0 triangles fully off-surface
+[GPU] vertex programs: 19191 batches, 76764 vertices; 0 triangles dropped behind the eye
+[GPU]   CPU-transformed triangles: 0 zero-area/NaN (no pixels; dropped), 38382 to the back end; software rasteriser: 0 off-surface, 0 drawn; pixels 0 written, 0 depth-failed; x 0..0 y 0..0 z 0..0
+[GPU]   blend pairs (src/dst): 302/303 302/1
+[GPU]   program attribute formats (slot:type/size): v0:2/4 v3:0/4 v9:2/2 v10:2/2 v11:2/2 v12:2/2
+[GPU] batches: 0 textured, 0 with no texcoords, 0 with texcoords but no usable stage
+  [GPU]   0x0100 x81991    last=0x00000000 (0.0000)
+  [GPU]   0x0110 x40996    last=0x00000000 (0.0000)
+  [GPU]   0x0394 x33093    last=0x00000000 (0.0000)
+  [GPU]   0x0398 x33093    last=0x4B7FFFFF (16777215.0000)
+  [GPU]   0x0308 x15671    last=0x00000001 (0.0000)
+  [GPU]   0x039C x13173    last=0x00000405 (0.0000)
+  [GPU]   0x1E78 x11030    last=0x00210000 (0.0000)
+  [GPU]   0x1D78 x10678    last=0x00000001 (0.0000)
+  [GPU]   0x03A0 x10676    last=0x00000901 (0.0000)
+  [GPU]   0x02B4 x9977     last=0x00000000 (0.0000)
+[Vulkan raw vertices] GPU fixed batches=0 CPU declined batches=0
+[Vulkan command batches] live targets: draws=24325 submissions=3898
+[Vulkan depth residency] binds=22033 imports=2710 writebacks=2776 CPU merges=0
+[Vulkan] completed frame 420: 640x480, guest=80534000
+[Vulkan raw vertices] GPU fixed batches=0 CPU declined batches=0
+[Vulkan command batches] live targets: draws=12615 submissions=3531
+[Vulkan depth residency] binds=23952 imports=3095 writebacks=3166 CPU merges=0
+[Vulkan] completed frame 480: 640x480, guest=80534000
+[GPU] 13.92 fps (500 flips)
+[GPU] surface 0x00534000 pitch 2560 clip 640x480+0+0 clears 3977 | 422497 unhandled methods (147 distinct), 90563 words as register runs
+[GPU] draws 23374 (23374 with coordinates), 93496 indices; x -0.5..415.5  y -16.5..454.5
+[GPU] brightest pixel written 0x00000000
+[GPU] 0 pixels written; draw surface 0x00534000 -> 0x80534000, clear surface 0x00534000 -> 0x80534000
+[GPU] rasterised 46748 triangles; 0 batches skipped as not screen-space, 0 triangles fully off-surface
+[GPU] vertex programs: 23374 batches, 93496 vertices; 0 triangles dropped behind the eye
+[GPU]   CPU-transformed triangles: 0 zero-area/NaN (no pixels; dropped), 46748 to the back end; software rasteriser: 0 off-surface, 0 drawn; pixels 0 written, 0 depth-failed; x 0..0 y 0..0 z 0..0
+[GPU]   blend pairs (src/dst): 302/303 302/1
+[GPU]   program attribute formats (slot:type/size): v0:2/4 v3:0/4 v9:2/2 v10:2/2 v11:2/2 v12:2/2
+[GPU] batches: 0 textured, 0 with no texcoords, 0 with texcoords but no usable stage
+  [GPU]   0x0100 x114259   last=0x00000000 (0.0000)
+  [GPU]   0x0110 x57130    last=0x00000000 (0.0000)
+  [GPU]   0x0394 x42749    last=0x00000000 (0.0000)
+  [GPU]   0x0398 x42749    last=0x4B7FFFFF (16777215.0000)
+  [GPU]   0x0308 x21850    last=0x00000000 (0.0000)
+  [GPU]   0x039C x18369    last=0x00000405 (0.0000)
+  [GPU]   0x1E78 x15384    last=0x00210000 (0.0000)
+  [GPU]   0x1D78 x14891    last=0x00000001 (0.0000)
+  [GPU]   0x03A0 x14889    last=0x00000901 (0.0000)
+  [GPU]   0x02B4 x13906    last=0x00000000 (0.0000)
+[Vulkan raw vertices] GPU fixed batches=0 CPU declined batches=0
+[Vulkan command batches] live targets: draws=14919 submissions=4098
+[Vulkan depth residency] binds=25929 imports=3484 writebacks=3560 CPU merges=0
+[Vulkan] completed frame 540: 640x480, guest=80408000
+[GPU] 7.79 fps (579 flips)
+[GPU] surface 0x00660000 pitch 2560 clip 640x480+0+0 clears 4601 | 486785 unhandled methods (149 distinct), 102776 words as register runs
+[GPU] draws 26004 (26004 with coordinates), 104016 indices; x -0.5..474.5  y -16.5..454.5
+[GPU] brightest pixel written 0x00000000
+[GPU] 0 pixels written; draw surface 0x00408000 -> 0x80408000, clear surface 0x00660000 -> 0x80660000
+[GPU] rasterised 52008 triangles; 0 batches skipped as not screen-space, 0 triangles fully off-surface
+[GPU] vertex programs: 26004 batches, 104016 vertices; 0 triangles dropped behind the eye
+[GPU]   CPU-transformed triangles: 0 zero-area/NaN (no pixels; dropped), 52008 to the back end; software rasteriser: 0 off-surface, 0 drawn; pixels 0 written, 0 depth-failed; x 0..0 y 0..0 z 0..0
+[GPU]   blend pairs (src/dst): 302/303 302/1
+[GPU]   program attribute formats (slot:type/size): v0:2/4 v3:0/4 v9:2/2 v10:2/2 v11:2/2 v12:2/2
+[GPU] batches: 0 textured, 0 with no texcoords, 0 with texcoords but no usable stage
+  [GPU]   0x0100 x132201   last=0x00000000 (0.0000)
+  [GPU]   0x0110 x66101    last=0x00000000 (0.0000)
+  [GPU]   0x0394 x48422    last=0x00000000 (0.0000)
+  [GPU]   0x0398 x48422    last=0x4B7FFFFF (16777215.0000)
+  [GPU]   0x0308 x25283    last=0x00000001 (0.0000)
+  [GPU]   0x039C x21256    last=0x00000405 (0.0000)
+  [GPU]   0x1E78 x17802    last=0x00210000 (0.0000)
+  [GPU]   0x1D78 x17231    last=0x00000001 (0.0000)
+  [GPU]   0x03A0 x17229    last=0x00000901 (0.0000)
+  [GPU]   0x02B4 x16090    last=0x00000000 (0.0000)
+[Vulkan raw vertices] GPU fixed batches=0 CPU declined batches=0
+[Vulkan command batches] live targets: draws=17614 submissions=4638
+[Vulkan depth residency] binds=28298 imports=3870 writebacks=3950 CPU merges=0
+[Vulkan] completed frame 600: 640x480, guest=80408000
+[Vulkan raw vertices] GPU fixed batches=0 CPU declined batches=0
+[Vulkan command batches] live targets: draws=20458 submissions=5210
+[Vulkan depth residency] binds=30812 imports=4260 writebacks=4346 CPU merges=0
+[Vulkan] completed frame 660: 640x480, guest=80408000
+[GPU] 9.62 fps (677 flips)
+[GPU] surface 0x008D0000 pitch 2560 clip 640x480+0+0 clears 5378 | 568399 unhandled methods (149 distinct), 119601 words as register runs
+[GPU] draws 30062 (30062 with coordinates), 120248 indices; x -256.5..557.5  y -16.5..454.5
+[GPU] brightest pixel written 0x00000000
+[GPU] 0 pixels written; draw surface 0x00C28000 -> 0x80C28000, clear surface 0x008D0000 -> 0x808D0000
+[GPU] rasterised 60124 triangles; 0 batches skipped as not screen-space, 0 triangles fully off-surface
+[GPU] vertex programs: 30062 batches, 120248 vertices; 0 triangles dropped behind the eye
+[GPU]   CPU-transformed triangles: 0 zero-area/NaN (no pixels; dropped), 60124 to the back end; software rasteriser: 0 off-surface, 0 drawn; pixels 0 written, 0 depth-failed; x 0..0 y 0..0 z 0..0
+[GPU]   blend pairs (src/dst): 302/303 302/1
+[GPU]   program attribute formats (slot:type/size): v0:2/4 v3:0/4 v9:2/2 v10:2/2 v11:2/2 v12:2/2
+[GPU] batches: 0 textured, 0 with no texcoords, 0 with texcoords but no usable stage
+  [GPU]   0x0100 x154465   last=0x00000000 (0.0000)
+  [GPU]   0x0110 x77233    last=0x00000000 (0.0000)
+  [GPU]   0x0394 x56255    last=0x00000000 (0.0000)
+  [GPU]   0x0398 x56255    last=0x4B7FFFFF (16777215.0000)
+  [GPU]   0x0308 x29546    last=0x00000001 (0.0000)
+  [GPU]   0x039C x24843    last=0x00000405 (0.0000)
+  [GPU]   0x1E78 x20809    last=0x00210000 (0.0000)
+  [GPU]   0x1D78 x20142    last=0x00000001 (0.0000)
+  [GPU]   0x03A0 x20140    last=0x00000901 (0.0000)
+  [GPU]   0x02B4 x18802    last=0x00000000 (0.0000)
+[Vulkan raw vertices] GPU fixed batches=0 CPU declined batches=0
+[Vulkan command batches] live targets: draws=24370 submissions=5782
+[Vulkan depth residency] binds=34401 imports=4649 writebacks=4745 CPU merges=0
+[Vulkan] completed frame 720: 640x480, guest=80408000
+[GPU] 9.02 fps (769 flips)
+[GPU] surface 0x00534000 pitch 2560 clip 640x480+0+0 clears 6118 | 649784 unhandled methods (149 distinct), 139028 words as register runs
+[GPU] draws 35610 (35610 with coordinates), 142440 indices; x -256.5..589.7  y -16.5..454.5
+[GPU] brightest pixel written 0x00000000
+[GPU] 0 pixels written; draw surface 0x00534000 -> 0x80534000, clear surface 0x00534000 -> 0x80534000
+[GPU] rasterised 71204 triangles; 0 batches skipped as not screen-space, 0 triangles fully off-surface
+[GPU] vertex programs: 35610 batches, 142440 vertices; 0 triangles dropped behind the eye
+[GPU]   CPU-transformed triangles: 16 zero-area/NaN (no pixels; dropped), 71204 to the back end; software rasteriser: 0 off-surface, 0 drawn; pixels 0 written, 0 depth-failed; x 0..0 y 0..0 z 0..0
+[GPU]   blend pairs (src/dst): 302/303 302/1
+[GPU]   program attribute formats (slot:type/size): v0:2/4 v3:0/4 v9:2/2 v10:2/2 v11:2/2 v12:2/2
+[GPU] batches: 0 textured, 0 with no texcoords, 0 with texcoords but no usable stage
+  [GPU]   0x0100 x175757   last=0x00000000 (0.0000)
+  [GPU]   0x0110 x87879    last=0x00000000 (0.0000)
+  [GPU]   0x0394 x65413    last=0x00000000 (0.0000)
+  [GPU]   0x0398 x65413    last=0x4B7FFFFF (16777215.0000)
+  [GPU]   0x0308 x33624    last=0x00000000 (0.0000)
+  [GPU]   0x039C x28273    last=0x00000405 (0.0000)
+  [GPU]   0x1E78 x23685    last=0x00210000 (0.0000)
+  [GPU]   0x1D78 x22925    last=0x00000001 (0.0000)
+  [GPU]   0x03A0 x22923    last=0x00000901 (0.0000)
+  [GPU]   0x02B4 x21394    last=0x00000000 (0.0000)
+[Vulkan raw vertices] GPU fixed batches=0 CPU declined batches=0
+[Vulkan command batches] live targets: draws=28475 submissions=6356
+[Vulkan depth residency] binds=38175 imports=5039 writebacks=5147 CPU merges=0
+[Vulkan] completed frame 780: 640x480, guest=80408000
+[Vulkan raw vertices] GPU fixed batches=0 CPU declined batches=0
+[Vulkan command batches] live targets: draws=32139 submissions=6955
+[Vulkan depth residency] binds=41513 imports=5427 writebacks=5546 CPU merges=0
+[Vulkan] completed frame 840: 640x480, guest=80408000
+[GPU] 7.49 fps (842 flips)
+[GPU] surface 0x008D0000 pitch 2560 clip 640x480+0+0 clears 6691 | 711952 unhandled methods (149 distinct), 153251 words as register runs
+[GPU] draws 39495 (39495 with coordinates), 157980 indices; x -256.5..589.7  y -16.5..476.1
+[GPU] brightest pixel written 0x00000000
+[GPU] 0 pixels written; draw surface 0x00C28000 -> 0x80C28000, clear surface 0x008D0000 -> 0x808D0000
+[GPU] rasterised 78974 triangles; 0 batches skipped as not screen-space, 0 triangles fully off-surface
+[GPU] vertex programs: 39495 batches, 157980 vertices; 0 triangles dropped behind the eye
+[GPU]   CPU-transformed triangles: 16 zero-area/NaN (no pixels; dropped), 78974 to the back end; software rasteriser: 0 off-surface, 0 drawn; pixels 0 written, 0 depth-failed; x 0..0 y 0..0 z 0..0
+[GPU]   blend pairs (src/dst): 302/303 302/1
+[GPU]   program attribute formats (slot:type/size): v0:2/4 v3:0/4 v9:2/2 v10:2/2 v11:2/2 v12:2/2
+[GPU] batches: 0 textured, 0 with no texcoords, 0 with texcoords but no usable stage
+  [GPU]   0x0100 x192259   last=0x00000000 (0.0000)
+  [GPU]   0x0110 x96130    last=0x00000000 (0.0000)
+  [GPU]   0x0394 x72095    last=0x00000000 (0.0000)
+  [GPU]   0x0398 x72095    last=0x4B7FFFFF (16777215.0000)
+  [GPU]   0x0308 x36771    last=0x00000001 (0.0000)
+  [GPU]   0x039C x30919    last=0x00000405 (0.0000)
+  [GPU]   0x1E78 x25899    last=0x00210000 (0.0000)
+  [GPU]   0x1D78 x25068    last=0x00000001 (0.0000)
+  [GPU]   0x03A0 x25066    last=0x00000901 (0.0000)
+  [GPU]   0x02B4 x23402    last=0x00000000 (0.0000)
+[Vulkan raw vertices] GPU fixed batches=0 CPU declined batches=0
+[Vulkan command batches] live targets: draws=34578 submissions=7552
+[Vulkan depth residency] binds=43622 imports=5815 writebacks=5941 CPU merges=0
+[Vulkan] completed frame 900: 640x480, guest=80408000
+[GPU] 7.76 fps (920 flips)
+[GPU] surface 0x00408000 pitch 2560 clip 640x480+0+0 clears 7312 | 776071 unhandled methods (149 distinct), 165362 words as register runs
+[GPU] draws 42054 (42054 with coordinates), 168216 indices; x -256.5..589.7  y -16.5..476.1
+[GPU] brightest pixel written 0x00000000
+[GPU] 0 pixels written; draw surface 0x00534000 -> 0x80534000, clear surface 0x00408000 -> 0x80408000
+[GPU] rasterised 84092 triangles; 0 batches skipped as not screen-space, 0 triangles fully off-surface
+[GPU] vertex programs: 42054 batches, 168216 vertices; 0 triangles dropped behind the eye
+[GPU]   CPU-transformed triangles: 16 zero-area/NaN (no pixels; dropped), 84092 to the back end; software rasteriser: 0 off-surface, 0 drawn; pixels 0 written, 0 depth-failed; x 0..0 y 0..0 z 0..0
+[GPU]   blend pairs (src/dst): 302/303 302/1
+[GPU]   program attribute formats (slot:type/size): v0:2/4 v3:0/4 v9:2/2 v10:2/2 v11:2/2 v12:2/2
+[GPU] batches: 0 textured, 0 with no texcoords, 0 with texcoords but no usable stage
+  [GPU]   0x0100 x210139   last=0x00000000 (0.0000)
+  [GPU]   0x0110 x105070   last=0x00000000 (0.0000)
+  [GPU]   0x0394 x77684    last=0x00000000 (0.0000)
+  [GPU]   0x0398 x77684    last=0x4B7FFFFF (16777215.0000)
+  [GPU]   0x0308 x40192    last=0x00000001 (0.0000)
+  [GPU]   0x039C x33796    last=0x00000405 (0.0000)
+  [GPU]   0x1E78 x28310    last=0x00210000 (0.0000)
+  [GPU]   0x1D78 x27401    last=0x00000001 (0.0000)
+  [GPU]   0x03A0 x27399    last=0x00000901 (0.0000)
+  [GPU]   0x02B4 x25578    last=0x00000000 (0.0000)
+[Vulkan raw vertices] GPU fixed batches=0 CPU declined batches=0
+[Vulkan command batches] live targets: draws=37034 submissions=8149
+[Vulkan depth residency] binds=45751 imports=6204 writebacks=6333 CPU merges=0
+[Vulkan] completed frame 960: 640x480, guest=80408000
+[GPU] 7.46 fps (995 flips)
+[GPU] surface 0x008D0000 pitch 2560 clip 640x480+0+0 clears 7914 | 837893 unhandled methods (149 distinct), 176995 words as register runs
+[GPU] draws 44497 (44497 with coordinates), 177988 indices; x -256.5..589.7  y -16.5..476.1
+[GPU] brightest pixel written 0x00000000
+[GPU] 0 pixels written; draw surface 0x00C28000 -> 0x80C28000, clear surface 0x008D0000 -> 0x808D0000
+[GPU] rasterised 88978 triangles; 0 batches skipped as not screen-space, 0 triangles fully off-surface
+[GPU] vertex programs: 44497 batches, 177988 vertices; 0 triangles dropped behind the eye
+[GPU]   CPU-transformed triangles: 16 zero-area/NaN (no pixels; dropped), 88978 to the back end; software rasteriser: 0 off-surface, 0 drawn; pixels 0 written, 0 depth-failed; x 0..0 y 0..0 z 0..0
+[GPU]   blend pairs (src/dst): 302/303 302/1
+[GPU]   program attribute formats (slot:type/size): v0:2/4 v3:0/4 v9:2/2 v10:2/2 v11:2/2 v12:2/2
+[GPU] batches: 0 textured, 0 with no texcoords, 0 with texcoords but no usable stage
+  [GPU]   0x0100 x227389   last=0x00000000 (0.0000)
+  [GPU]   0x0110 x113695   last=0x00000000 (0.0000)
+  [GPU]   0x0394 x83051    last=0x00000000 (0.0000)
+  [GPU]   0x0398 x83051    last=0x4B7FFFFF (16777215.0000)
+  [GPU]   0x0308 x43496    last=0x00000001 (0.0000)
+  [GPU]   0x039C x36575    last=0x00000405 (0.0000)
+  [GPU]   0x1E78 x30638    last=0x00210000 (0.0000)
+  [GPU]   0x1D78 x29654    last=0x00000001 (0.0000)
+  [GPU]   0x03A0 x29652    last=0x00000901 (0.0000)
+  [GPU]   0x02B4 x27676    last=0x00000000 (0.0000)
+[Vulkan raw vertices] GPU fixed batches=3961 CPU declined batches=0
+[Vulkan command batches] live targets: draws=43417 submissions=8827
+[Vulkan depth residency] binds=51785 imports=6596 writebacks=6748 CPU merges=0
+[Vulkan] completed frame 1020: 640x480, guest=80408000
+[GPU] 3.57 fps (1034 flips)
+[GPU] surface 0x008D0000 pitch 2560 clip 640x480+0+0 clears 8259 | 2379063 unhandled methods (435 distinct), 1530934 words as register runs
+[GPU] draws 60893 (60893 with coordinates), 1790048 indices; x -256.5..640.0  y -16.5..476.1
+[GPU] brightest pixel written 0x00000000
+[GPU] 0 pixels written; draw surface 0x008D0000 -> 0x808D0000, clear surface 0x008D0000 -> 0x808D0000
+[GPU] rasterised 1665112 triangles; 0 batches skipped as not screen-space, 0 triangles fully off-surface
+[GPU] vertex programs: 46669 batches, 188030 vertices; 0 triangles dropped behind the eye
+[GPU] fixed-function transform: 14224 batches
+[GPU]   on the back end: 14224 batches, 1573532 triangles, 864680 vertices; on the CPU 0; declined: points/lines 0 index range 0 attribute span 0 back end 0 program (no FINAL / writes c[]) 0
+[GPU]   CPU-transformed triangles: 1726 zero-area/NaN (no pixels; dropped), 91580 to the back end; software rasteriser: 0 off-surface, 0 drawn; pixels 0 written, 0 depth-failed; x 0..0 y 0..0 z 0..0
+[GPU]   blend pairs (src/dst): 302/303 302/1 300/1
+[GPU]   program attribute formats (slot:type/size): v0:2/4 v3:0/4 v9:2/2 v10:2/2 v11:2/2 v12:2/2 v0:2/3 v2:6/1 v1:2/1 v1:2/2 v1:2/3
+[GPU] batches: 0 textured, 0 with no texcoords, 0 with texcoords but no usable stage
+  [GPU]   0x0100 x237488   last=0x00000000 (0.0000)
+  [GPU]   0x0110 x118744   last=0x00000000 (0.0000)
+  [GPU]   0x0394 x106539   last=0x00000000 (0.0000)
+  [GPU]   0x0398 x106539   last=0x4B7FFFFF (16777215.0000)
+  [GPU]   0x0308 x46876    last=0x00000001 (0.0000)
+  [GPU]   0x039C x38823    last=0x00000405 (0.0000)
+  [GPU]   0x1E78 x31930    last=0x00210000 (0.0000)
+  [GPU]   0x1D78 x30810    last=0x00000001 (0.0000)
+  [GPU]   0x03A0 x30808    last=0x00000901 (0.0000)
+  [GPU]   0x02B4 x28857    last=0x00000000 (0.0000)
+[GPU] 2.84 fps (1064 flips)
+[GPU] surface 0x008D0000 pitch 2560 clip 640x480+0+0 clears 8559 | 4603722 unhandled methods (435 distinct), 3500430 words as register runs
+[GPU] draws 84262 (84262 with coordinates), 4151333 indices; x -256.5..640.0  y -16.5..476.1
+[GPU] brightest pixel written 0x00000000
+[GPU] 0 pixels written; draw surface 0x008D0000 -> 0x808D0000, clear surface 0x008D0000 -> 0x808D0000
+[GPU] rasterised 3976899 triangles; 0 batches skipped as not screen-space, 0 triangles fully off-surface
+[GPU] vertex programs: 49069 batches, 197630 vertices; 0 triangles dropped behind the eye
+[GPU] fixed-function transform: 35193 batches
+[GPU]   on the back end: 35193 batches, 3883219 triangles, 2136056 vertices; on the CPU 0; declined: points/lines 0 index range 0 attribute span 0 back end 0 program (no FINAL / writes c[]) 0
+[GPU]   CPU-transformed triangles: 4426 zero-area/NaN (no pixels; dropped), 93680 to the back end; software rasteriser: 0 off-surface, 0 drawn; pixels 0 written, 0 depth-failed; x 0..0 y 0..0 z 0..0
+[GPU]   blend pairs (src/dst): 302/303 302/1 300/1
+[GPU]   program attribute formats (slot:type/size): v0:2/4 v3:0/4 v9:2/2 v10:2/2 v11:2/2 v12:2/2 v0:2/3 v2:6/1 v1:2/1 v1:2/2 v1:2/3
+[GPU] batches: 0 textured, 0 with no texcoords, 0 with texcoords but no usable stage
+  [GPU]   0x0100 x245828   last=0x00000000 (0.0000)
+  [GPU]   0x0394 x139217   last=0x00000000 (0.0000)
+  [GPU]   0x0398 x139217   last=0x4B7FFFFF (16777215.0000)
+  [GPU]   0x0110 x122914   last=0x00000000 (0.0000)
+  [GPU]   0x0308 x50772    last=0x00000001 (0.0000)
+  [GPU]   0x03B8 x43546    last=0x00000001 (0.0000)
+  [GPU]   0x039C x41191    last=0x00000405 (0.0000)
+  [GPU]   0x0314 x36192    last=0x00000001 (0.0000)
+  [GPU]   0x0294 x36192    last=0x00010001 (0.0000)
+  [GPU]   0x17C4 x36192    last=0x00000000 (0.0000)
+[Vulkan raw vertices] GPU fixed batches=46141 CPU declined batches=0
+[Vulkan command batches] live targets: draws=88297 submissions=10379
+[Vulkan depth residency] binds=96095 imports=7046 writebacks=7423 CPU merges=0
+[Vulkan] completed frame 1080: 640x480, guest=80408000
+  [GPU] draw #100000
+[GPU] 2.73 fps (1092 flips)
+[GPU] surface 0x00660000 pitch 2560 clip 640x480+0+0 clears 8848 | 6745480 unhandled methods (435 distinct), 5396756 words as register runs
+[GPU] draws 106662 (106662 with coordinates), 6408525 indices; x -256.5..640.0  y -16.5..476.1
+[GPU] brightest pixel written 0x00000000
+[GPU] 0 pixels written; draw surface 0x00660000 -> 0x80660000, clear surface 0x00660000 -> 0x80660000
+[GPU] rasterised 6186623 triangles; 0 batches skipped as not screen-space, 0 triangles fully off-surface
+[GPU] vertex programs: 51382 batches, 206882 vertices; 0 triangles dropped behind the eye
+[GPU] fixed-function transform: 55280 batches
+[GPU]   on the back end: 55280 batches, 6090927 triangles, 3353976 vertices; on the CPU 0; declined: points/lines 0 index range 0 attribute span 0 back end 0 program (no FINAL / writes c[]) 0
+[GPU]   CPU-transformed triangles: 7036 zero-area/NaN (no pixels; dropped), 95696 to the back end; software rasteriser: 0 off-surface, 0 drawn; pixels 0 written, 0 depth-failed; x 0..0 y 0..0 z 0..0
+[GPU]   blend pairs (src/dst): 302/303 302/1 300/1
+[GPU]   program attribute formats (slot:type/size): v0:2/4 v3:0/4 v9:2/2 v10:2/2 v11:2/2 v12:2/2 v0:2/3 v2:6/1 v1:2/1 v1:2/2 v1:2/3
+[GPU] batches: 0 textured, 0 with no texcoords, 0 with texcoords but no usable stage
+  [GPU]   0x0100 x253912   last=0x00000000 (0.0000)
+  [GPU]   0x0394 x170483   last=0x00000000 (0.0000)
+  [GPU]   0x0398 x170483   last=0x4B7FFFFF (16777215.0000)
+  [GPU]   0x0110 x126956   last=0x00000000 (0.0000)
+  [GPU]   0x03B8 x65482    last=0x00000000 (0.0000)
+  [GPU]   0x0308 x54533    last=0x00000000 (0.0000)
+  [GPU]   0x0314 x53953    last=0x00000000 (0.0000)
+  [GPU]   0x0294 x53953    last=0x00020001 (0.0000)
+  [GPU]   0x17C4 x53953    last=0x00000000 (0.0000)
+  [GPU]   0x039C x43476    last=0x00000405 (0.0000)
+[GPU] 2.83 fps (1122 flips)
+[GPU] surface 0x00660000 pitch 2560 clip 640x480+0+0 clears 9137 | 8915615 unhandled methods (435 distinct), 7318147 words as register runs
+[GPU] draws 129454 (129454 with coordinates), 8725968 indices; x -256.5..640.0  y -16.5..476.1
+[GPU] brightest pixel written 0x00000000
+[GPU] 0 pixels written; draw surface 0x00408000 -> 0x80408000, clear surface 0x00660000 -> 0x80660000
+[GPU] rasterised 8457254 triangles; 0 batches skipped as not screen-space, 0 triangles fully off-surface
+[GPU] vertex programs: 53723 batches, 216246 vertices; 0 triangles dropped behind the eye
+[GPU] fixed-function transform: 75731 batches
+[GPU]   on the back end: 75731 batches, 8358046 triangles, 4602713 vertices; on the CPU 0; declined: points/lines 0 index range 0 attribute span 0 back end 0 program (no FINAL / writes c[]) 0
+[GPU]   CPU-transformed triangles: 8206 zero-area/NaN (no pixels; dropped), 99208 to the back end; software rasteriser: 0 off-surface, 0 drawn; pixels 0 written, 0 depth-failed; x 0..0 y 0..0 z 0..0
+[GPU]   blend pairs (src/dst): 302/303 302/1 300/1
+[GPU]   program attribute formats (slot:type/size): v0:2/4 v3:0/4 v9:2/2 v10:2/2 v11:2/2 v12:2/2 v0:2/3 v2:6/1 v1:2/1 v1:2/2 v1:2/3
+[GPU] batches: 0 textured, 0 with no texcoords, 0 with texcoords but no usable stage
+  [GPU]   0x0100 x261940   last=0x00000000 (0.0000)
+  [GPU]   0x0394 x202302   last=0x00000000 (0.0000)
+  [GPU]   0x0398 x202302   last=0x4B7FFFFF (16777215.0000)
+  [GPU]   0x0110 x130970   last=0x00000000 (0.0000)
+  [GPU]   0x03B8 x87801    last=0x00000000 (0.0000)
+  [GPU]   0x0314 x72038    last=0x00000000 (0.0000)
+  [GPU]   0x0294 x72038    last=0x00020001 (0.0000)
+  [GPU]   0x17C4 x72038    last=0x00000000 (0.0000)
+  [GPU]   0x0308 x58302    last=0x00000001 (0.0000)
+  [GPU]   0x0480 x54922    last=0xBF7D8232 (-0.9903)
+[Vulkan raw vertices] GPU fixed batches=88088 CPU declined batches=0
+[Vulkan command batches] live targets: draws=135435 submissions=11975
+[Vulkan depth residency] binds=142663 imports=7496 writebacks=8107 CPU merges=0
+[Vulkan] completed frame 1140: 640x480, guest=80408000
+[GPU] 2.65 fps (1150 flips)
+[GPU] surface 0x02FA6000 pitch 1024 clip 256x256+0+0 clears 9426 | 10944348 unhandled methods (435 distinct), 9112742 words as register runs
+[GPU] draws 152017 (152017 with coordinates), 10928126 indices; x -256.5..640.0  y -16.5..476.1
+[GPU] brightest pixel written 0x00000000
+[GPU] 0 pixels written; draw surface 0x00534000 -> 0x80534000, clear surface 0x02FA6000 -> 0x82FA6000
+[GPU] rasterised 10614230 triangles; 0 batches skipped as not screen-space, 0 triangles fully off-surface
+[GPU] vertex programs: 56952 batches, 229162 vertices; 0 triangles dropped behind the eye
+[GPU] fixed-function transform: 95065 batches
+[GPU]   on the back end: 95065 batches, 10508564 triangles, 5781328 vertices; on the CPU 0; declined: points/lines 0 index range 0 attribute span 0 back end 0 program (no FINAL / writes c[]) 0
+[GPU]   CPU-transformed triangles: 8206 zero-area/NaN (no pixels; dropped), 105666 to the back end; software rasteriser: 0 off-surface, 0 drawn; pixels 0 written, 0 depth-failed; x 0..0 y 0..0 z 0..0
+[GPU]   blend pairs (src/dst): 302/303 302/1 300/1
+[GPU]   program attribute formats (slot:type/size): v0:2/4 v3:0/4 v9:2/2 v10:2/2 v11:2/2 v12:2/2 v0:2/3 v2:6/1 v1:2/1 v1:2/2 v1:2/3
+[GPU] batches: 0 textured, 0 with no texcoords, 0 with texcoords but no usable stage
+  [GPU]   0x0100 x269976   last=0x00000000 (0.0000)
+  [GPU]   0x0394 x233375   last=0x00000000 (0.0000)
+  [GPU]   0x0398 x233375   last=0x4B7FFFFF (16777215.0000)
+  [GPU]   0x0110 x134988   last=0x00000000 (0.0000)
+  [GPU]   0x03B8 x108766   last=0x00000001 (0.0000)
+  [GPU]   0x0314 x89043    last=0x00000001 (0.0000)
+  [GPU]   0x0294 x89043    last=0x00010001 (0.0000)
+  [GPU]   0x17C4 x89043    last=0x00000000 (0.0000)
+  [GPU]   0x0480 x68972    last=0x3EA0EEB1 (0.3143)
+  [GPU]   0x0484 x68972    last=0xBEE6DC96 (-0.4509)
+[GPU] 3.67 fps (1188 flips)
+[GPU] surface 0x00660000 pitch 2560 clip 640x480+0+0 clears 9737 | 13186563 unhandled methods (435 distinct), 11102123 words as register runs
+[GPU] draws 173898 (173898 with coordinates), 13355151 indices; x -256.5..640.0  y -16.5..476.1
+[GPU] brightest pixel written 0x00000000
+[GPU] 0 pixels written; draw surface 0x00408000 -> 0x80408000, clear surface 0x00660000 -> 0x80660000
+[GPU] rasterised 12997477 triangles; 0 batches skipped as not screen-space, 0 triangles fully off-surface
+[GPU] vertex programs: 58546 batches, 235538 vertices; 0 triangles dropped behind the eye
+[GPU] fixed-function transform: 115352 batches
+[GPU]   on the back end: 115352 batches, 12888623 triangles, 7032470 vertices; on the CPU 0; declined: points/lines 0 index range 0 attribute span 0 back end 0 program (no FINAL / writes c[]) 0
+[GPU]   CPU-transformed triangles: 8206 zero-area/NaN (no pixels; dropped), 108854 to the back end; software rasteriser: 0 off-surface, 0 drawn; pixels 0 written, 0 depth-failed; x 0..0 y 0..0 z 0..0
+[GPU]   blend pairs (src/dst): 302/303 302/1 300/1
+[GPU]   program attribute formats (slot:type/size): v0:2/4 v3:0/4 v9:2/2 v10:2/2 v11:2/2 v12:2/2 v0:2/3 v2:6/1 v1:2/1 v1:2/2 v1:2/3
+[GPU] batches: 0 textured, 0 with no texcoords, 0 with texcoords but no usable stage
+  [GPU]   0x0100 x278848   last=0x00000000 (0.0000)
+  [GPU]   0x0394 x265943   last=0x00000000 (0.0000)
+  [GPU]   0x0398 x265943   last=0x4B7FFFFF (16777215.0000)
+  [GPU]   0x0110 x139424   last=0x00000000 (0.0000)
+  [GPU]   0x03B8 x131520   last=0x00000000 (0.0000)
+  [GPU]   0x0314 x107045   last=0x00000000 (0.0000)
+  [GPU]   0x0294 x107045   last=0x00020001 (0.0000)
+  [GPU]   0x17C4 x107045   last=0x00000000 (0.0000)
+  [GPU]   0x0480 x84271    last=0x3E999999 (0.3000)
+  [GPU]   0x0484 x84271    last=0x30000000 (0.0000)
+[Vulkan raw vertices] GPU fixed batches=121628 CPU declined batches=0
+[Vulkan command batches] live targets: draws=172312 submissions=13222
+[Vulkan depth residency] binds=179138 imports=7904 writebacks=8681 CPU merges=0
+[Vulkan] completed frame 1200: 640x480, guest=80408000
+[GPU] 4.08 fps (1230 flips)
+[GPU] surface 0x00660000 pitch 2560 clip 640x480+0+0 clears 10073 | 15398436 unhandled methods (435 distinct), 13064153 words as register runs
+[GPU] draws 194835 (194835 with coordinates), 15738859 indices; x -256.5..640.0  y -16.5..476.1
+[GPU] brightest pixel written 0x00000000
+[GPU] 0 pixels written; draw surface 0x00408000 -> 0x80408000, clear surface 0x00660000 -> 0x80660000
+[GPU] rasterised 15339311 triangles; 0 batches skipped as not screen-space, 0 triangles fully off-surface
+[GPU] vertex programs: 59890 batches, 240914 vertices; 0 triangles dropped behind the eye
+[GPU] fixed-function transform: 134945 batches
+[GPU]   on the back end: 134945 batches, 15227769 triangles, 8247439 vertices; on the CPU 0; declined: points/lines 0 index range 0 attribute span 0 back end 0 program (no FINAL / writes c[]) 0
+[GPU]   CPU-transformed triangles: 8206 zero-area/NaN (no pixels; dropped), 111542 to the back end; software rasteriser: 0 off-surface, 0 drawn; pixels 0 written, 0 depth-failed; x 0..0 y 0..0 z 0..0
+[GPU]   blend pairs (src/dst): 302/303 302/1 300/1
+[GPU]   program attribute formats (slot:type/size): v0:2/4 v3:0/4 v9:2/2 v10:2/2 v11:2/2 v12:2/2 v0:2/3 v2:6/1 v1:2/1 v1:2/2 v1:2/3
+[GPU] batches: 0 textured, 0 with no texcoords, 0 with texcoords but no usable stage
+  [GPU]   0x0394 x299657   last=0x00000000 (0.0000)
+  [GPU]   0x0398 x299657   last=0x4B7FFFFF (16777215.0000)
+  [GPU]   0x0100 x288508   last=0x00000000 (0.0000)
+  [GPU]   0x03B8 x153782   last=0x00000000 (0.0000)
+  [GPU]   0x0110 x144254   last=0x00000000 (0.0000)
+  [GPU]   0x0314 x124522   last=0x00000000 (0.0000)
+  [GPU]   0x0294 x124522   last=0x00020001 (0.0000)
+  [GPU]   0x17C4 x124522   last=0x00000000 (0.0000)
+  [GPU]   0x0480 x99229    last=0x3E99999A (0.3000)
+  [GPU]   0x0484 x99229    last=0x00000000 (0.0000)
+  [GPU] draw #200000
+[Vulkan raw vertices] GPU fixed batches=142181 CPU declined batches=0
+[Vulkan command batches] live targets: draws=195265 submissions=14163
+[Vulkan depth residency] binds=201761 imports=8294 writebacks=9173 CPU merges=0
+[Vulkan] completed frame 1260: 640x480, guest=80408000
+[GPU] 5.62 fps (1286 flips)
+[GPU] surface 0x00408000 pitch 2560 clip 640x480+0+0 clears 10521 | 16708683 unhandled methods (435 distinct), 14208218 words as register runs
+[GPU] draws 207956 (207956 with coordinates), 17135971 indices; x -256.5..640.0  y -16.5..476.1
+[GPU] brightest pixel written 0x00000000
+[GPU] 0 pixels written; draw surface 0x00534000 -> 0x80534000, clear surface 0x00408000 -> 0x80408000
+[GPU] rasterised 16710181 triangles; 0 batches skipped as not screen-space, 0 triangles fully off-surface
+[GPU] vertex programs: 61682 batches, 248082 vertices; 0 triangles dropped behind the eye
+[GPU] fixed-function transform: 146274 batches
+[GPU]   on the back end: 146274 batches, 16595055 triangles, 8958612 vertices; on the CPU 0; declined: points/lines 0 index range 0 attribute span 0 back end 0 program (no FINAL / writes c[]) 0
+[GPU]   CPU-transformed triangles: 8206 zero-area/NaN (no pixels; dropped), 115126 to the back end; software rasteriser: 0 off-surface, 0 drawn; pixels 0 written, 0 depth-failed; x 0..0 y 0..0 z 0..0
+[GPU]   blend pairs (src/dst): 302/303 302/1 300/1
+[GPU]   program attribute formats (slot:type/size): v0:2/4 v3:0/4 v9:2/2 v10:2/2 v11:2/2 v12:2/2 v0:2/3 v2:6/1 v1:2/1 v1:2/2 v1:2/3
+[GPU] batches: 0 textured, 0 with no texcoords, 0 with texcoords but no usable stage
+  [GPU]   0x0394 x333189   last=0x00000000 (0.0000)
+  [GPU]   0x0398 x333189   last=0x4B7FFFFF (16777215.0000)
+  [GPU]   0x0100 x301388   last=0x00000000 (0.0000)
+  [GPU]   0x03B8 x166670   last=0x00000000 (0.0000)
+  [GPU]   0x0110 x150694   last=0x00000000 (0.0000)
+  [GPU]   0x0314 x134705   last=0x00000000 (0.0000)
+  [GPU]   0x0294 x134705   last=0x00020001 (0.0000)
+  [GPU]   0x17C4 x134705   last=0x00000000 (0.0000)
+  [GPU]   0x0480 x107848   last=0x3E99999A (0.3000)
+  [GPU]   0x0484 x107848   last=0x00000000 (0.0000)
+[Vulkan raw vertices] GPU fixed batches=153136 CPU declined batches=0
+[Vulkan command batches] live targets: draws=208620 submissions=14946
+[Vulkan depth residency] binds=214786 imports=8684 writebacks=9631 CPU merges=0
+[Vulkan] completed frame 1320: 640x480, guest=80408000
+[GPU] 4.90 fps (1336 flips)
+[GPU] surface 0x00534000 pitch 2560 clip 640x480+0+0 clears 10921 | 18034256 unhandled methods (435 distinct), 15369528 words as register runs
+[GPU] draws 220974 (220974 with coordinates), 18575238 indices; x -256.5..640.0  y -16.5..476.1
+[GPU] brightest pixel written 0x00000000
+[GPU] 0 pixels written; draw surface 0x00660000 -> 0x80660000, clear surface 0x00534000 -> 0x80534000
+[GPU] rasterised 18123412 triangles; 0 batches skipped as not screen-space, 0 triangles fully off-surface
+[GPU] vertex programs: 63282 batches, 254482 vertices; 0 triangles dropped behind the eye
+[GPU] fixed-function transform: 157692 batches
+[GPU]   on the back end: 157692 batches, 18005086 triangles, 9697138 vertices; on the CPU 0; declined: points/lines 0 index range 0 attribute span 0 back end 0 program (no FINAL / writes c[]) 0
+[GPU]   CPU-transformed triangles: 8206 zero-area/NaN (no pixels; dropped), 118326 to the back end; software rasteriser: 0 off-surface, 0 drawn; pixels 0 written, 0 depth-failed; x 0..0 y 0..0 z 0..0
+[GPU]   blend pairs (src/dst): 302/303 302/1 300/1
+[GPU]   program attribute formats (slot:type/size): v0:2/4 v3:0/4 v9:2/2 v10:2/2 v11:2/2 v12:2/2 v0:2/3 v2:6/1 v1:2/1 v1:2/2 v1:2/3
+[GPU] batches: 0 textured, 0 with no texcoords, 0 with texcoords but no usable stage
+  [GPU]   0x0394 x364054   last=0x00000000 (0.0000)
+  [GPU]   0x0398 x364054   last=0x4B7FFFFF (16777215.0000)
+  [GPU]   0x0100 x312888   last=0x00000000 (0.0000)
+  [GPU]   0x03B8 x179603   last=0x00000000 (0.0000)
+  [GPU]   0x0110 x156444   last=0x00000000 (0.0000)
+  [GPU]   0x0314 x144893   last=0x00000000 (0.0000)
+  [GPU]   0x0294 x144893   last=0x00020001 (0.0000)
+  [GPU]   0x17C4 x144893   last=0x00000000 (0.0000)
+  [GPU]   0x0480 x116438   last=0x3E99999A (0.3000)
+  [GPU]   0x0484 x116438   last=0x00000000 (0.0000)
+[GPU] 3.76 fps (1374 flips)
+[GPU] surface 0x00660000 pitch 2560 clip 640x480+0+0 clears 11225 | 19773479 unhandled methods (435 distinct), 16909812 words as register runs
+[GPU] draws 237433 (237433 with coordinates), 20455032 indices; x -256.5..640.0  y -16.5..476.1
+[GPU] brightest pixel written 0x00000000
+[GPU] 0 pixels written; draw surface 0x00408000 -> 0x80408000, clear surface 0x00660000 -> 0x80660000
+[GPU] rasterised 19970288 triangles; 0 batches skipped as not screen-space, 0 triangles fully off-surface
+[GPU] vertex programs: 64498 batches, 259346 vertices; 0 triangles dropped behind the eye
+[GPU] fixed-function transform: 172935 batches
+[GPU]   on the back end: 172935 batches, 19849530 triangles, 10657882 vertices; on the CPU 0; declined: points/lines 0 index range 0 attribute span 0 back end 0 program (no FINAL / writes c[]) 0
+[GPU]   CPU-transformed triangles: 8206 zero-area/NaN (no pixels; dropped), 120758 to the back end; software rasteriser: 0 off-surface, 0 drawn; pixels 0 written, 0 depth-failed; x 0..0 y 0..0 z 0..0
+[GPU]   blend pairs (src/dst): 302/303 302/1 300/1
+[GPU]   program attribute formats (slot:type/size): v0:2/4 v3:0/4 v9:2/2 v10:2/2 v11:2/2 v12:2/2 v0:2/3 v2:6/1 v1:2/1 v1:2/2 v1:2/3
+[GPU] batches: 0 textured, 0 with no texcoords, 0 with texcoords but no usable stage
+  [GPU]   0x0394 x392469   last=0x00000000 (0.0000)
+  [GPU]   0x0398 x392469   last=0x4B7FFFFF (16777215.0000)
+  [GPU]   0x0100 x321628   last=0x00000000 (0.0000)
+  [GPU]   0x03B8 x196746   last=0x00000000 (0.0000)
+  [GPU]   0x0110 x160814   last=0x00000000 (0.0000)
+  [GPU]   0x0314 x158372   last=0x00000000 (0.0000)
+  [GPU]   0x0294 x158372   last=0x00020001 (0.0000)
+  [GPU]   0x17C4 x158372   last=0x00000000 (0.0000)
+  [GPU]   0x0480 x127867   last=0x3E99999A (0.3000)
+  [GPU]   0x0484 x127867   last=0x00000000 (0.0000)
+[Vulkan raw vertices] GPU fixed batches=175597 CPU declined batches=0
+[Vulkan command batches] live targets: draws=233481 submissions=15924
+[Vulkan depth residency] binds=239317 imports=9074 writebacks=10136 CPU merges=0
+[Vulkan] completed frame 1380: 640x480, guest=80408000
+[GPU] 3.43 fps (1410 flips)
+[GPU] surface 0x00660000 pitch 2560 clip 640x480+0+0 clears 11513 | 21660665 unhandled methods (435 distinct), 18583586 words as register runs
+[GPU] draws 255365 (255365 with coordinates), 22506276 indices; x -256.5..640.0  y -16.5..476.1
+[GPU] brightest pixel written 0x00000000
+[GPU] 0 pixels written; draw surface 0x00408000 -> 0x80408000, clear surface 0x00660000 -> 0x80660000
+[GPU] rasterised 21985668 triangles; 0 batches skipped as not screen-space, 0 triangles fully off-surface
+[GPU] vertex programs: 65650 batches, 263954 vertices; 0 triangles dropped behind the eye
+[GPU] fixed-function transform: 189715 batches
+[GPU]   on the back end: 189715 batches, 21862606 triangles, 11702062 vertices; on the CPU 0; declined: points/lines 0 index range 0 attribute span 0 back end 0 program (no FINAL / writes c[]) 0
+[GPU]   CPU-transformed triangles: 8206 zero-area/NaN (no pixels; dropped), 123062 to the back end; software rasteriser: 0 off-surface, 0 drawn; pixels 0 written, 0 depth-failed; x 0..0 y 0..0 z 0..0
+[GPU]   blend pairs (src/dst): 302/303 302/1 300/1
+[GPU]   program attribute formats (slot:type/size): v0:2/4 v3:0/4 v9:2/2 v10:2/2 v11:2/2 v12:2/2 v0:2/3 v2:6/1 v1:2/1 v1:2/2 v1:2/3
+[GPU] batches: 0 textured, 0 with no texcoords, 0 with texcoords but no usable stage
+  [GPU]   0x0394 x421258   last=0x00000000 (0.0000)
+  [GPU]   0x0398 x421258   last=0x4B7FFFFF (16777215.0000)
+  [GPU]   0x0100 x329908   last=0x00000000 (0.0000)
+  [GPU]   0x03B8 x215760   last=0x00000000 (0.0000)
+  [GPU]   0x0314 x173294   last=0x00000000 (0.0000)
+  [GPU]   0x0294 x173294   last=0x00020001 (0.0000)
+  [GPU]   0x17C4 x173294   last=0x00000000 (0.0000)
+  [GPU]   0x0110 x164954   last=0x00000000 (0.0000)
+  [GPU]   0x0480 x140564   last=0x3E99999A (0.3000)
+  [GPU]   0x0484 x140564   last=0x00000000 (0.0000)
+[Vulkan raw vertices] GPU fixed batches=203025 CPU declined batches=0
+[Vulkan command batches] live targets: draws=263309 submissions=16990
+[Vulkan depth residency] binds=268815 imports=9464 writebacks=10663 CPU merges=0
+[Vulkan] completed frame 1440: 640x480, guest=80408000
+[GPU] 3.72 fps (1448 flips)
+[GPU] surface 0x00408000 pitch 2560 clip 640x480+0+0 clears 11817 | 23388341 unhandled methods (435 distinct), 20112599 words as register runs
+[GPU] draws 271927 (271927 with coordinates), 24388545 indices; x -256.5..640.0  y -16.5..476.1
+[GPU] brightest pixel written 0x00000000
+[GPU] 0 pixels written; draw surface 0x00534000 -> 0x80534000, clear surface 0x00408000 -> 0x80408000
+[GPU] rasterised 23834813 triangles; 0 batches skipped as not screen-space, 0 triangles fully off-surface
+[GPU] vertex programs: 66866 batches, 268818 vertices; 0 triangles dropped behind the eye
+[GPU] fixed-function transform: 205061 batches
+[GPU]   on the back end: 205061 batches, 23709319 triangles, 12660683 vertices; on the CPU 0; declined: points/lines 0 index range 0 attribute span 0 back end 0 program (no FINAL / writes c[]) 0
+[GPU]   CPU-transformed triangles: 8206 zero-area/NaN (no pixels; dropped), 125494 to the back end; software rasteriser: 0 off-surface, 0 drawn; pixels 0 written, 0 depth-failed; x 0..0 y 0..0 z 0..0
+[GPU]   blend pairs (src/dst): 302/303 302/1 300/1
+[GPU]   program attribute formats (slot:type/size): v0:2/4 v3:0/4 v9:2/2 v10:2/2 v11:2/2 v12:2/2 v0:2/3 v2:6/1 v1:2/1 v1:2/2 v1:2/3
+[GPU] batches: 0 textured, 0 with no texcoords, 0 with texcoords but no usable stage
+  [GPU]   0x0394 x449874   last=0x00000000 (0.0000)
+  [GPU]   0x0398 x449874   last=0x4B7FFFFF (16777215.0000)
+  [GPU]   0x0100 x338648   last=0x00000000 (0.0000)
+  [GPU]   0x03B8 x233241   last=0x00000000 (0.0000)
+  [GPU]   0x0314 x186984   last=0x00000000 (0.0000)
+  [GPU]   0x0294 x186984   last=0x00020001 (0.0000)
+  [GPU]   0x17C4 x186984   last=0x00000000 (0.0000)
+  [GPU]   0x0110 x169324   last=0x00000000 (0.0000)
+  [GPU]   0x0480 x152217   last=0x3E999999 (0.3000)
+  [GPU]   0x0484 x152217   last=0x00000000 (0.0000)
+[Vulkan raw vertices] GPU fixed batches=207105 CPU declined batches=0
+[Vulkan command batches] live targets: draws=269787 submissions=17662
+[Vulkan depth residency] binds=274965 imports=9854 writebacks=11086 CPU merges=0
+[Vulkan] completed frame 1500: 640x480, guest=80408000
+[GPU] 8.21 fps (1530 flips)
+[GPU] surface 0x00660000 pitch 2560 clip 640x480+0+0 clears 12471 | 23739669 unhandled methods (435 distinct), 20382091 words as register runs
+[GPU] draws 276713 (276713 with coordinates), 24611646 indices; x -256.5..640.0  y -16.5..476.1
+[GPU] brightest pixel written 0x00000000
+[GPU] 0 pixels written; draw surface 0x00408000 -> 0x80408000, clear surface 0x00660000 -> 0x80660000
+[GPU] rasterised 24048342 triangles; 0 batches skipped as not screen-space, 0 triangles fully off-surface
+[GPU] vertex programs: 69488 batches, 279306 vertices; 0 triangles dropped behind the eye
+[GPU] fixed-function transform: 207225 batches
+[GPU]   on the back end: 207225 batches, 23917604 triangles, 12771476 vertices; on the CPU 0; declined: points/lines 0 index range 0 attribute span 0 back end 0 program (no FINAL / writes c[]) 0
+[GPU]   CPU-transformed triangles: 8206 zero-area/NaN (no pixels; dropped), 130738 to the back end; software rasteriser: 0 off-surface, 0 drawn; pixels 0 written, 0 depth-failed; x 0..0 y 0..0 z 0..0
+[GPU]   blend pairs (src/dst): 302/303 302/1 300/1 0/0
+[GPU]   program attribute formats (slot:type/size): v0:2/4 v3:0/4 v9:2/2 v10:2/2 v11:2/2 v12:2/2 v0:2/3 v2:6/1 v1:2/1 v1:2/2 v1:2/3
+[GPU] batches: 0 textured, 0 with no texcoords, 0 with texcoords but no usable stage
+  [GPU]   0x0394 x487652   last=0x00000000 (0.0000)
+  [GPU]   0x0398 x487652   last=0x4B7FFFFF (16777215.0000)
+  [GPU]   0x0100 x357424   last=0x00000000 (0.0000)
+  [GPU]   0x03B8 x235920   last=0x00000000 (0.0000)
+  [GPU]   0x0314 x189135   last=0x00000000 (0.0000)
+  [GPU]   0x0294 x189135   last=0x00020001 (0.0000)
+  [GPU]   0x17C4 x189135   last=0x00000000 (0.0000)
+  [GPU]   0x0110 x178712   last=0x00000000 (0.0000)
+  [GPU]   0x0480 x153861   last=0x3E99999A (0.3000)
+  [GPU]   0x0484 x153861   last=0x00000000 (0.0000)
+[Vulkan raw vertices] GPU fixed batches=207345 CPU declined batches=0
+[Vulkan command batches] live targets: draws=272425 submissions=18273
+[Vulkan depth residency] binds=277275 imports=10244 writebacks=11486 CPU merges=0
+[Vulkan] completed frame 1560: 640x480, guest=80408000

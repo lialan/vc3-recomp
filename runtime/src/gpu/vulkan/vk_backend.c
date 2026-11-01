@@ -9,7 +9,7 @@
 #include <time.h>
 #define MAX_SURFACES 32
 struct Surface { Nv2aSurface guest; uint32_t zeta; Nv2aRenderState state; float *depth; uint8_t *stencil; ChVkTarget *target; unsigned char *rgba,*observed,*cpu,*raw; size_t raw_span; int observed_valid,resident,color_dirty,native_z24; size_t bytes; };
-struct ChVkBackend { struct {int enabled;uint64_t start,n,surface,coherence,imports,draw,store;} profile; ChVkBackendConfig host; ChVkTextureCache *textures; ChVkDepthResident *zeta; uint64_t frames,raw_draws,raw_declined; struct Surface surfaces[MAX_SURFACES]; unsigned count; };
+struct ChVkBackend { struct {int enabled;uint64_t start,n,surface,coherence,imports,draw,store;} profile; struct {uint64_t previous,us[120];unsigned count;} frame_profile; ChVkBackendConfig host; ChVkTextureCache *textures; ChVkDepthResident *zeta; uint64_t frames,raw_draws,raw_declined; struct Surface surfaces[MAX_SURFACES]; unsigned count; };
 static ChVkBackend *active;
 static void flush_color(struct Surface *);
 static void observe_guest_colors(void);
@@ -30,6 +30,25 @@ static void profile_draw(const uint64_t t[6]) {
         active->profile.imports/1000.,active->profile.draw/1000.,active->profile.store/1000.);
     active->profile.n=active->profile.surface=active->profile.coherence=active->profile.imports=0;
     active->profile.draw=active->profile.store=0;active->profile.start=t[5];
+}
+static int compare_us(const void *a,const void *b) {
+    uint64_t x=*(const uint64_t *)a,y=*(const uint64_t *)b;return (x>y)-(x<y);
+}
+static void profile_frame(void) {
+    if(!active->profile.enabled) return;
+    uint64_t now=now_us(),previous=active->frame_profile.previous;
+    active->frame_profile.previous=now;
+    if(!previous) return;
+    active->frame_profile.us[active->frame_profile.count++]=now-previous;
+    if(active->frame_profile.count<120) return;
+    uint64_t sum=0;unsigned over20=0,over33=0;
+    for(unsigned i=0;i<120;i++) {uint64_t us=active->frame_profile.us[i];sum+=us;over20+=us>20000;over33+=us>33333;}
+    qsort(active->frame_profile.us,120,sizeof(uint64_t),compare_us);
+    fprintf(stderr,"[Vulkan frame intervals] flips %llu..%llu: %.2f fps mean %.2fms p95 %.2fms p99 %.2fms max %.2fms >20ms=%u >33ms=%u (guest completions, not XR display)\n",
+        (unsigned long long)(active->frames-120),(unsigned long long)active->frames,
+        sum?120e6/sum:0,sum/120000.,active->frame_profile.us[113]/1000.,
+        active->frame_profile.us[118]/1000.,active->frame_profile.us[119]/1000.,over20,over33);
+    active->frame_profile.count=0;
 }
 static void fatal(VkResult result,const char *operation) {
     if(active && active->host.fatal) active->host.fatal(result,operation);
@@ -350,6 +369,7 @@ static void flip(void) {
     if(!active) fatal(VK_ERROR_INITIALIZATION_FAILED,"flip without backend");
     flush();
     active->frames++;
+    profile_frame();
     if(active->profile.enabled && (active->frames==1 || active->frames%60==0))
         fprintf(stderr,"[Vulkan raw vertices] GPU fixed batches=%llu CPU declined batches=%llu\n",
             (unsigned long long)active->raw_draws,(unsigned long long)active->raw_declined);

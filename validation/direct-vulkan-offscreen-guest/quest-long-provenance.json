@@ -1,0 +1,5 @@
+{
+  "libmain_sha256": "5900037104bc15944359830c61ad611e42769cd0aaf8249f418ded50037b11f2",
+  "cli_sha256": "334b5f83120e628eb4f27ca6e0937ecf5328b0c2bd16e561f22cb07ba2ce5906",
+  "note": "Copied binaries have not been rebuilt since launch; pending bounded offscreen run."
+}

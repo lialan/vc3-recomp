@@ -23,6 +23,8 @@
  * seconds since the first poll and key one of test, service, coin, start,
  * fire, reload (each held for half a second), e.g.
  * VC3_AUTOKEYS="3:test,8:coin,9:start".
+ * AUTOKEYS_CLOCK=flips measures that timeline in executor flips at 60 Hz
+ * instead of wall time, for comparisons between differently paced renderers.
  */
 
 #include <stdint.h>
@@ -38,6 +40,7 @@
 #include "host_input.h"
 #include "chihiro/ch_env.h"
 #include "chihiro/chihiro_profile.h"
+#include "nv2a_backend.h"
 
 #define AUTO_MAX     32
 #define AUTO_HOLD_MS 500   /* > one poll at the current frame rate */
@@ -47,6 +50,8 @@ typedef struct { uint32_t at_ms; char key[12]; } auto_t;
 static auto_t s_auto[AUTO_MAX];
 static int s_nauto = -1;
 static uint64_t s_t0;
+static uint64_t s_flip0;
+static int s_auto_flip_clock;
 
 static uint64_t now_ms(void)
 {
@@ -517,6 +522,11 @@ void host_input_poll(chihiro_input_t *in)
         bind_load();
         auto_parse();
         s_t0 = now_ms();
+        const char *clock = ch_env("AUTOKEYS_CLOCK");
+        s_auto_flip_clock = clock && !strcmp(clock,"flips");
+        s_flip0 = nv2a_backend_flip_count();
+        if(s_auto_flip_clock)
+            fprintf(stderr,"[INPUT] script clock: executor flips at 60 Hz (origin %llu)\n",(unsigned long long)s_flip0);
         SDL_AddEventWatch(input_watch, NULL);
         if (ch_env("INPUT_SELFTEST")) {
             static uint64_t start;
@@ -525,7 +535,7 @@ void host_input_poll(chihiro_input_t *in)
             fprintf(stderr, "[INPUT] selftest: SDL events into the queue from t=30s\n");
         }
     }
-    t = (uint32_t)(now_ms() - s_t0);
+    t = s_auto_flip_clock ? (uint32_t)((nv2a_backend_flip_count()-s_flip0)*1000/60) : (uint32_t)(now_ms() - s_t0);
 
     memset(in, 0, sizeof(*in));
     k = (const Uint8 *)s_keys;

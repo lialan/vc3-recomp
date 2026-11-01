@@ -391,6 +391,13 @@ int main(int argc, char **argv)
 #endif
 
 #if defined(__ANDROID__)
+#if defined(CHIHIRO_RENDERER_VULKAN)
+    const char *offscreen=ch_env("VULKAN_OFFSCREEN");
+    if(offscreen && !strcmp(offscreen,"1")) {
+        fprintf(stderr,"[Vulkan] Android offscreen diagnostic: no XR session or VR performance acceptance\n");
+        rc = xbox_HostWindowMain(guest_main);
+    } else
+#endif
     rc = vc3_quest_run(guest_main);
 #else
     rc = xbox_HostWindowMain(guest_main);

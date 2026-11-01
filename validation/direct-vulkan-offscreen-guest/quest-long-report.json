@@ -1,0 +1,24 @@
+{
+  "exit_code": 137,
+  "elapsed_seconds": 240.7719261670718,
+  "environment": {
+    "LD_LIBRARY_PATH": "/data/local/tmp/vc3-game-combat-b00e5bfe",
+    "VC3_SAVE_DIR": "/data/local/tmp/vc3-game-combat-b00e5bfe/save",
+    "VC3_CONFIG_DIR": "/data/local/tmp/vc3-game-combat-b00e5bfe/config",
+    "VC3_SOUND": "0",
+    "VC3_SCALE": "1",
+    "VC3_FPS": "60",
+    "RECOMP_PB_DECODE_THREAD": "0",
+    "CHIHIRO_VULKAN_FRAME_LIMIT": "6100",
+    "CHIHIRO_VULKAN_RESIDENT_DEPTH": "1",
+    "CHIHIRO_VULKAN_PROFILE": "1",
+    "CHIHIRO_VULKAN_DUMP_DIR": "/data/local/tmp/vc3-game-combat-b00e5bfe/frames",
+    "CHIHIRO_VULKAN_DUMP_FIRST": "6000",
+    "CHIHIRO_VULKAN_DUMP_COUNT": "3",
+    "CHIHIRO_AUTOKEYS_CLOCK": "flips",
+    "CHIHIRO_AUTOKEYS": "30:coin,31:start,40:fire,60:start,62:start,65:fire,70:start,75:start,80:start,85:fire,90:fire,95:fire,100:reload",
+    "CHIHIRO_AUTOAIM": "0.2,0.5",
+    "CHIHIRO_AUTOFIRE_MS": "700"
+  },
+  "scope": "Actual Quest Vulkan guest; offscreen CLI, no XR session, not VR/FPS acceptance"
+}

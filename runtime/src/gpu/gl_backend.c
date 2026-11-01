@@ -2792,6 +2792,7 @@ typedef struct {
     GLsizeiptr show_cap;
     GLsizei sw, sh;
     int cut;                     /* VC3_FPS_DEBUG: made as a scene cut */
+    uint64_t executor_flip;       /* source frame, before async publication */
 } Readback;
 
 static Readback s_rb[2];
@@ -2800,7 +2801,7 @@ static int s_rb_next;
 static int interp_make(const Surf *f, GLuint *pbos, int n);
 static void interp_scene_snap(const Surf *f, const Nv2aBatch *b);
 static void interp_dump(const void *const *px, int n, uint32_t pitch,
-                        uint32_t bpp, GLsizei w, GLsizei h, int cut);
+                        uint32_t bpp, GLsizei w, GLsizei h, int cut,uint64_t executor_flip);
 static int s_ip_last_cut;
 extern void xbox_FramebufferWindowPresentFrames(const void *const *frames, int n,
                                                 uint32_t w, uint32_t h, uint32_t pitch,
@@ -2838,6 +2839,7 @@ static void show_read(Readback *r, const Surf *f, int fps)
     r->nmid = f->st ? 0 : interp_make(f, r->mid_pbo, fps / 60 - 1);
     r->cut = s_ip_last_cut;
     r->group = 1;
+    r->executor_flip = nv2a_backend_flip_count();
 }
 
 /* Map last flip's group and hand it to the window. */
@@ -2857,7 +2859,7 @@ static void show_publish(Readback *r)
     if (n == r->nmid + 1) {
         xbox_FramebufferWindowPresentFrames(px, n, (uint32_t)r->sw, (uint32_t)r->sh,
                                             (uint32_t)r->sw * 4, 4);
-        interp_dump(px, n, (uint32_t)r->sw * 4, 4, r->sw, r->sh, r->cut);
+        interp_dump(px, n, (uint32_t)r->sw * 4, 4, r->sw, r->sh, r->cut,r->executor_flip);
     }
     for (i = 0; i < n; i++) {
         glBindBuffer(GL_PIXEL_PACK_BUFFER, i < r->nmid ? r->mid_pbo[i] : r->show_pbo);
@@ -5982,7 +5984,7 @@ static int interp_make(const Surf *f, GLuint *pbos, int n)
  * "1"; "cuts", with VC3_FPS_DEBUG, writes only groups made as scene cuts).
  * For checking made frames headless, where nothing is shown. */
 static void interp_dump(const void *const *px, int n, uint32_t pitch,
-                        uint32_t bpp, GLsizei w, GLsizei h, int cut)
+                        uint32_t bpp, GLsizei w, GLsizei h, int cut,uint64_t executor_flip)
 {
     const char *prefix = genv("FPS_DUMP"), *flag = genv("FPS_DUMP_FLIPS");
     char path[600];
@@ -5995,6 +5997,13 @@ static void interp_dump(const void *const *px, int n, uint32_t pitch,
 
     if (!prefix)
         return;
+    /* Optional bounded reference capture indexed by the source executor flip,
+     * not the later flip that publishes this asynchronous PBO. Legacy dumps
+     * retain their existing filenames unless this range is requested. */
+    const char *first=genv("FPS_DUMP_FIRST"),*count=genv("FPS_DUMP_COUNT");
+    uint64_t start=first?strtoull(first,NULL,10):0;
+    if((first || count) && (executor_flip<start ||
+       (count && executor_flip-start>=strtoull(count,NULL,10)))) return;
     if (flag && !strcmp(flag, "cuts")) {
         if (!cut)
             return;
@@ -6018,7 +6027,8 @@ static void interp_dump(const void *const *px, int n, uint32_t pitch,
     hdr[28] = 24;
     for (k = 0; k < n; k++) {
         FILE *fo;
-        snprintf(path, sizeof path, "%s%05u_%d.bmp", prefix, s_frame, k);
+        snprintf(path, sizeof path, "%s%05llu_%d.bmp", prefix,
+            (unsigned long long)((first || count)?executor_flip:s_frame), k);
         fo = fopen(path, "wb");
         if (!fo)
             continue;

@@ -10,6 +10,34 @@ Latest bounded command batching and its validation are recorded in
 [`direct-vulkan-command-batches/`](direct-vulkan-command-batches/README.md).
 The Quest overlay now uses resident batches and the shared GL/Vulkan display
 cadence; see [`direct-vulkan-resident-overlay/`](direct-vulkan-resident-overlay/README.md).
+
+Android offscreen diagnostics can now boot the real guest on Adreno without
+creating an XR session. Configure `CHIHIRO_VULKAN_OFFSCREEN_CLI=ON` and build
+`vc3_vulkan_offscreen`, then run the complete session through the shared lock:
+
+```
+python3 ~/.local/bin/quest3-lock python3 tools/run-vulkan-quest-offscreen.py \
+  --output /tmp/vc3-quest-offscreen-fresh --frames 240 --capture-first 180
+```
+
+The runner uses isolated UUID files/saves/config, a remote watchdog and exact
+device serial, then cleans up and checks the original APK hash. It does not
+install/launch an Android app, touch tracking/Guardian, or measure compositor,
+overlay or VR frame-time behavior. The CLI calls the shared `chihiro_main`
+entry directly, bypassing the Java storage/env/log setup. The normal XR path
+still requires the runtime-selected Vulkan device.
+
+`CHIHIRO_AUTOKEYS_CLOCK=flips` optionally interprets the shared input timeline
+as executor flips at 60 Hz since first input poll. Default input timing remains
+wall time. `VC3_FPS_DUMP_FIRST`/`VC3_FPS_DUMP_COUNT` bound GL reference captures
+by their source executor flip, retaining that provenance through delayed PBO
+publication. Use `RECOMP_PB_DECODE_THREAD=0` for these indexed comparisons;
+the diagnostic counter is not a GPU fence and deferred submission may run
+ahead. Input alignment alone does not make other guest timers deterministic.
+
+With `VULKAN_PROFILE=1`, 120-interval windows now report guest completion FPS,
+mean, p95, p99, maximum and counts exceeding 20/33 ms. These are guest-frame
+intervals, explicitly separate from headset display/compositor timing.
 This adds resident draw submission reuse; full Quest combat and frame-time
 acceptance remain open. Earlier measurements below describe their original
 checkpoints, not the latest performance state.

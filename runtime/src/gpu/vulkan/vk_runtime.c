@@ -135,8 +135,11 @@ int ch_vk_runtime_start(void)
         return 1;
     }
 #ifdef __ANDROID__
-    result=VK_ERROR_INITIALIZATION_FAILED;
-    goto fail; /* Quest must use the OpenXR runtime-selected device. */
+    const char *offscreen=ch_env("VULKAN_OFFSCREEN");
+    if(!offscreen || strcmp(offscreen,"1")) {
+        result=VK_ERROR_INITIALIZATION_FAILED;
+        goto fail; /* Live Quest XR must use the runtime-selected device. */
+    }
 #endif
     VkApplicationInfo app={.sType=VK_STRUCTURE_TYPE_APPLICATION_INFO,
         .pApplicationName="Chihiro direct Vulkan",.apiVersion=VK_API_VERSION_1_0};
