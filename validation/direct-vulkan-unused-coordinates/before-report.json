@@ -1,0 +1,41 @@
+{
+  "binary": "/Users/lialan/Downloads/VR/vc3-vulkan/build-vulkan-direct/vc3",
+  "binary_sha256": "a2383c850f44e45e0a32092f7ba264174f72b5c780b759265548be33ae706607",
+  "game": "/Users/lialan/Downloads/VR/VC3/extracted",
+  "environment": {
+    "RECOMP_HEADLESS": "1",
+    "RECOMP_FB_WINDOW": "0",
+    "VC3_SOUND": "0",
+    "VC3_SCALE": "1",
+    "VC3_ASPECT": "4:3",
+    "VC3_STEREO": "0",
+    "VC3_FPS": "60",
+    "VC3_SAVE_DIR": "/private/tmp/vc3-vulkan-vertex-validation-gameplay/save",
+    "VC3_CONFIG_DIR": "/private/tmp/vc3-vulkan-vertex-validation-gameplay/config",
+    "VC3_VULKAN_DUMP_DIR": "/private/tmp/vc3-vulkan-vertex-validation-gameplay/frames",
+    "VC3_VULKAN_DUMP_FIRST": "1100",
+    "VC3_VULKAN_DUMP_COUNT": "3",
+    "VC3_VULKAN_FRAME_LIMIT": "1400",
+    "VK_ICD_FILENAMES": "/opt/homebrew/Cellar/mesa/26.2.6/share/vulkan/icd.d/kosmickrisp_mesa_icd.aarch64.json",
+    "CHIHIRO_VULKAN_PROFILE": "1",
+    "CHIHIRO_VULKAN_RESIDENT_DEPTH": "1",
+    "CHIHIRO_AUTOKEYS": "60:coin,62:start,64:start,75:fire,80:start,90:start,95:coin,97:start,99:start,110:fire,115:fire,120:start,130:start,135:coin,137:start,139:start,150:fire,155:fire,160:start,170:start,175:fire,180:fire,185:reload,190:fire,195:fire,200:fire,205:reload,210:fire,215:fire,220:fire,225:fire,230:reload",
+    "CHIHIRO_AUTOFIRE_MS": "700",
+    "CHIHIRO_AUTOAIM": "0.2,0.5",
+    "CHIHIRO_STRICT_GPU_FENCES": "1",
+    "CHIHIRO_FENCE_LOG": "1",
+    "CHIHIRO_VULKAN_REUSE_RESOURCES": "1",
+    "CHIHIRO_VULKAN_TEXTURE_CACHE_ENTRIES": "2048"
+  },
+  "requested_frames": 1400,
+  "scope": "Local VC3 guest execution; no Quest or VR acceptance",
+  "opengl_imports": [],
+  "exit_code": -6,
+  "reached_frame_limit": false,
+  "captures": {
+    "frame-001100.ppm": "5c8917e1de74f962ee0656e782d30fa86fe0f0f4227292ea9c83b6efeecf1a5d",
+    "frame-001101.ppm": "7c6f4c9051528b8eed10fbe063b890cca8d17720bb6686a5e8e63c6b759a9ed4",
+    "frame-001102.ppm": "4010f2994d254d7261b5046c381ca255eb1c0b8da0ef4e7d5762d5b7683b016c"
+  },
+  "passed_execution": false
+}

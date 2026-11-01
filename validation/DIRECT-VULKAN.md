@@ -160,7 +160,8 @@ scene, resolution, refresh rate and equivalent optimization settings with GL.
 Check headset frame repeats alongside producer timing and session focus:
 an unfocused/loading run cannot establish smooth gameplay. Do not average
 per-window percentiles and describe the result as an aggregate percentile.
-The present 1-2 FPS native startup candidate fails this performance requirement.
+The early 1-2 FPS native startup candidate and subsequent unfocused startup
+profiles do not meet this requirement; no combat performance pass exists.
 
 ## Resident color and measured combiner reduction
 
@@ -608,3 +609,100 @@ its per-app environment restored, automation proximity override disabled and
 the whole-session lock released. The installed original GL APK retained its
 preserved SHA256. Only diagnostic log excerpts are retained in versioned
 validation; no headset/system screenshot is committed.
+
+
+## Retained native draw resources
+
+The reference GL renderer streams vertices/indices through retained mapped
+buffers rather than allocating per draw. Native targets now retain growable
+host-visible geometry storage too, preferring coherent memory and otherwise
+flushing an atom-aligned written range. The prior synchronous draw fence must
+complete before storage is overwritten or replaced. Initial capacity is 64 KiB,
+growing geometrically; a later small draw retains the larger allocation.
+
+Each target also retains up to 32 native pipeline/descriptor-layout/pool bundles
+with LRU eviction across nonconsecutive state changes. The render pass, color
+view and framebuffer belong to the target and survive pipeline changes. Keys
+include shader kind, blend state/constants, depth/stencil and culling. Textures,
+combiner data, fog, alpha test and effects are updated on each draw, including
+cache hits. Cache eviction and teardown occur after completed GPU work; errors
+still wait for pending work before resource destruction. This does not defer
+a guest completion or remove the per-draw submit/wait.
+
+`CHIHIRO_VULKAN_REUSE_RESOURCES=0` selects a single pipeline entry and per-draw
+geometry allocation for diagnostics. The pass/framebuffer is still retained;
+this is a same-binary allocation/state-reuse control, not an exact replay of
+every prior allocation. Profile output adds cumulative pipeline builds/hits/
+evictions and geometry allocation/capacity counters per target.
+
+The final Quest GPU fixture renders 128 alternating-state draws: 2 pipeline
+builds and 1 geometry allocation with reuse versus 128/128 in the control.
+Every output byte matches, including subsequent growth beyond 64 KiB, return
+to small draws, 40 distinct states causing LRU eviction and rebuilding an old
+state. Observed single-run loops are 45.54 ms versus 70.09 ms including readback
+and initial compilation; these are microbenchmark observations, not combat
+FPS or a statistical performance gate. The wider native/GLES parity, queries,
+guest coherence/completion, depth/layout and injected-XR tests pass. The
+original GL APK hash remained unchanged and the device lock was released after
+cleanup.
+
+Both Mac startup controls complete 120 frames with frame 30-32 captures byte
+identical and no OpenGL imports. Their earlier allocation control used a 64 KiB
+minimum allocation; the final control uses exactly the requested size, covered
+by the final Quest fixture. Default retained behavior is unchanged by that
+control adjustment. Evidence and binary identities are under
+`validation/direct-vulkan-resource-reuse/`. The resource-stage APK build/import audit
+passes with SHA256
+`51eda0d105e84b281f8a277ccc74b524f884391da25cbf838ff101bee5687020`;
+this APK has not been installed for gameplay validation.
+
+Synchronous surface transfer/submission costs remain. In addition, unlike GL's
+`gl_draw_raw`, native Vulkan still declines raw fixed-function/vertex-program
+batches and receives executor CPU-transformed triangles. The existing raw
+batch ABI and reference shader arithmetic must be reused for the GPU vertex
+path; this remains part of the performance work rather than being hidden by
+the resource microbenchmark. Full gameplay, immersive host attachment and
+Quest combat/frame-time acceptance are still open.
+
+
+The longer late-input native replay reaches frame 1,164 before a new rejected
+draw (`VkResult=-3`), with valid-looking state and a DXT1 2D texture plus a
+DXT5 cube map (`stage_program=0x61`). It does not reach its 1,400-frame gate.
+The inspected frame 1,100 shows the title cinematic with two credits and a
+start prompt, not verified combat. Reports/logs and the game-only cinematic
+capture are preserved with the resource evidence. Vertex input diagnostics
+have been added for the next reproduction; this rejection is not declared
+fixed or attributed to pipeline reuse without further evidence.
+
+
+## Reference texture-coordinate forwarding
+
+The diagnostic replay aborts at frame 1,218 with an infinite vertex 757
+component 12 (texture0.y) and `stage_program=0`. All stages return constants in
+the shared GL helper, so no texture coordinate affects this draw. Native
+validation of all 21 interpolants caused a false fatal rejection. The adapter
+now uses the shared-header coordinate-use mask to zero unconsumed fields.
+Cube lookup ignores q; projective 2D ignores z; unprojected 2D also ignores q;
+missing samplers and constant modes consume none; PASSTHRU consumes all four.
+
+The intermediate mask-only game replay exposed a consumed NaN tex0.y with
+`stage_program=1` at frame 1,016. Reference GL forwards those shader attributes
+instead of aborting. Before changing the policy, actual Quest GPU comparisons
+verified that GLES and Vulkan produce identical RGBA output for eight point/
+linear 2D NaN/Inf cases, three nonfinite cube sampling modes and disabled
+modes with nonfinite interpolants. The final adapter also forwards consumed
+texture coordinates. The 2D differential test runs through the actual NV2A
+adapter and compares against GLES, not just a shader helper. These observations
+cover this device/driver; no portable NaN/Inf sampling color is assumed.
+Position, clipping, fog, guest bounds and sampler/state validation remain.
+
+The wider Quest GPU, guest completion/coherence, finite texture and injected-XR
+checks pass; both Mac renderer builds pass. Evidence, intermediate failures
+and binary identities are under `validation/direct-vulkan-unused-coordinates/`.
+A longer native game replay is verifying the final forwarding change. Neither
+unit tests nor cinematics establish Quest combat, full game or immersive
+acceptance.
+
+The final coordinate-forwarding APK passes the no-OpenGL-import audit with
+SHA256 `9c84df877480f5a17b7907572f83aec7e62d97369bbf65bcd4f9fb8c37e1b5d8`.
+It has not been installed for a full game session.

@@ -1,0 +1,22 @@
+[Vulkan] completed frame 1: 640x480, guest=80408000
+[Vulkan] completed frame 60: 640x480, guest=80534000
+[Vulkan] completed frame 120: 640x480, guest=80660000
+[Vulkan] completed frame 180: 640x480, guest=80534000
+[Vulkan] completed frame 240: 640x480, guest=80408000
+[Vulkan] completed frame 300: 640x480, guest=80660000
+[Vulkan] completed frame 360: 640x480, guest=80534000
+[Vulkan] completed frame 420: 640x480, guest=80534000
+[Vulkan] completed frame 480: 640x480, guest=80408000
+[Vulkan] completed frame 540: 640x480, guest=80660000
+[Vulkan] completed frame 600: 640x480, guest=80534000
+[Vulkan] completed frame 660: 640x480, guest=80534000
+[Vulkan] completed frame 720: 640x480, guest=80534000
+[Vulkan] completed frame 780: 640x480, guest=80534000
+[Vulkan] completed frame 840: 640x480, guest=80534000
+[Vulkan] completed frame 900: 640x480, guest=80534000
+[Vulkan] completed frame 960: 640x480, guest=80408000
+[Vulkan] invalid combiner vertex 1 component 12: value=nan stage_program=00000001
+[Vulkan] rejected draw surface=808D0000 size=640x480 vertices=405 ext=1 rc=1 stages=00000001
+[Vulkan] rejected state raw=0 alpha=1/0206 blend=0/0302/0303/8006 cull=1/0405/0901 depth=1/1/0203 stencil=0/0207/1E00/1E00/1E00
+[Vulkan] texture0 address=8204AB80 size=128x128 format=0C levels=1 filter=02022000 address=1/1 cube=0
+[Vulkan] fatal draw: VkResult=-3, frame=1016

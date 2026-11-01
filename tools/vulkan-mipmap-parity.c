@@ -1,13 +1,18 @@
 /* Called with the real GLES pbuffer current; Vulkan shares only the GPU. */
 #include <GLES3/gl3.h>
 #include "vk_target.h"
+#include "vk_nv2a.h"
 #include <stdio.h>
+#include <math.h>
 #include <stdlib.h>
 #include <string.h>
 static GLuint shader(GLenum type,const char *source) {
     GLuint s=glCreateShader(type);glShaderSource(s,1,&source,NULL);glCompileShader(s);
     GLint ok=0;glGetShaderiv(s,GL_COMPILE_STATUS,&ok);
     if(!ok) {glDeleteShader(s);return 0;}return s;
+}
+static VkResult resolve_image(void *context,const Nv2aTexture *tx,ChVkSampleImage *out) {
+    *out=(ChVkSampleImage){.gpu=context,.width=tx->width,.height=tx->height};return VK_SUCCESS;
 }
 int ch_test_mipmap_parity(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,uint32_t family) {
     enum {TW=64,TH=32,W=13,H=9};
@@ -71,6 +76,42 @@ int ch_test_mipmap_parity(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,uin
         for(unsigned i=0;i<W*H*4;i++) {unsigned delta=(unsigned)abs(reference[i]-native[i]);if(delta>maximum) maximum=delta;}
         printf("mip sample parity min=%u scale=%.1f maximum=%u\n",min,scale,maximum);
         REQUIRE(glGetError()==GL_NO_ERROR && maximum<=3);
+    }
+    /* Reference GL passes through nonfinite shader coordinates. Compare the
+     * actual driver outcome before choosing an adapter policy for those data. */
+    for(unsigned filter=1;filter<=2;filter++) for(unsigned test=0;test<4;test++) {
+        float uv[2]={.25f,.5f};uv[test&1]=test<2?NAN:INFINITY;
+        glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MIN_FILTER,filter==1?GL_NEAREST:GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MAG_FILTER,filter==1?GL_NEAREST:GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MAX_LEVEL,0);
+        glUniform1f(glGetUniformLocation(program,"scale"),0);glUniform2fv(glGetUniformLocation(program,"phase"),1,uv);
+        glDrawArrays(GL_TRIANGLES,0,3);glReadPixels(0,0,W,H,GL_RGBA,GL_UNSIGNED_BYTE,reference);
+        Nv2aTexture tx={.width=TW,.height=TH,.filter=(filter<<24)|(filter<<16),.addr_u=1,.addr_v=1};
+        VkSamplerCreateInfo sampler;REQUIRE(ch_vk_sampler_state(&tx,&sampler)==VK_SUCCESS);
+        REQUIRE(ch_vk_texture_set_sampler(image,&sampler)==VK_SUCCESS);
+        ChVkColorVertex quad[]={{{-1,-1,0,1},{1,1,1,1}},{{1,-1,0,1},{1,1,1,1}},
+            {{1,1,0,1},{1,1,1,1}},{{-1,1,0,1},{1,1,1,1}}};
+        for(unsigned i=0;i<4;i++) {quad[i].xy[4]=uv[0];quad[i].xy[5]=uv[1];}
+        Nv2aRenderState state={.color_mask=0x01010101};
+        REQUIRE(ch_vk_target_draw_texture_read(target,black,quad,4,indices,6,&state,image,native,sizeof native)==VK_SUCCESS);
+        unsigned maximum=0;
+        for(unsigned i=0;i<W*H*4;i++) {unsigned delta=(unsigned)abs(reference[i]-native[i]);if(delta>maximum) maximum=delta;}
+        printf("nonfinite 2D sample parity filter=%u case=%u maximum=%u\n",filter,test,maximum);
+        REQUIRE(glGetError()==GL_NO_ERROR && maximum<=3);
+        /* The real decoded-batch adapter must preserve that reference behavior,
+         * rather than aborting before the GPU sees nonfinite coordinates. */
+        Nv2aVertex vertices[6]={{0,0,0,1,0xffffffff,0,0},{W,0,0,1,0xffffffff,0,0},{W,H,0,1,0xffffffff,0,0},
+            {0,0,0,1,0xffffffff,0,0},{W,H,0,1,0xffffffff,0,0},{0,H,0,1,0xffffffff,0,0}};
+        Nv2aVertexEx ex[6]={0};
+        for(unsigned i=0;i<6;i++) {vertices[i].u=uv[0]*TW;vertices[i].v=uv[1]*TH;
+            ex[i].tex[0][0]=uv[0];ex[i].tex[0][1]=uv[1];ex[i].tex[0][3]=1;}
+        tx.color=0x06; /* Normalized Morton/DXT coordinate convention. */
+        Nv2aCombiner rc={.control=1,.stage_program=1};
+        rc.color_icw[0]=0x08040000;rc.alpha_icw[0]=0x18140000;rc.color_ocw[0]=rc.alpha_ocw[0]=0xc0;
+        Nv2aSurface surface={.width=W,.height=H,.pitch=W*4,.bytes_per_pixel=4};
+        Nv2aBatch batch={.vertices=vertices,.ext=ex,.count=6,.state=&state,.texture=&tx,.stage={&tx},.rc=&rc};
+        REQUIRE(ch_vk_nv2a_draw_resolved_read(target,&surface,&batch,NULL,resolve_image,image,native,sizeof native)==VK_SUCCESS);
+        for(unsigned i=0;i<W*H*4;i++) REQUIRE(abs(reference[i]-native[i])<=3);
     }
 done:
     ch_vk_target_destroy(target);ch_vk_texture_destroy(image);

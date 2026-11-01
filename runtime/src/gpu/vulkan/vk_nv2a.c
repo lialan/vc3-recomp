@@ -1,5 +1,6 @@
 #include "vk_nv2a.h"
 #include "../nv2a_texture_cube.h"
+#include "../nv2a_stage_fetch.h"
 #include "vk_guest_layout.h"
 #include "../nv2a_combiner_simple.h"
 #include <math.h>
@@ -147,9 +148,15 @@ static VkResult draw_decoded(ChVkTarget *t, const Nv2aSurface *s,
     ChVkTexture *texture=NULL;
     VkResult result=VK_ERROR_INITIALIZATION_FAILED;
     if(!isfinite(low) || !isfinite(high)) goto done;
+    uint32_t coordinate_masks[4]={0};
+    if(rc) for(unsigned j=0;j<4;j++) coordinate_masks[j]=ch_nv_stage_coordinate_mask(
+        (rc->stage_program>>(j*5))&31,b->stage[j]!=NULL,b->stage[j] && b->stage[j]->cube);
     for(uint32_t i=0;i<b->count;i++) {
         const Nv2aVertex *g=&b->vertices[i];
-        if(!isfinite(g->x) || !isfinite(g->y) || !isfinite(g->z) || !isfinite(g->rhw)) goto done;
+        if(!isfinite(g->x) || !isfinite(g->y) || !isfinite(g->z) || !isfinite(g->rhw)) {
+            fprintf(stderr,"[Vulkan] invalid guest vertex %u: position=%a/%a/%a rhw=%a\n",i,g->x,g->y,g->z,g->rhw);
+            goto done;
+        }
         float w=g->rhw>0 && g->rhw<1e30f?1/g->rhw:1;
         v[i].xy[0]=(g->x/s->width*2-1)*w;
         v[i].xy[1]=(g->y/s->height*2-1)*w;
@@ -166,7 +173,6 @@ static VkResult draw_decoded(ChVkTarget *t, const Nv2aSurface *s,
             v[i].xy[2]=(clip[2]+clip[3])*.5f; v[i].xy[3]=clip[3];
         }
         if(plain && !rc) {
-            if(!isfinite(g->u) || !isfinite(g->v)) goto done;
             /* Nv2aVertex.u/v are texels for this path for all format classes. */
             if(modulate) {
                 const float *tc=b->ext[i].tex[0];
@@ -174,13 +180,15 @@ static VkResult draw_decoded(ChVkTarget *t, const Nv2aSurface *s,
                 int norm=d3d8_format_is_swizzled(plain->color) || d3d8_format_dxt_block_bytes(plain->color);
                 v[i].xy[4]=tc[0]/q/(norm?1:plain->width);
                 v[i].xy[5]=tc[1]/q/(norm?1:plain->height);
-                if(!isfinite(v[i].xy[4]) || !isfinite(v[i].xy[5])) goto done;
             } else {
                 v[i].xy[4]=g->u/plain->width;
                 v[i].xy[5]=g->v/plain->height;
             }
         }
-        for(unsigned k=0;k<4;k++) if(!isfinite(v[i].xy[k])) goto done;
+        for(unsigned k=0;k<4;k++) if(!isfinite(v[i].xy[k])) {
+            fprintf(stderr,"[Vulkan] invalid clip vertex %u component %u: value=%a\n",i,k,v[i].xy[k]);
+            goto done;
+        }
         v[i].rgba[0]=((g->diffuse>>16)&255)/255.f;
         v[i].rgba[1]=((g->diffuse>>8)&255)/255.f;
         v[i].rgba[2]=(g->diffuse&255)/255.f;
@@ -192,8 +200,17 @@ static VkResult draw_decoded(ChVkTarget *t, const Nv2aSurface *s,
             v[i].xy[8]=(ex->specular&255)/255.f;
             v[i].xy[9]=(ex->specular>>24)/255.f;
             v[i].xy[10]=ex->fog;
-            for(unsigned j=0;j<4;j++) for(unsigned k=0;k<4;k++) v[i].xy[11+j*4+k]=ex->tex[j][k];
-            for(unsigned k=6;k<27;k++) if(!isfinite(v[i].xy[k])) goto done;
+            for(unsigned j=0;j<4;j++) {
+                /* The reference passes consumed shader coordinates through,
+                 * including NaN/Inf; these are not structural draw errors.
+                 * Constant/unused components cannot affect output. */
+                for(unsigned k=0;k<4;k++) v[i].xy[11+j*4+k]=(coordinate_masks[j]&(1u<<k))?ex->tex[j][k]:0;
+            }
+            for(unsigned k=6;k<11;k++) if(!isfinite(v[i].xy[k])) {
+                fprintf(stderr,"[Vulkan] invalid combiner vertex %u component %u: value=%a stage_program=%08X\n",
+                    i,k,v[i].xy[k],rc->stage_program);
+                goto done;
+            }
         }
         indices[i]=(uint16_t)i;
     }

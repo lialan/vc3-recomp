@@ -1,0 +1,47 @@
+[Vulkan] completed frame 1: 640x480, guest=80408000
+[Vulkan] completed frame 60: 640x480, guest=80534000
+[Vulkan] completed frame 120: 640x480, guest=80660000
+[Vulkan] completed frame 180: 640x480, guest=80534000
+[Vulkan] completed frame 240: 640x480, guest=80408000
+[Vulkan] completed frame 300: 640x480, guest=80660000
+[Vulkan] completed frame 360: 640x480, guest=80534000
+[Vulkan] completed frame 420: 640x480, guest=80534000
+[Vulkan] completed frame 480: 640x480, guest=80408000
+[Vulkan] completed frame 540: 640x480, guest=80660000
+[Vulkan] completed frame 600: 640x480, guest=80534000
+[INPUT] auto coin at 60.0s
+[INPUT] auto start at 62.0s
+[Vulkan] completed frame 660: 640x480, guest=80534000
+[INPUT] auto start at 64.0s
+[Vulkan] completed frame 720: 640x480, guest=80534000
+[Vulkan] completed frame 780: 640x480, guest=80534000
+[INPUT] auto fire at 75.0s
+[Vulkan] completed frame 840: 640x480, guest=80534000
+[INPUT] auto start at 80.0s
+[Vulkan] completed frame 900: 640x480, guest=80534000
+[INPUT] auto start at 90.0s
+[Vulkan] completed frame 960: 640x480, guest=80534000
+[INPUT] auto coin at 95.0s
+[INPUT] auto start at 97.0s
+[INPUT] auto start at 99.0s
+[Vulkan] completed frame 1020: 640x480, guest=80408000
+[INPUT] auto fire at 110.0s
+[INPUT] auto fire at 115.0s
+[Vulkan] completed frame 1080: 640x480, guest=80408000
+[INPUT] auto start at 120.0s
+[INPUT] auto start at 130.0s
+[INPUT] auto coin at 135.0s
+[INPUT] auto start at 137.0s
+[INPUT] auto start at 139.0s
+[Vulkan] completed frame 1140: 640x480, guest=80408000
+[INPUT] auto fire at 150.0s
+[INPUT] auto fire at 155.0s
+[INPUT] auto start at 160.0s
+[INPUT] auto start at 170.0s
+[Vulkan] completed frame 1200: 640x480, guest=80408000
+[INPUT] auto fire at 175.0s
+[Vulkan] invalid combiner vertex 757 component 12: value=inf stage_program=00000000
+[Vulkan] rejected draw surface=808D0000 size=640x480 vertices=40395 ext=1 rc=1 stages=00000000
+[Vulkan] rejected state raw=0 alpha=1/0206 blend=0/0302/0303/8006 cull=1/0405/0901 depth=1/1/0203 stencil=0/0207/1E00/1E00/1E00
+[Vulkan] texture0 address=820FE800 size=32x32 format=0C levels=6 filter=02042000 address=1/1 cube=0
+[Vulkan] fatal draw: VkResult=-3, frame=1218

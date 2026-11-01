@@ -1,6 +1,7 @@
 #include "vk_texture_cache.h"
 #include "../nv2a_texture_cube.h"
 #include <stdio.h>
+#include <math.h>
 #include <string.h>
 static void unpin(ChVkSampleImage *image) {
     if(image->gpu && image->release) image->release(image->release_context,image->gpu);
@@ -58,6 +59,36 @@ int ch_test_cube_cache(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,uint32
     rc.stage_program=6<<5;
     REQUIRE(ch_vk_nv2a_draw_decoded_read(target,&surface,&batch,decode,pixels,sizeof pixels)==VK_SUCCESS);
     for(unsigned i=0;i<sizeof pixels;i++) REQUIRE(!pixels[i]);
+    /* Actual game rejection: an infinite tc.y with every stage disabled.
+     * All unconsumed components may be nonfinite without affecting pixels. */
+    for(unsigned i=0;i<6;i++) for(unsigned st=0;st<4;st++) for(unsigned k=0;k<4;k++)
+        ex[i].tex[st][k]=k&1?INFINITY:NAN;
+    rc.stage_program=0;
+    REQUIRE(ch_vk_nv2a_draw_decoded_read(target,&surface,&batch,decode,pixels,sizeof pixels)==VK_SUCCESS);
+    for(unsigned i=0;i<sizeof pixels;i++) REQUIRE(pixels[i]==(i%4==3?255:0));
+    for(unsigned mode=1;mode<=3;mode++) {
+        rc.stage_program=mode<<5;
+        for(unsigned i=0;i<6;i++) {ex[i].tex[1][0]=0;ex[i].tex[1][1]=0;ex[i].tex[1][2]=1;}
+        REQUIRE(ch_vk_nv2a_draw_decoded_read(target,&surface,&batch,decode,pixels,sizeof pixels)==VK_SUCCESS);
+        for(unsigned i=0;i<16;i++) REQUIRE(pixels[i*4]==0 && pixels[i*4+1]==255 && pixels[i*4+2]==255 && pixels[i*4+3]==255);
+    }
+    ex[2].tex[1][0]=NAN; /* Reference forwards consumed shader coordinates too. */
+    REQUIRE(ch_vk_nv2a_draw_decoded_read(target,&surface,&batch,decode,pixels,sizeof pixels)==VK_SUCCESS);
+    batch.stage[1]=NULL;
+    REQUIRE(ch_vk_nv2a_draw_decoded_read(target,&surface,&batch,decode,pixels,sizeof pixels)==VK_SUCCESS);
+    for(unsigned i=0;i<sizeof pixels;i++) REQUIRE(pixels[i]==255);
+    Nv2aTexture flat=tx;flat.cube=0;flat.levels=1;batch.stage[1]=&flat;
+    for(unsigned i=0;i<6;i++) {ex[i].tex[1][0]=.5f;ex[i].tex[1][1]=.5f;ex[i].tex[1][2]=NAN;ex[i].tex[1][3]=1;}
+    rc.stage_program=1<<5;
+    REQUIRE(ch_vk_nv2a_draw_decoded_read(target,&surface,&batch,decode,pixels,sizeof pixels)==VK_SUCCESS);
+    for(unsigned i=0;i<16;i++) REQUIRE(pixels[i*4]==255 && pixels[i*4+1]==0 && pixels[i*4+2]==0 && pixels[i*4+3]==255);
+    ex[2].tex[1][3]=NAN;
+    REQUIRE(ch_vk_nv2a_draw_decoded_read(target,&surface,&batch,decode,pixels,sizeof pixels)==VK_SUCCESS);
+    rc.stage_program=3<<5; /* Unprojected 2D does not consume q. */
+    REQUIRE(ch_vk_nv2a_draw_decoded_read(target,&surface,&batch,decode,pixels,sizeof pixels)==VK_SUCCESS);
+    rc.stage_program=4<<5; /* PASSTHRU consumes all four components. */
+    REQUIRE(ch_vk_nv2a_draw_decoded_read(target,&surface,&batch,decode,pixels,sizeof pixels)==VK_SUCCESS);
+    puts("PASS: inactive/nonfinite texture coordinates ignored exactly by stage use; cube q and 2D z/q liveness, missing samplers and reference consumed-coordinate forwarding");
 done:
     unpin(&a);unpin(&b);unpin(&c);ch_vk_target_destroy(target);ch_vk_texture_cache_destroy(cache);
     if(!failed) puts("PASS: actual DXT5 cube decoder, padded stored mip face strides, immutable edits, bounds and cached/uncached stage-one directional draws");

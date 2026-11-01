@@ -2,6 +2,7 @@
 #include "vk_target.h"
 #include "../nv2a_stage_fetch.h"
 #include <stdio.h>
+#include <math.h>
 #include <stdlib.h>
 #include <string.h>
 static GLuint compile(GLenum type,const char *text) {
@@ -44,10 +45,11 @@ int ch_test_cube_parity(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,uint3
         {1,.8f,-.4f,0,.4f,0,0,0,.8f},{1,-.4f,.8f,0,0,.4f,0,.8f,0},
         {1,.85f,.85f,0,.3f,0,0,0,.3f},{-1,-.85f,-.85f,0,-.3f,0,0,0,-.3f}};
     const float black[]={0,0,0,0};const uint16_t indices[]={0,1,2,0,2,3};
-    for(unsigned test=0;test<10+32;test++) {
-        unsigned mode=test<10?3:test-10;
+    for(unsigned test=0;test<10+32+2+3;test++) {
+        unsigned mode=test<10?3:test<42?test-10:test==42?0:test==43?6:test-43;
         rc.stage_program=mode;glUniform1ui(glGetUniformLocation(program,"mode"),mode);
-        const float *p=cases[test<10?test:0];
+        const float unused[]={INFINITY,NAN,-INFINITY,0,0,0,0,0,0};
+        const float *p=test>=42?unused:cases[test<10?test:0];
         glUniform3fv(glGetUniformLocation(program,"base"),1,p);glUniform3fv(glGetUniformLocation(program,"dx"),1,p+3);glUniform3fv(glGetUniformLocation(program,"dy"),1,p+6);
         glDrawArrays(GL_TRIANGLES,0,3);glReadPixels(0,0,W,H,GL_RGBA,GL_UNSIGNED_BYTE,reference);
         ChVkColorVertex quad[]={{{-1,-1,0,1},{1,1,1,1}},{{1,-1,0,1},{1,1,1,1}},{{1,1,0,1},{1,1,1,1}},{{-1,1,0,1},{1,1,1,1}}};

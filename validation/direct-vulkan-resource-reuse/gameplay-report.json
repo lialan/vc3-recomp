@@ -1,0 +1,41 @@
+{
+  "binary": "/Users/lialan/Downloads/VR/vc3-vulkan/build-vulkan-direct/vc3",
+  "binary_sha256": "0cf5015a2e68a7e107de0a3815259494baa8cba5f1f47c9c8943b3c35a0fc27f",
+  "game": "/Users/lialan/Downloads/VR/VC3/extracted",
+  "environment": {
+    "RECOMP_HEADLESS": "1",
+    "RECOMP_FB_WINDOW": "0",
+    "VC3_SOUND": "0",
+    "VC3_SCALE": "1",
+    "VC3_ASPECT": "4:3",
+    "VC3_STEREO": "0",
+    "VC3_FPS": "60",
+    "VC3_SAVE_DIR": "/private/tmp/vc3-vulkan-resource-reuse-gameplay/save",
+    "VC3_CONFIG_DIR": "/private/tmp/vc3-vulkan-resource-reuse-gameplay/config",
+    "VC3_VULKAN_DUMP_DIR": "/private/tmp/vc3-vulkan-resource-reuse-gameplay/frames",
+    "VC3_VULKAN_DUMP_FIRST": "1100",
+    "VC3_VULKAN_DUMP_COUNT": "3",
+    "VC3_VULKAN_FRAME_LIMIT": "1400",
+    "VK_ICD_FILENAMES": "/opt/homebrew/Cellar/mesa/26.2.6/share/vulkan/icd.d/kosmickrisp_mesa_icd.aarch64.json",
+    "CHIHIRO_VULKAN_PROFILE": "1",
+    "CHIHIRO_VULKAN_RESIDENT_DEPTH": "1",
+    "CHIHIRO_AUTOKEYS": "60:coin,62:start,64:start,75:fire,80:start,90:start,95:coin,97:start,99:start,110:fire,115:fire,120:start,130:start,135:coin,137:start,139:start,150:fire,155:fire,160:start,170:start,175:fire,180:fire,185:reload,190:fire,195:fire,200:fire,205:reload,210:fire,215:fire,220:fire,225:fire,230:reload",
+    "CHIHIRO_AUTOFIRE_MS": "700",
+    "CHIHIRO_AUTOAIM": "0.2,0.5",
+    "CHIHIRO_STRICT_GPU_FENCES": "1",
+    "CHIHIRO_FENCE_LOG": "1",
+    "CHIHIRO_VULKAN_REUSE_RESOURCES": "1",
+    "CHIHIRO_VULKAN_TEXTURE_CACHE_ENTRIES": "2048"
+  },
+  "requested_frames": 1400,
+  "scope": "Local VC3 guest execution; no Quest or VR acceptance",
+  "opengl_imports": [],
+  "exit_code": -6,
+  "reached_frame_limit": false,
+  "captures": {
+    "frame-001100.ppm": "f4fed1c3efa89a6b8f879fc566b3c7b68c9258e006cf55b3eb2dd4a4b11e76fa",
+    "frame-001101.ppm": "5f657b2c58d0659d80e83c5d4dcad50bf4041cf1b4c64c0486133e6da97820d7",
+    "frame-001102.ppm": "13068efed59fdbba9d9f3d398478c15b56b9fa3b0742dc6270613c70dbd0f7d1"
+  },
+  "passed_execution": false
+}

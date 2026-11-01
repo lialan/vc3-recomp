@@ -8,6 +8,13 @@
 #include "vk_texture.h"
 typedef struct ChVkTarget ChVkTarget;
 typedef struct {
+    uint64_t pipeline_builds,pipeline_hits,pipeline_evictions,geometry_allocations;
+    VkDeviceSize geometry_capacity;
+} ChVkTargetResourceStats;
+/* Diagnostic counters; calls remain synchronous. Geometry is persistently mapped
+ * and reused only after completion. Pipeline objects have a bounded LRU. */
+void ch_vk_target_resource_stats(const ChVkTarget *,ChVkTargetResourceStats *);
+typedef struct {
     uint32_t kind; /* 1: soft spot/ring/flat beam; 2: sight glass/reticle */
     float color[4], shape[4], tint[4], reticle[4];
 } ChVkEffect;
