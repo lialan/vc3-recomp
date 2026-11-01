@@ -25,45 +25,51 @@ must observe them before GPU use. Color-disabled draws and depth-only clears
 also need not import or dirty destination color. Existing GPU writes remain
 dirty until published. Host routing notifications retain their existing rules.
 
-## Next structural step: exact write tracking
+## Experimental exact write tracking
 
-Removing the remaining full scans needs actual guest-write evidence. Replacing
-them with OpenGL's sampled hash would miss edits outside the sampled locations.
-A possible implementation is a shared host write tracker, initially limited to
-the contiguous-memory allocation and its tiled alias; unsupported mappings
-retain exact comparisons. This is a design, not an implemented optimization.
+`CHIHIRO_VULKAN_WRITE_WATCH=1` enables the shared host tracker implemented in
+`runtime/src/gpu/guest_write_watch.c`. The default is off. It tracks the actual
+contiguous-memory allocation and tiled alias; unsupported mappings/pages retain
+exact comparisons. It does not approximate writes with sampled hashes.
 
-The kernel must enumerate the actual mapped views and their common backing.
+The kernel enumerates the actual mapped views and their common backing.
 Constants alone are insufficient: mirrors can be absent, and contiguous RAM is
-separate storage from low guest RAM in this runtime. A per-page generation can
-serve multiple overlapping observer ranges. Each observer keeps its own last
-generation; one observer must not consume another observer's dirty indication.
+separate storage from low guest RAM in this runtime. Initially writable,
+non-executable permissions are checked through host mapping information. Each
+observer keeps independent page generations; one observer does not consume
+another observer's dirty indication.
 
-To observe, arm read-only protection before reading a snapshot and record the
-generation before that read. A subsequent write fault increments the generation
-before opening every alias for writes. A write during observation must leave a
-new generation for the next observation. Reprotection and fault-driven opening
-must serialize, otherwise a delayed fault handler can reopen a page after it was
-rearmed and later writes become invisible. Signal-handler state must be
-preallocated and use lock-free atomics; protected-memory accesses must not occur
-while holding a lock that their own fault handler requires. Unhandled faults
-must continue to the existing MMIO/crash handlers.
+Observers arm read-only protection before reading a snapshot. Write faults
+advance a generation before opening every alias. Rearming after a writable
+interval also advances the generation, so an observer cannot consume a fault's
+generation before its store finishes and then miss that store. Ordered page
+locks serialize reprotection and fault-driven opening. Adjacent pages are
+protected together. Signal-handler state is preallocated and uses lock-free
+atomics; it performs no guest-memory accesses, allocation, logging or Vulkan
+calls. Host fault context distinguishes writes from read/execute faults.
+Unhandled faults continue to the existing MMIO/crash handlers.
 
-Kernel copies require special treatment. POSIX `ReadFile` calls `read` directly
-into its destination. A read-only destination can produce EFAULT instead of a
-user-space write fault. A begin/end write lease around such a syscall must keep
-the destination writable for the complete operation, prevent reprotection while
-the lease is active, and advance its generation again on completion. All other
-syscall destinations must be audited before enabling tracking.
+POSIX `ReadFile` and `xbox_NtReadFile` call `read` directly into their destination.
+Their paired observer hooks hold a write lease across the complete syscall,
+including EOF/error paths, and preserve its errno. Observers cannot reprotect a
+leased page; completion advances its generation again. The source audit found
+these two guest-memory read destinations. Other fread/configuration buffers are
+host-owned. GPU color/depth publication also holds a lease, avoiding a fault per
+page for the renderer's own writeback.
 
-Guest protection changes must invalidate tracking and preserve the requested
-permissions. Backend publication must also notify generations, and tracker
-shutdown must remove its protections before guest mappings are released. Debug
-watchpoints and other protection users require explicit coordination or a
-fallback. Never infer that a page stayed unchanged simply because a write fault
-was not seen.
+`VirtualProtect`, recommit, decommit and unmap operations invalidate affected
+pages before changing their permissions; those pages retain exact comparison
+fallback. Direct protection changes outside the observer hooks are unsupported.
+The runtime rejects simultaneous `RECOMP_WATCH`. Shutdown requires stopped guest
+callers and drained GPU work, destroys observer ranges, unregisters the hooks,
+restores tracker-owned protections and then releases metadata before mappings
+are torn down. It preserves permissions imposed by an external protection call.
 
-Validation must include multiple aliases/subscribers, repeated reprotection,
-CPU writes during observation, kernel write leases, protection changes, actual
-CPU color/depth merges, GPU completion ordering, and unsupported-layout fallback.
-Only after those pass should a same-scenario Quest run establish performance.
+Tests cover independent subscribers/aliases, 1000 concurrent writable/rearm
+cycles, actual write/NX fault decoding, a blocked kernel read lease, protection
+invalidation and teardown on Mac and Quest. A real Quest Vulkan fixture checks
+CPU color/depth edits through the alias, 100 unchanged draws, EQUAL visibility,
+GPU neighbor preservation and exact fallback after a protection change. Platform,
+kernel-file and memory-view registry regressions pass on Mac. Actual Quest runs
+reach the bomb battle; their evidence is in `validation/direct-vulkan-write-watch`.
+Combat throughput, full gameplay and immersive XR acceptance remain open.

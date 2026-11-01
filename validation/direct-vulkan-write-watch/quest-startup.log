@@ -1,0 +1,27 @@
+[Vulkan write tracking] ranges=2 checks=5 unchanged=2 faults=0 protection calls=12
+[Vulkan depth residency] binds=3 imports=0 writebacks=2 CPU merges=0 GPU copies=0 clear skips=2
+[Vulkan texture cache] hits=0 uploads=1 evictions=0 live=0.0MiB entries=1/2048
+[Vulkan] completed frame 1: 640x480, guest=80408000
+[Vulkan backend] 868 batches: surface 10.5ms CPU edits 13.9ms imports 128.4ms draw 176.1ms writeback 0.1ms (color disabled=0)
+[Vulkan write tracking] ranges=273 checks=7147 unchanged=6416 faults=0 protection calls=2924
+[Vulkan depth residency] binds=3275 imports=143 writebacks=330 CPU merges=0 GPU copies=0 clear skips=290
+[Vulkan texture cache] hits=3115 uploads=14 evictions=0 live=10.6MiB entries=14/2048
+[Vulkan] completed frame 60: 640x480, guest=808D0000
+[Vulkan backend] 2426 batches: surface 19.5ms CPU edits 29.8ms imports 352.7ms draw 56.9ms writeback 0.2ms (color disabled=0)
+[Vulkan backend] 2428 batches: surface 20.9ms CPU edits 30.0ms imports 357.6ms draw 50.4ms writeback 0.2ms (color disabled=0)
+[Vulkan write tracking] ranges=541 checks=14546 unchanged=13070 faults=0 protection calls=5902
+[Vulkan depth residency] binds=6664 imports=291 writebacks=670 CPU merges=0 GPU copies=0 clear skips=590
+[Vulkan texture cache] hits=6352 uploads=14 evictions=0 live=10.6MiB entries=14/2048
+[Vulkan] completed frame 120: 640x480, guest=80408000
+[Vulkan frame intervals] flips 1..121: 36.77 fps mean 27.19ms p95 31.89ms p99 161.21ms max 322.44ms >20ms=81 >33ms=5 (guest completions, not XR display)
+[Vulkan backend] 2431 batches: surface 20.3ms CPU edits 30.9ms imports 360.1ms draw 46.9ms writeback 0.1ms (color disabled=0)
+[Vulkan write tracking] ranges=811 checks=21951 unchanged=19732 faults=0 protection calls=8874
+[Vulkan depth residency] binds=10054 imports=441 writebacks=1009 CPU merges=0 GPU copies=0 clear skips=890
+[Vulkan texture cache] hits=9591 uploads=15 evictions=0 live=11.4MiB entries=15/2048
+[Vulkan] completed frame 180: 640x480, guest=80660000
+[Vulkan backend] 2426 batches: surface 20.6ms CPU edits 30.2ms imports 349.7ms draw 50.9ms writeback 0.2ms (color disabled=0)
+[Vulkan write tracking] ranges=1077 checks=29257 unchanged=26296 faults=0 protection calls=11842
+[Vulkan depth residency] binds=13394 imports=589 writebacks=1345 CPU merges=0 GPU copies=1 clear skips=1185
+[Vulkan texture cache] hits=12784 uploads=15 evictions=0 live=11.4MiB entries=15/2048
+[Vulkan] completed frame 240: 640x480, guest=80660000
+[Vulkan] diagnostic frame limit reached: 240

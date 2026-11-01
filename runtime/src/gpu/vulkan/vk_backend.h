@@ -1,6 +1,7 @@
 #ifndef CHIHIRO_VK_BACKEND_H
 #define CHIHIRO_VK_BACKEND_H
 #include "vk_nv2a.h"
+#include "../guest_write_watch.h"
 typedef struct ChVkBackend ChVkBackend;
 typedef struct {
     VkPhysicalDevice physical; VkDevice device; VkQueue queue; uint32_t family;
@@ -11,6 +12,9 @@ typedef struct {
     void (*unlock_queue)(void *);
     void *queue_context;
     void *guest_base; size_t guest_bytes;
+    /* Optional shared tracker with host alias/fault/syscall hooks installed.
+     * Unsupported pages retain exact comparisons. Host owns it until destroy. */
+    ChGuestWriteWatch *guest_write_watch;
     ChVkDecodeTexture decode;
     /* Set only when host enabled VkPhysicalDeviceFeatures.occlusionQueryPrecise. */
     int precise_queries;

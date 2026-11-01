@@ -1,0 +1,7 @@
+Test project /tmp/vc3-memory-views-checks
+    Start 1: memory_layout_posix_test
+1/1 Test #1: memory_layout_posix_test .........   Passed    0.04 sec
+
+100% tests passed, 0 tests failed out of 1
+
+Total Test time (real) =   0.04 sec

@@ -11,4 +11,7 @@ int ch_vk_runtime_configure(const ChVkBackendConfig *);
 int ch_vk_runtime_start(void);
 /* Stop/drain executor workers before destroying the runtime. */
 void ch_vk_runtime_stop(void);
+/* Called from the existing SA_SIGINFO fault handler; only confirmed write
+ * data-aborts to tracked pages are handled. Others retain normal handling. */
+int ch_vk_runtime_write_fault(uintptr_t address,void *context);
 #endif

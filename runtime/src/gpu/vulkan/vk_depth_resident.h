@@ -1,9 +1,12 @@
 #ifndef CH_VK_DEPTH_RESIDENT_H
 #define CH_VK_DEPTH_RESIDENT_H
 #include "vk_target.h"
+#include "../guest_write_watch.h"
 typedef struct ChVkDepthResident ChVkDepthResident;
 typedef struct {uint64_t imports,writebacks,cpu_merges,binds,gpu_copies,clear_skips;} ChVkDepthResidentStats;
 VkResult ch_vk_depth_resident_create(void *guest,size_t bytes,ChVkDepthResident **);
+/* Set before binding a target. Host keeps tracker and hooks alive. */
+void ch_vk_depth_resident_write_watch(ChVkDepthResident *,ChGuestWriteWatch *);
 /* One current owner: an exact shared-zeta target switch copies on the GPU.
  * Changing zeta interpretation publishes/imports, including partial overlaps.
  * Targets must use native D24S8. Guest RAM must be serialized with callbacks.

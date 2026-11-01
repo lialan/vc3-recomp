@@ -1,0 +1,27 @@
+[03:22:40.410] INFO  [PATH  ] Path init: game=/tmp/filestatusGmxBod, save=/tmp/filestatusGmxBod, user data=/tmp/filestatusGmxBod
+failed open status
+  missing file, directory present: NAME_NOT_FOUND                PASS
+  ... and win32 err 2 (ERROR_FILE_NOT_FOUND)                     PASS
+  missing directory: PATH_NOT_FOUND                              PASS
+  ... and win32 err 3 (ERROR_PATH_NOT_FOUND)                     PASS
+attribute query status (unchanged)
+  missing file: NAME_NOT_FOUND                                   PASS
+  missing directory: NAME_NOT_FOUND too                          PASS
+  read observer memory allocation                                PASS
+  read observer file allocation                                  PASS
+  read observer payload                                          PASS
+  arm protected read destination                                 PASS
+  NtReadFile lease covers destination                            PASS
+  NtReadFile destination opens before syscall                    PASS
+  NtReadFile lease closes after syscall                          PASS
+  NtReadFile succeeds into initially read-only destination       PASS
+  NtReadFile lease covers destination                            PASS
+  NtReadFile destination opens before syscall                    PASS
+  NtReadFile lease closes after syscall                          PASS
+  EOF preserves paired observer lease                            PASS
+  NtReadFile lease covers destination                            PASS
+  NtReadFile destination opens before syscall                    PASS
+  NtReadFile lease closes after syscall                          PASS
+  syscall failure preserves paired observer lease                PASS
+  all NtReadFile paths release their lease                       PASS
+OK (0 failures)

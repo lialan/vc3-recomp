@@ -1,0 +1,52 @@
+{
+  "serial": "2G97C5ZJ0G02DQ",
+  "binary_hashes": {
+    "vc3_vulkan_offscreen": "3416d020c3cb70d57fd80aa38c2f49546a04d5e70f088499ede21011c0e584c9",
+    "libmain.so": "17ae84274d06ceb1ba7cf6196af40ab66207b4c9cf4b76e6769c1f926e5158d6",
+    "libSDL2.so": "ea883ab161a9ca9313365915f3b1df955e82487aa8a4433ee72a5ac2072e5bc0",
+    "libopenxr_loader.so": "5a6853378430b2cbb75ec34a14e7494ed49cb248e516adfa9fe6bd7032eb7750"
+  },
+  "environment": {
+    "LD_LIBRARY_PATH": "/data/local/tmp/vc3-offscreen-15abf78fb25545d88c8c270458103979",
+    "VC3_SAVE_DIR": "/data/local/tmp/vc3-offscreen-15abf78fb25545d88c8c270458103979/save",
+    "VC3_CONFIG_DIR": "/data/local/tmp/vc3-offscreen-15abf78fb25545d88c8c270458103979/config",
+    "VC3_SOUND": "0",
+    "VC3_SCALE": "1",
+    "VC3_FPS": "60",
+    "VC3_ASPECT": "4:3",
+    "VC3_STEREO": "0",
+    "RECOMP_GPU_XF": "ff",
+    "RECOMP_PB_DECODE_THREAD": "0",
+    "CHIHIRO_VULKAN_FRAME_LIMIT": "240",
+    "CHIHIRO_VULKAN_RESIDENT_DEPTH": "1",
+    "CHIHIRO_VULKAN_PROFILE": "1",
+    "CHIHIRO_VULKAN_DUMP_DIR": "/data/local/tmp/vc3-offscreen-15abf78fb25545d88c8c270458103979/frames",
+    "CHIHIRO_VULKAN_DUMP_FIRST": "180",
+    "CHIHIRO_VULKAN_DUMP_COUNT": "1",
+    "CHIHIRO_AUTOKEYS_CLOCK": "flips",
+    "CHIHIRO_AUTOKEYS": "",
+    "CHIHIRO_AUTOAIM": "0.2,0.5",
+    "CHIHIRO_AUTOFIRE_MS": "700",
+    "CHIHIRO_VULKAN_DEPTH_GPU_COPY": "1",
+    "CHIHIRO_VULKAN_DEPTH_CLEAR_SKIP": "1",
+    "CHIHIRO_VULKAN_DEPTH_PACKED": "1",
+    "CHIHIRO_VULKAN_COLOR_FAST_IO": "1",
+    "CHIHIRO_VULKAN_TEXTURE_CACHE_MIB": "64",
+    "CHIHIRO_VULKAN_WRITE_WATCH": "0",
+    "CHIHIRO_VULKAN_DUMP_EVERY": "0"
+  },
+  "requested_frames": 240,
+  "game": "/sdcard/VirtuaCop3",
+  "scope": "Actual Quest guest/Vulkan; no XR session or VR performance acceptance",
+  "profiling": null,
+  "build_options": {
+    "CHIHIRO_GEN_OPT": "-O2",
+    "CMAKE_BUILD_TYPE": "Release",
+    "CMAKE_C_FLAGS": "-march=armv8.2-a+fp16+dotprod -mtune=cortex-a78"
+  },
+  "exit_code": 0,
+  "reached_frame_limit": true,
+  "elapsed_seconds": 11.175905082956888,
+  "baseline_before": "3a0660db0d8a5d8e6d95a555dc087bd8f9351f2f8df91e601599ae2789b53ad6",
+  "baseline_after": "3a0660db0d8a5d8e6d95a555dc087bd8f9351f2f8df91e601599ae2789b53ad6"
+}

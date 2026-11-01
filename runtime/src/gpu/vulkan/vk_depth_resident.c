@@ -7,6 +7,7 @@
 struct ChVkDepthResident {
     void *guest;size_t bytes;
     ChVkTarget *target;
+    ChGuestWriteWatch *watch;ChGuestWriteRange *write_range;
     Nv2aSurface surface;Nv2aRenderState state;ChVkGuestLayout layout;
     float *depth;uint8_t *stencil,*raw,*edits;uint32_t *words;
     int dirty,gpu_copies,packed;
@@ -27,6 +28,7 @@ static VkResult write_target(ChVkDepthResident *d) {
         ch_vk_target_write_depth_stencil(d->target,d->depth,d->stencil,count);
 }
 static VkResult observe(ChVkDepthResident *d) {
+    if(d->target && d->write_range && !ch_guest_write_range_changed(d->write_range)) return VK_SUCCESS;
     if(!d->target || !memcmp(storage(d),d->raw,(size_t)d->layout.span)) return VK_SUCCESS;
     memcpy(d->edits,storage(d),(size_t)d->layout.span);
     int changed=0;
@@ -66,6 +68,9 @@ VkResult ch_vk_depth_resident_create(void *guest,size_t bytes,ChVkDepthResident 
     d->guest=guest;d->bytes=bytes;d->gpu_copies=d->packed=1;*out=d;return VK_SUCCESS;
 }
 void ch_vk_depth_resident_gpu_copies(ChVkDepthResident *d,int enabled) {if(d) d->gpu_copies=!!enabled;}
+void ch_vk_depth_resident_write_watch(ChVkDepthResident *d,ChGuestWriteWatch *watch) {
+    if(d && !d->target) d->watch=watch;
+}
 VkResult ch_vk_depth_resident_packed(ChVkDepthResident *d,int enabled) {
     if(!d || d->target || d->words || d->depth || d->stencil) return VK_ERROR_INITIALIZATION_FAILED;
     d->packed=!!enabled;return VK_SUCCESS;
@@ -78,16 +83,19 @@ VkResult ch_vk_depth_resident_flush(ChVkDepthResident *d) {
     VkResult r=observe(d);
     if(r!=VK_SUCCESS) return r;
     r=read_target(d);
+    ch_guest_write_watch_begin(d->watch,storage(d),(size_t)d->layout.span);
     if(r==VK_SUCCESS) r=d->packed?ch_vk_guest_z24s8_store(&d->surface,&d->state,d->guest,d->bytes,d->words):
         ch_vk_guest_depth_store(&d->surface,&d->state,d->guest,d->bytes,d->depth,d->stencil);
+    if(r==VK_SUCCESS) memcpy(d->raw,storage(d),(size_t)d->layout.span);
+    ch_guest_write_watch_end(d->watch,storage(d),(size_t)d->layout.span);
     if(r!=VK_SUCCESS) return r;
-    memcpy(d->raw,storage(d),(size_t)d->layout.span);
     d->dirty=0;d->stats.writebacks++;return VK_SUCCESS;
 }
 VkResult ch_vk_depth_resident_release(ChVkDepthResident *d) {
     VkResult r=ch_vk_depth_resident_flush(d);
     if(r!=VK_SUCCESS) return r;
     d->target=NULL;free(d->depth);free(d->stencil);free(d->words);free(d->raw);free(d->edits);
+    ch_guest_write_range_destroy(d->write_range);d->write_range=NULL;
     d->depth=NULL;d->words=NULL;d->stencil=d->raw=d->edits=NULL;return VK_SUCCESS;
 }
 static VkResult bind_depth(ChVkDepthResident *d,ChVkTarget *target,
@@ -141,6 +149,7 @@ static VkResult bind_depth(ChVkDepthResident *d,ChVkTarget *target,
     }
     d->surface=*surface;d->state=*state;d->layout=layout;d->target=target;
     memcpy(d->raw,storage(d),(size_t)layout.span);
+    d->write_range=ch_guest_write_range_create(d->watch,storage(d),(size_t)layout.span);
     if(overwrite) d->stats.clear_skips++;else d->stats.imports++;
     return VK_SUCCESS;
 }

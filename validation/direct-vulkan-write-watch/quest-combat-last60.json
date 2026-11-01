@@ -1,0 +1,252 @@
+{
+  "scope": "Sampled user CPU only; no GPU or frame-time attribution",
+  "libmain_sha256": "17ae84274d06ceb1ba7cf6196af40ab66207b4c9cf4b76e6769c1f926e5158d6",
+  "recorded_samples": 29727,
+  "selected_samples": 6667,
+  "selected_wall_seconds": 60.0,
+  "event_count": 33502508375,
+  "self": [
+    {
+      "symbol_or_chain": "sample_tex",
+      "sampled_cpu_percent": 39.61301934903255,
+      "event_count": 13271355125
+    },
+    {
+      "symbol_or_chain": "__memcpy_aarch64_simd",
+      "sampled_cpu_percent": 8.32458377081146,
+      "event_count": 2788944375
+    },
+    {
+      "symbol_or_chain": "__memcmp_aarch64",
+      "sampled_cpu_percent": 4.109794510274487,
+      "event_count": 1376884250
+    },
+    {
+      "symbol_or_chain": "ch_vk_fixed_prepare",
+      "sampled_cpu_percent": 3.089845507724614,
+      "event_count": 1035175750
+    },
+    {
+      "symbol_or_chain": "@plt",
+      "sampled_cpu_percent": 1.9949002549872505,
+      "event_count": 668341625
+    },
+    {
+      "symbol_or_chain": "swap_color_rows",
+      "sampled_cpu_percent": 1.6349182540872957,
+      "event_count": 547738625
+    },
+    {
+      "symbol_or_chain": "xbox_HostSleepNs",
+      "sampled_cpu_percent": 1.4999250037498124,
+      "event_count": 502512500
+    },
+    {
+      "symbol_or_chain": "mcpx_apu_vp_frame",
+      "sampled_cpu_percent": 1.4249287535623218,
+      "event_count": 477386875
+    },
+    {
+      "symbol_or_chain": "mcpx_apu_phys",
+      "sampled_cpu_percent": 1.4099295035248238,
+      "event_count": 472361750
+    },
+    {
+      "symbol_or_chain": "ch_guest_write_range_changed",
+      "sampled_cpu_percent": 1.3949302534873256,
+      "event_count": 467336625
+    },
+    {
+      "symbol_or_chain": "transfer_depth_stencil",
+      "sampled_cpu_percent": 1.3649317534123293,
+      "event_count": 457286375
+    },
+    {
+      "symbol_or_chain": "__kernel_clock_gettime",
+      "sampled_cpu_percent": 1.184940752962352,
+      "event_count": 396984875
+    },
+    {
+      "symbol_or_chain": "nv2a_backend_decode_texture",
+      "sampled_cpu_percent": 1.094945252737363,
+      "event_count": 366834125
+    },
+    {
+      "symbol_or_chain": "upload",
+      "sampled_cpu_percent": 1.079946002699865,
+      "event_count": 361809000
+    },
+    {
+      "symbol_or_chain": "voice_get_samples",
+      "sampled_cpu_percent": 0.9149542522873856,
+      "event_count": 306532625
+    },
+    {
+      "symbol_or_chain": "d3d8_format_is_swizzled",
+      "sampled_cpu_percent": 0.8099595020248987,
+      "event_count": 271356750
+    },
+    {
+      "symbol_or_chain": "nv2a_pb_exec_method",
+      "sampled_cpu_percent": 0.7799610019499025,
+      "event_count": 261306500
+    },
+    {
+      "symbol_or_chain": "nanosleep",
+      "sampled_cpu_percent": 0.5549722513874307,
+      "event_count": 185929625
+    },
+    {
+      "symbol_or_chain": "!!!0000!daea2ea21aa5908c29cc1c3495dcef!810c66ceb7!",
+      "sampled_cpu_percent": 0.46497675116244186,
+      "event_count": 155778875
+    },
+    {
+      "symbol_or_chain": "ch_vk_texture_cache_resolve",
+      "sampled_cpu_percent": 0.4199790010499475,
+      "event_count": 140703500
+    },
+    {
+      "symbol_or_chain": "sub_0011AAA2",
+      "sampled_cpu_percent": 0.38998050097495124,
+      "event_count": 130653250
+    },
+    {
+      "symbol_or_chain": "getenv",
+      "sampled_cpu_percent": 0.38998050097495124,
+      "event_count": 130653250
+    },
+    {
+      "symbol_or_chain": "memset",
+      "sampled_cpu_percent": 0.38998050097495124,
+      "event_count": 130653250
+    },
+    {
+      "symbol_or_chain": "pthread_mutex_unlock",
+      "sampled_cpu_percent": 0.359982000899955,
+      "event_count": 120603000
+    },
+    {
+      "symbol_or_chain": "[linker]tlsdesc_resolver_static",
+      "sampled_cpu_percent": 0.359982000899955,
+      "event_count": 120603000
+    },
+    {
+      "symbol_or_chain": "!!!0000!2537cf78b99c7faacbe9e8ee1781e9!810c66ceb7!",
+      "sampled_cpu_percent": 0.32998350082495875,
+      "event_count": 110552750
+    },
+    {
+      "symbol_or_chain": "vc3_d3d_block_on_time",
+      "sampled_cpu_percent": 0.32998350082495875,
+      "event_count": 110552750
+    },
+    {
+      "symbol_or_chain": "sub_0010C8C0",
+      "sampled_cpu_percent": 0.32998350082495875,
+      "event_count": 110552750
+    },
+    {
+      "symbol_or_chain": "ch_vk_nv2a_load_color_state",
+      "sampled_cpu_percent": 0.3149842507874606,
+      "event_count": 105527625
+    },
+    {
+      "symbol_or_chain": "pb_walk_segment",
+      "sampled_cpu_percent": 0.3149842507874606,
+      "event_count": 105527625
+    }
+  ],
+  "memcmp_callchains": [
+    {
+      "symbol_or_chain": "ch_vk_texture_cache_resolve -> sample_image -> draw_decoded -> ch_vk_nv2a_draw_resolved_read -> draw_batch -> locked_draw -> backend_flush -> raster_batch",
+      "sampled_cpu_percent": 1.319934003299835,
+      "event_count": 442211000
+    },
+    {
+      "symbol_or_chain": "ch_vk_texture_cache_resolve -> sample_image -> draw_decoded -> ch_vk_nv2a_draw_fixed_resolved_read -> draw_batch -> locked_draw_raw -> raster_batch -> draw_primitive",
+      "sampled_cpu_percent": 0.9449527523623819,
+      "event_count": 316582875
+    },
+    {
+      "symbol_or_chain": "observe_guest_color -> locked_clear -> clear_surface -> nv2a_pb_exec_method -> pb_walk_segment -> nv2a_pb_scan_segment -> nv2a_ack_thread -> thread_trampoline",
+      "sampled_cpu_percent": 0.32998350082495875,
+      "event_count": 110552750
+    },
+    {
+      "symbol_or_chain": "observe -> bind_depth -> import_depth -> draw_batch -> locked_draw_raw -> raster_batch -> draw_primitive -> nv2a_pb_exec_method",
+      "sampled_cpu_percent": 0.25498725063746813,
+      "event_count": 85427125
+    },
+    {
+      "symbol_or_chain": "observe_guest_color -> draw_batch -> locked_draw -> backend_flush -> raster_batch -> draw_primitive -> draw_inline_array -> nv2a_pb_exec_method",
+      "sampled_cpu_percent": 0.25498725063746813,
+      "event_count": 85427125
+    },
+    {
+      "symbol_or_chain": "observe -> ch_vk_depth_resident_flush -> ch_vk_depth_resident_release -> bind_depth -> import_depth -> locked_clear -> clear_surface -> nv2a_pb_exec_method",
+      "sampled_cpu_percent": 0.2249887505624719,
+      "event_count": 75376875
+    },
+    {
+      "symbol_or_chain": "observe_guest_color -> draw_batch -> locked_draw_raw -> raster_batch -> draw_primitive -> nv2a_pb_exec_method -> pb_walk_segment -> nv2a_pb_scan_segment",
+      "sampled_cpu_percent": 0.2249887505624719,
+      "event_count": 75376875
+    },
+    {
+      "symbol_or_chain": "observe -> bind_depth -> import_depth -> draw_batch -> locked_draw -> backend_flush -> raster_batch -> draw_primitive",
+      "sampled_cpu_percent": 0.10499475026248688,
+      "event_count": 35175875
+    },
+    {
+      "symbol_or_chain": "unchanged -> ch_vk_texture_cache_resolve -> sample_image -> draw_decoded -> ch_vk_nv2a_draw_resolved_read -> draw_batch -> locked_draw -> backend_flush",
+      "sampled_cpu_percent": 0.10499475026248688,
+      "event_count": 35175875
+    },
+    {
+      "symbol_or_chain": "observe_guest_color -> draw_batch -> locked_draw_raw -> raster_batch -> draw_primitive -> draw_inline_array -> nv2a_pb_exec_method -> pb_walk_segment",
+      "sampled_cpu_percent": 0.07499625018749062,
+      "event_count": 25125625
+    },
+    {
+      "symbol_or_chain": "observe -> bind_depth -> import_depth -> draw_batch -> locked_draw_raw -> raster_batch -> draw_primitive -> draw_inline_array",
+      "sampled_cpu_percent": 0.0599970001499925,
+      "event_count": 20100500
+    },
+    {
+      "symbol_or_chain": "unchanged -> ch_vk_texture_cache_resolve -> sample_image -> draw_decoded -> ch_vk_nv2a_draw_fixed_resolved_read -> draw_batch -> locked_draw_raw -> raster_batch",
+      "sampled_cpu_percent": 0.0599970001499925,
+      "event_count": 20100500
+    },
+    {
+      "symbol_or_chain": "draw_full -> ch_vk_target_draw_fixed_read -> draw_decoded -> ch_vk_nv2a_draw_fixed_resolved_read -> draw_batch -> locked_draw_raw -> raster_batch -> draw_primitive",
+      "sampled_cpu_percent": 0.0599970001499925,
+      "event_count": 20100500
+    },
+    {
+      "symbol_or_chain": "profile_rc -> draw_decoded -> ch_vk_nv2a_draw_fixed_resolved_read -> draw_batch -> locked_draw_raw -> raster_batch -> draw_primitive -> nv2a_pb_exec_method",
+      "sampled_cpu_percent": 0.02999850007499625,
+      "event_count": 10050250
+    },
+    {
+      "symbol_or_chain": "observe_guest_color -> flush -> locked_flush -> nv2a_defer_write -> nv2a_pb_exec_method -> pb_walk_segment -> nv2a_pb_scan_segment -> nv2a_ack_thread",
+      "sampled_cpu_percent": 0.014999250037498125,
+      "event_count": 5025125
+    },
+    {
+      "symbol_or_chain": "profile_rc -> draw_decoded -> ch_vk_nv2a_draw_resolved_read -> draw_batch -> locked_draw -> backend_flush -> raster_batch -> draw_primitive",
+      "sampled_cpu_percent": 0.014999250037498125,
+      "event_count": 5025125
+    },
+    {
+      "symbol_or_chain": "observe -> ch_vk_depth_resident_flush -> flush -> locked_flush -> nv2a_defer_write -> nv2a_pb_exec_method -> pb_walk_segment -> nv2a_pb_scan_segment",
+      "sampled_cpu_percent": 0.014999250037498125,
+      "event_count": 5025125
+    },
+    {
+      "symbol_or_chain": "observe -> ch_vk_depth_resident_flush -> ch_vk_depth_resident_release -> bind_depth -> import_depth -> draw_batch -> locked_draw -> backend_flush",
+      "sampled_cpu_percent": 0.014999250037498125,
+      "event_count": 5025125
+    }
+  ]
+}

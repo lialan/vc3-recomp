@@ -1,0 +1,13 @@
+{
+  "reference": "untracked native256MiB prior run sourceframe1920",
+  "candidate": "write-tracked native64MiB sourceframe1920",
+  "changed_pixels": 1299,
+  "difference_bounds": [
+    429,
+    439,
+    574,
+    449
+  ],
+  "max_channel_delta": 9,
+  "interpretation": "Differences confined to blinking INSERT COINS prompt; all other pixels exact. Not a synchronized same-build A/B or whole-game acceptance."
+}

@@ -1,0 +1,43 @@
+  CreateFileMapping returns a mapping                          PASS
+  MapViewOfFileEx over a live mapping fails                    PASS
+  ...and the live mapping keeps its contents                   PASS
+  VirtualAlloc over a live mapping fails                       PASS
+  ...and the live mapping keeps its contents                   PASS
+  MapViewOfFileEx maps at a free address                       PASS
+  MapViewOfFile maps a second view                             PASS
+  the two views alias the same memory                          PASS
+  UnmapViewOfFile releases the fixed view                      PASS
+  the address can be mapped again after UnmapViewOfFile        PASS
+  MapViewOfFileEx with an unaligned offset fails               PASS
+  ...and leaves the address free for the next view             PASS
+  VirtualAlloc maps at a free address                          PASS
+  VirtualFree(MEM_RELEASE) releases it                         PASS
+  the address can be allocated again after VirtualFree         PASS
+  observer test allocation                                     PASS
+  observer test file                                           PASS
+  prepare read payload                                         PASS
+  arm simulated observer protection                            PASS
+  read observer receives the complete destination range        PASS
+  begin lease opens destination before kernel read             PASS
+  end lease may restore read-only protection                   PASS
+  ReadFile fills a protected destination through paired hooks  PASS
+  successful read releases exactly one lease                   PASS
+  read observer receives the complete destination range        PASS
+  begin lease opens destination before kernel read             PASS
+  end lease may restore read-only protection                   PASS
+  failed read releases lease and preserves syscall errno       PASS
+  error path releases exactly one lease                        PASS
+  protection observer receives the whole range                 PASS
+  observer removes its protection before external change       PASS
+  VirtualProtect notifies before applying new permissions      PASS
+  protection observer receives the whole range                 PASS
+  observer removes its protection before external change       PASS
+  decommit notifies before protection change                   PASS
+  protection observer receives the whole range                 PASS
+  observer removes its protection before external change       PASS
+  recommit invalidates protection tracking                     PASS
+  protection observer receives the whole range                 PASS
+  observer removes its protection before external change       PASS
+  release invalidates before unmapping                         PASS
+
+0 failure(s)

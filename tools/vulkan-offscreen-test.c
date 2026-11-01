@@ -20,6 +20,7 @@ int ch_test_command_batches(VkPhysicalDevice,VkDevice,VkQueue,uint32_t);
 int ch_test_resource_reuse(VkPhysicalDevice,VkDevice,VkQueue,uint32_t);
 int ch_test_depth24(VkPhysicalDevice,VkDevice,VkQueue,uint32_t);
 int ch_test_depth_copy(VkPhysicalDevice,VkDevice,VkQueue,uint32_t);
+int ch_test_write_watch(VkPhysicalDevice,VkDevice,VkQueue,uint32_t,ChVkDecodeTexture);
 static float smooth_reference(float low,float high,float x) {
     float t=fminf(1,fmaxf(0,(x-low)/(high-low))); return t*t*(3-2*t);
 }
@@ -613,6 +614,7 @@ int main(void) {
     if(mismatch) goto done;
     if(ch_test_depth24(gpu,device,queue,family)) goto done;
     if(ch_test_depth_copy(gpu,device,queue,family)) goto done;
+    if(ch_test_write_watch(gpu,device,queue,family,fixture_decode)) goto done;
     if(ch_test_resource_reuse(gpu,device,queue,family)) goto done;
     if(ch_test_command_batches(gpu,device,queue,family)) goto done;
     puts("PASS: RGBA8 clears, indexed quad coverage, interpolated triangle, post-draw clear, blend equations/factors/color masks, depth/stencil, persistent batches and selective clears, decoded NV2A adapter, alpha comparisons, face culling, ARGB texture upload/readback and sampled modulation, decoded textured batches, partial-channel clears, precise visibility queries, fragment combiners, guest CPU color imports, depth/stencil transfers, rectangular clears, per-eye projection, overlay effect shading (synthetic fixtures)");

@@ -8,7 +8,7 @@
 #include <stdio.h>
 #include <time.h>
 #define MAX_SURFACES 32
-struct Surface { Nv2aSurface guest; uint32_t zeta; Nv2aRenderState state; float *depth; uint8_t *stencil; ChVkTarget *target; unsigned char *rgba,*observed,*cpu,*raw; size_t raw_span; int observed_valid,resident,color_dirty,native_z24; size_t bytes; };
+struct Surface { Nv2aSurface guest; uint32_t zeta; Nv2aRenderState state; float *depth; uint8_t *stencil; ChVkTarget *target; unsigned char *rgba,*observed,*cpu,*raw; ChGuestWriteRange *write_range; size_t raw_span; int observed_valid,resident,color_dirty,native_z24; size_t bytes; };
 struct ChVkBackend { struct {int enabled;uint64_t start,n,surface,coherence,imports,draw,store,no_color;} profile; struct {uint64_t previous,us[120];unsigned count;} frame_profile; ChVkBackendConfig host; ChVkTextureCache *textures; ChVkDepthResident *zeta; uint64_t frames,raw_draws,raw_declined; struct Surface surfaces[MAX_SURFACES]; unsigned count; };
 static ChVkBackend *active;
 static void flush_color(struct Surface *);
@@ -56,6 +56,7 @@ static void fatal(VkResult result,const char *operation) {
     abort();
 }
 static void release_surface(struct Surface *f) {
+    ch_guest_write_range_destroy(f->write_range);
     ch_vk_target_destroy(f->target);free(f->rgba);free(f->observed);free(f->cpu);free(f->raw);
     free(f->depth);free(f->stencil);memset(f,0,sizeof *f);
 }
@@ -99,6 +100,9 @@ static struct Surface *surface(const Nv2aSurface *s,const Nv2aRenderState *rs) {
             void *raw=realloc(f->raw,(size_t)span);
             if(!raw) fatal(VK_ERROR_OUT_OF_HOST_MEMORY,"resident guest snapshot resize");
             f->raw=raw;f->raw_span=(size_t)span;
+            ch_guest_write_range_destroy(f->write_range);
+            f->write_range=ch_guest_write_range_create(active->host.guest_write_watch,
+                (unsigned char *)active->host.guest_base+s->color_va,(size_t)span);
         }
         f->guest=*s;f->state=*rs;return f;
     }
@@ -130,6 +134,8 @@ static struct Surface *surface(const Nv2aSurface *s,const Nv2aRenderState *rs) {
     if(f->resident) {
         f->cpu=malloc(f->bytes); f->raw=malloc((size_t)span); f->raw_span=(size_t)span;
         if(!f->cpu || !f->raw) fatal(VK_ERROR_OUT_OF_HOST_MEMORY,"CPU color staging");
+        f->write_range=ch_guest_write_range_create(active->host.guest_write_watch,
+            (unsigned char *)active->host.guest_base+s->color_va,(size_t)span);
     }
     if(!f->rgba) fatal(VK_ERROR_OUT_OF_HOST_MEMORY,"surface readback allocation");
     VkResult r=VK_ERROR_FORMAT_NOT_SUPPORTED;
@@ -185,16 +191,23 @@ static void store(struct Surface *f,VkResult result,const char *operation,int co
 static void flush_color(struct Surface *f) {
     if(!f->resident || !f->color_dirty) return;
     VkResult r=ch_vk_target_read_color(f->target,f->rgba,f->bytes);
+    void *storage=(unsigned char *)active->host.guest_base+f->guest.color_va;
+    ch_guest_write_watch_begin(active->host.guest_write_watch,storage,f->raw_span);
     if(r==VK_SUCCESS) r=ch_vk_nv2a_store_color_state(&f->guest,&f->state,f->rgba,f->bytes,
         active->host.guest_base,active->host.guest_bytes);
+    if(r==VK_SUCCESS) {
+        memcpy(f->observed,f->rgba,f->bytes);
+        memcpy(f->raw,storage,f->raw_span);
+    }
+    ch_guest_write_watch_end(active->host.guest_write_watch,storage,f->raw_span);
     if(r!=VK_SUCCESS) fatal(r,"resident color writeback");
-    memcpy(f->observed,f->rgba,f->bytes);
-    memcpy(f->raw,(const unsigned char *)active->host.guest_base+f->guest.color_va,f->raw_span);
     f->observed_valid=1; f->color_dirty=0;
 }
 static void observe_guest_color(struct Surface *f) {
     if(!f->observed) return;
     const unsigned char *raw=(const unsigned char *)active->host.guest_base+f->guest.color_va;
+    if(f->resident && f->observed_valid && f->write_range &&
+        !ch_guest_write_range_changed(f->write_range)) return;
     /* Fast unchanged-storage check before Morton/pixel decoding. Padding
      * changes fall through once, then the pixel comparison ignores them. */
     if(f->resident && f->observed_valid && !memcmp(raw,f->raw,f->raw_span)) return;
@@ -381,6 +394,12 @@ static void flip(void) {
     if(!active) fatal(VK_ERROR_INITIALIZATION_FAILED,"flip without backend");
     flush();
     active->frames++;
+    if(active->host.guest_write_watch && active->profile.enabled && (active->frames==1 || active->frames%60==0)) {
+        ChGuestWriteStats stats;ch_guest_write_watch_stats(active->host.guest_write_watch,&stats);
+        fprintf(stderr,"[Vulkan write tracking] ranges=%llu checks=%llu unchanged=%llu faults=%llu protection calls=%llu\n",
+            (unsigned long long)stats.ranges,(unsigned long long)stats.checks,(unsigned long long)stats.unchanged,
+            (unsigned long long)stats.faults,(unsigned long long)stats.protect_calls);
+    }
     profile_frame();
     if(active->profile.enabled && (active->frames==1 || active->frames%60==0))
         fprintf(stderr,"[Vulkan raw vertices] GPU fixed batches=%llu CPU declined batches=%llu\n",
@@ -476,6 +495,7 @@ VkResult ch_vk_backend_create(const ChVkBackendConfig *config,ChVkBackend **out)
     if(config->resident_depth) {
         VkResult r=ch_vk_depth_resident_create(config->guest_base,config->guest_bytes,&b->zeta);
         if(r!=VK_SUCCESS) {free(b);return r;}
+        ch_vk_depth_resident_write_watch(b->zeta,config->guest_write_watch);
         r=ch_vk_depth_resident_packed(b->zeta,!config->depth_float_transfers);
         if(r!=VK_SUCCESS) {ch_vk_depth_resident_destroy(b->zeta);free(b);return r;}
         ch_vk_depth_resident_gpu_copies(b->zeta,!config->strict_depth_switches);

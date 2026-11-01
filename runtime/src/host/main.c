@@ -88,6 +88,10 @@ static void fault_handler(int sig, siginfo_t *si, void *ucv)
 {
     uintptr_t fault = (uintptr_t)si->si_addr;
 
+#if defined(CHIHIRO_RENDERER_VULKAN)
+    if(ch_vk_runtime_write_fault(fault,ucv)) return;
+#endif
+
     /* Trapped hardware registers (APU, AC'97, OHCI): decoded and stepped over. */
     if (xbox_PosixMmioFault(ucv, fault))
         return;

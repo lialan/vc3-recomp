@@ -6,6 +6,7 @@
 #include <errno.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdatomic.h>
 
 extern void xbox_FramebufferWindowPresentFrames(const void *const *,int,uint32_t,uint32_t,uint32_t,uint32_t);
 static ChVkBackendConfig host_config;
@@ -14,12 +15,25 @@ static struct {
     VkInstance instance;
     VkDevice device;
     ChVkBackend *backend;
+    ChGuestWriteWatch *write_watch;
     uint32_t *argb;
     size_t capacity;
     unsigned char *capture_rgb;
     size_t capture_capacity;
     uint64_t frames;
 } runtime;
+static _Atomic(ChGuestWriteWatch *) fault_watch;
+#if !defined(_WIN32)
+static W32MemoryObserver write_observer;
+static void write_begin(void *context,void *p,size_t n) {ch_guest_write_watch_begin(context,p,n);}
+static void write_end(void *context,void *p,size_t n) {ch_guest_write_watch_end(context,p,n);}
+static void write_invalidate(void *context,void *p,size_t n) {ch_guest_write_watch_invalidate(context,p,n);}
+#endif
+int ch_vk_runtime_write_fault(uintptr_t address,void *context)
+{
+    ChGuestWriteWatch *watch=atomic_load_explicit(&fault_watch,memory_order_acquire);
+    return watch && ch_guest_write_watch_fault(watch,address,ch_guest_write_fault_is_write(context));
+}
 
 static void fatal(VkResult result,const char *operation)
 {
@@ -112,6 +126,26 @@ static VkResult attach(ChVkBackendConfig config)
     config.guest_base=(void *)xbox_GetMemoryOffset();
     config.guest_bytes=(size_t)0x80000000u+g_xbox_total_ram;
     config.decode=nv2a_backend_decode_texture;
+    const char *tracking=ch_env("VULKAN_WRITE_WATCH");
+    if(tracking && strcmp(tracking,"0")) {
+        if(strcmp(tracking,"1") || getenv("RECOMP_WATCH")) return VK_ERROR_INITIALIZATION_FAILED;
+#if !defined(_WIN32)
+        void *bases[2];size_t sizes[2];ChGuestWriteView views[2];
+        size_t count=xbox_GetContiguousViews(bases,sizes,2);
+        if(!count) return VK_ERROR_FEATURE_NOT_PRESENT;
+        for(size_t i=0;i<count;i++) views[i]=(ChGuestWriteView){bases[i],sizes[i]};
+        runtime.write_watch=ch_guest_write_watch_create(views,count);
+        if(!runtime.write_watch) return VK_ERROR_FEATURE_NOT_PRESENT;
+        write_observer=(W32MemoryObserver){.context=runtime.write_watch,.begin_write=write_begin,
+            .end_write=write_end,.invalidate=write_invalidate};
+        atomic_store_explicit(&fault_watch,runtime.write_watch,memory_order_release);
+        w32_set_memory_observer(&write_observer);
+        config.guest_write_watch=runtime.write_watch;
+        fprintf(stderr,"[Vulkan] exact write tracking: %zu contiguous backing view(s), unsupported pages compare exactly\n",count);
+#else
+        return VK_ERROR_FEATURE_NOT_PRESENT;
+#endif
+    }
     const char *resident=ch_env("VULKAN_RESIDENT_COLOR");
     config.resident_color=!resident || strcmp(resident,"0");
     const char *cache=ch_env("VULKAN_TEXTURE_CACHE");
@@ -232,6 +266,13 @@ fail:
 void ch_vk_runtime_stop(void)
 {
     ch_vk_backend_destroy(runtime.backend);
+    if(runtime.write_watch) {
+#if !defined(_WIN32)
+        w32_set_memory_observer(NULL);
+#endif
+        atomic_store_explicit(&fault_watch,NULL,memory_order_release);
+        if(!ch_guest_write_watch_destroy(runtime.write_watch)) fatal(VK_ERROR_UNKNOWN,"write tracker still has active leases at shutdown");
+    }
     if(runtime.device) vkDestroyDevice(runtime.device,NULL);
     if(runtime.instance) vkDestroyInstance(runtime.instance,NULL);
     free(runtime.argb);
