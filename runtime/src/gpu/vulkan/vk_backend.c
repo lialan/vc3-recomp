@@ -7,6 +7,10 @@
 #include <string.h>
 #include <stdio.h>
 #include <time.h>
+#ifdef __APPLE__
+#include <pthread.h>
+#include <pthread/qos.h>
+#endif
 #define MAX_SURFACES 32
 struct Surface { Nv2aSurface guest; ChVkGuestLayout layout; uint32_t zeta; Nv2aRenderState state; float *depth; uint8_t *stencil; ChVkTarget *target; unsigned char *rgba,*observed,*cpu,*raw; ChGuestWriteRange *write_range; size_t raw_span; int observed_valid,resident,color_bgra,color_fallback_reported,color_dirty,native_z24,quantized_z24; size_t bytes; uint64_t color_serial; };
 typedef struct {uint64_t pipeline_ns,batch_wait_ns,batch_gpu_ns,upload_wait_ns;} FrameCosts;
@@ -15,6 +19,26 @@ static ChVkBackend *active;
 static void flush_color(struct Surface *);
 static void observe_guest_colors(void);
 static void observe_guest_color(struct Surface *);
+/* Optional host scheduling experiment, once on each actual rendering thread.
+ * Uses normal macOS QoS, not realtime policy, affinity, or busy waiting. */
+static void configure_render_thread(void) {
+#ifdef __APPLE__
+    static _Thread_local int configured;
+    if(configured) return;
+    configured=1;
+    const char *setting=getenv("CHIHIRO_VULKAN_RENDER_QOS");
+    if(!setting) return;
+    int mode=atoi(setting),relative=0,result=0;
+    qos_class_t before=QOS_CLASS_UNSPECIFIED,after=QOS_CLASS_UNSPECIFIED;
+    int queried=pthread_get_qos_class_np(pthread_self(),&before,&relative);
+    qos_class_t requested=mode==1?QOS_CLASS_USER_INITIATED:mode==2?QOS_CLASS_USER_INTERACTIVE:QOS_CLASS_UNSPECIFIED;
+    if(requested!=QOS_CLASS_UNSPECIFIED && !(before==QOS_CLASS_USER_INTERACTIVE && mode==1))
+        result=pthread_set_qos_class_self_np(requested,0);
+    int verified=pthread_get_qos_class_np(pthread_self(),&after,&relative);
+    fprintf(stderr,"[Vulkan render thread] mode=%d qos_before=%u qos_after=%u query=%d set=%d verify=%d\n",
+        mode,(unsigned)before,(unsigned)after,queried,result,verified);
+#endif
+}
 static uint64_t now_us(void) {
     struct timespec t;clock_gettime(CLOCK_MONOTONIC,&t);
     return (uint64_t)t.tv_sec*1000000u+t.tv_nsec/1000;
@@ -502,6 +526,7 @@ static void import_depth(struct Surface *f,int overwrite) {
     if(r!=VK_SUCCESS) fatal(r,"guest depth import");
 }
 static void clear(const Nv2aSurface *s,const Nv2aRenderState *rs,uint32_t flags,uint32_t argb,uint32_t zs) {
+    configure_render_thread();
     uint64_t cpu=active->costs.enabled?thread_cpu_ns():0;
     uint64_t start=active->costs.enabled?now_us():0;
     struct Surface *f=surface(s,rs);
@@ -516,6 +541,7 @@ static void clear(const Nv2aSurface *s,const Nv2aRenderState *rs,uint32_t flags,
     if(active->costs.enabled) {active->costs.clear_us+=now_us()-start;active->costs.clear_cpu_ns+=thread_cpu_ns()-cpu;}
 }
 static void draw_batch(const Nv2aSurface *s,const Nv2aBatch *b,const ChVkFixedGeometry *fixed) {
+    configure_render_thread();
     if(!b || !s) fatal(VK_ERROR_INITIALIZATION_FAILED,"batch arguments");
     /* An empty guest clip cannot rasterize fragments. Reset-state draws may
      * still carry an unset format/pitch; no image or guest memory is touched.
