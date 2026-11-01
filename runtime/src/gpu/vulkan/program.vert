@@ -2,8 +2,9 @@
 #extension GL_GOOGLE_include_directive : require
 #extension GL_EXT_control_flow_attributes : require
 #include "fixed_layout.glsl"
+#include "attribute_decode.glsl"
 layout(std430,set=0,binding=3) readonly buffer RawParams {ChVkFixedParams p;} params;
-layout(location=0) in vec4 attributes[16];
+layout(location=0) in uvec4 encoded_attributes[16];
 layout(location=0) out vec4 v_col;
 layout(location=1) out vec2 v_uv;
 layout(location=2) out vec4 v_spec;
@@ -21,6 +22,8 @@ float fog_factor(float d) {
     return isnan(f)?1:clamp(f,0,1);
 }
 void main() {
+    vec4 attributes[16];
+    for(int i=0;i<16;i++) attributes[i]=ch_attribute(encoded_attributes[i],params.p.attribute_format[i]);
     vec4 pos,O[13];vp_run(attributes,pos,O);
     if(floatBitsToUint(pos.w)==0u) pos.w=1;
     vec3 s=vec3(pos.xy*vec2(params.p.aa[0],params.p.aa[1]),pos.z);float w=pos.w;

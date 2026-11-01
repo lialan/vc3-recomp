@@ -69,7 +69,7 @@ foreach(stage program vert frag textured combiner effect fixed frag_noat texture
     add_custom_command(OUTPUT "${output}"
         COMMAND "${CHIHIRO_GLSLC}" --target-env=vulkan1.0 -I "${CMAKE_CURRENT_BINARY_DIR}" ${defines}
                 "${CMAKE_CURRENT_SOURCE_DIR}/${input}" -o "${output}"
-        DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/${input}" "${CMAKE_CURRENT_SOURCE_DIR}/combiner.glsl" "${CMAKE_CURRENT_SOURCE_DIR}/../nv2a_stage_fetch.h" "${CMAKE_CURRENT_SOURCE_DIR}/../nv2a_fixed_shader.h" "${fixed_layout}" "${combiner_program}" "${vertex_program}" program.glsl VERBATIM)
+        DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/${input}" "${CMAKE_CURRENT_SOURCE_DIR}/combiner.glsl" "${CMAKE_CURRENT_SOURCE_DIR}/../nv2a_stage_fetch.h" "${CMAKE_CURRENT_SOURCE_DIR}/../nv2a_fixed_shader.h" "${fixed_layout}" "${combiner_program}" "${vertex_program}" program.glsl attribute_decode.glsl VERBATIM)
     list(APPEND spirv_outputs "${output}")
     if(input STREQUAL "color.frag")
         set(quant_output "${CMAKE_CURRENT_BINARY_DIR}/color.${stage}_depth.spv")
@@ -245,7 +245,7 @@ if(CHIHIRO_VULKAN_TESTS OR CHIHIRO_VULKAN_SHADER_TESTS)
     add_custom_command(OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/program_test.spv"
         COMMAND "${CHIHIRO_GLSLC}" --target-env=vulkan1.0 -O -I "${CMAKE_CURRENT_BINARY_DIR}"
             "${CMAKE_CURRENT_SOURCE_DIR}/program_test.comp" -o "${CMAKE_CURRENT_BINARY_DIR}/program_test.spv"
-        DEPENDS program_test.comp program.glsl "${fixed_layout}" "${vertex_program}" VERBATIM)
+        DEPENDS program_test.comp attribute_decode.glsl program.glsl "${fixed_layout}" "${vertex_program}" VERBATIM)
     add_custom_target(vulkan_program_shader DEPENDS "${CMAKE_CURRENT_BINARY_DIR}/program_test.spv")
     add_executable(vulkan_program_check "${CH_VK_ROOT}/tools/vulkan-combiner-driver.c"
         "${CH_VK_ROOT}/tools/vulkan-program-check.c" "${XBOXRECOMP_DIR}/src/kernel/nv2a_vsh_interp.c")
@@ -295,3 +295,12 @@ if(CHIHIRO_VULKAN_TESTS OR CHIHIRO_VULKAN_SHADER_TESTS)
     target_compile_options(vulkan_texture_decode_check PRIVATE -Wall -Wextra -Werror)
     target_link_libraries(vulkan_texture_decode_check PRIVATE chihiro_vulkan)
 endif()
+
+add_custom_command(OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/color_pack.spv"
+    COMMAND "${CHIHIRO_GLSLC}" --target-env=vulkan1.0 -O "${CMAKE_CURRENT_SOURCE_DIR}/color_pack.comp" -o "${CMAKE_CURRENT_BINARY_DIR}/color_pack.spv"
+    DEPENDS color_pack.comp VERBATIM)
+add_custom_command(OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/color_pack_spv.h"
+    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/embed_binary_spirv.py"
+        "${CMAKE_CURRENT_BINARY_DIR}/color_pack.spv" "${CMAKE_CURRENT_BINARY_DIR}/color_pack_spv.h" color_pack_spv
+    DEPENDS "${CMAKE_CURRENT_BINARY_DIR}/color_pack.spv" embed_binary_spirv.py VERBATIM)
+target_sources(chihiro_vulkan PRIVATE vk_color_pack.c "${CMAKE_CURRENT_BINARY_DIR}/color_pack_spv.h")

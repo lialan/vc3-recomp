@@ -1,0 +1,26 @@
+[
+  {
+    "first_flip": 1320,
+    "last_flip": 1560,
+    "cpu_texture_pixels_per_frame": 418.1333333333333,
+    "cpu_texture_ms_per_frame": 0.005012500000000013,
+    "cpu_color_pixels_per_frame": 81920.0,
+    "cpu_color_ms_per_frame": 0.20025833333333337
+  },
+  {
+    "first_flip": 1560,
+    "last_flip": 1680,
+    "cpu_texture_pixels_per_frame": 486.4,
+    "cpu_texture_ms_per_frame": 0.007600000000000051,
+    "cpu_color_pixels_per_frame": 81920.0,
+    "cpu_color_ms_per_frame": 0.2015083333333332
+  },
+  {
+    "first_flip": 1680,
+    "last_flip": 1920,
+    "cpu_texture_pixels_per_frame": 69.33333333333333,
+    "cpu_texture_ms_per_frame": 0.0008500000000000323,
+    "cpu_color_pixels_per_frame": 81920.0,
+    "cpu_color_ms_per_frame": 0.2029041666666667
+  }
+]

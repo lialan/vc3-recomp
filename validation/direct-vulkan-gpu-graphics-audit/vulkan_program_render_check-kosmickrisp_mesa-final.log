@@ -1,0 +1,3 @@
+device=Apple M4 Pro vendor=106b deviceID=0064 api=1.4.354
+PASS: registered raw fixed GPU callbacks, rebased strip/fan indices, precise query256, resident guest flush; unsupported program/bounds decline before drawing
+PASS: GPU program rendering, indexed strip/fan, precise visibility, constants snapshot, instruction identity, +0 w, w/near clipping, bounds rejection

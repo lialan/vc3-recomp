@@ -1,0 +1,2 @@
+device=Apple M4 Pro vendor=106b deviceID=0064 api=1.4.354
+PASS: 144 MAC/ILU, relative-address, mask/swizzle programs x 256 vertices against CPU oracle (2e-5 relative/absolute tolerance)

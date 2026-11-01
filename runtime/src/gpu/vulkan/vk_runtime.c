@@ -54,12 +54,12 @@ static void save_pipeline_cache(void)
             ch_vk_pipeline_cache_file_save(runtime.cache_device,runtime.pipeline_cache,runtime.cache_path)?"ok":"skipped");
 }
 
-static VkResult present(void *unused,const Nv2aSurface *surface,const void *rgba,size_t bytes)
+static VkResult present_pixels(void *unused,const Nv2aSurface *surface,const void *rgba,size_t bytes,int bgra)
 {
     (void)unused;
     size_t count=(size_t)surface->width*surface->height;
     if(bytes!=count*4) return VK_ERROR_INITIALIZATION_FAILED;
-    if(!has_host_config) {
+    if(!has_host_config && !bgra) {
         if(bytes>runtime.capacity) {
             void *p=realloc(runtime.argb,bytes);
             if(!p) return VK_ERROR_OUT_OF_HOST_MEMORY;
@@ -70,6 +70,9 @@ static VkResult present(void *unused,const Nv2aSurface *surface,const void *rgba
             runtime.argb[i]=((uint32_t)src[4*i+3]<<24)|((uint32_t)src[4*i]<<16)
                 |((uint32_t)src[4*i+1]<<8)|src[4*i+2];
         const void *planes[]={runtime.argb};
+        xbox_FramebufferWindowPresentFrames(planes,1,surface->width,surface->height,surface->width*4,4);
+    } else if(!has_host_config) {
+        const void *planes[]={rgba};
         xbox_FramebufferWindowPresentFrames(planes,1,surface->width,surface->height,surface->width*4,4);
     } else if(host_config.present_rgba) {
         VkResult result=host_config.present_rgba(host_config.render_context,surface,rgba,bytes);
@@ -88,7 +91,7 @@ static VkResult present(void *unused,const Nv2aSurface *surface,const void *rgba
             runtime.capture_rgb=p;runtime.capture_capacity=rgb_bytes;
         }
         for(size_t i=0;i<count;i++) {
-            runtime.capture_rgb[3*i]=src[4*i];runtime.capture_rgb[3*i+1]=src[4*i+1];runtime.capture_rgb[3*i+2]=src[4*i+2];
+            runtime.capture_rgb[3*i]=src[4*i+(bgra?2:0)];runtime.capture_rgb[3*i+1]=src[4*i+1];runtime.capture_rgb[3*i+2]=src[4*i+(bgra?0:2)];
         }
         char path[4096];
         if(snprintf(path,sizeof path,"%s/frame-%06llu.ppm",dir,(unsigned long long)runtime.frames)>=(int)sizeof path)
@@ -121,6 +124,13 @@ static VkResult present(void *unused,const Nv2aSurface *surface,const void *rgba
     }
     return VK_SUCCESS;
 }
+static VkResult present(void *context,const Nv2aSurface *surface,const void *pixels,size_t bytes) {
+    return present_pixels(context,surface,pixels,bytes,0);
+}
+static VkResult present_bgra(void *context,const Nv2aSurface *surface,const void *pixels,size_t bytes) {
+    return present_pixels(context,surface,pixels,bytes,1);
+}
+
 
 int ch_vk_runtime_configure(const ChVkBackendConfig *config)
 {
@@ -190,6 +200,9 @@ static VkResult attach(ChVkBackendConfig config)
     const char *decode=ch_env("VULKAN_GPU_TEXTURE_DECODE");
     config.gpu_texture_decode=(!decode || atoi(decode)) && config.family<queue_count &&
         (queues[config.family].queueFlags&VK_QUEUE_COMPUTE_BIT);
+    const char *color_pack=ch_env("VULKAN_GPU_COLOR_PACK");
+    config.gpu_color_pack=(!color_pack || atoi(color_pack)) && config.family<queue_count &&
+        (queues[config.family].queueFlags&VK_QUEUE_COMPUTE_BIT);
     free(queues);
     fprintf(stderr,"[Vulkan] D32 guest depth GPU conversion: %s\n",config.gpu_depth_pack?"enabled":"disabled");
     const char *fixed=ch_env("VULKAN_GPU_FIXED");
@@ -229,6 +242,7 @@ static VkResult attach(ChVkBackendConfig config)
     const char *texture_watch=ch_env("VULKAN_TEXTURE_WRITE_WATCH");
     config.strict_texture_checks=texture_watch && !strcmp(texture_watch,"0");
     config.present_rgba=present;
+    if(!has_host_config || !host_config.present_rgba) config.present_bgra=present_bgra;
     if(!config.fatal) config.fatal=fatal;
     const char *cache_path=ch_env("VULKAN_PIPELINE_CACHE");
     if(cache_path && *cache_path && !config.pipeline_cache) {

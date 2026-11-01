@@ -17,6 +17,15 @@ static void instruction(uint32_t *p,unsigned mac,unsigned ilu,unsigned input,uns
     p[2]=(2u<<26)|(0x1bu<<17)|(2u<<11)|(0x1bu<<2);
     p[3]=(2u<<28)|(15u<<12)|(1u<<11)|(out<<3);
 }
+static void decode_attribute(const float encoded[4],unsigned type,unsigned size,float out[4]) {
+    const unsigned char *p=(const unsigned char *)encoded;
+    out[0]=out[1]=out[2]=0;out[3]=1;
+    if(type==0) {out[0]=p[2]/255.f;out[1]=p[1]/255.f;out[2]=p[0]/255.f;out[3]=p[3]/255.f;}
+    else if(type==2) memcpy(out,p,size*4);
+    else if(type==4) for(unsigned i=0;i<size;i++) out[i]=p[i]/255.f;
+    else if(type==1 || type==5) for(unsigned i=0;i<size;i++) {int16_t v;memcpy(&v,p+i*2,2);out[i]=type==1?v/32767.f:v;}
+    else if(type==6) {uint32_t v;memcpy(&v,p,4);out[0]=((int32_t)(v<<21)>>21)/1023.f;out[1]=((int32_t)(v<<10)>>21)/1023.f;out[2]=((int32_t)v>>22)/511.f;}
+}
 int combiner_check(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,VkCommandPool pool) {
     int failed=1; VkResult r;
     VkBuffer buffer=VK_NULL_HANDLE; VkDeviceMemory memory=VK_NULL_HANDLE;
@@ -76,7 +85,7 @@ int combiner_check(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,VkCommandP
     VkSpecializationMapEntry entries[545];uint32_t spec[545]={0};
     for(unsigned i=0;i<545;i++) entries[i]=(VkSpecializationMapEntry){i,i*4,4};
     VkSpecializationInfo specialization={545,entries,sizeof spec,spec};pi.stage.pSpecializationInfo=&specialization;
-    for(unsigned test=0;test<144;test++) {
+    for(unsigned test=0;test<168;test++) {
         unsigned mac=(test/8)%16,ilu=test%8;uint32_t words[136][4]={{0}};
         // Paired outputs to R2/R1, then export each result independently.
         instruction(words[0],mac,ilu,0,9);
@@ -85,7 +94,7 @@ int combiner_check(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,VkCommandP
         instruction(words[2],1,0,0,11);words[2][2]=(1u<<26)|(1u<<28);
         instruction(words[3],1,0,0,0);words[3][2]=(1u<<26)|(12u<<28);words[3][3]|=1;
         unsigned length=4;
-        if(test>=128) {
+        if(test>=128 && test<144) {
             unsigned variant=test-128;
             // ARL from finite constant, followed by relative constant reads;
             // partial destinations, every temp index, negation and swizzles.
@@ -99,6 +108,20 @@ int combiner_check(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,VkCommandP
             instruction(words[3],1,0,0,96);words[3][3]&=~(1u<<11);
             instruction(words[4],1,0,1,0);words[4][3]|=1u;length=5;
         }
+        unsigned attribute_type=0,attribute_size=0;
+        params.attribute_format[0]=0;
+        if(test>=144) {
+            const unsigned types[]={0,1,2,4,5,6};
+            attribute_type=types[(test-144)/4];attribute_size=(test-144)%4+1;
+            params.attribute_format[0]=(attribute_size<<8)|(attribute_type+1);
+            instruction(words[0],1,0,0,9);
+            instruction(words[1],1,0,0,0);words[1][3]|=1;length=2;
+            for(unsigned i=0;i<N;i++) for(unsigned k=0;k<4;k++) {
+                uint32_t bits=i<8?edges[i]:random_word();
+                memcpy(&cases[i].input[0][k],&bits,4);
+            }
+        }
+        memcpy(mapped,&params,sizeof params);
         // Do not compare undefined float-to-int conversions in the CPU ARL.
         if(mac==13 && test<128) for(unsigned i=0;i<8;i++) cases[i].input[0][0]=.25f;
         memcpy((char *)mapped+header,cases,N*sizeof(*cases));TRY(vkFlushMappedMemoryRanges(device,1,&range));
@@ -120,7 +143,9 @@ int combiner_check(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,VkCommandP
     TRY(vkInvalidateMappedMemoryRanges(device,1,&range));
     for(unsigned i=0;i<N;i++) {
         struct Case *got=(struct Case *)((char *)mapped+header)+i;Nv2aVshOutput expected;
-        if(!nv2a_vsh_run(cases[i].input,&expected)) goto done;
+        float decoded[16][4];memcpy(decoded,cases[i].input,sizeof decoded);
+        if(test>=144) decode_attribute(cases[i].input[0],attribute_type,attribute_size,decoded[0]);
+        if(!nv2a_vsh_run(decoded,&expected)) goto done;
         const float *x=(const float *)&got->output,*y=(const float *)&expected;
         for(unsigned k=0;k<32;k++) {
             if((isnan(x[k]) && isnan(y[k])) || x[k]==y[k]) continue;
@@ -131,7 +156,7 @@ int combiner_check(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,VkCommandP
     vkDestroyFence(device,fence,NULL);fence=VK_NULL_HANDLE;
     vkFreeCommandBuffers(device,pool,1,&cmd);vkDestroyPipeline(device,pipeline,NULL);pipeline=VK_NULL_HANDLE;
     }
-    failed=0;puts("PASS: 144 MAC/ILU, relative-address, mask/swizzle programs x 256 vertices against CPU oracle (2e-5 relative/absolute tolerance)");
+    failed=0;puts("PASS: 144 MAC/ILU, relative-address, mask/swizzle programs and 24 attribute-format cases x 256 vertices against CPU oracle (2e-5 relative/absolute tolerance)");
 done:
     vkDeviceWaitIdle(device);
     if(mapped) vkUnmapMemory(device,memory);

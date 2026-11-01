@@ -3,15 +3,24 @@
 #define CH_NV_SHADER_GLSL 1
 #include "../nv2a_fixed_shader.h"
 #include "fixed_layout.glsl"
+#include "attribute_decode.glsl"
 layout(std430,set=0,binding=3) readonly buffer FixedParams { ChVkFixedParams p; } params;
-layout(location=0) in vec4 a_pos;
-layout(location=1) in vec4 a_wt;
-layout(location=2) in vec4 a_nrm;
-layout(location=3) in vec4 a_col;
-layout(location=4) in vec4 a_t0;
-layout(location=5) in vec4 a_t1;
-layout(location=6) in vec4 a_t2;
-layout(location=7) in vec4 a_t3;
+layout(location=0) in uvec4 a_pos_bits;
+vec4 a_pos;
+layout(location=1) in uvec4 a_wt_bits;
+vec4 a_wt;
+layout(location=2) in uvec4 a_nrm_bits;
+vec4 a_nrm;
+layout(location=3) in uvec4 a_col_bits;
+vec4 a_col;
+layout(location=4) in uvec4 a_t0_bits;
+vec4 a_t0;
+layout(location=5) in uvec4 a_t1_bits;
+vec4 a_t1;
+layout(location=6) in uvec4 a_t2_bits;
+vec4 a_t2;
+layout(location=7) in uvec4 a_t3_bits;
+vec4 a_t3;
 layout(location=0) out vec4 v_col;
 layout(location=1) out vec2 v_uv;
 layout(location=2) out vec4 v_spec;
@@ -57,6 +66,14 @@ void load_state() {
 }
 CH_NV_FIXED_SHADER_FUNCTIONS
 void main() {
+    a_pos=ch_attribute(a_pos_bits,params.p.attribute_format[0]);
+    a_wt=ch_attribute(a_wt_bits,params.p.attribute_format[1]);
+    a_nrm=ch_attribute(a_nrm_bits,params.p.attribute_format[2]);
+    a_col=ch_attribute(a_col_bits,params.p.attribute_format[3]);
+    a_t0=ch_attribute(a_t0_bits,params.p.attribute_format[4]);
+    a_t1=ch_attribute(a_t1_bits,params.p.attribute_format[5]);
+    a_t2=ch_attribute(a_t2_bits,params.p.attribute_format[6]);
+    a_t3=ch_attribute(a_t3_bits,params.p.attribute_format[7]);
     load_state();ch_nv_fixed_vertex();
     vec3 s=o_screen.xyz;float w=o_screen.w;
     bool bad=abs(w)<=1e-6 || any(isnan(o_screen)) || any(isinf(o_screen));

@@ -5,7 +5,50 @@
 #include <stdio.h>
 #include <string.h>
 static int decode(const Nv2aTexture *t,uint32_t *p) {(void)t;(void)p;return 0;}
+static int registered_fixed(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,uint32_t family) {
+    unsigned char guest[4096]={0};ChVkBackend *backend=NULL;int failed=1;
+    ChVkBackendConfig config={.physical=gpu,.device=device,.queue=queue,.family=family,
+        .guest_base=guest,.guest_bytes=sizeof guest,.decode=decode,.raw_fixed=1,.precise_queries=1,.resident_color=1,.batch_draws=1,.gpu_color_pack=1};
+    if(ch_vk_backend_create(&config,&backend)!=VK_SUCCESS || ch_vk_backend_attach(backend)!=VK_SUCCESS) goto done;
+    const Nv2aBackend *cb=ch_vk_backend_callbacks();
+    Nv2aFixedState ff={.use_composite=1,.tex0_slot=9};for(unsigned i=0;i<4;i++) ff.composite[i*4+i]=1;
+    ff.composite[0]=ff.composite[5]=8;ff.c59[0]=ff.c59[1]=8;
+    const float positions[][4]={{-1,-1,.3f,1},{1,-1,.3f,1},{1,1,.3f,1},{-1,1,.3f,1}};
+    const uint16_t strip[]={0,1,3,2},fan[]={0,1,2,3};
+    Nv2aRawGeometry raw={.prim=6,.indices=strip,.index_count=4,.min_index=37,.max_index=40,
+        .kind=NV2A_RAW_FIXED,.ff=&ff,.aa_sx=1,.aa_sy=1,.uv_scale0={1,1}};
+    raw.attr[0]=(Nv2aAttrib){.data=positions,.type=2,.size=4,.stride=16,.bytes=sizeof positions};
+    Nv2aSurface surface={.color_va=128,.width=16,.height=16,.pitch=64,.bytes_per_pixel=4};
+    Nv2aRenderState state={.color_mask=0x01010101,.depth_max=1};uint32_t samples=0;
+    Nv2aBatch batch={.raw=&raw,.state=&state,.zpass_out=&samples};
+    for(unsigned primitive=6;primitive<=7;primitive++) {
+        raw.prim=primitive;raw.indices=primitive==6?strip:fan;samples=0;
+        cb->clear(&surface,&state,0xf3,0,0xffffff00);
+        if(!cb->draw_raw || cb->draw_raw(&surface,&batch)!=1 || samples!=256 || !cb->flush) goto done;
+        cb->flush();
+        for(unsigned i=0;i<256;i++) {uint32_t pixel;memcpy(&pixel,guest+128+i*4,4);if(pixel!=0xffffffff) goto done;}
+    }
+    int16_t packed_positions[][4]={{-1,-1,0,1},{1,-1,0,1},{1,1,0,1},{-1,1,0,1}};
+    raw.attr[0]=(Nv2aAttrib){.data=packed_positions,.type=5,.size=4,.stride=8,.bytes=sizeof packed_positions};
+    batch.zpass_out=NULL;ff.has_color=1;ff.color_slot=3;
+    const uint32_t packed_colors[]={0xffff0000,0xffff0000,0xffff0000,0xffff0000};
+    raw.attr[3]=(Nv2aAttrib){.data=packed_colors,.type=0,.size=4,.stride=4,.bytes=sizeof packed_colors};
+    if(cb->draw_raw(&surface,&batch)!=1) goto done;
+    ff.has_color=0; /* Shader constants must already have been snapshotted. */
+    for(unsigned i=0;i<256;i++) {uint32_t pixel;memcpy(&pixel,guest+128+i*4,4);if(pixel!=0xffffffff) goto done;}
+    cb->flush();
+    for(unsigned i=0;i<256;i++) {uint32_t pixel;memcpy(&pixel,guest+128+i*4,4);if(pixel!=0xffff0000) goto done;}
+    batch.zpass_out=&samples;
+    raw.kind=NV2A_RAW_PROGRAM;samples=19;
+    if(cb->draw_raw(&surface,&batch)!=0 || samples!=19) goto done;
+    raw.kind=NV2A_RAW_FIXED;raw.attr[0].bytes=4;
+    if(cb->draw_raw(&surface,&batch)!=0 || samples!=19) goto done;
+    puts("PASS: registered raw fixed GPU callbacks, rebased strip/fan indices, precise query256, resident guest flush; unsupported program/bounds decline before drawing");failed=0;
+done:
+    ch_vk_backend_destroy(backend);return failed;
+}
 int ch_test_program_render(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,uint32_t family) {
+    if(registered_fixed(gpu,device,queue,family)) return 1;
     unsigned char guest[4096]={0};ChVkBackend *backend=NULL;int failed=1;
 #define REQUIRE(x) do {if(!(x)) {fprintf(stderr,"program render line %d: %s\n",__LINE__,#x);goto done;}} while(0)
     ChVkBackendConfig config={.physical=gpu,.device=device,.queue=queue,.family=family,

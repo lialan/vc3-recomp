@@ -1,0 +1,11 @@
+#version 450
+layout(local_size_x=64) in;
+layout(std430,set=0,binding=0) buffer Storage {uint words[];} data;
+layout(push_constant) uniform Params {uint count;uint upload;} pc;
+void main() {
+    uint base=gl_GlobalInvocationID.x*4u;
+    for(uint j=0u;j<4u && base+j<pc.count;j++) {
+        uint v=data.words[base+j];
+        data.words[base+j]=(v&0xff00ff00u)|((v&255u)<<16)|((v>>16)&255u);
+    }
+}

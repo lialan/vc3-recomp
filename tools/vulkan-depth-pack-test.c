@@ -9,11 +9,12 @@ int ch_test_depth_fragment(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,ui
     float *depth=NULL;uint8_t *stencil=NULL,*rgba=NULL;
     const unsigned sizes[][2]={{1,1},{3,5},{17,9},{512,512}};uint32_t seed=12345;
 #define REQUIRE(x) do {if(!(x)){fprintf(stderr,"depth pack line%d: %s\n",__LINE__,#x);goto done;}}while(0)
-    for(unsigned test=0;test<4;test++) {
-        unsigned w=sizes[test][0],h=sizes[test][1],n=w*h;
+    for(unsigned test=0;test<8;test++) {
+        unsigned w=sizes[test%4][0],h=sizes[test%4][1],n=w*h;
         input=malloc(n*4);output=malloc(n*4);depth=malloc(n*4);stencil=malloc(n);rgba=malloc(n*4);
         REQUIRE(input && output && depth && stencil && rgba);
         REQUIRE(ch_vk_target_create(gpu,device,queue,family,w,h,&target)==VK_SUCCESS);
+        REQUIRE(ch_vk_target_color_bgra(target,test>=4)==VK_SUCCESS);
         const float black[]={0,0,0,1};REQUIRE(ch_vk_target_clear_read(target,black,rgba,n*4)==VK_SUCCESS);
         REQUIRE(ch_vk_target_batching(target,1)==VK_SUCCESS);
         for(unsigned repeat=0;repeat<3;repeat++) {
@@ -33,8 +34,19 @@ int ch_test_depth_fragment(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,ui
             REQUIRE(ch_vk_target_write_depth_stencil(target,depth,stencil,n)==VK_SUCCESS);
             REQUIRE(ch_vk_target_read_depth_color(target,output,NULL,n,1,rgba,n*4)==VK_SUCCESS);
             REQUIRE(!memcmp(input,output,n*4));
-            // Reuse the same staging for color before the next packed upload.
+            // In-place GPU color conversion must preserve every byte and its
+            // inverse across reuse with float/packed depth staging.
+            for(unsigned i=0;i<n*4;i++) rgba[i]=(uint8_t)(i*79u+repeat*37u);
             REQUIRE(ch_vk_target_import_color(target,rgba,n*4)==VK_SUCCESS);
+            REQUIRE(ch_vk_target_read_color(target,output,n*4)==VK_SUCCESS);
+            REQUIRE(!memcmp(rgba,output,n*4));
+            REQUIRE(ch_vk_target_color_bgra(target,test<4)==VK_SUCCESS);
+            REQUIRE(ch_vk_target_read_color(target,output,n*4)==VK_SUCCESS);
+            for(unsigned i=0;i<n;i++) {
+                const uint8_t *q=(const uint8_t *)output+i*4;
+                REQUIRE(q[0]==rgba[i*4+2] && q[1]==rgba[i*4+1] && q[2]==rgba[i*4] && q[3]==rgba[i*4+3]);
+            }
+            REQUIRE(ch_vk_target_color_bgra(target,test>=4)==VK_SUCCESS);
         }
         REQUIRE(ch_vk_target_depth_quantization(target,5)==VK_SUCCESS);
         ch_vk_target_defer_color_readback(target,1);
@@ -47,10 +59,10 @@ int ch_test_depth_fragment(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,ui
         REQUIRE(ch_vk_target_draw_state_read(target,NULL,v,3,idx,3,&state,rgba,n*4)==VK_SUCCESS);
         REQUIRE(ch_vk_target_read_depth_color(target,output,NULL,n,1,rgba,n*4)==VK_SUCCESS);
         ch_vk_target_resource_stats(target,&after);REQUIRE(after.batch_submissions==before.batch_submissions+1);
-        for(unsigned i=0;i<n;i++) {REQUIRE(output[i]==0x40000071);REQUIRE(rgba[i*4]==255 && rgba[i*4+1]==0 && rgba[i*4+2]==0);}
+        for(unsigned i=0;i<n;i++) {REQUIRE(output[i]==0x40000071);REQUIRE(rgba[i*4+(test>=4?2:0)]==255 && rgba[i*4+1]==0 && rgba[i*4+(test>=4?0:2)]==0);}
         ch_vk_target_destroy(target);target=NULL;free(input);input=NULL;free(output);output=NULL;free(depth);depth=NULL;free(stencil);stencil=NULL;free(rgba);rgba=NULL;
     }
-    puts("PASS: GPU D32/Z24S8 exact roundtrip and float packing, stencil, odd sizes, repeated staging reuse, combined pending depth/color readback");failed=0;
+    puts("PASS: GPU RGBA/BGRA byte roundtrip and D32/Z24S8 exact roundtrip and float packing, stencil, odd sizes, repeated staging reuse, combined pending depth/color readback");failed=0;
 done:
     ch_vk_target_destroy(target);free(input);free(output);free(depth);free(stencil);free(rgba);return failed;
 }

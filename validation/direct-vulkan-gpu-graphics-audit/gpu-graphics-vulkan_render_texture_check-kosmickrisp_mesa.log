@@ -1,0 +1,10 @@
+[Vulkan] resizing surface 00000100: 4x4 pitch=24 bpp=4 -> 2x2 pitch=24 bpp=4
+[Vulkan] resizing surface 00000100: 4x4 pitch=24 bpp=4 -> 2x2 pitch=24 bpp=4
+[Vulkan] resizing surface 00000100: 4x4 pitch=24 bpp=4 -> 2x2 pitch=24 bpp=4
+[Vulkan] resizing surface 00000100: 4x4 pitch=24 bpp=4 -> 2x2 pitch=24 bpp=4
+[Vulkan] resizing surface 00000100: 4x4 pitch=24 bpp=4 -> 2x2 pitch=24 bpp=4
+device=Apple M4 Pro vendor=106b deviceID=0064 api=1.4.354
+PASS: texture write tracking, aliases, palettes, pinned snapshots, repeated mismatch, restored bytes, active write leases and invalidation fallback
+PASS: borrowed pipeline cache survives backend destruction; persisted cache preserves exact guest memory; corrupt/truncated/oversized/incompatible data falls back to empty cache
+PASS: exact GPU snapshots preserve all UNORM bytes/mips/orientation; version and sampler keys, pin-budget rejection, source destruction before pending sampling and shared bounded cache lifetime
+PASS: strict-vs-GPU render-target sampling preserves exact guest memory for pitched/Morton targets, CPU edits, self sampling, resize, sampler changes, format/subview rejection and budget/pin fallback; eligible cases avoid CPU decoding

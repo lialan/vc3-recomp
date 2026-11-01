@@ -186,6 +186,7 @@ VkResult ch_vk_texture_cache_resolve(void *context,const Nv2aTexture *t,ChVkSamp
     memcpy(raw,guest(c,t->offset),span);
     if(palette) memcpy(raw+span,guest(c,t->palette),palette);
     if(!gpu_decode && !ch_vk_decode_texture_faces(t,c->config.decode,argb)) {free(raw);free(argb);return VK_ERROR_FORMAT_NOT_SUPPORTED;}
+    if(!gpu_decode) c->stats.cpu_decode_pixels+=(uint64_t)t->width*t->height*(t->cube?6:1);
     struct Entry snapshot={.raw=raw,.span=span,.palette=palette};
     if(!unchanged(c,&snapshot,t)) {free(raw);free(argb);return VK_NOT_READY;}
     if(reusable) {

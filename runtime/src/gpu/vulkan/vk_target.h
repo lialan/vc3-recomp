@@ -157,6 +157,10 @@ VkResult ch_vk_target_draw_combiner_read(ChVkTarget *target, const float rgba[4]
     const ChVkTexture *const stage_images[4], void *pixels, VkDeviceSize bytes);
 /* Replace color from tightly packed RGBA8; retain initialized depth/stencil.
  * Caller serializes queue use. Imported image ends in transfer-source layout. */
+/* Select BGRA bytes for host color imports/readbacks (including paired depth
+ * readbacks). GPU images and snapshot/verification APIs remain RGBA. Requires
+ * a compute-capable graphics queue. Change only between complete host uses. */
+VkResult ch_vk_target_color_bgra(ChVkTarget *target,int enabled);
 VkResult ch_vk_target_import_color(ChVkTarget *target, const void *rgba, VkDeviceSize bytes);
 /* Explicit host representation: normalized float32 depth + uint8 stencil.
  * Transfers preserve color and finish in depth/stencil attachment layout.

@@ -8,8 +8,8 @@
 #include <stdio.h>
 #include <time.h>
 #define MAX_SURFACES 32
-struct Surface { Nv2aSurface guest; uint32_t zeta; Nv2aRenderState state; float *depth; uint8_t *stencil; ChVkTarget *target; unsigned char *rgba,*observed,*cpu,*raw; ChGuestWriteRange *write_range; size_t raw_span; int observed_valid,resident,color_dirty,native_z24,quantized_z24; size_t bytes; uint64_t color_serial; };
-struct ChVkBackend { VkPipelineCache pipeline_cache; struct {int enabled;uint64_t start,n,surface,coherence,imports,draw,store,no_color,flushes,depth_flushes,paired_flushes;} profile; struct {uint64_t previous,us[120];unsigned count;} frame_profile; ChVkBackendConfig host; ChVkTextureCache *textures; ChVkDepthResident *zeta; uint64_t frames,raw_draws,raw_programs,raw_program_vertices,raw_declined,color_clock; struct Surface surfaces[MAX_SURFACES]; unsigned count; };
+struct Surface { Nv2aSurface guest; uint32_t zeta; Nv2aRenderState state; float *depth; uint8_t *stencil; ChVkTarget *target; unsigned char *rgba,*observed,*cpu,*raw; ChGuestWriteRange *write_range; size_t raw_span; int observed_valid,resident,color_bgra,color_fallback_reported,color_dirty,native_z24,quantized_z24; size_t bytes; uint64_t color_serial; };
+struct ChVkBackend { VkPipelineCache pipeline_cache; struct {int enabled;uint64_t start,n,surface,coherence,imports,draw,store,no_color,flushes,depth_flushes,paired_flushes;} profile; struct {uint64_t previous,us[120];unsigned count;} frame_profile; ChVkBackendConfig host; ChVkTextureCache *textures; ChVkDepthResident *zeta; uint64_t frames,raw_draws,raw_programs,raw_program_vertices,raw_declined,color_clock,cpu_batches,cpu_vertices,cpu_texels,cpu_texture_us,cpu_color_pixels,cpu_color_us; struct Surface surfaces[MAX_SURFACES]; unsigned count; };
 static ChVkBackend *active;
 static void flush_color(struct Surface *);
 static void observe_guest_colors(void);
@@ -35,6 +35,15 @@ static void profile_draw(const uint64_t t[6]) {
     active->profile.flushes=active->profile.depth_flushes=active->profile.paired_flushes=0;
     active->profile.n=active->profile.surface=active->profile.coherence=active->profile.imports=0;
     active->profile.draw=active->profile.store=active->profile.no_color=0;active->profile.start=t[5];
+}
+static int decode_cpu_texture(const Nv2aTexture *texture,uint32_t *argb) {
+    uint64_t start=active->profile.enabled?now_us():0;
+    int result=active->host.decode(texture,argb);
+    if(active->profile.enabled) {
+        active->cpu_texels+=(uint64_t)texture->width*texture->height;
+        active->cpu_texture_us+=now_us()-start;
+    }
+    return result;
 }
 static int compare_us(const void *a,const void *b) {
     uint64_t x=*(const uint64_t *)a,y=*(const uint64_t *)b;return (x>y)-(x<y);
@@ -63,6 +72,41 @@ static void release_surface(struct Surface *f) {
     ch_guest_write_range_destroy(f->write_range);
     ch_vk_target_destroy(f->target);free(f->rgba);free(f->observed);free(f->cpu);free(f->raw);
     free(f->depth);free(f->stencil);memset(f,0,sizeof *f);
+}
+static void color_encoding(struct Surface *f,int swizzled) {
+    int bgra=active->host.gpu_color_pack && f->resident && !swizzled && !active->host.guest_color_changed;
+    if(bgra==f->color_bgra) return;
+    if(active->profile.enabled && !bgra && !f->color_fallback_reported) {
+        fprintf(stderr,"[Vulkan color fallback] %ux%u bpp=%u Morton=%d\n",f->guest.width,f->guest.height,f->guest.bytes_per_pixel,swizzled);
+        f->color_fallback_reported=1;
+    }
+    VkResult r=ch_vk_target_color_bgra(f->target,bgra);
+    if(r!=VK_SUCCESS) fatal(r,"GPU color conversion setup");
+    f->color_bgra=bgra;f->observed_valid=0;
+}
+static VkResult load_surface_color(struct Surface *f,void *pixels) {
+    if(!f->color_bgra) {
+        uint64_t start=active->profile.enabled?now_us():0;
+        VkResult r=ch_vk_nv2a_load_color_state(&f->guest,&f->state,pixels,f->bytes,active->host.guest_base,active->host.guest_bytes);
+        if(active->profile.enabled) {active->cpu_color_pixels+=f->bytes/4;active->cpu_color_us+=now_us()-start;}
+        return r;
+    }
+    const unsigned char *src=(const unsigned char *)active->host.guest_base+f->guest.color_va;
+    for(uint32_t y=0;y<f->guest.height;y++)
+        memcpy((unsigned char *)pixels+(size_t)y*f->guest.width*4,src+(size_t)y*f->guest.pitch,(size_t)f->guest.width*4);
+    return VK_SUCCESS;
+}
+static VkResult store_surface_color(struct Surface *f,const void *pixels) {
+    if(!f->color_bgra) {
+        uint64_t start=active->profile.enabled?now_us():0;
+        VkResult r=ch_vk_nv2a_store_color_state(&f->guest,&f->state,pixels,f->bytes,active->host.guest_base,active->host.guest_bytes);
+        if(active->profile.enabled) {active->cpu_color_pixels+=f->bytes/4;active->cpu_color_us+=now_us()-start;}
+        return r;
+    }
+    unsigned char *dst=(unsigned char *)active->host.guest_base+f->guest.color_va;
+    for(uint32_t y=0;y<f->guest.height;y++)
+        memcpy(dst+(size_t)y*f->guest.pitch,(const unsigned char *)pixels+(size_t)y*f->guest.width*4,(size_t)f->guest.width*4);
+    return VK_SUCCESS;
 }
 static struct Surface *surface(const Nv2aSurface *s,const Nv2aRenderState *rs) {
     if(!active || !s || !rs) fatal(VK_ERROR_INITIALIZATION_FAILED,"surface arguments");
@@ -108,7 +152,7 @@ static struct Surface *surface(const Nv2aSurface *s,const Nv2aRenderState *rs) {
             f->write_range=ch_guest_write_range_create(active->host.guest_write_watch,
                 (unsigned char *)active->host.guest_base+s->color_va,(size_t)span);
         }
-        f->guest=*s;f->state=*rs;return f;
+        f->guest=*s;f->state=*rs;color_encoding(f,layout.swizzled);return f;
     }
     if(f) {
         fprintf(stderr,"[Vulkan] resizing surface %08X: %ux%u pitch=%u bpp=%u -> %ux%u pitch=%u bpp=%u\n",
@@ -161,6 +205,9 @@ static struct Surface *surface(const Nv2aSurface *s,const Nv2aRenderState *rs) {
     }
     r=ch_vk_target_pipeline_cache(f->target,active->pipeline_cache);
     if(r!=VK_SUCCESS) fatal(r,"shared pipeline cache binding");
+    color_encoding(f,layout.swizzled);
+    if(active->profile.enabled) fprintf(stderr,"[Vulkan color transfer] %ux%u bpp=%u Morton=%d GPU conversion=%d\n",
+        s->width,s->height,s->bytes_per_pixel,layout.swizzled,f->color_bgra);
     if(f->resident && active->host.batch_draws) {
         r=ch_vk_target_batch_limit(f->target,active->host.batch_draw_limit);
         if(r==VK_SUCCESS) r=ch_vk_target_batching(f->target,1);
@@ -190,12 +237,12 @@ static void store(struct Surface *f,VkResult result,const char *operation,int co
     if(color_dirty) f->color_serial=++active->color_clock;
     if(f->resident) f->color_dirty|=!!color_dirty;
     else {
-        result=ch_vk_nv2a_store_color_state(&f->guest,&f->state,f->rgba,f->bytes,active->host.guest_base,active->host.guest_bytes);
+        result=store_surface_color(f,f->rgba);
         if(result!=VK_SUCCESS) fatal(result,"color writeback");
         if(f->observed) {
             /* RGB565 writeback quantizes: compare with canonical stored pixels,
              * not the higher precision GPU output, to avoid false CPU edits. */
-            result=ch_vk_nv2a_load_color_state(&f->guest,&f->state,f->observed,f->bytes,active->host.guest_base,active->host.guest_bytes);
+            result=load_surface_color(f,f->observed);
             if(result!=VK_SUCCESS) fatal(result,"color observation baseline");
             f->observed_valid=1;
         }
@@ -216,8 +263,7 @@ static void publish_color(struct Surface *f,int ready) {
     VkResult r=ready?VK_SUCCESS:ch_vk_target_read_color(f->target,f->rgba,f->bytes);
     void *storage=(unsigned char *)active->host.guest_base+f->guest.color_va;
     ch_guest_write_watch_begin(active->host.guest_write_watch,storage,f->raw_span);
-    if(r==VK_SUCCESS) r=ch_vk_nv2a_store_color_state(&f->guest,&f->state,f->rgba,f->bytes,
-        active->host.guest_base,active->host.guest_bytes);
+    if(r==VK_SUCCESS) r=store_surface_color(f,f->rgba);
     if(r==VK_SUCCESS) {
         memcpy(f->observed,f->rgba,f->bytes);
         memcpy(f->raw,storage,f->raw_span);
@@ -236,7 +282,7 @@ static void observe_guest_color(struct Surface *f) {
      * changes fall through once, then the pixel comparison ignores them. */
     if(f->resident && f->observed_valid && !memcmp(raw,f->raw,f->raw_span)) return;
     unsigned char *cpu=f->resident?f->cpu:f->rgba;
-    VkResult r=ch_vk_nv2a_load_color_state(&f->guest,&f->state,cpu,f->bytes,active->host.guest_base,active->host.guest_bytes);
+    VkResult r=load_surface_color(f,cpu);
     if(r!=VK_SUCCESS) fatal(r,"guest color observation");
     if(!f->observed_valid || memcmp(cpu,f->observed,f->bytes)) {
         if(f->resident) {
@@ -378,7 +424,7 @@ static void flush_sampled_colors(const Nv2aBatch *b) {
 }
 static void import_color(struct Surface *f) {
     if(f->resident) return; /* CPU changes already merged by observation. */
-    VkResult r=ch_vk_nv2a_load_color_state(&f->guest,&f->state,f->rgba,f->bytes,active->host.guest_base,active->host.guest_bytes);
+    VkResult r=load_surface_color(f,f->rgba);
     if(r!=VK_SUCCESS) fatal(r,"guest color read");
     r=ch_vk_target_import_color(f->target,f->rgba,f->bytes);
     if(r!=VK_SUCCESS) fatal(r,"guest color import");
@@ -439,6 +485,7 @@ static void draw_batch(const Nv2aSurface *s,const Nv2aBatch *b,const ChVkFixedGe
      * still carry an unset format/pitch; no image or guest memory is touched.
      * Pending earlier work remains ordered by the normal fence/flip path. */
     if(!s->width || !s->height) return;
+    if(!fixed) {active->cpu_batches++;active->cpu_vertices+=b->count;}
     uint64_t t[6]={0};
     if(active->profile.enabled) t[0]=now_us();
     struct Surface *f=surface(s,b->state);
@@ -453,9 +500,9 @@ static void draw_batch(const Nv2aSurface *s,const Nv2aBatch *b,const ChVkFixedGe
     flush_sampled_colors(b);
     if(b->state->depth_test_enable || b->state->stencil_enable) import_depth(f,0);
     if(active->profile.enabled) t[3]=now_us();
-    VkResult result=fixed?ch_vk_nv2a_draw_fixed_resolved_read(f->target,s,b,fixed,active->host.decode,
+    VkResult result=fixed?ch_vk_nv2a_draw_fixed_resolved_read(f->target,s,b,fixed,decode_cpu_texture,
         active->textures?resolve_sample:NULL,active,f->rgba,f->bytes):
-        ch_vk_nv2a_draw_resolved_read(f->target,s,b,active->host.decode,
+        ch_vk_nv2a_draw_resolved_read(f->target,s,b,decode_cpu_texture,
         active->textures?resolve_sample:NULL,active,f->rgba,f->bytes);
     if(active->profile.enabled) t[4]=now_us();
     if(result!=VK_SUCCESS) {
@@ -526,16 +573,29 @@ static void flip(void) {
             (unsigned long long)stats.hits,(unsigned long long)stats.uploads,
             (unsigned long long)stats.evictions,stats.bytes/(1024.*1024.),stats.entries,stats.capacity,
             (unsigned long long)stats.gpu_copies,(unsigned long long)stats.gpu_hits,(unsigned long long)stats.gpu_reuses);
-        fprintf(stderr,"[Vulkan texture comparisons] checks=%llu logical_bytes=%llu changed=%llu tracked=%llu reused=%llu GPU decoded=%llu\n",
-            (unsigned long long)stats.cpu_checks,(unsigned long long)stats.cpu_check_bytes,(unsigned long long)stats.cpu_changes,(unsigned long long)stats.tracked_checks,(unsigned long long)stats.cpu_reuses,(unsigned long long)stats.gpu_decodes);
+        fprintf(stderr,"[Vulkan texture comparisons] checks=%llu logical_bytes=%llu changed=%llu tracked=%llu reused=%llu GPU decoded=%llu CPU decoded pixels=%llu\n",
+            (unsigned long long)stats.cpu_checks,(unsigned long long)stats.cpu_check_bytes,(unsigned long long)stats.cpu_changes,(unsigned long long)stats.tracked_checks,(unsigned long long)stats.cpu_reuses,(unsigned long long)stats.gpu_decodes,(unsigned long long)stats.cpu_decode_pixels);
     }
+    if(profile && atoi(profile) && active->frames%60==0)
+        fprintf(stderr,"[Vulkan CPU geometry] batches=%llu vertices=%llu (includes pretransformed input)\n",
+            (unsigned long long)active->cpu_batches,(unsigned long long)active->cpu_vertices);
+    if(profile && atoi(profile) && active->frames%60==0)
+        fprintf(stderr,"[Vulkan CPU graphics] texture_pixels=%llu texture_ms=%.3f color_pixels=%llu color_ms=%.3f (cumulative)\n",
+            (unsigned long long)active->cpu_texels,active->cpu_texture_us/1000.,
+            (unsigned long long)active->cpu_color_pixels,active->cpu_color_us/1000.);
     uint32_t presented=nv2a_backend_presented_va();
-    if(active->host.present_rgba && presented) {
+    if((active->host.present_rgba || active->host.present_bgra) && presented) {
         struct Surface *f=NULL;
         for(unsigned i=0;i<active->count;i++) if(active->surfaces[i].guest.color_va==presented) { f=&active->surfaces[i]; break; }
         if(!f) fatal(VK_ERROR_FEATURE_NOT_PRESENT,"unknown presented surface");
-        VkResult r=ch_vk_nv2a_load_color_state(&f->guest,&f->state,f->rgba,f->bytes,active->host.guest_base,active->host.guest_bytes);
-        if(r==VK_SUCCESS) r=active->host.present_rgba(active->host.render_context,&f->guest,f->rgba,f->bytes);
+        VkResult r;
+        if(f->color_bgra && active->host.present_bgra) {
+            r=load_surface_color(f,f->rgba);
+            if(r==VK_SUCCESS) r=active->host.present_bgra(active->host.render_context,&f->guest,f->rgba,f->bytes);
+        } else {
+            r=ch_vk_nv2a_load_color_state(&f->guest,&f->state,f->rgba,f->bytes,active->host.guest_base,active->host.guest_bytes);
+            if(r==VK_SUCCESS && active->host.present_rgba) r=active->host.present_rgba(active->host.render_context,&f->guest,f->rgba,f->bytes);
+        }
         if(r!=VK_SUCCESS) fatal(r,"host RGBA frame handoff");
     }
     if(active->host.render_flip) {
@@ -573,8 +633,8 @@ static int locked_observe_raw(const Nv2aSurface *s,const Nv2aBatch *b) {
 static int locked_draw_raw(const Nv2aSurface *s,const Nv2aBatch *b) {
     if(active->host.observe_raw) return locked_observe_raw(s,b);
     if(!active->host.raw_fixed || active->host.render_draw || !b || !b->state) return 0;
-    /* Attribute unpacking is CPU-only and must not hold the shared XR queue
-     * mutex. The original guest streams are borrowed until this call returns. */
+    /* Snapshot encoded attributes and topology without holding the shared XR
+     * queue mutex. Vertex shaders unpack the borrowed guest formats. */
     ChVkFixedGeometry fixed;
     VkResult r=b->raw && b->raw->kind==NV2A_RAW_PROGRAM?
         ch_vk_program_prepare(b->raw,&fixed):ch_vk_fixed_prepare(b->raw,&fixed);
@@ -594,6 +654,7 @@ VkResult ch_vk_backend_create(const ChVkBackendConfig *config,ChVkBackend **out)
     if(!config || !config->physical || !config->device || !config->queue ||
        !config->guest_base || !config->guest_bytes || !config->decode ||
        config->batch_draw_limit>CH_VK_MAX_BATCH_DRAWS ||
+       (config->present_bgra && !config->present_rgba) ||
        (!!config->lock_queue != !!config->unlock_queue) ||
        (config->quantized_depth && !config->resident_depth) ||
        ((config->depth_quant_draw || config->depth_quant_inline || config->depth_quant_fragment) && !config->quantized_depth) ||
@@ -618,7 +679,7 @@ VkResult ch_vk_backend_create(const ChVkBackendConfig *config,ChVkBackend **out)
     if(config->cache_textures) {
         ChVkTextureCacheConfig texture_config={.physical=config->physical,.device=config->device,
             .queue=config->queue,.family=config->family,.guest_base=config->guest_base,
-            .guest_bytes=config->guest_bytes,.decode=config->decode,.max_entries=config->texture_cache_entries,
+            .guest_bytes=config->guest_bytes,.decode=decode_cpu_texture,.max_entries=config->texture_cache_entries,
             .max_bytes=config->texture_cache_bytes,.queued_uploads=1,.reuse_uploads=1,
             .gpu_decode=config->gpu_texture_decode,.pipeline_cache=config->pipeline_cache,
             .guest_write_watch=config->strict_texture_checks?NULL:config->guest_write_watch};

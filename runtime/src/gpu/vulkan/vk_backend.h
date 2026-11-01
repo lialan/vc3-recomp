@@ -23,6 +23,7 @@ typedef struct {
     /* Set only when host enabled VkPhysicalDeviceFeatures.occlusionQueryPrecise. */
     int precise_queries;
     int gpu_texture_decode; /* common ARGB/XRGB on compute-capable graphics queue */
+    int gpu_color_pack; /* linear resident ARGB color transfers on compute queue */
     int gpu_depth_pack; /* D32 guest Z24/S8 conversion on compute-capable graphics queue */
     int raw_fixed; /* raw fixed/program GPU transforms; device enabled shaderClipDistance + depthClamp */
     /* Keep ARGB8888 targets resident between draws. Flush publishes guest
@@ -70,6 +71,8 @@ typedef struct {
      * queue/target ownership is transferred. Nonzero unknown VA is an error.
      * Called before render_flip; zero presented VA produces no image. */
     VkResult (*present_rgba)(void *,const Nv2aSurface *,const void *,size_t);
+    /* Optional native guest-order handoff; requires present_rgba as fallback. */
+    VkResult (*present_bgra)(void *,const Nv2aSurface *,const void *,size_t);
     /* Called on fatal rendering errors. Must stop execution; abort follows if
      * it returns. No fallback or continued guest fence progress is allowed. */
     void (*fatal)(VkResult result, const char *operation);
