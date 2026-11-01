@@ -16,6 +16,14 @@ static inline uint32_t ch_vk_depth_pack(float z) {
     else if(scaled-(float)q>0.5f) q++;
     return q;
 }
+/* Reference attachment conversion, separate from CPU guest-store semantics.
+ * Binary32 product followed by nearest-even integer rounding (lavapipe D24). */
+static inline uint32_t ch_vk_depth_pack_attachment(float z) {
+    float scaled=z*16777215.0f;
+    uint32_t q=(uint32_t)scaled;
+    float fraction=scaled-(float)q;
+    return q+(fraction>0.5f || (fraction==0.5f && (q&1u)));
+}
 static inline float ch_vk_depth_unpack(uint32_t q) {
     float z=(float)q*0x1p-24f;
     uint32_t bits;memcpy(&bits,&z,sizeof bits);

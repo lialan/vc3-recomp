@@ -1,5 +1,6 @@
 #include "vk_target.h"
 #include "vk_depth_quant.h"
+#include "vk_depth_quant_math.h"
 #include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
@@ -16,7 +17,7 @@ typedef struct {
     VkPipelineDepthStencilStateCreateInfo depth;
     VkCullModeFlags cull;
     VkFrontFace front;
-    unsigned shader,fixed,alpha_shader,specialized;
+    unsigned shader,fixed,alpha_shader,specialized,fragment_depth;
     ChVkCombinerProgram program;
 } PipelineKey;
 #define BASE_PIPELINE_SLOTS 32u
@@ -458,10 +459,11 @@ fail:
     retire_samples(t);return result;
 }
 VkResult ch_vk_target_finish(ChVkTarget *t) {return finish_batch(t,0);}
+static VkResult quantize_depth(ChVkTarget *,int);
 VkResult ch_vk_target_depth_quantization(ChVkTarget *t,int mode) {
-    if(!t || mode<0 || mode>4)return VK_ERROR_INITIALIZATION_FAILED;
+    if(!t || mode<0 || mode>5)return VK_ERROR_INITIALIZATION_FAILED;
     if(!mode) {VkResult r=ch_vk_target_finish(t);if(r==VK_SUCCESS)t->quantized_depth=0;return r;}
-    if(mode>=3 && !t->input_depth)return VK_ERROR_FEATURE_NOT_PRESENT;
+    if((mode==3 || mode==4) && !t->input_depth)return VK_ERROR_FEATURE_NOT_PRESENT;
     if(t->quantized_depth==mode)return VK_SUCCESS;
     if(mode==4 && t->pass && !t->input_pass)return VK_ERROR_INITIALIZATION_FAILED;
     if(t->failed || !t->initialized || t->depth_format!=VK_FORMAT_D32_SFLOAT_S8_UINT)
@@ -481,6 +483,11 @@ VkResult ch_vk_target_depth_quantization(ChVkTarget *t,int mode) {
     }
     VkResult result;
     TRY(ch_vk_target_finish(t));
+    if(mode==5) {
+        /* Establish canonical storage once before fragment-side depth tests.
+         * Later uploads and clears canonicalize at their existing boundary. */
+        TRY(quantize_depth(t,1));t->quantized_depth=5;return VK_SUCCESS;
+    }
     if(mode>=3) {
         if(!t->depth_quant_input) TRY(ch_vk_depth_quant_create_input(t->device,t->depth,t->depth_view,t->width,t->height,&t->depth_quant_input));
     } else if(mode==2) {
@@ -549,7 +556,7 @@ static VkResult record_batch(ChVkTarget *t,VkBuffer geometry,VkDeviceSize index_
     vkCmdBindVertexBuffers(t->command,0,1,&geometry,&vertex_offset);
     vkCmdBindIndexBuffer(t->command,geometry,index_offset,VK_INDEX_TYPE_UINT16);
     vkCmdDrawIndexed(t->command,index_count,1,0,0,0);
-    if(t->quantized_depth && t->active_pipeline->key.depth.depthTestEnable &&
+    if(t->quantized_depth && t->quantized_depth!=5 && t->active_pipeline->key.depth.depthTestEnable &&
        t->active_pipeline->key.depth.depthWriteEnable) {
         t->resource_stats.depth_roundtrips_by_compare[t->active_pipeline->key.depth.depthCompareOp]++;
         if(t->quantized_depth==4) {
@@ -576,6 +583,7 @@ static VkResult render_read(ChVkTarget *t, const float rgba[4], uint32_t clear_f
     VkBuffer geometry, VkDeviceSize index_offset, uint32_t index_count,
     void *pixels, VkDeviceSize bytes) {
     if(!t || t->failed || !pixels || bytes<t->bytes ||
+       (t->quantized_depth==5 && (clear_flags&2) && (!isfinite(clear_depth) || clear_depth<0 || clear_depth>1)) ||
        (clear_flags & ~7u) || ((clear_flags & 1) && !rgba) ||
        (!t->initialized && clear_flags!=7))
         return VK_ERROR_INITIALIZATION_FAILED;
@@ -621,6 +629,7 @@ static VkResult render_read(ChVkTarget *t, const float rgba[4], uint32_t clear_f
         depth_range.aspectMask=((clear_flags & 2)?VK_IMAGE_ASPECT_DEPTH_BIT:0)|
                                ((clear_flags & 4)?VK_IMAGE_ASPECT_STENCIL_BIT:0);
         VkClearDepthStencilValue value={clear_depth,clear_stencil};
+        if(t->quantized_depth==5 && (clear_flags&2)) value.depth=ch_vk_depth_unpack(ch_vk_depth_pack_attachment(clear_depth));
         vkCmdClearDepthStencilImage(t->command,t->depth,VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,&value,1,&depth_range);
     }
     depth_barrier.srcAccessMask=VK_ACCESS_TRANSFER_WRITE_BIT|VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
@@ -658,7 +667,7 @@ static VkResult render_read(ChVkTarget *t, const float rgba[4], uint32_t clear_f
             ch_vk_depth_quant_record_inline(t->depth_quant_inline,t->command);
         vkCmdEndRenderPass(t->command);
     }
-    if(t->quantized_depth && !(t->quantized_depth==4 && geometry) && ((clear_flags&2) || (geometry &&
+    if(t->quantized_depth && t->quantized_depth!=5 && !(t->quantized_depth==4 && geometry) && ((clear_flags&2) || (geometry &&
        t->active_pipeline->key.depth.depthTestEnable && t->active_pipeline->key.depth.depthWriteEnable)))
         ch_vk_depth_quant_record(t->quantized_depth>=3?t->depth_quant_input:t->quantized_depth==2?t->depth_quant_draw:t->depth_quant,t->command,t->depth,t->width,t->height);
     barrier.srcAccessMask=geometry?VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT:VK_ACCESS_TRANSFER_WRITE_BIT;
@@ -820,16 +829,22 @@ static VkResult create_pipeline(ChVkTarget *t, const VkPipelineColorBlendAttachm
     VkShaderModuleCreateInfo shader={.sType=VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
         .codeSize=t->fixed?sizeof(color_fixed_spv):sizeof(color_vert_spv),.pCode=t->fixed?color_fixed_spv:color_vert_spv};
     TRY(vkCreateShaderModule(t->device,&shader,NULL,&vert));
+#define FRAGMENT(name) do { \
+    shader.codeSize=key->fragment_depth?sizeof(color_##name##_depth_spv):sizeof(color_##name##_spv); \
+    shader.pCode=key->fragment_depth?color_##name##_depth_spv:color_##name##_spv; \
+} while(0)
     if(key->specialized) {
-        shader.codeSize=key->alpha_shader?sizeof(color_combiner_specialized_spv):sizeof(color_combiner_specialized_noat_spv);
-        shader.pCode=key->alpha_shader?color_combiner_specialized_spv:color_combiner_specialized_noat_spv;
-    } else if(key->alpha_shader) {
-        shader.codeSize=t->effect?sizeof(color_effect_spv):t->rc?sizeof(color_combiner_spv):texture?sizeof(color_textured_spv):sizeof(color_frag_spv);
-        shader.pCode=t->effect?color_effect_spv:t->rc?color_combiner_spv:texture?color_textured_spv:color_frag_spv;
+        if(key->alpha_shader) FRAGMENT(combiner_specialized);else FRAGMENT(combiner_specialized_noat);
+    } else if(key->shader==3) {
+        if(key->alpha_shader) FRAGMENT(effect);else FRAGMENT(effect_noat);
+    } else if(key->shader==2) {
+        if(key->alpha_shader) FRAGMENT(combiner);else FRAGMENT(combiner_noat);
+    } else if(key->shader==1) {
+        if(key->alpha_shader) FRAGMENT(textured);else FRAGMENT(textured_noat);
     } else {
-        shader.codeSize=t->effect?sizeof(color_effect_noat_spv):t->rc?sizeof(color_combiner_noat_spv):texture?sizeof(color_textured_noat_spv):sizeof(color_frag_noat_spv);
-        shader.pCode=t->effect?color_effect_noat_spv:t->rc?color_combiner_noat_spv:texture?color_textured_noat_spv:color_frag_noat_spv;
+        if(key->alpha_shader) FRAGMENT(frag);else FRAGMENT(frag_noat);
     }
+#undef FRAGMENT
     TRY(vkCreateShaderModule(t->device,&shader,NULL,&frag));
     VkPipelineShaderStageCreateInfo stages[]={
         {.sType=VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,.stage=VK_SHADER_STAGE_VERTEX_BIT,.module=vert,.pName="main"},
@@ -1007,6 +1022,7 @@ static VkResult draw_full(ChVkTarget *t, const float rgba[4],
     key.blend=blend;
     key.depth=depth_state; key.cull=cull; key.front=front;
     key.shader=effect?3:rc?2:texture?1:0;key.fixed=fixed!=NULL;
+    key.fragment_depth=t->quantized_depth==5 && depth_state.depthTestEnable;
     key.alpha_shader=!!state->alpha_test_enable || !t->split_alpha;
     key.specialized=key.shader==2 && t->specialize_rc;
     if(key.specialized) ch_vk_combiner_program(rc,&key.program);
@@ -1287,6 +1303,9 @@ static VkResult transfer_depth_stencil(ChVkTarget *t,void *depth,void *stencil,s
             uint32_t *z=mapped;
             for(size_t i=0;i<t->bytes/4;i++)
                 z[i]=(uint32_t)((double)((const float *)depth)[i]*16777215.0+0.5);
+        } else if(t->quantized_depth==5) {
+            float *values=mapped;
+            for(size_t i=0;i<t->bytes/4;i++) values[i]=ch_vk_depth_unpack(ch_vk_depth_pack(((const float *)depth)[i]));
         } else memcpy(mapped,depth,(size_t)t->bytes);
         if(!packed) memcpy((char *)mapped+t->bytes,stencil,(size_t)t->bytes/4);
         result=vkFlushMappedMemoryRanges(t->device,1,&range);

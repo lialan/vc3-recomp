@@ -72,3 +72,14 @@ D32 post-draw conversion deliberately retains the CPU-roundtrip contract, which
 can differ from native D24 visibility at rounding boundaries: repeated z=0.5
 with EQUAL passes D24 but fails that D32 path. The fixture records this distinction;
 passing the D32 oracle alone does not establish native-format comparison parity.
+
+Experimental `depth_quant_fragment` / `CHIHIRO_VULKAN_DEPTH_QUANT_FRAGMENT=1`
+selects target mode5 on guest Z24 D32 fallbacks. It requires `quantized_depth`
+and resident depth and is mutually exclusive with `depth_quant_draw` and
+`depth_quant_inline`. Incoming depth uses binary32 scaling and nearest-even
+rounding, matching the local native-D24 comparison fixture; this intentionally
+differs from the legacy CPU/post-draw contract. Native D24 is unaffected. Mode5
+canonicalizes existing storage once when enabled and uploads/clears at their
+existing boundaries; shader output then supplies canonical depth directly.
+Ordinary pipelines use separate unchanged fragment modules. The mode is opt-in;
+see the depth-batch validation notes for correctness coverage and local performance.

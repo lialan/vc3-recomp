@@ -33,6 +33,7 @@ add_custom_command(OUTPUT "${combiner_program}" "${combiner_asserts}"
     DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/generate_combiner_program.py"
         "${CMAKE_CURRENT_SOURCE_DIR}/vk_combiner_program.h" VERBATIM)
 set(spirv_outputs)
+set(quant_spirv_outputs)
 foreach(stage vert frag textured combiner effect fixed frag_noat textured_noat combiner_noat effect_noat combiner_specialized combiner_specialized_noat)
     string(REGEX REPLACE "_noat$" "" base_stage "${stage}")
     if(base_stage STREQUAL "fixed")
@@ -63,7 +64,17 @@ foreach(stage vert frag textured combiner effect fixed frag_noat textured_noat c
                 "${CMAKE_CURRENT_SOURCE_DIR}/${input}" -o "${output}"
         DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/${input}" "${CMAKE_CURRENT_SOURCE_DIR}/combiner.glsl" "${CMAKE_CURRENT_SOURCE_DIR}/../nv2a_stage_fetch.h" "${CMAKE_CURRENT_SOURCE_DIR}/../nv2a_fixed_shader.h" "${fixed_layout}" "${combiner_program}" VERBATIM)
     list(APPEND spirv_outputs "${output}")
+    if(input STREQUAL "color.frag")
+        set(quant_output "${CMAKE_CURRENT_BINARY_DIR}/color.${stage}_depth.spv")
+        add_custom_command(OUTPUT "${quant_output}"
+            COMMAND "${CHIHIRO_GLSLC}" --target-env=vulkan1.0 -I "${CMAKE_CURRENT_BINARY_DIR}" ${defines} -DDEPTH_QUANT_FRAGMENT
+                "${CMAKE_CURRENT_SOURCE_DIR}/${input}" -o "${quant_output}"
+            DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/${input}" depth_quant.glsl combiner.glsl
+                "${CMAKE_CURRENT_SOURCE_DIR}/../nv2a_stage_fetch.h" "${combiner_program}" VERBATIM)
+        list(APPEND quant_spirv_outputs "${quant_output}")
+    endif()
 endforeach()
+list(APPEND spirv_outputs ${quant_spirv_outputs})
 set(header "${CMAKE_CURRENT_BINARY_DIR}/color_spv.h")
 add_custom_command(OUTPUT "${header}"
     COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/embed_spirv.py"
@@ -102,6 +113,7 @@ option(CHIHIRO_VULKAN_CPU_TESTS "Build guest storage tests without a graphics co
 if(CHIHIRO_VULKAN_CPU_TESTS)
     add_executable(vulkan_depth_quant_exact_test "${CH_VK_ROOT}/tools/vulkan-depth-quant-exact-test.c")
     target_compile_options(vulkan_depth_quant_exact_test PRIVATE -Wall -Wextra -Werror)
+    target_link_libraries(vulkan_depth_quant_exact_test PRIVATE m)
     add_executable(guest_write_watch_test "${CH_VK_ROOT}/tools/guest-write-watch-test.c")
     target_include_directories(guest_write_watch_test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/..")
     target_compile_options(guest_write_watch_test PRIVATE -Wall -Wextra -Werror)
@@ -160,6 +172,10 @@ endif()
 
 option(CHIHIRO_VULKAN_SHADER_TESTS "Build headless Vulkan shader fixtures without EGL/OpenGL" OFF)
 if(CHIHIRO_VULKAN_TESTS OR CHIHIRO_VULKAN_SHADER_TESTS)
+    add_executable(vulkan_depth_fragment_check "${CH_VK_ROOT}/tools/vulkan-combiner-driver.c" "${CH_VK_ROOT}/tools/vulkan-depth-fragment-test.c")
+    target_compile_definitions(vulkan_depth_fragment_check PRIVATE CH_VK_DEPTH_FRAGMENT_TEST=1)
+    target_compile_options(vulkan_depth_fragment_check PRIVATE -Wall -Wextra -Werror)
+    target_link_libraries(vulkan_depth_fragment_check PRIVATE chihiro_vulkan)
     add_executable(vulkan_depth24_check "${CH_VK_ROOT}/tools/vulkan-combiner-driver.c" "${CH_VK_ROOT}/tools/vulkan-depth24-test.c")
     target_compile_definitions(vulkan_depth24_check PRIVATE CH_VK_DEPTH24_TEST=1)
     target_compile_options(vulkan_depth24_check PRIVATE -Wall -Wextra -Werror)

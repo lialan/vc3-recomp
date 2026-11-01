@@ -9,6 +9,8 @@ static const Nv2aBackend *registered;
 void nv2a_backend_register(const Nv2aBackend *backend) {registered=backend;}
 uint32_t nv2a_backend_presented_va(void) {abort();} /* No guest flip in this fixture. */
 int ch_test_render_textures(VkPhysicalDevice,VkDevice,VkQueue,uint32_t);
+#elif defined(CH_VK_DEPTH_FRAGMENT_TEST)
+int ch_test_depth_fragment(VkPhysicalDevice,VkDevice,VkQueue,uint32_t);
 #elif defined(CH_VK_DEPTH24_TEST)
 int ch_test_depth24(VkPhysicalDevice,VkDevice,VkQueue,uint32_t);
 #elif defined(CH_VK_DEPTH_ROUNDTRIP_BENCH)
@@ -53,7 +55,7 @@ int main(void) {
     float priority=1;
     VkDeviceQueueCreateInfo qci={.sType=VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,.queueFamilyIndex=family,.queueCount=1,.pQueuePriorities=&priority};
     VkDeviceCreateInfo dci={.sType=VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,.queueCreateInfoCount=1,.pQueueCreateInfos=&qci};
-#if defined(CH_VK_SPECIALIZATION_TEST) || defined(CH_VK_RENDER_TEXTURE_TEST)
+#if defined(CH_VK_SPECIALIZATION_TEST) || defined(CH_VK_RENDER_TEXTURE_TEST) || defined(CH_VK_DEPTH_FRAGMENT_TEST)
     VkPhysicalDeviceFeatures available;vkGetPhysicalDeviceFeatures(gpu,&available);
     if(!available.occlusionQueryPrecise) {fputs("Precise visibility queries required by specialization fixture\n",stderr);goto done;}
     VkPhysicalDeviceFeatures features={.occlusionQueryPrecise=VK_TRUE};dci.pEnabledFeatures=&features;
@@ -77,6 +79,8 @@ int main(void) {
 #ifdef CH_VK_RENDER_TEXTURE_TEST
     result=ch_test_render_textures(gpu,device,queue,family);
     if(registered) {fputs("Render fixture left an attached backend\n",stderr);result=1;}
+#elif defined(CH_VK_DEPTH_FRAGMENT_TEST)
+    result=ch_test_depth_fragment(gpu,device,queue,family);
 #elif defined(CH_VK_DEPTH24_TEST)
     result=ch_test_depth24(gpu,device,queue,family);
 #elif defined(CH_VK_DEPTH_ROUNDTRIP_BENCH)

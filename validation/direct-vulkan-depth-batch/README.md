@@ -487,3 +487,54 @@ match native fixed-point behavior and remove per-draw full-target copies, but it
 is NOT implemented and must not silently replace the legacy D32 contract. The
 semantic distinction is now executable test evidence. Goal remains open: no
 smooth60FPS/Quest acceptance claim.
+
+## Experimental fragment-depth Z24 mode (2026-11-01)
+
+New shared target mode5 / ChVkBackendConfig.depth_quant_fragment /
+CHIHIRO_VULKAN_DEPTH_QUANT_FRAGMENT=1 rounds incoming fragment depth before the
+hardware comparison. Requires quantized_depth+resident_depth, mutually exclusive
+with the other graphics experiments. Native D24 remains unchanged. Mode5 is
+opt-in; legacy post-draw modes retain their distinct comparison contract.
+Separate shader modules keep gl_FragDepth/late-tests out of ordinary pipelines.
+Pipeline keys distinguish fragment rounding. Enabling mode5 canonicalizes current
+D32 storage once; subsequent uploads and clears canonicalize at existing memory
+boundaries. No per-draw full-target conversion/copy/pass break. No game addresses
+or scene heuristics; plain/textured/combiner/specialized/no-alpha modules share it.
+
+Native lavapipe D24 conversion is binary32 z*16777215 followed by nearest-even
+integer rounding in the measured fixtures. The old CPU double-precision pack
+fails to reproduce a half-step case (z=0x1.000002p-25), so the two conversion
+helpers remain separate. /tmp/vc3-native-quant-probe.{c,log} records calibration.
+The exhaustive CPU oracle verifies every nonnegative float32 through1 against
+both independent contracts and all16777216 canonical code roundtrips. It passes
+(/tmp/vc3-fragment-oracle.log); this is not exhaustive GPU/native hardware proof.
+
+vulkan_depth_fragment_check passes384 constant/diverse-gradient cases against
+native D24 on lavapipe: all8 comparisons, depth read-only/write, alpha discard,
+stencil fail/depth-fail/pass outcomes, precise queries, plain/textured/combiner
+and specialized/no-alpha paths. It also verifies64 queued draws in one batch,
+zero post-draw conversions, exact final color/depth/stencil. Evidence:
+/tmp/vc3-fragment-diverse-lvp.log. KosmicKrisp lacks D24;256 constant-depth cases
+passed its independent CPU-rounded incoming-depth oracle, including interpreter
+and specialized variants and queued draws (/tmp/vc3-fragment-expanded-kosmickrisp.log,
+/tmp/vc3-fragment-interpreter.log). Its last run predates the added read-only cases.
+Legacy specialization, guest-memory backend (now also fragment-mode cases10..12),
+and CPU oracle tests pass. Mac main and Android offscreen builds pass. Validation
+and sync validation were requested; no VUID/SYNC diagnostics in the above logs.
+
+/tmp/vc3-fragment-depth-on and -off both completed2400 frames, exit0, identical
+binarySHA=f35ba6227abdc20e978b3f1f43fdc51155a1ecd2fd1e541321c0775dc7cb3b8e. Same immutable executable
+/tmp/vc3-fragment-depth-vc3, timestamps0. Combat windows1321/1441/1561/1681:
+fragment55.14/55.54/56.51/54.90 FPS vs compute26.25/27.89/28.13/29.07.
+Later1921/2041/2161:fragment59.93/60.11/60.00 vs34.83/35.24/35.17.
+All fragment per-draw conversion counts are0. First loading window still had a
+4.5second max; combat windows had isolated131/162ms spikes (not smooth-frame
+acceptance yet). Frame1200 and1680 visually show the expected intro/combat;
+versus native lavapipe captures mean channel differences1.689/1.084, not exact
+cross-driver/game parity.
+
+Long repeat running: /tmp/vc3-fragment-depth-extended,7200 frames, same immutable
+binary and the previous31-entry extended autokey sequence, session24082. Do not
+run other GPU workloads until terminal. Check pacing, captures, and failures;
+this scripted run includes play/death/continue/attract, not uninterrupted combat.
+No headset/device use. Default remains legacy compute pending further acceptance.

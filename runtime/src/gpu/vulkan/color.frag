@@ -1,4 +1,8 @@
 #version 450
+#ifdef DEPTH_QUANT_FRAGMENT
+#extension GL_GOOGLE_include_directive : require
+#include "depth_quant.glsl"
+#endif
 layout(location=0) in vec4 diffuse;
 layout(location=0) out vec4 color;
 layout(push_constant) uniform Alpha { uint enabled; uint func; uint reference; uint effect_kind; vec4 effect_color; vec4 effect_shape; vec4 effect_tint; vec4 effect_reticle; } alpha;
@@ -97,6 +101,12 @@ void main() {
         }
         if(!pass) discard;
     }
+#endif
+#ifdef DEPTH_QUANT_FRAGMENT
+    // Native D24 reference conversion: binary32 scaling, nearest-even integer.
+    // Distinct from the legacy CPU double-precision post-draw pack contract.
+    precise float scaled_depth=clamp(gl_FragCoord.z,0.0,1.0)*16777215.0;
+    gl_FragDepth=ch_depth_unpack(uint(roundEven(scaled_depth)));
 #endif
     color=shaded;
 }

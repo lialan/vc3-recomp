@@ -18,7 +18,10 @@ VkResult ch_vk_target_quantize_depth_input(ChVkTarget *);
 /* Opt-in per-draw round-trip without an additional host submission/wait.
  * mode: 0 off, 1 compute, 2 buffer draw, 3 input-attachment draw, 4 same-subpass draw.
  * Mode 4 must first be selected before any pipeline exists. Switching finishes
- * pending work; its compatible renderpass remains until target destruction. */
+ * pending work; its compatible renderpass remains until target destruction.
+ * Mode 5 is experimental fragment-side Z24 rounding before depth comparison,
+ * intentionally distinct from the legacy post-draw modes. It canonicalizes
+ * existing storage on enable, and subsequent uploads/clears at their boundary. */
 VkResult ch_vk_target_depth_quantization(ChVkTarget *,int mode);
 /* Before the first pipeline creation, borrow a same-device driver cache.
  * Caller serializes ALL accesses to it and retains it until targets die. */
