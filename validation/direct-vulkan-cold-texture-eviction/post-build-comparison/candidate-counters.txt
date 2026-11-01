@@ -1,0 +1,272 @@
+  [NV2A] vblank -> ISR claimed it
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan texture cache] hits=0 uploads=1 evictions=0 live=0.0MiB entries=1/2048 GPU copies/hits/reuses=0/0/0
+[Vulkan texture comparisons] checks=1 logical_bytes=4096 changed=0 tracked=0 reused=0 GPU decoded=0 CPU decoded pixels=4096
+  [NV2A] vblank -> ISR claimed it
+  [NV2A] vblank -> ISR claimed it
+[FRAMES] 59 flips, 2 late | on time: arrived 1.9 ms after the vblank, executed in 7.1 | late: arrived -2.6, executed in 12.7
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan texture cache] hits=3099 uploads=10 evictions=0 live=12.0MiB entries=14/2048 GPU copies/hits/reuses=26/0/22
+[Vulkan texture comparisons] checks=72 logical_bytes=74207296 changed=0 tracked=3037 reused=0 GPU decoded=7 CPU decoded pixels=36928
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=36928 texture_ms=0.103 color_pixels=0 color_ms=0.000 (cumulative)
+[FRAMES] 60 flips, 0 late | on time: arrived 1.9 ms after the vblank, executed in 7.1 | late: arrived 0.0, executed in 0.0
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan texture cache] hits=6309 uploads=10 evictions=0 live=12.0MiB entries=14/2048 GPU copies/hits/reuses=56/0/52
+[Vulkan texture comparisons] checks=132 logical_bytes=147935296 changed=0 tracked=6187 reused=0 GPU decoded=7 CPU decoded pixels=36928
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=36928 texture_ms=0.103 color_pixels=0 color_ms=0.000 (cumulative)
+[Vulkan frame intervals] flips 1..121: 58.80 fps mean 17.01ms p95 20.63ms p99 50.52ms max 60.49ms >20ms=15 >33ms=2 (guest completions, not XR display)
+[FRAMES] 61 flips, 0 late | on time: arrived 1.9 ms after the vblank, executed in 6.9 | late: arrived 0.0, executed in 0.0
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan texture cache] hits=9519 uploads=10 evictions=0 live=12.0MiB entries=14/2048 GPU copies/hits/reuses=86/0/82
+[Vulkan texture comparisons] checks=192 logical_bytes=221663296 changed=0 tracked=9337 reused=0 GPU decoded=7 CPU decoded pixels=36928
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=36928 texture_ms=0.103 color_pixels=0 color_ms=0.000 (cumulative)
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan texture cache] hits=12728 uploads=11 evictions=0 live=13.0MiB entries=15/2048 GPU copies/hits/reuses=116/0/112
+[Vulkan texture comparisons] checks=254 logical_bytes=295915584 changed=0 tracked=12485 reused=0 GPU decoded=8 CPU decoded pixels=36928
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=36928 texture_ms=0.103 color_pixels=0 color_ms=0.000 (cumulative)
+[FRAMES] 61 flips, 0 late | on time: arrived 1.9 ms after the vblank, executed in 5.7 | late: arrived 0.0, executed in 0.0
+[Vulkan frame intervals] flips 121..241: 60.01 fps mean 16.66ms p95 21.51ms p99 22.50ms max 22.51ms >20ms=40 >33ms=0 (guest completions, not XR display)
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan texture cache] hits=15938 uploads=11 evictions=0 live=13.0MiB entries=15/2048 GPU copies/hits/reuses=146/0/142
+[Vulkan texture comparisons] checks=314 logical_bytes=369643584 changed=0 tracked=15635 reused=0 GPU decoded=8 CPU decoded pixels=36928
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=36928 texture_ms=0.103 color_pixels=0 color_ms=0.000 (cumulative)
+[FRAMES] 61 flips, 0 late | on time: arrived 1.7 ms after the vblank, executed in 5.1 | late: arrived 0.0, executed in 0.0
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan texture cache] hits=19148 uploads=11 evictions=0 live=13.0MiB entries=15/2048 GPU copies/hits/reuses=176/0/172
+[Vulkan texture comparisons] checks=374 logical_bytes=443371584 changed=0 tracked=18785 reused=0 GPU decoded=8 CPU decoded pixels=36928
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=36928 texture_ms=0.103 color_pixels=0 color_ms=0.000 (cumulative)
+[Vulkan frame intervals] flips 241..361: 60.04 fps mean 16.66ms p95 21.50ms p99 22.40ms max 22.54ms >20ms=28 >33ms=0 (guest completions, not XR display)
+[FRAMES] 60 flips, 0 late | on time: arrived 1.6 ms after the vblank, executed in 4.6 | late: arrived 0.0, executed in 0.0
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan texture cache] hits=20941 uploads=12 evictions=0 live=15.5MiB entries=16/2048 GPU copies/hits/reuses=206/0/202
+[Vulkan texture comparisons] checks=436 logical_bytes=518148160 changed=0 tracked=20517 reused=0 GPU decoded=8 CPU decoded pixels=299072
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=299072 texture_ms=0.600 color_pixels=0 color_ms=0.000 (cumulative)
+[FRAMES] 61 flips, 0 late | on time: arrived 1.2 ms after the vblank, executed in 4.4 | late: arrived 0.0, executed in 0.0
+  [NV2A] vblank 600: last 600 in 9984 ms, gap 16.7-16.7 ms, ack give-ups 0, late acks 0 (max 0 ms), declined 0
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan texture cache] hits=22711 uploads=12 evictions=0 live=15.5MiB entries=16/2048 GPU copies/hits/reuses=236/0/232
+[Vulkan texture comparisons] checks=496 logical_bytes=591876160 changed=0 tracked=22227 reused=0 GPU decoded=8 CPU decoded pixels=299072
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=299072 texture_ms=0.600 color_pixels=0 color_ms=0.000 (cumulative)
+[Vulkan frame intervals] flips 361..481: 60.03 fps mean 16.66ms p95 19.10ms p99 20.09ms max 20.51ms >20ms=2 >33ms=0 (guest completions, not XR display)
+[FRAMES] 61 flips, 0 late | on time: arrived 1.5 ms after the vblank, executed in 4.1 | late: arrived 0.0, executed in 0.0
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan texture cache] hits=24481 uploads=12 evictions=0 live=15.5MiB entries=16/2048 GPU copies/hits/reuses=266/0/262
+[Vulkan texture comparisons] checks=556 logical_bytes=665604160 changed=0 tracked=23937 reused=0 GPU decoded=8 CPU decoded pixels=299072
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=299072 texture_ms=0.600 color_pixels=0 color_ms=0.000 (cumulative)
+[FRAMES] 60 flips, 0 late | on time: arrived 1.5 ms after the vblank, executed in 4.2 | late: arrived 0.0, executed in 0.0
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan texture cache] hits=26618 uploads=15 evictions=0 live=16.1MiB entries=18/2048 GPU copies/hits/reuses=296/0/292
+[Vulkan texture comparisons] checks=622 logical_bytes=742084672 changed=1 tracked=26012 reused=1 GPU decoded=11 CPU decoded pixels=299072
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=299072 texture_ms=0.600 color_pixels=0 color_ms=0.000 (cumulative)
+[Vulkan frame intervals] flips 481..601: 59.96 fps mean 16.68ms p95 20.10ms p99 21.00ms max 25.24ms >20ms=7 >33ms=0 (guest completions, not XR display)
+[FRAMES] 61 flips, 0 late | on time: arrived 1.7 ms after the vblank, executed in 4.2 | late: arrived 0.0, executed in 0.0
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan texture cache] hits=28893 uploads=16 evictions=0 live=16.2MiB entries=19/2048 GPU copies/hits/reuses=326/0/322
+[Vulkan texture comparisons] checks=684 logical_bytes=815845440 changed=1 tracked=28226 reused=1 GPU decoded=12 CPU decoded pixels=299072
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=299072 texture_ms=0.600 color_pixels=0 color_ms=0.000 (cumulative)
+[FRAMES] 61 flips, 0 late | on time: arrived 2.0 ms after the vblank, executed in 4.8 | late: arrived 0.0, executed in 0.0
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan texture cache] hits=32215 uploads=17 evictions=0 live=16.7MiB entries=20/2048 GPU copies/hits/reuses=356/0/352
+[Vulkan texture comparisons] checks=746 logical_bytes=889835584 changed=1 tracked=31487 reused=1 GPU decoded=13 CPU decoded pixels=299072
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=299072 texture_ms=0.600 color_pixels=0 color_ms=0.000 (cumulative)
+[Vulkan frame intervals] flips 601..721: 59.97 fps mean 16.67ms p95 19.37ms p99 19.63ms max 19.82ms >20ms=0 >33ms=0 (guest completions, not XR display)
+[FRAMES] 60 flips, 0 late | on time: arrived 2.5 ms after the vblank, executed in 4.2 | late: arrived 0.0, executed in 0.0
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan texture cache] hits=36057 uploads=17 evictions=0 live=16.7MiB entries=20/2048 GPU copies/hits/reuses=386/0/382
+[Vulkan texture comparisons] checks=806 logical_bytes=963563584 changed=1 tracked=35269 reused=1 GPU decoded=13 CPU decoded pixels=299072
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=299072 texture_ms=0.600 color_pixels=0 color_ms=0.000 (cumulative)
+[FRAMES] 61 flips, 0 late | on time: arrived 3.0 ms after the vblank, executed in 4.2 | late: arrived 0.0, executed in 0.0
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan texture cache] hits=37672 uploads=100 evictions=0 live=33.7MiB entries=25/2048 GPU copies/hits/reuses=416/0/412
+[Vulkan texture comparisons] checks=1059 logical_bytes=1270403136 changed=79 tracked=36792 reused=79 GPU decoded=94 CPU decoded pixels=577600
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=577600 texture_ms=3.934 color_pixels=0 color_ms=0.000 (cumulative)
+[Vulkan frame intervals] flips 721..841: 59.89 fps mean 16.70ms p95 19.40ms p99 22.01ms max 22.11ms >20ms=3 >33ms=0 (guest completions, not XR display)
+[FRAMES] 60 flips, 0 late | on time: arrived 4.9 ms after the vblank, executed in 5.2 | late: arrived 0.0, executed in 0.0
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan texture cache] hits=39293 uploads=189 evictions=0 live=33.7MiB entries=25/2048 GPU copies/hits/reuses=446/0/442
+[Vulkan texture comparisons] checks=1327 logical_bytes=1599721536 changed=168 tracked=38323 reused=168 GPU decoded=183 CPU decoded pixels=577600
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=577600 texture_ms=3.934 color_pixels=0 color_ms=0.000 (cumulative)
+[FRAMES] 61 flips, 0 late | on time: arrived 4.5 ms after the vblank, executed in 5.6 | late: arrived 0.0, executed in 0.0
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan texture cache] hits=42101 uploads=237 evictions=0 live=33.8MiB entries=26/2048 GPU copies/hits/reuses=476/0/472
+[Vulkan texture comparisons] checks=1486 logical_bytes=1790341184 changed=215 tracked=41067 reused=215 GPU decoded=230 CPU decoded pixels=581696
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=581696 texture_ms=3.985 color_pixels=0 color_ms=0.000 (cumulative)
+[Vulkan frame intervals] flips 841..961: 60.07 fps mean 16.65ms p95 20.26ms p99 20.77ms max 21.34ms >20ms=9 >33ms=0 (guest completions, not XR display)
+[FRAMES] 61 flips, 0 late | on time: arrived 2.1 ms after the vblank, executed in 6.6 | late: arrived 0.0, executed in 0.0
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan texture cache] hits=45284 uploads=237 evictions=0 live=33.8MiB entries=26/2048 GPU copies/hits/reuses=506/0/502
+[Vulkan texture comparisons] checks=1547 logical_bytes=1864200256 changed=215 tracked=44189 reused=215 GPU decoded=230 CPU decoded pixels=581696
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=581696 texture_ms=3.985 color_pixels=0 color_ms=0.000 (cumulative)
+[FRAMES] 61 flips, 0 late | on time: arrived 2.5 ms after the vblank, executed in 6.3 | late: arrived 0.0, executed in 0.0
+  [NV2A] vblank 1200: last 600 in 10000 ms, gap 16.7-16.7 ms, ack give-ups 0, late acks 0 (max 0 ms), declined 0
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan texture cache] hits=48893 uploads=238 evictions=0 live=36.3MiB entries=27/2048 GPU copies/hits/reuses=536/0/532
+[Vulkan texture comparisons] checks=1609 logical_bytes=1938976832 changed=215 tracked=47737 reused=215 GPU decoded=230 CPU decoded pixels=843840
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=843840 texture_ms=4.426 color_pixels=0 color_ms=0.000 (cumulative)
+[Vulkan frame intervals] flips 961..1081: 60.09 fps mean 16.64ms p95 21.58ms p99 21.98ms max 22.63ms >20ms=33 >33ms=0 (guest completions, not XR display)
+[FRAMES] 61 flips, 0 late | on time: arrived 2.0 ms after the vblank, executed in 5.8 | late: arrived 0.0, executed in 0.0
+[FRAMES] 48 flips, 2 late | on time: arrived 2.0 ms after the vblank, executed in 5.1 | late: arrived -48.4, executed in 58.5
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan texture cache] hits=55247 uploads=442 evictions=24 live=55.9MiB entries=208/2048 GPU copies/hits/reuses=571/25/562
+[Vulkan texture comparisons] checks=2075 logical_bytes=2029812672 changed=219 tracked=53808 reused=219 GPU decoded=238 CPU decoded pixels=5930688
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=5930688 texture_ms=97.064 color_pixels=0 color_ms=0.000 (cumulative)
+[FRAMES] 35 flips, 26 late | on time: arrived -5.0 ms after the vblank, executed in 18.9 | late: arrived -20.3, executed in 25.5
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan texture cache] hits=143268 uploads=604 evictions=123 live=63.1MiB entries=241/2048 GPU copies/hits/reuses=721/142/682
+[Vulkan texture comparisons] checks=2459 logical_bytes=2254473920 changed=279 tracked=141550 reused=279 GPU decoded=299 CPU decoded pixels=8698048
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=8698048 texture_ms=149.938 color_pixels=0 color_ms=0.000 (cumulative)
+[Vulkan frame intervals] flips 1081..1201: 37.60 fps mean 26.60ms p95 33.13ms p99 217.14ms max 220.80ms >20ms=83 >33ms=5 (guest completions, not XR display)
+[FRAMES] 30 flips, 20 late | on time: arrived -10.8 ms after the vblank, executed in 21.6 | late: arrived -22.1, executed in 26.7
+[FRAMES] 53 flips, 4 late | on time: arrived 2.1 ms after the vblank, executed in 7.8 | late: arrived -51.4, executed in 56.3
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan texture cache] hits=172186 uploads=771 evictions=235 live=47.9MiB entries=241/2048 GPU copies/hits/reuses=765/149/721
+[Vulkan texture comparisons] checks=2853 logical_bytes=2480377536 changed=339 tracked=170294 reused=339 GPU decoded=361 CPU decoded pixels=11535552
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=11535552 texture_ms=195.218 color_pixels=0 color_ms=0.000 (cumulative)
+[FRAMES] 60 flips, 1 late | on time: arrived 2.9 ms after the vblank, executed in 6.9 | late: arrived 4.2, executed in 9.9
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan texture cache] hits=199552 uploads=848 evictions=240 live=48.0MiB entries=253/2048 GPU copies/hits/reuses=795/149/751
+[Vulkan texture comparisons] checks=3067 logical_bytes=2702049472 changed=399 tracked=197583 reused=399 GPU decoded=421 CPU decoded pixels=12006656
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=12006656 texture_ms=204.532 color_pixels=0 color_ms=0.000 (cumulative)
+[Vulkan frame intervals] flips 1201..1321: 55.51 fps mean 18.01ms p95 28.32ms p99 48.59ms max 126.50ms >20ms=33 >33ms=4 (guest completions, not XR display)
+[FRAMES] 60 flips, 0 late | on time: arrived 3.5 ms after the vblank, executed in 7.3 | late: arrived 0.0, executed in 0.0
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan texture cache] hits=234271 uploads=936 evictions=259 live=48.0MiB entries=248/2048 GPU copies/hits/reuses=825/149/772
+[Vulkan texture comparisons] checks=3349 logical_bytes=3038767296 changed=529 tracked=232239 reused=482 GPU decoded=505 CPU decoded pixels=12019968
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=12019968 texture_ms=204.689 color_pixels=0 color_ms=0.000 (cumulative)
+[FRAMES] 61 flips, 0 late | on time: arrived 3.6 ms after the vblank, executed in 7.4 | late: arrived 0.0, executed in 0.0
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan texture cache] hits=266916 uploads=1058 evictions=289 live=48.0MiB entries=250/2048 GPU copies/hits/reuses=855/149/772
+[Vulkan texture comparisons] checks=3773 logical_bytes=3554872512 changed=769 tracked=264824 reused=602 GPU decoded=625 CPU decoded pixels=12025088
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=12025088 texture_ms=204.759 color_pixels=0 color_ms=0.000 (cumulative)
+[Vulkan frame intervals] flips 1321..1441: 60.00 fps mean 16.67ms p95 21.23ms p99 22.36ms max 22.73ms >20ms=11 >33ms=0 (guest completions, not XR display)
+[FRAMES] 60 flips, 0 late | on time: arrived 3.9 ms after the vblank, executed in 6.9 | late: arrived 0.0, executed in 0.0
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan texture cache] hits=294455 uploads=1176 evictions=321 live=48.0MiB entries=250/2048 GPU copies/hits/reuses=885/149/772
+[Vulkan texture comparisons] checks=4189 logical_bytes=4061301952 changed=1005 tracked=292310 reused=718 GPU decoded=741 CPU decoded pixels=12107008
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=12107008 texture_ms=205.708 color_pixels=0 color_ms=0.000 (cumulative)
+[FRAMES] 61 flips, 3 late | on time: arrived 4.2 ms after the vblank, executed in 7.9 | late: arrived -11.1, executed in 12.6
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan texture cache] hits=321918 uploads=1293 evictions=351 live=48.0MiB entries=250/2048 GPU copies/hits/reuses=915/149/772
+[Vulkan texture comparisons] checks=4603 logical_bytes=4570025152 changed=1242 tracked=319718 reused=835 GPU decoded=858 CPU decoded pixels=12107008
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=12107008 texture_ms=205.708 color_pixels=0 color_ms=0.000 (cumulative)
+[Vulkan frame intervals] flips 1441..1561: 59.96 fps mean 16.68ms p95 20.18ms p99 23.26ms max 24.66ms >20ms=10 >33ms=0 (guest completions, not XR display)
+  [NV2A] vblank 1800: last 600 in 10000 ms, gap 16.7-16.7 ms, ack give-ups 0, late acks 0 (max 0 ms), declined 0
+[FRAMES] 57 flips, 4 late | on time: arrived -4.8 ms after the vblank, executed in 15.9 | late: arrived -15.4, executed in 19.4
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan texture cache] hits=357165 uploads=1568 evictions=411 live=56.9MiB entries=261/2048 GPU copies/hits/reuses=1071/3527/923
+[Vulkan texture comparisons] checks=5303 logical_bytes=5415539904 changed=1628 tracked=351577 reused=1044 GPU decoded=1127 CPU decoded pixels=12165376
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=12165376 texture_ms=206.573 color_pixels=0 color_ms=0.000 (cumulative)
+[FRAMES] 58 flips, 3 late | on time: arrived -6.5 ms after the vblank, executed in 16.4 | late: arrived -21.0, executed in 21.8
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan texture cache] hits=393930 uploads=1809 evictions=472 live=57.5MiB entries=262/2048 GPU copies/hits/reuses=1184/7243/1036
+[Vulkan texture comparisons] checks=5933 logical_bytes=6187357376 changed=1986 tracked=384625 reused=1223 GPU decoded=1367 CPU decoded pixels=12230912
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=12230912 texture_ms=207.233 color_pixels=0 color_ms=0.000 (cumulative)
+[Vulkan frame intervals] flips 1561..1681: 56.96 fps mean 17.56ms p95 22.11ms p99 23.87ms max 32.37ms >20ms=18 >33ms=0 (guest completions, not XR display)
+[FRAMES] 61 flips, 5 late | on time: arrived -7.7 ms after the vblank, executed in 16.2 | late: arrived -18.5, executed in 19.0
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan texture cache] hits=430164 uploads=2016 evictions=532 live=57.7MiB entries=264/2048 GPU copies/hits/reuses=1274/10857/1126
+[Vulkan texture comparisons] checks=6479 logical_bytes=6853400256 changed=2276 tracked=417208 reused=1368 GPU decoded=1572 CPU decoded pixels=12247552
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=12247552 texture_ms=207.436 color_pixels=0 color_ms=0.000 (cumulative)
+[FRAMES] 59 flips, 10 late | on time: arrived -3.9 ms after the vblank, executed in 14.8 | late: arrived -15.1, executed in 18.1
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan texture cache] hits=466487 uploads=2196 evictions=592 live=57.7MiB entries=264/2048 GPU copies/hits/reuses=1364/14573/1216
+[Vulkan texture comparisons] checks=6959 logical_bytes=7443224256 changed=2516 tracked=449755 reused=1488 GPU decoded=1752 CPU decoded pixels=12247552
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=12247552 texture_ms=207.436 color_pixels=0 color_ms=0.000 (cumulative)
+[Vulkan frame intervals] flips 1681..1801: 58.44 fps mean 17.11ms p95 22.94ms p99 33.71ms max 37.00ms >20ms=12 >33ms=2 (guest completions, not XR display)
+[FRAMES] 51 flips, 12 late | on time: arrived -7.7 ms after the vblank, executed in 16.3 | late: arrived -16.6, executed in 20.7
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan texture cache] hits=503159 uploads=2376 evictions=652 live=57.7MiB entries=264/2048 GPU copies/hits/reuses=1454/18289/1306
+[Vulkan texture comparisons] checks=7439 logical_bytes=8033048256 changed=2756 tracked=482651 reused=1608 GPU decoded=1932 CPU decoded pixels=12247552
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=12247552 texture_ms=207.436 color_pixels=0 color_ms=0.000 (cumulative)
+[FRAMES] 51 flips, 10 late | on time: arrived -5.4 ms after the vblank, executed in 15.9 | late: arrived -21.2, executed in 25.9
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan texture cache] hits=539941 uploads=2556 evictions=714 live=57.7MiB entries=264/2048 GPU copies/hits/reuses=1544/22005/1396
+[Vulkan texture comparisons] checks=7917 logical_bytes=8620414656 changed=2994 tracked=515657 reused=1726 GPU decoded=2112 CPU decoded pixels=12247552
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=12247552 texture_ms=207.436 color_pixels=0 color_ms=0.000 (cumulative)
+[Vulkan frame intervals] flips 1801..1921: 50.82 fps mean 19.68ms p95 29.34ms p99 31.04ms max 31.29ms >20ms=43 >33ms=0 (guest completions, not XR display)
+[FRAMES] 60 flips, 8 late | on time: arrived -0.5 ms after the vblank, executed in 13.9 | late: arrived -13.0, executed in 14.5
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan texture cache] hits=573193 uploads=2707 evictions=766 live=48.0MiB entries=256/2048 GPU copies/hits/reuses=1608/24079/1448
+[Vulkan texture comparisons] checks=8367 logical_bytes=9173374656 changed=3233 tracked=546775 reused=1845 GPU decoded=2263 CPU decoded pixels=12247552
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=12247552 texture_ms=207.436 color_pixels=0 color_ms=0.000 (cumulative)
+[FRAMES] 61 flips, 0 late | on time: arrived 4.0 ms after the vblank, executed in 7.7 | late: arrived 0.0, executed in 0.0
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan texture cache] hits=602269 uploads=2827 evictions=796 live=48.0MiB entries=256/2048 GPU copies/hits/reuses=1638/24079/1448
+[Vulkan texture comparisons] checks=8787 logical_bytes=9689470656 changed=3473 tracked=575792 reused=1965 GPU decoded=2383 CPU decoded pixels=12247552
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=12247552 texture_ms=207.436 color_pixels=0 color_ms=0.000 (cumulative)
+[Vulkan frame intervals] flips 1921..2041: 60.68 fps mean 16.48ms p95 20.68ms p99 21.42ms max 21.59ms >20ms=17 >33ms=0 (guest completions, not XR display)
+[FRAMES] 60 flips, 1 late | on time: arrived 3.8 ms after the vblank, executed in 7.4 | late: arrived -10.3, executed in 11.8
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan texture cache] hits=628953 uploads=2948 evictions=826 live=48.6MiB entries=257/2048 GPU copies/hits/reuses=1668/24079/1448
+[Vulkan texture comparisons] checks=9208 logical_bytes=10205632192 changed=3713 tracked=602418 reused=2085 GPU decoded=2503 CPU decoded pixels=12313088
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=12313088 texture_ms=207.956 color_pixels=0 color_ms=0.000 (cumulative)
