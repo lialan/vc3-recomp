@@ -430,3 +430,13 @@ texture is ordinary 256x256 Morton ARGB, single-level linear filtering, so
 the next investigation is the rejected render state. The frame-1200 capture
 is mostly black and is not visual proof of correct 3D. Full gameplay and Quest
 combat performance remain unverified.
+
+A repeat with full rejected-state diagnostics completed 1,300 frames. Its
+trace explicitly exercised both `80408000` and `80660000` changing from
+640x480 linear to 256x256 Morton and back, without rejection. This provides
+actual-game coverage of the earlier target-reuse fix. The repeat did not
+reproduce the frame-1244 draw rejection; it is not declared resolved. The
+new diagnostic prints raw-batch presence, alpha/blend/cull/depth/stencil state
+on future rejected draws. Its frame-1238 capture shows the communication
+panel, not a verified combat scene. The next bounded run uses timed coin/start
+input and explicit `AUTOAIM=0.2,0.5` to select the first mission.
