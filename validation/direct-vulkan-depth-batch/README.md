@@ -208,3 +208,15 @@ Frames 1680/2160 differ even without a code change: respectively 148603/271431
 pixels, mean absolute channel differences 0.603/6.003. This establishes run-to-run
 variation, not its cause or whole-game correctness. Single-frame comparisons
 later in gameplay cannot alone attribute differences to an optimization.
+
+Combined-readback guest measurement: /tmp/vc3-combined-flush-profile completed
+2400 frames (exit 0, no failure diagnostics), using immutable
+/tmp/vc3-combined-flush-vc3. Frame 1200 matches the preceding repeat exactly.
+Windows 2041..2161 and 2161..2281 reached 32.77/32.59 FPS versus 26.27/25.29
+in /tmp/vc3-batch256-repeat; >33ms counts fell from 119/119 to 15/10. Earlier
+batch256 controls varied, so these are individual measurements, not a confidence
+interval. Final live-target counters: 12888 combined depth reads and 10443
+combined color reads; control depth reads were 8309, with no combined color path.
+A differing draw count and known later capture variation prevent whole-run exact
+parity claims. The backend remains below the performance goal; continue profiling
+shared guest publication/conversion and GPU round-trip costs. All runs are terminal.
