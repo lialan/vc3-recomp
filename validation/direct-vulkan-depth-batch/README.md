@@ -19,3 +19,18 @@ frame 1200; its capture visibly shows the mission intro (PRESS START TO SKIP),
 not combat. Window 1081..1201 was 1.32 FPS, p99 2889.42 ms. That run predates
 this change and remains a baseline, not evidence of an optimization speedup.
 No headset access or Quest performance acceptance occurred.
+
+## Next structural experiment: exact GPU quantization
+
+The strict D32 fallback quantizes written depth through guest Z24 after every
+draw. Residency cannot simply skip that conversion. A proposed compute pass
+can round-trip D32 -> Z24 -> D32 on GPU between draws, retaining semantics
+while publishing guest RAM only at the existing coherence boundaries.
+
+CPU exhaustive oracle tools/vulkan-depth-quant-exact-test.c passes every
+nonnegative float bit pattern through 1.0 and all 2^24 depth words. Quantize
+with scaled=z*2^24, q=uint(scaled), then decrement if z>0.5, otherwise increment
+only if scaled-q>0.5. Normalize q with bits(float(q)*2^-24)+(q!=0). This matches
+the existing double-precision CPU formulas bit-for-bit in that oracle.
+GPU implementation, driver arithmetic validation, transfers/barriers, guest
+coherence and performance are NOT implemented or established yet.
