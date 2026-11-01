@@ -10,7 +10,7 @@
 #define MAX_SURFACES 32
 struct Surface { Nv2aSurface guest; uint32_t zeta; Nv2aRenderState state; float *depth; uint8_t *stencil; ChVkTarget *target; unsigned char *rgba,*observed,*cpu,*raw; ChGuestWriteRange *write_range; size_t raw_span; int observed_valid,resident,color_bgra,color_fallback_reported,color_dirty,native_z24,quantized_z24; size_t bytes; uint64_t color_serial; };
 typedef struct {uint64_t pipeline_ns,batch_wait_ns,batch_gpu_ns,upload_wait_ns;} FrameCosts;
-struct ChVkBackend { struct {int enabled;uint64_t draw_us,clear_us,flip_us,trim_us,surface_us,coherence_us,imports_us,raster_us,store_us,texture_uploads;FrameCosts retired,previous;} costs; VkPipelineCache pipeline_cache; struct {int enabled;uint64_t start,n,surface,coherence,imports,draw,store,no_color,flushes,depth_flushes,paired_flushes;} profile; struct {uint64_t previous,us[120];unsigned count;} frame_profile; ChVkBackendConfig host; ChVkTextureCache *textures; ChVkDepthResident *zeta; uint64_t frames,raw_draws,raw_programs,raw_program_vertices,raw_declined,color_clock,cpu_batches,cpu_vertices,cpu_texels,cpu_texture_us,cpu_color_pixels,cpu_color_us,cpu_depth_pixels; struct Surface surfaces[MAX_SURFACES]; unsigned count; };
+struct ChVkBackend { struct {int enabled;uint64_t draw_cpu_ns,clear_cpu_ns,flip_cpu_ns,trim_cpu_ns;uint64_t draw_us,clear_us,flip_us,trim_us,surface_us,coherence_us,imports_us,raster_us,store_us,texture_uploads;FrameCosts retired,previous;} costs; VkPipelineCache pipeline_cache; struct {int enabled;uint64_t start,n,surface,coherence,imports,draw,store,no_color,flushes,depth_flushes,paired_flushes;} profile; struct {uint64_t previous,us[120];unsigned count;} frame_profile; ChVkBackendConfig host; ChVkTextureCache *textures; ChVkDepthResident *zeta; uint64_t frames,raw_draws,raw_programs,raw_program_vertices,raw_declined,color_clock,cpu_batches,cpu_vertices,cpu_texels,cpu_texture_us,cpu_color_pixels,cpu_color_us,cpu_depth_pixels; struct Surface surfaces[MAX_SURFACES]; unsigned count; };
 static ChVkBackend *active;
 static void flush_color(struct Surface *);
 static void observe_guest_colors(void);
@@ -18,6 +18,16 @@ static void observe_guest_color(struct Surface *);
 static uint64_t now_us(void) {
     struct timespec t;clock_gettime(CLOCK_MONOTONIC,&t);
     return (uint64_t)t.tv_sec*1000000u+t.tv_nsec/1000;
+}
+/* Optional diagnostic: thread CPU excludes fence blocking and descheduling,
+ * but includes driver work on this calling thread. It is not shader time. */
+static uint64_t thread_cpu_ns(void) {
+#ifdef CLOCK_THREAD_CPUTIME_ID
+    struct timespec t;
+    if(clock_gettime(CLOCK_THREAD_CPUTIME_ID,&t)==0)
+        return (uint64_t)t.tv_sec*1000000000u+t.tv_nsec;
+#endif
+    return 0;
 }
 static void profile_draw(const uint64_t t[6]) {
     if(!active->profile.enabled) return;
@@ -70,15 +80,17 @@ static void profile_frame(void) {
         FrameCosts total=active->costs.retired,*old=&active->costs.previous;int timed=0;
         for(unsigned i=0;i<active->count;i++) timed|=add_target_costs(&total,active->surfaces[i].target);
         ChVkTextureCacheStats textures={0};if(active->textures) ch_vk_texture_cache_stats(active->textures,&textures);
-        if(previous) fprintf(stderr,"[Vulkan frame costs] frame=%llu interval_ms=%.3f draw_ms=%.3f clear_ms=%.3f flip_flush_ms=%.3f cache_trim_ms=%.3f other_ms=%.3f pipeline_ms=%.3f batch_wait_ms=%.3f batch_gpu_ms=%.3f depth_upload_wait_ms=%.3f gpu_timing=%d surface_ms=%.3f coherence_ms=%.3f imports_ms=%.3f raster_ms=%.3f store_ms=%.3f texture_uploads=%llu\n",
+        if(previous) fprintf(stderr,"[Vulkan frame costs] frame=%llu interval_ms=%.3f draw_ms=%.3f clear_ms=%.3f flip_flush_ms=%.3f cache_trim_ms=%.3f other_ms=%.3f pipeline_ms=%.3f batch_wait_ms=%.3f batch_gpu_ms=%.3f depth_upload_wait_ms=%.3f gpu_timing=%d surface_ms=%.3f coherence_ms=%.3f imports_ms=%.3f raster_ms=%.3f store_ms=%.3f texture_uploads=%llu draw_cpu_ms=%.3f clear_cpu_ms=%.3f flip_cpu_ms=%.3f cache_trim_cpu_ms=%.3f thread_cpu_timing=%d\n",
             (unsigned long long)active->frames,(now-previous)/1000.,active->costs.draw_us/1000.,active->costs.clear_us/1000.,active->costs.flip_us/1000.,active->costs.trim_us/1000.,
             ((double)(now-previous)-active->costs.draw_us-active->costs.clear_us-active->costs.flip_us-active->costs.trim_us)/1000.,
             (total.pipeline_ns-old->pipeline_ns)/1e6,(total.batch_wait_ns-old->batch_wait_ns)/1e6,
             (total.batch_gpu_ns-old->batch_gpu_ns)/1e6,(total.upload_wait_ns-old->upload_wait_ns)/1e6,timed,active->costs.surface_us/1000.,active->costs.coherence_us/1000.,
             active->costs.imports_us/1000.,active->costs.raster_us/1000.,active->costs.store_us/1000.,
-            (unsigned long long)(textures.uploads-active->costs.texture_uploads));
+            (unsigned long long)(textures.uploads-active->costs.texture_uploads),active->costs.draw_cpu_ns/1e6,
+            active->costs.clear_cpu_ns/1e6,active->costs.flip_cpu_ns/1e6,active->costs.trim_cpu_ns/1e6,thread_cpu_ns()!=0);
         active->costs.texture_uploads=textures.uploads;
         active->costs.surface_us=active->costs.coherence_us=active->costs.imports_us=active->costs.raster_us=active->costs.store_us=0;
+        active->costs.draw_cpu_ns=active->costs.clear_cpu_ns=active->costs.flip_cpu_ns=active->costs.trim_cpu_ns=0;
         *old=total;active->costs.draw_us=active->costs.clear_us=active->costs.flip_us=active->costs.trim_us=0;
     }
     if(!previous) return;
@@ -508,6 +520,7 @@ static void import_depth(struct Surface *f,int overwrite) {
     if(r!=VK_SUCCESS) fatal(r,"guest depth import");
 }
 static void clear(const Nv2aSurface *s,const Nv2aRenderState *rs,uint32_t flags,uint32_t argb,uint32_t zs) {
+    uint64_t cpu=active->costs.enabled?thread_cpu_ns():0;
     uint64_t start=active->costs.enabled?now_us():0;
     struct Surface *f=surface(s,rs);
     if(!f->resident || (flags&0xf0)) observe_target_color(f);
@@ -518,7 +531,7 @@ static void clear(const Nv2aSurface *s,const Nv2aRenderState *rs,uint32_t flags,
         VkResult r=active->host.render_clear(active->host.render_context,s,rs,flags,argb,zs);
         if(r!=VK_SUCCESS) fatal(r,"host clear routing");
     }
-    if(active->costs.enabled) active->costs.clear_us+=now_us()-start;
+    if(active->costs.enabled) {active->costs.clear_us+=now_us()-start;active->costs.clear_cpu_ns+=thread_cpu_ns()-cpu;}
 }
 static void draw_batch(const Nv2aSurface *s,const Nv2aBatch *b,const ChVkFixedGeometry *fixed) {
     if(!b || !s) fatal(VK_ERROR_INITIALIZATION_FAILED,"batch arguments");
@@ -527,6 +540,7 @@ static void draw_batch(const Nv2aSurface *s,const Nv2aBatch *b,const ChVkFixedGe
      * Pending earlier work remains ordered by the normal fence/flip path. */
     if(!s->width || !s->height) return;
     if(!fixed) {active->cpu_batches++;active->cpu_vertices+=b->count;}
+    uint64_t cpu=active->costs.enabled?thread_cpu_ns():0;
     uint64_t t[6]={0};
     if(active->profile.enabled) t[0]=now_us();
     struct Surface *f=surface(s,b->state);
@@ -563,6 +577,7 @@ static void draw_batch(const Nv2aSurface *s,const Nv2aBatch *b,const ChVkFixedGe
     }
     store(f,result,"draw",color_write,(b->state->depth_test_enable && b->state->depth_write)
         || (b->state->stencil_enable && b->state->stencil_write_mask));
+    if(active->costs.enabled) active->costs.draw_cpu_ns+=thread_cpu_ns()-cpu;
     if(active->profile.enabled) {t[5]=now_us();profile_draw(t);}
     if(active->host.render_draw) {
         VkResult r=active->host.render_draw(active->host.render_context,s,b);
@@ -573,13 +588,15 @@ static void flip(void) {
     /* All guest work completed. Snapshot guest-authoritative pixels before
      * crossing the submission/display thread boundary. */
     if(!active) fatal(VK_ERROR_INITIALIZATION_FAILED,"flip without backend");
+    uint64_t cpu=active->costs.enabled?thread_cpu_ns():0;
     uint64_t start=active->costs.enabled?now_us():0;
     flush();
-    if(active->costs.enabled) active->costs.flip_us+=now_us()-start;
+    if(active->costs.enabled) {active->costs.flip_us+=now_us()-start;active->costs.flip_cpu_ns+=thread_cpu_ns()-cpu;}
     active->frames++;
+    cpu=active->costs.enabled?thread_cpu_ns():0;
     start=active->costs.enabled?now_us():0;
     ch_vk_texture_cache_advance_frame(active->textures);
-    if(active->costs.enabled) active->costs.trim_us+=now_us()-start;
+    if(active->costs.enabled) {active->costs.trim_us+=now_us()-start;active->costs.trim_cpu_ns+=thread_cpu_ns()-cpu;}
     if(active->host.guest_write_watch && active->profile.enabled && (active->frames==1 || active->frames%60==0)) {
         ChGuestWriteStats stats;ch_guest_write_watch_stats(active->host.guest_write_watch,&stats);
         fprintf(stderr,"[Vulkan write tracking] ranges=%llu checks=%llu unchanged=%llu faults=%llu protection calls=%llu\n",
