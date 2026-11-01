@@ -6,6 +6,57 @@
 void nv2a_pb_exec_method(uint32_t,uint32_t,uint32_t);
 static uint32_t read_word(const unsigned char *p) {uint32_t n;memcpy(&n,p,4);return n;}
 static void put_word(unsigned char *p,uint32_t n) {memcpy(p,&n,4);}
+int ch_test_depth_copy(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,uint32_t family) {
+    ChVkTarget *a=NULL,*b=NULL,*wrong=NULL;int failed=1;
+    unsigned char rgba[64],stencil[16];float depth[16];
+    const float blue[]={0,0,1,1},green[]={0,1,0,1};
+#define COPY_REQUIRE(x) do {if(!(x)) {fprintf(stderr,"depth copy failure line%d: %s\n",__LINE__,#x);goto done;}}while(0)
+    COPY_REQUIRE(ch_vk_target_create(gpu,device,queue,family,4,4,&a)==VK_SUCCESS);
+    COPY_REQUIRE(ch_vk_target_create(gpu,device,queue,family,4,4,&b)==VK_SUCCESS);
+    COPY_REQUIRE(ch_vk_target_create(gpu,device,queue,family,3,4,&wrong)==VK_SUCCESS);
+    COPY_REQUIRE(ch_vk_target_clear_read(wrong,green,rgba,sizeof rgba)==VK_SUCCESS);
+    COPY_REQUIRE(ch_vk_target_batching(a,1)==VK_SUCCESS && ch_vk_target_batching(b,1)==VK_SUCCESS);
+    COPY_REQUIRE(ch_vk_target_enable_queries(b)==VK_SUCCESS);
+    COPY_REQUIRE(ch_vk_target_clear_read(a,blue,rgba,sizeof rgba)==VK_SUCCESS);
+    COPY_REQUIRE(ch_vk_target_clear_read(b,green,rgba,sizeof rgba)==VK_SUCCESS);
+    for(unsigned i=0;i<16;i++) {depth[i]=.6f+i/64.f;stencil[i]=(unsigned char)(i+1);}
+    COPY_REQUIRE(ch_vk_target_write_depth_stencil(a,depth,stencil,16)==VK_SUCCESS);
+    ch_vk_target_defer_color_readback(a,1);ch_vk_target_defer_color_readback(b,1);
+    ChVkColorVertex v[]={{{-1,-1,.25f,1},{1,0,0,1}},{{1,-1,.25f,1},{1,0,0,1}},
+        {{1,1,.25f,1},{1,0,0,1}},{{-1,1,.25f,1},{1,0,0,1}}};
+    const uint16_t indices[]={0,1,2,0,2,3};
+    Nv2aRenderState color={.color_mask=0x01010101};
+    COPY_REQUIRE(ch_vk_target_draw_state_read(b,NULL,v,4,indices,6,&color,rgba,sizeof rgba)==VK_SUCCESS);
+    v[1].xy[0]=v[2].xy[0]=0;
+    Nv2aRenderState ds={.depth_test_enable=1,.depth_write=1,.depth_func=0x207,
+        .stencil_enable=1,.stencil_func=0x207,.stencil_ref=0x7b,.stencil_func_mask=255,.stencil_write_mask=255,
+        .stencil_fail=0x1e00,.stencil_zfail=0x1e00,.stencil_zpass=0x1e01};
+    COPY_REQUIRE(ch_vk_target_draw_state_read(a,NULL,v,4,indices,6,&ds,rgba,sizeof rgba)==VK_SUCCESS);
+    COPY_REQUIRE(ch_vk_target_pending(a) && ch_vk_target_pending(b));
+    COPY_REQUIRE(ch_vk_target_copy_depth_stencil(a,wrong)==VK_ERROR_INITIALIZATION_FAILED && ch_vk_target_pending(a));
+    COPY_REQUIRE(ch_vk_target_copy_depth_stencil(a,b)==VK_SUCCESS);
+    COPY_REQUIRE(!ch_vk_target_pending(a) && !ch_vk_target_pending(b));
+    COPY_REQUIRE(vkGetFenceStatus(device,ch_vk_target_completion_fence(a))==VK_SUCCESS &&
+        vkGetFenceStatus(device,ch_vk_target_completion_fence(b))==VK_SUCCESS);
+    COPY_REQUIRE(ch_vk_target_read_depth_stencil(b,depth,stencil,16)==VK_SUCCESS);
+    for(unsigned i=0;i<16;i++) {
+        COPY_REQUIRE(depth[i]==(i%4<2?.25f:.6f+i/64.f));
+        COPY_REQUIRE(stencil[i]==(i%4<2?0x7b:i+1));
+    }
+    COPY_REQUIRE(ch_vk_target_read_color(a,rgba,sizeof rgba)==VK_SUCCESS);
+    for(unsigned i=0;i<64;i++) COPY_REQUIRE(rgba[i]==(i%4>=2?255:0));
+    COPY_REQUIRE(ch_vk_target_read_color(b,rgba,sizeof rgba)==VK_SUCCESS);
+    for(unsigned i=0;i<64;i++) COPY_REQUIRE(rgba[i]==((i%4==0 || i%4==3)?255:0));
+    v[1].xy[0]=v[2].xy[0]=1;
+    ds.color_mask=0x01010101;ds.depth_func=ds.stencil_func=0x202;ds.depth_write=ds.stencil_write_mask=0;
+    uint32_t samples=0;
+    COPY_REQUIRE(ch_vk_target_draw_count_read(b,NULL,v,4,indices,6,&ds,NULL,&samples,rgba,sizeof rgba)==VK_SUCCESS && samples==8);
+    COPY_REQUIRE(ch_vk_target_copy_depth_stencil(b,b)==VK_SUCCESS);
+    puts("PASS: exact GPU depth/stencil copy completes pending source/destination, preserves both colors, restores depth/stencil tests and rejects extent mismatch");failed=0;
+done:
+    ch_vk_target_destroy(wrong);ch_vk_target_destroy(a);ch_vk_target_destroy(b);return failed;
+#undef COPY_REQUIRE
+}
 int ch_test_depth_resident(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,uint32_t family,
     void *guest,size_t bytes,ChVkDecodeTexture decode) {
     enum {W=4,H=4,N=W*H};
@@ -46,13 +97,29 @@ int ch_test_depth_resident(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,ui
     REQUIRE(ch_vk_depth_resident_flush(z)==VK_SUCCESS);
     REQUIRE(read_word(ram+1024)==0xbfffff07 && read_word(ram+1028)==0x4000002a && read_word(ram+1032)==0x40000007);
     REQUIRE(ram[1040]==0xcd && ram[1041]==0xab);
-    /* Same zeta, another color target: publish previous owner then import. */
+    /* Exact shared-zeta switches remain GPU owned, including dirty contents. */
     REQUIRE(ch_vk_depth_resident_bind(z,b,&surface,&state)==VK_SUCCESS);
     REQUIRE(ch_vk_target_clear_aspects_read(b,6,NULL,.5f,3,rgba,sizeof rgba)==VK_SUCCESS);
     REQUIRE(ch_vk_depth_resident_dirty(z,b)==VK_SUCCESS);
     REQUIRE(ch_vk_depth_resident_bind(z,a,&surface,&state)==VK_SUCCESS);
     REQUIRE(ch_vk_target_read_depth_stencil(a,depth,stencil,N)==VK_SUCCESS);
     for(unsigned i=0;i<N;i++) REQUIRE(depth[i]==(float)(8388608.0/16777215.0) && stencil[i]==3);
+    ch_vk_depth_resident_stats(z,&stats);
+    REQUIRE(stats.imports==1 && stats.writebacks==1 && stats.gpu_copies==2);
+    REQUIRE(read_word(ram+1024)==0xbfffff07); /* no intermediate CPU publication */
+    put_word(ram+1024,0xbfffff5a); /* stencil-only CPU edit while GPU depth is .5 */
+    REQUIRE(ch_vk_depth_resident_bind(z,b,&surface,&state)==VK_SUCCESS);
+    REQUIRE(ch_vk_target_read_depth_stencil(b,depth,stencil,N)==VK_SUCCESS);
+    REQUIRE(depth[0]==(float)(8388608.0/16777215.0) && stencil[0]==0x5a);
+    for(unsigned i=0;i<100;i++) REQUIRE(ch_vk_depth_resident_bind(z,i&1?a:b,&surface,&state)==VK_SUCCESS);
+    ch_vk_depth_resident_stats(z,&stats);
+    REQUIRE(stats.imports==1 && stats.writebacks==1 && stats.gpu_copies==102 && stats.cpu_merges==2);
+    /* Diagnostic control must preserve the same bits through CPU publication. */
+    ch_vk_depth_resident_gpu_copies(z,0);
+    REQUIRE(ch_vk_depth_resident_bind(z,b,&surface,&state)==VK_SUCCESS);
+    REQUIRE(read_word(ram+1024)==0x8000005a);
+    REQUIRE(ch_vk_target_read_depth_stencil(b,depth,stencil,N)==VK_SUCCESS && stencil[0]==0x5a);
+    ch_vk_depth_resident_gpu_copies(z,1);
     /* Overlapping zeta interpretation must also transfer ownership. */
     Nv2aRenderState shifted=state;shifted.zeta_va+=4;
     REQUIRE(ch_vk_depth_resident_bind(z,b,&surface,&shifted)==VK_SUCCESS);

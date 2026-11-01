@@ -115,6 +115,8 @@ static VkResult attach(ChVkBackendConfig config)
     fprintf(stderr,"[Vulkan] resident command batches: %s\n",config.batch_draws?"enabled":"disabled");
     const char *depth=ch_env("VULKAN_RESIDENT_DEPTH");
     config.resident_depth=depth && !strcmp(depth,"1");
+    const char *depth_copy=ch_env("VULKAN_DEPTH_GPU_COPY");
+    config.strict_depth_switches=depth_copy && !strcmp(depth_copy,"0");
     fprintf(stderr,"[Vulkan] resident color targets: %s\n",config.resident_color?"enabled":"disabled");
     fprintf(stderr,"[Vulkan] resident D24 depth targets: %s\n",config.resident_depth?"enabled":"disabled");
     config.present_rgba=present;

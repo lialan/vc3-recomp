@@ -1,0 +1,12 @@
+[Vulkan depth residency] binds=3 imports=1 writebacks=2 CPU merges=0 GPU copies=0
+[Vulkan] completed frame 1: 640x480, guest=80408000
+[Vulkan depth residency] binds=3282 imports=263 writebacks=333 CPU merges=0 GPU copies=117
+[Vulkan] completed frame 60: 640x480, guest=80534000
+[Vulkan depth residency] binds=6663 imports=526 writebacks=668 CPU merges=0 GPU copies=238
+[Vulkan] completed frame 120: 640x480, guest=80660000
+[Vulkan frame intervals] flips 1..121: 14.66 fps mean 68.20ms p95 79.80ms p99 206.21ms max 345.01ms >20ms=120 >33ms=120 (guest completions, not XR display)
+[Vulkan depth residency] binds=10051 imports=795 writebacks=1004 CPU merges=0 GPU copies=357
+[Vulkan] completed frame 180: 640x480, guest=80534000
+[Vulkan depth residency] binds=13391 imports=1061 writebacks=1340 CPU merges=0 GPU copies=476
+[Vulkan] completed frame 240: 640x480, guest=80534000
+[Vulkan] diagnostic frame limit reached: 240

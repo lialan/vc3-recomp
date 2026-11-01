@@ -1,0 +1,10 @@
+{
+  "same_binaries": true,
+  "both_reached_240_frames": true,
+  "scope": "Single Quest startup A/B; no combat/VR acceptance or synchronized game pixel parity",
+  "frame180_pixel_comparison": {
+    "max_channel_delta": 35,
+    "mean_absolute_delta": 0.5468446180555555,
+    "different_pixels": 11044
+  }
+}

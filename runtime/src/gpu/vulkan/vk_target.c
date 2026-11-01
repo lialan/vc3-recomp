@@ -1042,6 +1042,53 @@ VkResult ch_vk_target_write_depth_stencil(ChVkTarget *t,const float *depth,const
     return transfer_depth_stencil(t,(void *)depth,(void *)stencil,pixels,1);
 }
 
+VkResult ch_vk_target_copy_depth_stencil(ChVkTarget *source,ChVkTarget *destination) {
+    ChVkTarget *s=source,*t=destination;
+    if(!s || !t || s->failed || t->failed || !s->initialized || !t->initialized ||
+       s->device!=t->device || s->queue!=t->queue || s->family!=t->family ||
+       s->width!=t->width || s->height!=t->height || s->depth_format!=t->depth_format)
+        return VK_ERROR_INITIALIZATION_FAILED;
+    VkResult result;
+    TRY(ch_vk_target_finish(s));
+    if(s==t) return VK_SUCCESS;
+    TRY(ch_vk_target_finish(t));
+    TRY(vkResetCommandBuffer(t->command,0));TRY(vkResetFences(t->device,1,&t->fence));
+    VkCommandBufferBeginInfo begin={.sType=VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+        .flags=VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT};
+    TRY(vkBeginCommandBuffer(t->command,&begin));
+    VkImageMemoryBarrier barriers[2];
+    for(unsigned i=0;i<2;i++) barriers[i]=(VkImageMemoryBarrier){
+        .sType=VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+        .srcAccessMask=VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT|VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
+        .dstAccessMask=i?VK_ACCESS_TRANSFER_WRITE_BIT:VK_ACCESS_TRANSFER_READ_BIT,
+        .oldLayout=VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+        .newLayout=i?VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL:VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+        .srcQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED,.dstQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED,
+        .image=i?t->depth:s->depth,.subresourceRange={VK_IMAGE_ASPECT_DEPTH_BIT|VK_IMAGE_ASPECT_STENCIL_BIT,0,1,0,1}};
+    VkPipelineStageFlags depth_stages=VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT|VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
+    vkCmdPipelineBarrier(t->command,depth_stages,VK_PIPELINE_STAGE_TRANSFER_BIT,0,0,NULL,0,NULL,2,barriers);
+    VkImageCopy regions[2];
+    for(unsigned i=0;i<2;i++) regions[i]=(VkImageCopy){
+        .srcSubresource={i?VK_IMAGE_ASPECT_STENCIL_BIT:VK_IMAGE_ASPECT_DEPTH_BIT,0,0,1},
+        .dstSubresource={i?VK_IMAGE_ASPECT_STENCIL_BIT:VK_IMAGE_ASPECT_DEPTH_BIT,0,0,1},
+        .extent={t->width,t->height,1}};
+    vkCmdCopyImage(t->command,s->depth,barriers[0].newLayout,t->depth,barriers[1].newLayout,2,regions);
+    for(unsigned i=0;i<2;i++) {
+        barriers[i].srcAccessMask=barriers[i].dstAccessMask;
+        barriers[i].dstAccessMask=VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT|VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+        barriers[i].oldLayout=barriers[i].newLayout;
+        barriers[i].newLayout=VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+    }
+    vkCmdPipelineBarrier(t->command,VK_PIPELINE_STAGE_TRANSFER_BIT,depth_stages,0,0,NULL,0,NULL,2,barriers);
+    TRY(vkEndCommandBuffer(t->command));
+    VkSubmitInfo submit={.sType=VK_STRUCTURE_TYPE_SUBMIT_INFO,.commandBufferCount=1,.pCommandBuffers=&t->command};
+    TRY(vkQueueSubmit(t->queue,1,&submit,t->fence));
+    TRY(vkWaitForFences(t->device,1,&t->fence,VK_TRUE,5000000000ULL));
+    return VK_SUCCESS;
+fail:
+    s->failed=t->failed=1;return result;
+}
+
 VkResult ch_vk_target_draw_combiner_read(ChVkTarget *t,const float rgba[4],const ChVkColorVertex *v,uint32_t n,
     const uint16_t *indices,uint32_t count,const Nv2aRenderState *state,const ChVkTexture *texture,
     uint32_t *samples,const Nv2aCombiner *rc,uint32_t fog,const ChVkTexture *const stages[4],void *pixels,VkDeviceSize bytes) {

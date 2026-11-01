@@ -2,13 +2,15 @@
 #define CH_VK_DEPTH_RESIDENT_H
 #include "vk_target.h"
 typedef struct ChVkDepthResident ChVkDepthResident;
-typedef struct {uint64_t imports,writebacks,cpu_merges,binds;} ChVkDepthResidentStats;
+typedef struct {uint64_t imports,writebacks,cpu_merges,binds,gpu_copies;} ChVkDepthResidentStats;
 VkResult ch_vk_depth_resident_create(void *guest,size_t bytes,ChVkDepthResident **);
-/* One current owner: changing target or zeta interpretation publishes the old
- * owner before importing the new one, including shared/overlapping zeta.
+/* One current owner: an exact shared-zeta target switch copies on the GPU.
+ * Changing zeta interpretation publishes/imports, including partial overlaps.
  * Targets must use native D24S8. Guest RAM must be serialized with callbacks.
  * Retains target until release; no device or guest-memory ownership. */
 VkResult ch_vk_depth_resident_bind(ChVkDepthResident *,ChVkTarget *,const Nv2aSurface *,const Nv2aRenderState *);
+/* Diagnostic synchronous roundtrip control. Default is enabled. */
+void ch_vk_depth_resident_gpu_copies(ChVkDepthResident *,int enabled);
 VkResult ch_vk_depth_resident_dirty(ChVkDepthResident *,ChVkTarget *);
 /* Merge CPU changes per depth/stencil component, then publish at completion.
  * Padding is excluded from edits and preserved on writeback. */

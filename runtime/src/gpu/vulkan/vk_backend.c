@@ -381,9 +381,9 @@ static void flip(void) {
     }
     if(active->zeta && active->profile.enabled && (active->frames==1 || active->frames%60==0)) {
         ChVkDepthResidentStats stats;ch_vk_depth_resident_stats(active->zeta,&stats);
-        fprintf(stderr,"[Vulkan depth residency] binds=%llu imports=%llu writebacks=%llu CPU merges=%llu\n",
+        fprintf(stderr,"[Vulkan depth residency] binds=%llu imports=%llu writebacks=%llu CPU merges=%llu GPU copies=%llu\n",
             (unsigned long long)stats.binds,(unsigned long long)stats.imports,
-            (unsigned long long)stats.writebacks,(unsigned long long)stats.cpu_merges);
+            (unsigned long long)stats.writebacks,(unsigned long long)stats.cpu_merges,(unsigned long long)stats.gpu_copies);
     }
     if(active->textures && profile && atoi(profile) && (active->frames==1 || active->frames%60==0)) {
         ChVkTextureCacheStats stats;ch_vk_texture_cache_stats(active->textures,&stats);
@@ -463,6 +463,7 @@ VkResult ch_vk_backend_create(const ChVkBackendConfig *config,ChVkBackend **out)
     if(config->resident_depth) {
         VkResult r=ch_vk_depth_resident_create(config->guest_base,config->guest_bytes,&b->zeta);
         if(r!=VK_SUCCESS) {free(b);return r;}
+        ch_vk_depth_resident_gpu_copies(b->zeta,!config->strict_depth_switches);
     }
     if(config->cache_textures) {
         ChVkTextureCacheConfig texture_config={.physical=config->physical,.device=config->device,

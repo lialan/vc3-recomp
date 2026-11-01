@@ -9,7 +9,7 @@ struct ChVkDepthResident {
     ChVkTarget *target;
     Nv2aSurface surface;Nv2aRenderState state;ChVkGuestLayout layout;
     float *depth;uint8_t *stencil,*raw,*edits;
-    int dirty;
+    int dirty,gpu_copies;
     ChVkDepthResidentStats stats;
 };
 static uint8_t *storage(ChVkDepthResident *d) {return (uint8_t *)d->guest+d->state.zeta_va;}
@@ -49,8 +49,9 @@ VkResult ch_vk_depth_resident_create(void *guest,size_t bytes,ChVkDepthResident 
     if(!guest || !bytes) return VK_ERROR_INITIALIZATION_FAILED;
     ChVkDepthResident *d=calloc(1,sizeof *d);
     if(!d) return VK_ERROR_OUT_OF_HOST_MEMORY;
-    d->guest=guest;d->bytes=bytes;*out=d;return VK_SUCCESS;
+    d->guest=guest;d->bytes=bytes;d->gpu_copies=1;*out=d;return VK_SUCCESS;
 }
+void ch_vk_depth_resident_gpu_copies(ChVkDepthResident *d,int enabled) {if(d) d->gpu_copies=!!enabled;}
 VkResult ch_vk_depth_resident_flush(ChVkDepthResident *d) {
     if(!d) return VK_ERROR_INITIALIZATION_FAILED;
     VkResult r=observe(d);
@@ -77,10 +78,21 @@ VkResult ch_vk_depth_resident_bind(ChVkDepthResident *d,ChVkTarget *target,
     if(state->zeta_va>d->bytes || layout.span>d->bytes-state->zeta_va ||
        (uint64_t)surface->width*surface->height>SIZE_MAX/4) return VK_ERROR_INITIALIZATION_FAILED;
     d->stats.binds++;
-    if(d->target==target && d->state.zeta_va==state->zeta_va &&
+    int same=d->target && d->state.zeta_va==state->zeta_va &&
        d->surface.width==surface->width && d->surface.height==surface->height &&
        d->state.zeta_pitch==state->zeta_pitch &&
-       (d->state.surface_format&0xffffff00u)==(state->surface_format&0xffffff00u)) return observe(d);
+        (d->state.surface_format&0xffffff00u)==(state->surface_format&0xffffff00u);
+    if(same && d->target==target) return observe(d);
+    if(same && d->gpu_copies) {
+        /* RAM remains the last published snapshot. Merge any intervening CPU
+         * component edits before transferring the exact GPU depth/stencil.
+         * Completion/sample/layout boundaries still publish through flush. */
+        r=observe(d);
+        if(r==VK_SUCCESS) r=ch_vk_target_copy_depth_stencil(d->target,target);
+        if(r!=VK_SUCCESS) return r;
+        d->target=target;d->surface=*surface;d->state=*state;d->layout=layout;
+        d->stats.gpu_copies++;return VK_SUCCESS;
+    }
     r=ch_vk_depth_resident_release(d);
     if(r!=VK_SUCCESS) return r;
     size_t count=(size_t)surface->width*surface->height;

@@ -121,6 +121,9 @@ VkResult ch_vk_target_read_depth_stencil(ChVkTarget *target, float *depth,
     uint8_t *stencil, size_t pixels);
 VkResult ch_vk_target_write_depth_stencil(ChVkTarget *target, const float *depth,
     const uint8_t *stencil, size_t pixels);
+/* Exact same-device/queue/extent/format copy. Completes both pending targets,
+ * preserves their colors and restores depth/stencil attachment layouts. */
+VkResult ch_vk_target_copy_depth_stencil(ChVkTarget *source,ChVkTarget *destination);
 /* Premultiplied effect shading; xy[4..5] is local effect UV. */
 VkResult ch_vk_target_draw_effect_read(ChVkTarget *,const ChVkColorVertex *,uint32_t,
     const uint16_t *,uint32_t,const Nv2aRenderState *,const ChVkEffect *,void *,VkDeviceSize);
