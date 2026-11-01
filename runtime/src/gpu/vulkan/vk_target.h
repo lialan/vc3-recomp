@@ -11,11 +11,21 @@ typedef struct ChVkTarget ChVkTarget;
 typedef struct {
     uint64_t pipeline_builds,pipeline_hits,pipeline_evictions,geometry_allocations;
     uint64_t batch_draws,batch_submissions;
+    uint64_t no_alpha_pipeline_builds,no_alpha_pipeline_hits;
     VkDeviceSize geometry_capacity;
 } ChVkTargetResourceStats;
 /* Diagnostic counters. Geometry is persistently mapped
  * and reused only after completion. Pipeline objects have a bounded LRU. */
 void ch_vk_target_resource_stats(const ChVkTarget *,ChVkTargetResourceStats *);
+typedef struct {
+    int available; /* Profile enabled, timestamps enabled and queue support */
+    uint64_t sync_render_submissions,sync_render_gpu_ns,sync_render_host_ns;
+    uint64_t batch_submissions,batch_draws,batch_gpu_ns,batch_record_ns;
+    uint64_t batch_finish_ns,batch_submit_ns,batch_wait_ns,batch_retire_ns;
+} ChVkTargetTimingStats;
+/* Completed batch GPU samples and host phase totals. No wait is introduced by
+ * this snapshot; pending work is not yet included in completed GPU totals. */
+void ch_vk_target_timing_stats(const ChVkTarget *,ChVkTargetTimingStats *);
 typedef struct {
     uint32_t kind; /* 1: soft spot/ring/flat beam; 2: sight glass/reticle */
     float color[4], shape[4], tint[4], reticle[4];

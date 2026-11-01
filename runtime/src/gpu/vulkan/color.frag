@@ -66,6 +66,7 @@ void main() {
         shaded=vec4(alpha.effect_color.rgb*a+alpha.effect_tint.rgb*ta,a+ta);
     }
 #endif
+#ifndef NOAT
     if(alpha.enabled != 0) {
         float a=floor(clamp(shaded.a,0,1)*255.0+0.5);
         float r=float(alpha.reference);
@@ -82,5 +83,6 @@ void main() {
         }
         if(!pass) discard;
     }
+#endif
     color=shaded;
 }

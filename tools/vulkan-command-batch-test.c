@@ -12,6 +12,9 @@ static int decode(const Nv2aTexture *t,uint32_t *argb) {
 }
 static double now_ms(void) {struct timespec t;clock_gettime(CLOCK_MONOTONIC,&t);return t.tv_sec*1000.0+t.tv_nsec/1e6;}
 int ch_test_command_batches(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,uint32_t family) {
+    const char *old_profile=getenv("CHIHIRO_VULKAN_PROFILE");char *saved_profile=old_profile?strdup(old_profile):NULL;
+    if(old_profile && !saved_profile) return 1;
+    setenv("CHIHIRO_VULKAN_PROFILE","1",1);
     ChVkTarget *t=NULL;ChVkTextureCache *cache=NULL;int failed=1;
     unsigned char pixels[16*16*4];const float black[]={0,0,0,0};
     ChVkColorVertex v[]={{{-1,-1,0,1},{0,0,0,0}},{{1,-1,0,1},{0,0,0,0}},{{1,1,0,1},{0,0,0,0}},{{-1,1,0,1},{0,0,0,0}}};
@@ -28,6 +31,7 @@ int ch_test_command_batches(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,u
         REQUIRE(ch_vk_target_finish(t)==VK_SUCCESS);
         REQUIRE(ch_vk_target_clear_read(t,black,pixels,sizeof pixels)==VK_SUCCESS);
         ChVkTargetResourceStats before;ch_vk_target_resource_stats(t,&before);
+        ChVkTargetTimingStats timing_before;ch_vk_target_timing_stats(t,&timing_before);
         memset(pixels,0xa5,sizeof pixels);double start=now_ms();
         for(unsigned i=0;i<130;i++) {
             for(unsigned k=0;k<4;k++) {memset(v[k].rgba,0,sizeof v[k].rgba);v[k].rgba[i%3]=1/255.f;v[k].rgba[3]=1/255.f;}
@@ -40,6 +44,15 @@ int ch_test_command_batches(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,u
         REQUIRE(vkGetFenceStatus(device,ch_vk_target_completion_fence(t))==VK_SUCCESS);
         ChVkTargetResourceStats stats;ch_vk_target_resource_stats(t,&stats);
         REQUIRE(stats.batch_draws-before.batch_draws==(batched?130u:0u) && stats.batch_submissions-before.batch_submissions==(batched?3u:0u));
+        ChVkTargetTimingStats timing;ch_vk_target_timing_stats(t,&timing);
+        if(timing.available) {
+            REQUIRE(timing.batch_submissions-timing_before.batch_submissions==(batched?3u:0u));
+            REQUIRE(timing.batch_draws-timing_before.batch_draws==(batched?130u:0u));
+            REQUIRE(timing.sync_render_submissions-timing_before.sync_render_submissions==(batched?0u:130u));
+            if(batched) REQUIRE(timing.batch_record_ns>timing_before.batch_record_ns && timing.batch_finish_ns>timing_before.batch_finish_ns &&
+                timing.batch_wait_ns<=timing.batch_finish_ns && timing.batch_retire_ns<=timing.batch_finish_ns);
+            puts("PASS: completed GPU timestamp samples cover every synchronous draw or command batch with exact submission/draw counts and host phase totals");
+        } else puts("SKIP: queue has no GPU timestamp support");
         REQUIRE(ch_vk_target_read_color(t,pixels,sizeof pixels)==VK_SUCCESS);
         const unsigned char expected[]={44,43,43,130};
         for(unsigned i=0;i<sizeof pixels;i++) REQUIRE(pixels[i]==expected[i%4]);
@@ -114,6 +127,8 @@ int ch_test_command_batches(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,u
     ch_vk_target_destroy(t);t=NULL;ch_vk_texture_cache_destroy(cache);cache=NULL;
     puts("PASS: batched texture descriptors/immutable same-VA edits, pinned-budget fallback uploads, query/clear/CPU color/depth boundaries and LRU retirement");failed=0;
 done:
-    ch_vk_target_destroy(t);ch_vk_texture_cache_destroy(cache);return failed;
+    ch_vk_target_destroy(t);ch_vk_texture_cache_destroy(cache);
+    if(saved_profile) {setenv("CHIHIRO_VULKAN_PROFILE",saved_profile,1);free(saved_profile);} else unsetenv("CHIHIRO_VULKAN_PROFILE");
+    return failed;
 #undef REQUIRE
 }

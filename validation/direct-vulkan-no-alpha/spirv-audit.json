@@ -1,0 +1,42 @@
+{
+  "color.frag.spv": {
+    "bytes": 2412,
+    "sha256": "0519cb1a6d65d03d19b1e98ed2b4f8139a53180868f87cf4c2cae7343edad405",
+    "OpKill": 1
+  },
+  "color.frag_noat.spv": {
+    "bytes": 1008,
+    "sha256": "db98cc224577fd5f3a7f109af2655f60e1a9d2b3ab18d795b4ef817d97320681",
+    "OpKill": 0
+  },
+  "color.textured.spv": {
+    "bytes": 2720,
+    "sha256": "7036c6702d4b5ce51de898d022335a1c5e1e240fc5a020a2e8d3404fe9f97bb2",
+    "OpKill": 1
+  },
+  "color.textured_noat.spv": {
+    "bytes": 1316,
+    "sha256": "e732eff59cd1da94369f518d64aead2641864fb49d7369191f10bba23961d616",
+    "OpKill": 0
+  },
+  "color.combiner.spv": {
+    "bytes": 32104,
+    "sha256": "2e67d2cf3fb738fc483a4ddb8908e6b95c2704773a248cc44ac7e992358dedfe",
+    "OpKill": 1
+  },
+  "color.combiner_noat.spv": {
+    "bytes": 30900,
+    "sha256": "df8fcb831d20187d77be98791a32e4f17e682215797578f9a091fc8057a5ee56",
+    "OpKill": 0
+  },
+  "color.effect.spv": {
+    "bytes": 5636,
+    "sha256": "ac3caf032b8e1787cd49bc8a411939eab7df9c7ab16e27599cf3c6c0f018b311",
+    "OpKill": 1
+  },
+  "color.effect_noat.spv": {
+    "bytes": 4352,
+    "sha256": "a18e58cf4c624e3a518d7da528d38814682ed0c6718f2f600a192ca665c3df80",
+    "OpKill": 0
+  }
+}

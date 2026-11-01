@@ -1,0 +1,1 @@
+PASS: rectangular Morton color/Z24S8/Z16, packed depth, pitched/unaligned ARGB fast-vs-scalar rows, padding, bounds, alias loads and atomic rejection

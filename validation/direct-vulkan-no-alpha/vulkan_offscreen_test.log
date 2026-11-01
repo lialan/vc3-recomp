@@ -1,0 +1,221 @@
+device=Adreno (TM) 740 vendor=5143 deviceID=43050b00 api=1.3.295
+PASS: real executor methods -> Vulkan pixels, precise GET_REPORT=16, ordered semaphore release
+PASS: guest callbacks and destruction serialize the shared host queue; unpaired hooks rejected
+PASS: resident color defers readback; CPU pixel edits preserve GPU neighbors; sampled/self targets, precise queries and executor semaphore/report flushes
+PASS: real DMA ring CALL/RETURN/JUMP, increment/nonincrement packets -> Vulkan pixels/report/semaphore/GET
+PASS: exact guest color coherence, ARGB/RGB565 CPU edits before sampling/flip, no false edits from quantized GPU writes or padding
+PASS: backend flip -> owned host frame -> Vulkan upload includes CPU writes and retains prior frame ownership
+PASS: registered backend synchronous clear/draw/flip host hooks -> distinct stereo eye targets
+PASS: reference CPU menu painter -> Vulkan target, every RGBA byte including alpha, hover/repaint
+PASS: complete shared overlay geometry: sights, shifted eye, beam/dot/flash, premultiplied alpha
+PASS: shared gun mesh, three sight housings, recoil changes and invalid-pose visibility on Vulkan
+overlay reference GL=OpenGL ES 3.2 V@0837.0.9 (GIT@810c66ceb7, Idb4ff819d7, 1782305085) (Date:06/24/26) renderer=Adreno (TM) 740
+overlay parity sight=0 mode=0 eye=0 recoil=0 covered=4659 bad=0 max=0
+overlay parity sight=0 mode=0 eye=0 recoil=1 covered=5184 bad=0 max=0
+overlay parity sight=0 mode=0 eye=1 recoil=0 covered=5245 bad=0 max=0
+overlay parity sight=0 mode=0 eye=1 recoil=1 covered=5785 bad=0 max=0
+overlay parity sight=0 mode=1 eye=0 recoil=0 covered=4919 bad=0 max=1
+overlay parity sight=0 mode=1 eye=0 recoil=1 covered=5495 bad=0 max=1
+overlay parity sight=0 mode=1 eye=1 recoil=0 covered=5544 bad=0 max=1
+overlay parity sight=0 mode=1 eye=1 recoil=1 covered=6126 bad=0 max=1
+overlay parity sight=0 mode=2 eye=0 recoil=0 covered=853 bad=0 max=1
+overlay parity sight=0 mode=2 eye=0 recoil=1 covered=916 bad=0 max=1
+overlay parity sight=0 mode=2 eye=1 recoil=0 covered=851 bad=0 max=1
+overlay parity sight=0 mode=2 eye=1 recoil=1 covered=915 bad=0 max=1
+overlay parity sight=0 mode=3 eye=0 recoil=0 covered=81920 bad=0 max=0
+overlay parity sight=0 mode=3 eye=0 recoil=1 covered=81920 bad=0 max=0
+overlay parity sight=0 mode=3 eye=1 recoil=0 covered=81920 bad=0 max=0
+overlay parity sight=0 mode=3 eye=1 recoil=1 covered=81920 bad=0 max=0
+overlay parity sight=1 mode=0 eye=0 recoil=0 covered=4935 bad=0 max=0
+overlay parity sight=1 mode=0 eye=0 recoil=1 covered=5547 bad=0 max=0
+overlay parity sight=1 mode=0 eye=1 recoil=0 covered=5565 bad=0 max=0
+overlay parity sight=1 mode=0 eye=1 recoil=1 covered=6182 bad=0 max=0
+overlay parity sight=1 mode=1 eye=0 recoil=0 covered=5194 bad=0 max=1
+overlay parity sight=1 mode=1 eye=0 recoil=1 covered=5837 bad=0 max=1
+overlay parity sight=1 mode=1 eye=1 recoil=0 covered=5857 bad=0 max=1
+overlay parity sight=1 mode=1 eye=1 recoil=1 covered=6516 bad=0 max=1
+overlay parity sight=1 mode=2 eye=0 recoil=0 covered=853 bad=0 max=1
+overlay parity sight=1 mode=2 eye=0 recoil=1 covered=916 bad=0 max=1
+overlay parity sight=1 mode=2 eye=1 recoil=0 covered=851 bad=0 max=1
+overlay parity sight=1 mode=2 eye=1 recoil=1 covered=915 bad=0 max=1
+overlay parity sight=1 mode=3 eye=0 recoil=0 covered=81920 bad=0 max=0
+overlay parity sight=1 mode=3 eye=0 recoil=1 covered=81920 bad=0 max=0
+overlay parity sight=1 mode=3 eye=1 recoil=0 covered=81920 bad=0 max=0
+overlay parity sight=1 mode=3 eye=1 recoil=1 covered=81920 bad=0 max=0
+overlay parity sight=2 mode=0 eye=0 recoil=0 covered=5527 bad=0 max=0
+overlay parity sight=2 mode=0 eye=0 recoil=1 covered=6308 bad=0 max=0
+overlay parity sight=2 mode=0 eye=1 recoil=0 covered=6239 bad=0 max=0
+overlay parity sight=2 mode=0 eye=1 recoil=1 covered=7011 bad=0 max=0
+overlay parity sight=2 mode=1 eye=0 recoil=0 covered=5779 bad=0 max=1
+overlay parity sight=2 mode=1 eye=0 recoil=1 covered=6582 bad=0 max=1
+overlay parity sight=2 mode=1 eye=1 recoil=0 covered=6511 bad=0 max=1
+overlay parity sight=2 mode=1 eye=1 recoil=1 covered=7319 bad=0 max=1
+overlay parity sight=2 mode=2 eye=0 recoil=0 covered=853 bad=0 max=1
+overlay parity sight=2 mode=2 eye=0 recoil=1 covered=916 bad=0 max=1
+overlay parity sight=2 mode=2 eye=1 recoil=0 covered=851 bad=0 max=1
+overlay parity sight=2 mode=2 eye=1 recoil=1 covered=915 bad=0 max=1
+overlay parity sight=2 mode=3 eye=0 recoil=0 covered=81920 bad=0 max=0
+overlay parity sight=2 mode=3 eye=0 recoil=1 covered=81920 bad=0 max=0
+overlay parity sight=2 mode=3 eye=1 recoil=0 covered=81920 bad=0 max=0
+overlay parity sight=2 mode=3 eye=1 recoil=1 covered=81920 bad=0 max=0
+PASS: actual GLES/Vulkan overlay readbacks, 48 cases, all pixels RGBA within 3 UNORM steps
+PASS: resident overlay matches all 48 synchronous images byte-for-byte, no intermediate CPU writes, 132 draws in 48 submissions, one geometry allocation
+generated mip parity level=0 size=64x32 maximum=0
+generated mip parity level=1 size=32x16 maximum=0
+generated mip parity level=2 size=16x8 maximum=0
+generated mip parity level=3 size=8x4 maximum=0
+generated mip parity level=4 size=4x2 maximum=0
+generated mip parity level=5 size=2x1 maximum=0
+generated mip parity level=6 size=1x1 maximum=0
+mip sample parity min=3 scale=1.0 maximum=0
+mip sample parity min=3 scale=1.5 maximum=0
+mip sample parity min=3 scale=4.0 maximum=0
+mip sample parity min=4 scale=1.0 maximum=0
+mip sample parity min=4 scale=1.5 maximum=0
+mip sample parity min=4 scale=4.0 maximum=0
+mip sample parity min=5 scale=1.0 maximum=0
+mip sample parity min=5 scale=1.5 maximum=0
+mip sample parity min=5 scale=4.0 maximum=0
+mip sample parity min=6 scale=1.0 maximum=0
+mip sample parity min=6 scale=1.5 maximum=0
+mip sample parity min=6 scale=4.0 maximum=0
+nonfinite 2D sample parity filter=1 case=0 maximum=0
+nonfinite 2D sample parity filter=1 case=1 maximum=0
+nonfinite 2D sample parity filter=1 case=2 maximum=0
+nonfinite 2D sample parity filter=1 case=3 maximum=0
+nonfinite 2D sample parity filter=2 case=0 maximum=0
+nonfinite 2D sample parity filter=2 case=1 maximum=0
+nonfinite 2D sample parity filter=2 case=2 maximum=0
+nonfinite 2D sample parity filter=2 case=3 maximum=0
+PASS: GLES/Vulkan generated mip levels and all four mip filters, 12 minified draws including fractional LOD
+cube directional parity case=0 mode=3 maximum=0
+cube directional parity case=1 mode=3 maximum=0
+cube directional parity case=2 mode=3 maximum=0
+cube directional parity case=3 mode=3 maximum=0
+cube directional parity case=4 mode=3 maximum=0
+cube directional parity case=5 mode=3 maximum=0
+cube directional parity case=6 mode=3 maximum=0
+cube directional parity case=7 mode=3 maximum=0
+cube directional parity case=8 mode=3 maximum=1
+cube directional parity case=9 mode=3 maximum=1
+cube directional parity case=10 mode=0 maximum=0
+cube directional parity case=11 mode=1 maximum=0
+cube directional parity case=12 mode=2 maximum=0
+cube directional parity case=13 mode=3 maximum=0
+cube directional parity case=14 mode=4 maximum=0
+cube directional parity case=15 mode=5 maximum=0
+cube directional parity case=16 mode=6 maximum=0
+cube directional parity case=17 mode=7 maximum=0
+cube directional parity case=18 mode=8 maximum=0
+cube directional parity case=19 mode=9 maximum=0
+cube directional parity case=20 mode=10 maximum=0
+cube directional parity case=21 mode=11 maximum=0
+cube directional parity case=22 mode=12 maximum=0
+cube directional parity case=23 mode=13 maximum=0
+cube directional parity case=24 mode=14 maximum=0
+cube directional parity case=25 mode=15 maximum=0
+cube directional parity case=26 mode=16 maximum=0
+cube directional parity case=27 mode=17 maximum=0
+cube directional parity case=28 mode=18 maximum=0
+cube directional parity case=29 mode=19 maximum=0
+cube directional parity case=30 mode=20 maximum=0
+cube directional parity case=31 mode=21 maximum=0
+cube directional parity case=32 mode=22 maximum=0
+cube directional parity case=33 mode=23 maximum=0
+cube directional parity case=34 mode=24 maximum=0
+cube directional parity case=35 mode=25 maximum=0
+cube directional parity case=36 mode=26 maximum=0
+cube directional parity case=37 mode=27 maximum=0
+cube directional parity case=38 mode=28 maximum=0
+cube directional parity case=39 mode=29 maximum=0
+cube directional parity case=40 mode=30 maximum=0
+cube directional parity case=41 mode=31 maximum=0
+cube directional parity case=42 mode=0 maximum=0
+cube directional parity case=43 mode=6 maximum=0
+cube directional parity case=44 mode=1 maximum=0
+cube directional parity case=45 mode=2 maximum=0
+cube directional parity case=46 mode=3 maximum=0
+PASS: GLES/Vulkan cube sampling, six orientations and seamless edges/corners; shared stage contribution for all 32 modes
+fixed vertex parity case=0 mode=0 maximum=1 samples=462 covered=462
+fixed vertex parity case=1 mode=0 maximum=1 samples=462 covered=462
+fixed vertex parity case=2 mode=0 maximum=0 samples=462 covered=462
+fixed vertex parity case=3 mode=0 maximum=0 samples=374 covered=374
+fixed vertex parity case=4 mode=0 maximum=1 samples=462 covered=462
+fixed vertex parity case=5 mode=0 maximum=0 samples=462 covered=462
+fixed vertex parity case=6 mode=0 maximum=0 samples=440 covered=440
+fixed vertex parity case=7 mode=0 maximum=0 samples=440 covered=440
+fixed vertex parity case=8 mode=0 maximum=0 samples=462 covered=462
+fixed vertex parity case=9 mode=0 maximum=0 samples=462 covered=462
+fixed vertex parity case=10 mode=0 maximum=0 samples=462 covered=462
+fixed vertex parity case=11 mode=0 maximum=0 samples=462 covered=462
+fixed vertex parity case=12 mode=0 maximum=0 samples=462 covered=462
+fixed vertex parity case=13 mode=0 maximum=0 samples=462 covered=462
+fixed vertex parity case=14 mode=0 maximum=0 samples=462 covered=462
+fixed vertex parity case=15 mode=0 maximum=0 samples=462 covered=462
+fixed vertex parity case=16 mode=0 maximum=0 samples=462 covered=462
+fixed vertex parity case=17 mode=0 maximum=0 samples=462 covered=462
+fixed vertex parity case=18 mode=0 maximum=0 samples=462 covered=462
+fixed vertex parity case=19 mode=0 maximum=0 samples=462 covered=462
+fixed vertex parity case=20 mode=1 maximum=0 samples=462 covered=462
+fixed vertex parity case=21 mode=2 maximum=0 samples=462 covered=462
+fixed vertex parity case=22 mode=3 maximum=0 samples=462 covered=462
+fixed vertex parity case=23 mode=4 maximum=0 samples=462 covered=462
+fixed vertex parity case=24 mode=1 maximum=0 samples=462 covered=462
+fixed vertex parity case=25 mode=2 maximum=0 samples=462 covered=462
+fixed vertex parity case=26 mode=3 maximum=0 samples=462 covered=462
+fixed vertex parity case=27 mode=4 maximum=0 samples=462 covered=462
+fixed vertex parity case=28 mode=1 maximum=0 samples=462 covered=462
+fixed vertex parity case=29 mode=2 maximum=0 samples=462 covered=462
+fixed vertex parity case=30 mode=3 maximum=0 samples=462 covered=462
+fixed vertex parity case=31 mode=4 maximum=0 samples=462 covered=462
+fixed vertex parity case=32 mode=1 maximum=0 samples=462 covered=462
+fixed vertex parity case=33 mode=2 maximum=0 samples=462 covered=462
+fixed vertex parity case=34 mode=3 maximum=0 samples=462 covered=462
+fixed vertex parity case=35 mode=4 maximum=0 samples=462 covered=462
+fixed vertex parity case=36 mode=1 maximum=0 samples=462 covered=462
+fixed vertex parity case=37 mode=2 maximum=0 samples=462 covered=462
+fixed vertex parity case=38 mode=3 maximum=0 samples=462 covered=462
+fixed vertex parity case=39 mode=4 maximum=0 samples=462 covered=462
+fixed vertex parity case=40 mode=5 maximum=0 samples=462 covered=462
+fixed vertex parity case=41 mode=5 maximum=0 samples=462 covered=462
+fixed vertex parity case=42 mode=5 maximum=0 samples=462 covered=462
+fixed vertex parity case=43 mode=5 maximum=0 samples=462 covered=462
+fixed vertex parity case=44 mode=0 maximum=0 samples=781 covered=781
+fixed vertex parity case=45 mode=0 maximum=0 samples=220 covered=220
+fixed vertex parity case=46 mode=0 maximum=0 samples=0 covered=0
+fixed vertex parity case=47 mode=0 maximum=0 samples=992 covered=992
+PASS: registered raw fixed GPU callbacks, rebased strip/fan indices, precise query256, resident guest flush; unsupported program/bounds decline before drawing
+PASS: reference GL/native Vulkan fixed vertex transforms, all skin modes, lighting/materials, four-stage texgen/matrices, fog, w/near clipping and precise visibility
+PASS: concurrent atomic flat/stereo/HUD/pose frame mailbox, 226/1000 latest frames consumed, owned snapshots survive producer reuse/teardown
+PASS: scene routing/projection, native per-eye RT copy, multi-stage combiner sampling, self-feedback snapshots, CPU-owned source decoding/presentation/recovery, scaled HUD coverage and transitions
+PASS: registered submission pipeline -> atomic flat/stereo/HUD/render-pose packet, next-frame latch, CPU edits and retained ownership through teardown
+PASS: 96-texture working set retained within a 4096-byte payload budget, second pass hits all images without eviction
+PASS: immutable texture cache hits, same-VA texel/palette edits, sampler keys, pinned eviction/budget fallback and guest bounds
+PASS: resident D24 float transfers: component CPU merges, padding, target/shared/overlapping zeta ownership, texture/palette alias publication and real semaphore visibility
+PASS: resident D24 packed transfers: component CPU merges, padding, target/shared/overlapping zeta ownership, texture/palette alias publication and real semaphore visibility
+PASS: proven texture-diffuse combiner reduction matches generic shader: linear/Morton/DXT textures, alpha tests, bilinear/projective UV, swapped inputs/final identity; varying q retains fragment divide
+PASS: inactive/nonfinite texture coordinates ignored exactly by stage use; cube q and 2D z/q liveness, missing samplers and reference consumed-coordinate forwarding
+PASS: actual DXT5 cube decoder, padded stored mip face strides, immutable edits, bounds and cached/uncached stage-one directional draws
+PASS: real executor decoder + Vulkan sampled draws: padded linear ARGB, Morton ARGB, DXT1/3/5, repeat/mirror/clamp, bilinear, guest ARGB8888/RGB565 render-to-texture
+PASS: 65536 exact packed D24S8 GPU words, all depth bit positions/stencil byte values and float-control roundtrip
+PASS: native D24S8 exact packed depth/stencil transfers and resident-vs-roundtrip EQUAL/LESS decisions
+PASS: exact GPU depth/stencil copy completes pending source/destination, preserves both colors, restores depth/stencil tests and rejects extent mismatch
+PASS: write-tracked resident Vulkan color/depth, 100 unchanged draws, alias CPU edits, exact EQUAL visibility, pending GPU neighbor merge and protection-change fallback
+PASS: retained-resource control=1: 128 alternating-state draws 69.57ms, pipelines 128 geometry allocations 128; growth/reuse and LRU eviction preserve every RGBA byte
+PASS: retained-resource control=0: 128 alternating-state draws 43.30ms, pipelines 2 geometry allocations 1; growth/reuse and LRU eviction preserve every RGBA byte
+PASS: completed GPU timestamp samples cover every synchronous draw or command batch with exact submission/draw counts and host phase totals
+PASS: command batch control=1:130 changing-geometry draws 29.25ms, batch submissions=0, exact additive pixels and pending fence ownership
+PASS: completed GPU timestamp samples cover every synchronous draw or command batch with exact submission/draw counts and host phase totals
+PASS: command batch control=0:130 changing-geometry draws 1.36ms, batch submissions=3, exact additive pixels and pending fence ownership
+PASS: batched texture descriptors/immutable same-VA edits, pinned-budget fallback uploads, query/clear/CPU color/depth boundaries and LRU retirement
+PASS: alpha-free vs generic shaders preserve exact color/depth/stencil and visibility across disabled/reject/pass/disabled transitions; distinct cached alpha pipeline and no-alpha reuse
+PASS: RGBA8 clears, indexed quad coverage, interpolated triangle, post-draw clear, blend equations/factors/color masks, depth/stencil, persistent batches and selective clears, decoded NV2A adapter, alpha comparisons, face culling, ARGB texture upload/readback and sampled modulation, decoded textured batches, partial-channel clears, precise visibility queries, fragment combiners, guest CPU color imports, depth/stencil transfers, rectangular clears, per-eye projection, overlay effect shading (synthetic fixtures)
+[Vulkan] resizing surface 00000800: 4x4 pitch=16 bpp=4 -> 2x2 pitch=16 bpp=4
+[Vulkan] resizing surface 00000800: 2x2 pitch=16 bpp=4 -> 4x4 pitch=16 bpp=4
+[Vulkan] resizing surface 00000800: 4x4 pitch=16 bpp=4 -> 2x2 pitch=16 bpp=4
+[Vulkan] resizing surface 00000800: 2x2 pitch=16 bpp=4 -> 4x4 pitch=16 bpp=4
+[overlay] handgun: 372 triangles
+[Vulkan] resizing surface 00000800: 4x4 pitch=16 bpp=4 -> 2x2 pitch=16 bpp=4
+[Vulkan] resizing surface 00000800: 2x2 pitch=16 bpp=4 -> 4x4 pitch=16 bpp=4
+[Vulkan] resizing surface 00000800: 4x4 pitch=16 bpp=4 -> 2x2 pitch=16 bpp=4
+[Vulkan] resizing surface 00000800: 2x2 pitch=16 bpp=4 -> 4x4 pitch=16 bpp=4

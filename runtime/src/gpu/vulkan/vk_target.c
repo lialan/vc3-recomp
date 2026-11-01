@@ -14,7 +14,7 @@ typedef struct {
     VkPipelineDepthStencilStateCreateInfo depth;
     VkCullModeFlags cull;
     VkFrontFace front;
-    unsigned shader,fixed;
+    unsigned shader,fixed,alpha_shader;
 } PipelineKey;
 #define PIPELINE_SLOTS 32u
 #define BATCH_DRAWS 64u
@@ -44,6 +44,7 @@ struct ChVkTarget {
     VkPipelineCache pipeline_cache;
     uint64_t pipeline_clock;
     int reuse_resources;
+    int split_alpha;
     VkBuffer geometry;
     VkDeviceMemory geometry_memory;
     void *geometry_map;
@@ -69,6 +70,8 @@ struct ChVkTarget {
     float timestamp_period;
     uint32_t timestamp_bits;
     uint64_t timing_start,timing_gpu,timing_cpu,timing_calls;
+    ChVkTargetTimingStats timing_stats,batch_report;
+    uint64_t batch_report_start;
     int count_requested;
     uint64_t samples;
     struct { uint32_t alpha[3]; ChVkEffect effect; } push;
@@ -85,6 +88,32 @@ struct ChVkTarget {
 static uint64_t time_ns(void) {
     struct timespec t;clock_gettime(CLOCK_MONOTONIC,&t);
     return (uint64_t)t.tv_sec*1000000000u+t.tv_nsec;
+}
+static VkResult timestamp_elapsed(ChVkTarget *t,uint64_t *ns) {
+    uint64_t stamps[2];
+    VkResult r=vkGetQueryPoolResults(t->device,t->timing,0,2,sizeof stamps,stamps,sizeof(uint64_t),VK_QUERY_RESULT_64_BIT);
+    if(r!=VK_SUCCESS) return r;
+    uint64_t mask=t->timestamp_bits==64?UINT64_MAX:((UINT64_C(1)<<t->timestamp_bits)-1);
+    *ns=(uint64_t)(((stamps[1]-stamps[0])&mask)*t->timestamp_period);
+    return VK_SUCCESS;
+}
+void ch_vk_target_timing_stats(const ChVkTarget *t,ChVkTargetTimingStats *out) {
+    if(!out) return;
+    *out=t?t->timing_stats:(ChVkTargetTimingStats){0};
+    out->available=t && t->timing!=VK_NULL_HANDLE;
+}
+static void report_batch_timing(ChVkTarget *t,uint64_t now) {
+    if(!t->batch_report_start) t->batch_report_start=now;
+    if(now-t->batch_report_start<1000000000) return;
+    const ChVkTargetTimingStats *s=&t->timing_stats,*b=&t->batch_report;
+    fprintf(stderr,"[Vulkan batch GPU] %ux%u draws=%llu submissions=%llu GPU %.2fms host record %.2fms finish %.2fms (submit %.2fms wait %.2fms retire %.2fms)\n",
+        t->width,t->height,(unsigned long long)(s->batch_draws-b->batch_draws),
+        (unsigned long long)(s->batch_submissions-b->batch_submissions),
+        (s->batch_gpu_ns-b->batch_gpu_ns)/1e6,(s->batch_record_ns-b->batch_record_ns)/1e6,
+        (s->batch_finish_ns-b->batch_finish_ns)/1e6,(s->batch_submit_ns-b->batch_submit_ns)/1e6,
+        (s->batch_wait_ns-b->batch_wait_ns)/1e6,
+        (s->batch_retire_ns-b->batch_retire_ns)/1e6);
+    t->batch_report=*s;t->batch_report_start=now;
 }
 static int memory_type(VkPhysicalDevice gpu, uint32_t bits,
                        VkMemoryPropertyFlags flags, uint32_t *index) {
@@ -223,6 +252,11 @@ VkResult ch_vk_target_create_depth(VkPhysicalDevice physical, VkDevice device,
     t->family=family; t->physical=physical; t->device=device; t->queue=queue; t->width=width; t->height=height;
     const char *reuse=getenv("CHIHIRO_VULKAN_REUSE_RESOURCES");
     t->reuse_resources=!reuse || strcmp(reuse,"0");
+    const char *split=getenv("CHIHIRO_VULKAN_NOAT");
+    if(!split) split=getenv("VC3_VULKAN_NOAT");
+    /* Keep opt-in: the first Quest pair regressed and warm repeats show no
+     * benefit. A discard-free module is not automatically faster. */
+    t->split_alpha=split && atoi(split);
     t->depth_format=depth_format;
     t->bytes=(VkDeviceSize)width*height*4;
     VkResult result;
@@ -282,7 +316,8 @@ VkResult ch_vk_target_create_depth(VkPhysicalDevice physical, VkDevice device,
     VkFenceCreateInfo fence={.sType=VK_STRUCTURE_TYPE_FENCE_CREATE_INFO};
     TRY(vkCreateFence(device,&fence,NULL,&t->fence));
     const char *profile=getenv("CHIHIRO_VULKAN_PROFILE");
-    if(profile && atoi(profile)) {
+    const char *timestamps=getenv("CHIHIRO_VULKAN_GPU_TIMESTAMPS");
+    if(profile && atoi(profile) && (!timestamps || atoi(timestamps))) {
         uint32_t n=0;vkGetPhysicalDeviceQueueFamilyProperties(physical,&n,NULL);
         VkQueueFamilyProperties *properties=calloc(n,sizeof *properties);
         if(!properties) {result=VK_ERROR_OUT_OF_HOST_MEMORY;goto fail;}
@@ -305,6 +340,7 @@ VkResult ch_vk_target_finish(ChVkTarget *t) {
     if(!t || t->failed) return VK_ERROR_INITIALIZATION_FAILED;
     if(!t->pending) return VK_SUCCESS;
     VkResult result;
+    uint64_t finish_start=t->timing?time_ns():0;
     vkCmdEndRenderPass(t->command);
     VkImageMemoryBarrier barrier={.sType=VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
         .srcAccessMask=VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,.dstAccessMask=VK_ACCESS_TRANSFER_READ_BIT,
@@ -312,24 +348,45 @@ VkResult ch_vk_target_finish(ChVkTarget *t) {
         .srcQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED,.dstQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED,
         .image=t->image,.subresourceRange={VK_IMAGE_ASPECT_COLOR_BIT,0,1,0,1}};
     vkCmdPipelineBarrier(t->command,VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,VK_PIPELINE_STAGE_TRANSFER_BIT,0,0,NULL,0,NULL,1,&barrier);
+    if(t->timing) vkCmdWriteTimestamp(t->command,VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,t->timing,1);
     TRY(vkEndCommandBuffer(t->command));
     VkSubmitInfo submit={.sType=VK_STRUCTURE_TYPE_SUBMIT_INFO,.commandBufferCount=1,.pCommandBuffers=&t->command};
+    uint64_t submit_start=t->timing?time_ns():0;
     TRY(vkQueueSubmit(t->queue,1,&submit,t->fence));
+    uint64_t wait_start=t->timing?time_ns():0;
+    if(t->timing) t->timing_stats.batch_submit_ns+=wait_start-submit_start;
     TRY(vkWaitForFences(t->device,1,&t->fence,VK_TRUE,5000000000ULL));
+    if(t->timing) {
+        t->timing_stats.batch_wait_ns+=time_ns()-wait_start;
+        uint64_t elapsed;TRY(timestamp_elapsed(t,&elapsed));
+        t->timing_stats.batch_gpu_ns+=elapsed;
+        t->timing_stats.batch_draws+=t->pending;t->timing_stats.batch_submissions++;
+    }
     t->layout=VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;t->resource_stats.batch_submissions++;
     t->pending=0;t->geometry_used=0;
     for(unsigned i=0;i<PIPELINE_SLOTS;i++) t->pipelines[i].set_used=0;
-    retire_samples(t);return VK_SUCCESS;
+    uint64_t retire_start=t->timing?time_ns():0;
+    retire_samples(t);
+    if(t->timing) {
+        uint64_t now=time_ns();t->timing_stats.batch_retire_ns+=now-retire_start;
+        t->timing_stats.batch_finish_ns+=now-finish_start;report_batch_timing(t,now);
+    }
+    return VK_SUCCESS;
 fail:
     t->failed=1;vkQueueWaitIdle(t->queue);t->pending=0;
     retire_samples(t);return result;
 }
 static VkResult record_batch(ChVkTarget *t,VkBuffer geometry,VkDeviceSize index_offset,uint32_t index_count) {
     VkResult result;
+    uint64_t record_start=t->timing?time_ns():0;
     if(!t->pending) {
         TRY(vkResetCommandBuffer(t->command,0));TRY(vkResetFences(t->device,1,&t->fence));
         VkCommandBufferBeginInfo begin={.sType=VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,.flags=VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT};
         TRY(vkBeginCommandBuffer(t->command,&begin));
+        if(t->timing) {
+            vkCmdResetQueryPool(t->command,t->timing,0,2);
+            vkCmdWriteTimestamp(t->command,VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,t->timing,0);
+        }
         VkImageMemoryBarrier barriers[2]={
             {.sType=VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,.srcAccessMask=VK_ACCESS_TRANSFER_READ_BIT,
                 .dstAccessMask=VK_ACCESS_COLOR_ATTACHMENT_READ_BIT|VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
@@ -358,6 +415,7 @@ static VkResult record_batch(ChVkTarget *t,VkBuffer geometry,VkDeviceSize index_
     vkCmdBindIndexBuffer(t->command,geometry,index_offset,VK_INDEX_TYPE_UINT16);
     vkCmdDrawIndexed(t->command,index_count,1,0,0,0);
     t->pending++;t->resource_stats.batch_draws++;
+    if(t->timing) t->timing_stats.batch_record_ns+=time_ns()-record_start;
     return VK_SUCCESS;
 fail:
     t->failed=1;return result;
@@ -468,20 +526,22 @@ static VkResult render_read(ChVkTarget *t, const float rgba[4], uint32_t clear_f
     TRY(vkQueueSubmit(t->queue,1,&submit,t->fence));
     TRY(vkWaitForFences(t->device,1,&t->fence,VK_TRUE,5000000000ULL));
     if(t->timing) {
-        uint64_t stamps[2];
-        TRY(vkGetQueryPoolResults(t->device,t->timing,0,2,sizeof stamps,stamps,sizeof(uint64_t),VK_QUERY_RESULT_64_BIT));
-        uint64_t mask=t->timestamp_bits==64?UINT64_MAX:((UINT64_C(1)<<t->timestamp_bits)-1);
+        uint64_t elapsed;TRY(timestamp_elapsed(t,&elapsed));
         uint64_t now=time_ns();
-        t->timing_gpu+=(uint64_t)(((stamps[1]-stamps[0])&mask)*t->timestamp_period);
+        t->timing_gpu+=elapsed;
+        t->timing_stats.sync_render_gpu_ns+=elapsed;
+        t->timing_stats.sync_render_host_ns+=now-cpu_start;t->timing_stats.sync_render_submissions++;
         t->timing_cpu+=now-cpu_start;t->timing_calls++;
         if(!t->timing_start) t->timing_start=cpu_start;
         if(now-t->timing_start>=1000000000) {
             fprintf(stderr,"[Vulkan GPU] %ux%u %llu synchronous submissions (excludes command batches): GPU %.2fms host record/submit/wait %.2fms\n",
                 t->width,t->height,(unsigned long long)t->timing_calls,t->timing_gpu/1e6,t->timing_cpu/1e6);
-            fprintf(stderr,"[Vulkan resources] %ux%u: pipelines builds=%llu hits=%llu evictions=%llu geometry allocations=%llu capacity=%lluKiB\n",
+            fprintf(stderr,"[Vulkan resources] %ux%u: pipelines builds=%llu hits=%llu evictions=%llu geometry allocations=%llu capacity=%lluKiB alpha-free builds/hits=%llu/%llu\n",
                 t->width,t->height,(unsigned long long)t->resource_stats.pipeline_builds,
                 (unsigned long long)t->resource_stats.pipeline_hits,(unsigned long long)t->resource_stats.pipeline_evictions,
-                (unsigned long long)t->resource_stats.geometry_allocations,(unsigned long long)(t->geometry_capacity/1024));
+                (unsigned long long)t->resource_stats.geometry_allocations,(unsigned long long)(t->geometry_capacity/1024),
+                (unsigned long long)t->resource_stats.no_alpha_pipeline_builds,
+                (unsigned long long)t->resource_stats.no_alpha_pipeline_hits);
             t->timing_start=now;t->timing_gpu=t->timing_cpu=t->timing_calls=0;
         }
     }
@@ -520,7 +580,7 @@ VkResult ch_vk_target_clear_read(ChVkTarget *t, const float rgba[4],
     void *pixels, VkDeviceSize bytes) {
     return render_read(t,rgba,7,1.0f,0,VK_NULL_HANDLE,0,0,pixels,bytes);
 }
-static VkResult create_pipeline(ChVkTarget *t, const VkPipelineColorBlendAttachmentState *blend, const float constants[4], const VkPipelineDepthStencilStateCreateInfo *depth_state, VkCullModeFlags cull, VkFrontFace front, const ChVkTexture *texture) {
+static VkResult create_pipeline(ChVkTarget *t, const VkPipelineColorBlendAttachmentState *blend, const float constants[4], const VkPipelineDepthStencilStateCreateInfo *depth_state, VkCullModeFlags cull, VkFrontFace front, const ChVkTexture *texture,int alpha_shader) {
     VkResult result;
     VkShaderModule vert=VK_NULL_HANDLE, frag=VK_NULL_HANDLE;
     if(!t->pass) {
@@ -556,8 +616,13 @@ static VkResult create_pipeline(ChVkTarget *t, const VkPipelineColorBlendAttachm
     VkShaderModuleCreateInfo shader={.sType=VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
         .codeSize=t->fixed?sizeof(color_fixed_spv):sizeof(color_vert_spv),.pCode=t->fixed?color_fixed_spv:color_vert_spv};
     TRY(vkCreateShaderModule(t->device,&shader,NULL,&vert));
-    shader.codeSize=t->effect?sizeof(color_effect_spv):t->rc?sizeof(color_combiner_spv):texture?sizeof(color_textured_spv):sizeof(color_frag_spv);
-    shader.pCode=t->effect?color_effect_spv:t->rc?color_combiner_spv:texture?color_textured_spv:color_frag_spv;
+    if(alpha_shader) {
+        shader.codeSize=t->effect?sizeof(color_effect_spv):t->rc?sizeof(color_combiner_spv):texture?sizeof(color_textured_spv):sizeof(color_frag_spv);
+        shader.pCode=t->effect?color_effect_spv:t->rc?color_combiner_spv:texture?color_textured_spv:color_frag_spv;
+    } else {
+        shader.codeSize=t->effect?sizeof(color_effect_noat_spv):t->rc?sizeof(color_combiner_noat_spv):texture?sizeof(color_textured_noat_spv):sizeof(color_frag_noat_spv);
+        shader.pCode=t->effect?color_effect_noat_spv:t->rc?color_combiner_noat_spv:texture?color_textured_noat_spv:color_frag_noat_spv;
+    }
     TRY(vkCreateShaderModule(t->device,&shader,NULL,&frag));
     VkPipelineShaderStageCreateInfo stages[]={
         {.sType=VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,.stage=VK_SHADER_STAGE_VERTEX_BIT,.module=vert,.pName="main"},
@@ -726,6 +791,7 @@ static VkResult draw_full(ChVkTarget *t, const float rgba[4],
     key.blend=blend; memcpy(key.constants,constants,sizeof constants);
     key.depth=depth_state; key.cull=cull; key.front=front;
     key.shader=effect?3:rc?2:texture?1:0;key.fixed=fixed!=NULL;
+    key.alpha_shader=!!state->alpha_test_enable || !t->split_alpha;
     PipelineResources *entry=NULL,*oldest=NULL;
     unsigned capacity=t->reuse_resources?PIPELINE_SLOTS:1;
     for(unsigned i=0;i<capacity;i++) {
@@ -733,16 +799,17 @@ static VkResult draw_full(ChVkTarget *t, const float rgba[4],
         if(p->pipeline && !memcmp(&key,&p->key,sizeof key)) {entry=p;break;}
         if(!oldest || p->used<oldest->used) oldest=p;
     }
-    if(entry) t->resource_stats.pipeline_hits++;
+    if(entry) {t->resource_stats.pipeline_hits++;if(!key.alpha_shader) t->resource_stats.no_alpha_pipeline_hits++;}
     else {
         entry=oldest;
         if(entry->pipeline) {
             TRY(ch_vk_target_finish(t));t->resource_stats.pipeline_evictions++;
         }
         destroy_pipeline(t,entry);t->active_pipeline=entry;
-        result=create_pipeline(t,&blend,constants,&depth_state,cull,front,texture);
+        result=create_pipeline(t,&blend,constants,&depth_state,cull,front,texture,key.alpha_shader);
         if(result!=VK_SUCCESS) return result;
         entry->key=key;t->resource_stats.pipeline_builds++;
+        if(!key.alpha_shader) t->resource_stats.no_alpha_pipeline_builds++;
     }
     t->active_pipeline=entry;entry->used=++t->pipeline_clock;
     VkDeviceSize header=t->fixed?(256+sizeof(*t->fixed)+255)/256*256:t->rc?256:0;
