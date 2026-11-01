@@ -1,0 +1,27 @@
+[Vulkan] completed frame 1: 640x480, guest=80408000
+[Vulkan] completed frame 60: 640x480, guest=80534000
+[Vulkan] completed frame 120: 640x480, guest=80660000
+[Vulkan] completed frame 180: 640x480, guest=80534000
+[Vulkan] completed frame 240: 640x480, guest=80408000
+[Vulkan] completed frame 300: 640x480, guest=80660000
+[Vulkan] completed frame 360: 640x480, guest=80660000
+[Vulkan] completed frame 420: 640x480, guest=80660000
+[Vulkan] completed frame 480: 640x480, guest=80660000
+[Vulkan] completed frame 540: 640x480, guest=80660000
+[Vulkan] completed frame 600: 640x480, guest=80660000
+[Vulkan] completed frame 660: 640x480, guest=80660000
+[Vulkan] completed frame 720: 640x480, guest=80660000
+[D3D] BlockOnTime(0x00000D59) timed out: head 0x00000D5D sem 0x00000D57
+[D3D] BlockOnTime(0x00000D61) timed out: head 0x00000D75 sem 0x00000D5B
+[D3D] BlockOnTime(0x00000D6B) timed out: head 0x00000D7D sem 0x00000D5B
+[D3D] BlockOnTime(0x00000D75) timed out: head 0x00000D87 sem 0x00000D61
+[D3D] BlockOnTime(0x00000D7D) timed out: head 0x00000D91 sem 0x00000D65
+[D3D] BlockOnTime(0x00000D79) timed out: head 0x00000D95 sem 0x00000D6B
+[D3D] BlockOnTime(0x00000D87) timed out: head 0x00000D9B sem 0x00000D6F
+[D3D] BlockOnTime(0x00000D91) timed out: head 0x00000DA5 sem 0x00000D75
+[Vulkan] completed frame 780: 640x480, guest=80660000
+[Vulkan] completed frame 840: 640x480, guest=80408000
+[Vulkan] rejected draw surface=80C28000 size=640x480 vertices=6 ext=1 rc=1 stages=00000001
+[Vulkan] rejected state raw=0 alpha=33693696/0001 blend=1/0302/0001/0000 cull=0/0405/181028 depth=0/1/0000 stencil=0/0000/241000/0000/0000
+[Vulkan] texture0 address=808D0000 size=640x480 format=1E levels=1 filter=02022000 address=3/3 cube=0
+[Vulkan] fatal draw: VkResult=-8, frame=861

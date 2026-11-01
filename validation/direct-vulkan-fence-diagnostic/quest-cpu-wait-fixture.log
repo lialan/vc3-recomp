@@ -4,4 +4,5 @@ PASS: actual BlockOnTime strict wait retains a slow GPU fence, preserves wraparo
 [D3D] BlockOnTime(0x00000020) awaiting actual GPU completion beyond 250 ms: head 0x00000020 sem 0x00000000
 [D3D] BlockOnTime(0xFFFFFFF8) awaiting actual GPU completion beyond 250 ms: head 0x00000010 sem 0xFFFFFFF0
 [D3D] BlockOnTime(0x00000020) awaiting actual GPU completion beyond 250 ms: head 0x00000020 sem 0x00000000
+[D3D] BlockOnTime(0x00000020) awaiting actual GPU completion beyond 250 ms: head 0x00000020 sem 0x00000000
 [D3D] BlockOnTime(0x00000020) timed out: head 0x00000020 sem 0x00000000

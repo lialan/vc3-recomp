@@ -36,6 +36,13 @@ int main(void) {
     setup(0x10,0xfffffff8,0xfffffff0);completion=8;vc3_d3d_block_on_time();
     if(clock_ns<release_at || MEM32(0x600)!=8 || kicks || g_esp!=0x100c) return 3;
     setup(0x30,0x20,0x20);vc3_d3d_block_on_time();if(clock_ns!=1000 || kicks) return 4;
+    setup(0x20,0x20,0);strict=NULL;vc3_d3d_block_on_time();
+#ifdef CHIHIRO_RENDERER_VULKAN
+    if(clock_ns<release_at || MEM32(0x600)!=0x20) return 7;
+#else
+    if(clock_ns>=release_at || MEM32(0x600)!=0) return 7;
+#endif
+    strict="1";
     pid_t child=fork();if(child<0) return 5;
     if(!child) {
         struct rlimit limit={0,0};setrlimit(RLIMIT_CORE,&limit);

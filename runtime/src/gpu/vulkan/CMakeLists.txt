@@ -65,6 +65,7 @@ if(CHIHIRO_VULKAN_TESTS)
     target_include_directories(vulkan_fence_wait_test PRIVATE "${CH_VK_ROOT}/runtime/src"
         "${XBOXRECOMP_DIR}/templates/runtime" "${XBOXRECOMP_DIR}/src/platform")
     target_compile_options(vulkan_fence_wait_test PRIVATE -Wall -Wextra -Werror)
+    target_compile_definitions(vulkan_fence_wait_test PRIVATE CHIHIRO_RENDERER_VULKAN=1)
     add_executable(vulkan_defer_flush_test "${CH_VK_ROOT}/tools/vulkan-defer-flush-test.c"
         "${XBOXRECOMP_DIR}/src/kernel/nv2a_pb_defer.c")
     target_include_directories(vulkan_defer_flush_test PRIVATE "${XBOXRECOMP_DIR}/src/kernel"

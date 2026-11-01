@@ -1,0 +1,7 @@
+{
+  "binary_sha256": "70be48bbf505745eb016dd693419c8044a84505eb66c6ae9ab1de1ba7a247935",
+  "same_binary": true,
+  "control_exit_code": -6,
+  "strict_exit_code": "timeout",
+  "scope": "Control reproduces malformed state at frame 861; strict remains incomplete at the external timeout after at least 1020 frames."
+}

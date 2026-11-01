@@ -60,7 +60,11 @@ void vc3_d3d_block_on_time(void)
     uint64_t deadline, start;
     int slept = 0;
     const char *strict_env = ch_env("STRICT_GPU_FENCES");
+#ifdef CHIHIRO_RENDERER_VULKAN
+    int strict = !strict_env || atoi(strict_env) != 0;
+#else
     int strict = strict_env && atoi(strict_env) != 0;
+#endif
     int reported_slow = 0;
     static unsigned slow_reports;
 
@@ -101,7 +105,7 @@ void vc3_d3d_block_on_time(void)
             if (s_timeouts++ < 8)
                 fprintf(stderr, "[D3D] BlockOnTime(0x%08X) timed out: head 0x%08X "
                         "sem 0x%08X\n", time, head, MEM32(sem));
-            /* An experimental strict wait must never tell the SDK that an
+            /* A strict wait must never tell the SDK that an
              * incomplete fence is reusable. Keep the legacy bound as the
              * control; a stuck strict wait terminates with diagnostics. */
             if (strict) abort();

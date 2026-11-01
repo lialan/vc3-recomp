@@ -505,10 +505,12 @@ the next investigation; they are not accepted as new blend/depth modes.
 The preceding color-layout rejection is also still open. The timeouts are a
 correlation, not yet proof that fence reuse caused the malformed state.
 
-`CHIHIRO_STRICT_GPU_FENCES=1` is an opt-in experiment: BlockOnTime waits for
+`CHIHIRO_STRICT_GPU_FENCES=1` selects strict completion: BlockOnTime waits for
 the actual semaphore instead of returning after 250 ms. A 30-second watchdog
-aborts a stuck wait rather than reporting successful completion. The default
-retains the existing 250-ms control on both renderers. This is a completion
+aborts a stuck wait rather than reporting successful completion. Following the
+same-binary comparison below, Vulkan now defaults to strict completion;
+OpenGL retains the existing 250-ms default. Explicit `0` retains the legacy
+control for A/B tests. This is a completion
 diagnostic, not an FPS cap/pacing adjustment or performance acceptance.
 
 The actual BlockOnTime implementation passes Mac and Quest CPU fixtures with
@@ -535,3 +537,14 @@ against a 64-MiB byte budget. The 64-entry limit can evict small scene textures
 while much of the byte budget remains free. GL uses 2,048 texture slots. A
 capacity experiment should retain byte/pin bounds and measure upload/eviction
 counts on the same scene, independently of strict-fence correctness.
+
+The same-binary 250-ms control reproduces malformed state and aborts at frame
+861: `alpha_test_enable=33693696`, `alpha_func=0001`, and command-like cull/
+stencil values in the postprocess batch. Both reports identify the identical
+executable hash and the same timed input scenario. The strict run actually
+waits beyond 250 ms, reaches at least frame 1,020 without malformed-state
+rejection and yields the visible city capture. This supports enforcing actual
+completion as a correctness requirement; it does not establish full-game or
+performance acceptance. Native Vulkan now selects strict completion by default
+while the GL default remains unchanged. CPU fixtures explicitly cover each
+renderer default and the `0`/`1` overrides, in addition to ABI/wrap/watchdog.
