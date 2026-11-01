@@ -1,4 +1,5 @@
 #include "vk_nv2a.h"
+#include "../nv2a_texture_cube.h"
 #include "vk_guest_layout.h"
 #include "../nv2a_combiner_simple.h"
 #include <math.h>
@@ -55,15 +56,30 @@ VkResult ch_vk_nv2a_clear_read(ChVkTarget *t, const Nv2aSurface *s,
         ((flags & 0x20)?0x100:0)|((flags & 0x40)?1:0)|((flags & 0x80)?0x1000000:0)};
     return ch_vk_target_draw_state_read(t,NULL,quad,4,indices,6,&state,pixels,bytes);
 }
+int ch_vk_decode_texture_faces(const Nv2aTexture *tx,ChVkDecodeTexture decode,uint32_t *argb) {
+    if(!tx || !decode || !argb) return 0;
+    if(!tx->cube) return decode(tx,argb);
+    size_t stride=ch_nv2a_cube_face_bytes(tx),pixels=(size_t)tx->width*tx->height;
+    if(!stride || (uint64_t)tx->offset+stride*6>UINT64_C(0x100000000)) return 0;
+    for(unsigned f=0;f<6;f++) {
+        Nv2aTexture face=*tx;face.cube=0;face.levels=1;face.offset+=(uint32_t)(stride*f);
+        if(!decode(&face,argb+pixels*f)) return 0;
+    }
+    return 1;
+}
 static VkResult sample_image(ChVkTarget *target,const Nv2aTexture *tx,ChVkDecodeTexture decode,
     ChVkSampleResolver resolve,void *context,ChVkTexture **out,ChVkSampleImage *lease) {
     ChVkSampleImage image={0};
     VkResult result=resolve?resolve(context,tx,&image):VK_NOT_READY;
     *lease=image;
     if(result==VK_SUCCESS && image.gpu) {
-        if(image.argb || !image.width || !image.height) return VK_ERROR_INITIALIZATION_FAILED;
+        if(image.argb || !image.width || !image.height || ch_vk_texture_is_cube(image.gpu)!=!!tx->cube)
+            return VK_ERROR_INITIALIZATION_FAILED;
         *out=image.gpu;return VK_SUCCESS;
     }
+    /* Existing CPU resolvers expose a single plane. Cube faces retain the
+     * reference guest-memory decoder unless the resolver supplies a GPU cube. */
+    if(result==VK_SUCCESS && tx->cube) result=VK_NOT_READY;
     if(result==VK_SUCCESS) {
         if(!image.argb || !image.width || !image.height || (uint64_t)image.width*image.height>SIZE_MAX/4)
             return VK_ERROR_INITIALIZATION_FAILED;
@@ -73,10 +89,12 @@ static VkResult sample_image(ChVkTarget *target,const Nv2aTexture *tx,ChVkDecode
     }
     if(result!=VK_NOT_READY) return result;
     if(!decode) return VK_ERROR_FEATURE_NOT_PRESENT;
-    uint32_t *argb=malloc((size_t)tx->width*tx->height*4);
+    if((uint64_t)tx->width*tx->height>SIZE_MAX/4/(tx->cube?6:1)) return VK_ERROR_OUT_OF_HOST_MEMORY;
+    uint32_t *argb=malloc((size_t)tx->width*tx->height*4*(tx->cube?6:1));
     if(!argb) return VK_ERROR_OUT_OF_HOST_MEMORY;
-    if(!decode(tx,argb)) { free(argb); return VK_ERROR_FORMAT_NOT_SUPPORTED; }
-    result=ch_vk_target_upload_texture_mips(target,tx->width,tx->height,argb,
+    if(!ch_vk_decode_texture_faces(tx,decode,argb)) { free(argb); return VK_ERROR_FORMAT_NOT_SUPPORTED; }
+    if(tx->cube) result=ch_vk_target_upload_cube(target,tx->width,argb,out);
+    else result=ch_vk_target_upload_texture_mips(target,tx->width,tx->height,argb,
         ch_nv2a_texture_mip_levels(tx,1),out);
     free(argb); return result;
 }
@@ -106,7 +124,7 @@ static VkResult draw_decoded(ChVkTarget *t, const Nv2aSurface *s,
         }
     }
     const char *force=getenv("CHIHIRO_VULKAN_FORCE_COMBINER");
-    int modulate=b->ext && b->stage[0] && (!force || !atoi(force))?
+    int modulate=b->ext && b->stage[0] && !b->stage[0]->cube && (!force || !atoi(force))?
         ch_nv2a_combiner_modulate(b->rc):0;
     /* Division before interpolation is equivalent only for a constant q.
      * Varying projective q must retain the general fragment-stage divide. */
@@ -206,7 +224,7 @@ static VkResult draw_decoded(ChVkTarget *t, const Nv2aSurface *s,
         result=sample_image(t,tx,decode,resolve,context,&stage_images[st],&leases[st]);
         if(result!=VK_SUCCESS) goto done;
         result=leases[st].gpu?VK_SUCCESS:ch_vk_texture_set_sampler(stage_images[st],&sm); if(result!=VK_SUCCESS) goto done;
-        if(!d3d8_format_is_swizzled(tx->color) && !d3d8_format_dxt_block_bytes(tx->color))
+        if(!tx->cube && !d3d8_format_is_swizzled(tx->color) && !d3d8_format_dxt_block_bytes(tx->color))
             for(uint32_t i=0;i<b->count;i++) { v[i].xy[11+st*4]/=tx->width; v[i].xy[12+st*4]/=tx->height; }
     }
     uint64_t textures_done=profile?profile_us():0;

@@ -43,7 +43,11 @@ static struct Surface *surface(const Nv2aSurface *s,const Nv2aRenderState *rs) {
     if(!active || !s || !rs) fatal(VK_ERROR_INITIALIZATION_FAILED,"surface arguments");
     ChVkGuestLayout layout;
     VkResult layout_result=ch_vk_guest_layout(rs->surface_format,s->width,s->height,s->pitch,s->bytes_per_pixel,&layout);
-    if(layout_result!=VK_SUCCESS) fatal(layout_result,"color surface layout");
+    if(layout_result!=VK_SUCCESS) {
+        fprintf(stderr,"[Vulkan] rejected surface address=%08X size=%ux%u pitch=%u bpp=%u format=%08X aa=%u/%u\n",
+            s->color_va,s->width,s->height,s->pitch,s->bytes_per_pixel,rs->surface_format,s->aa_sx,s->aa_sy);
+        fatal(layout_result,"color surface layout");
+    }
     if(active->zeta) {
         VkResult r=ch_vk_depth_resident_check_color(active->zeta,s->color_va,(size_t)layout.span);
         if(r!=VK_SUCCESS) fatal(r,"resident depth/color alias");

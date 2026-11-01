@@ -440,3 +440,38 @@ new diagnostic prints raw-batch presence, alpha/blend/cull/depth/stencil state
 on future rejected draws. Its frame-1238 capture shows the communication
 panel, not a verified combat scene. The next bounded run uses timed coin/start
 input and explicit `AUTOAIM=0.2,0.5` to select the first mission.
+
+## Directional cube textures
+
+The timed mission probe reaches a real skinned 3D draw at frame 757 with a
+64x64 DXT5 cube on combiner stage one (`stage_program=00000061`). Native
+Vulkan now supports cube-compatible six-layer images, cube views and typed
+cube descriptors on all four combiner stages. Directional sampling uses XYZ,
+without projecting it as 2D UV. Missing 2D and cube descriptors use separate
+valid white resources. Cube stages retain the general combiner shader rather
+than entering the 2D modulation reduction.
+
+OpenGL and Vulkan share `nv2a_texture_cube.h` for the stored face stride:
+each full guest mip chain is padded to 128 bytes, in +X/-X/+Y/-Y/+Z/-Z order.
+Both decode only each face's level zero and use linear/clamped cube sampling.
+The native cache checks the complete six-face encoded footprint, validates
+guest bounds, and retains immutable old cubes while changed faces are uploaded.
+Uncached draws decode/upload six faces directly. A CPU resolver's single plane
+does not substitute for six faces: it falls back to the guest cube decoder.
+
+Actual Quest GLES/Vulkan comparisons pass six face orientations, interpolated
+directions, shared edges and corners: eight cases are byte-identical and two
+corner cases differ by at most one UNORM step. A real executor DXT5 decoder
+test covers padded stored mip-chain strides, all six decoded face colors,
+changed-face invalidation while an old cube remains pinned, out-of-bounds
+rejection, and cached/uncached stage-one draws. The existing renderer suite
+also passes. See `validation/direct-vulkan-cubes/`.
+
+A subsequent mission replay stops on `stage_program=00001821`, whose stage
+two requests mode 6. The GL fragment-stage helper returns zero for modes above
+4; native validation still rejects them. Porting that existing reference
+behavior is the next compatibility step. A separate run stopped on an invalid
+color layout at frame 460, so a surface-description diagnostic has been added;
+that rejection has not been declared resolved. Full mission rendering and
+Quest combat performance remain open. The cube APK build/import audit passes;
+the production candidate has not yet been installed for a full game run.

@@ -78,6 +78,7 @@ extern void vc3_quest_frame(GLuint fbo, int pw, int ph, int eyes, int lw, int lh
 
 #include "nv2a_backend.h"
 #include "nv2a_texture_mips.h"
+#include "nv2a_texture_cube.h"
 #include "gl_texdec.h"
 #include "nv2a_vsh_glsl.h"
 #include "nv2a_vsh_interp.h"
@@ -3120,34 +3121,10 @@ static uint64_t hash_bytes(const uint8_t *p, size_t n)
     return h;
 }
 
-/* Bytes of one w x h level of a swizzled or DXT texture. */
-static size_t level_bytes(uint32_t color, uint32_t w, uint32_t h)
-{
-    uint32_t bb = d3d8_format_dxt_block_bytes(color);
-    if (bb)
-        return (size_t)((w + 3) / 4) * ((h + 3) / 4) * bb;
-    switch (color) {
-    case 0x00: case 0x01: case 0x0B: case 0x13: case 0x19: case 0x1F:
-        return (size_t)w * h;
-    case 0x02: case 0x03: case 0x04: case 0x05: case 0x10: case 0x11:
-    case 0x1A: case 0x1C: case 0x1D: case 0x24: case 0x25:
-        return (size_t)w * h * 2;
-    default:
-        return (size_t)w * h * 4;
-    }
-}
-
 /* One cube face: its whole mip chain, padded to 128 bytes. */
 static size_t cube_face_bytes(const Nv2aTexture *t)
 {
-    uint32_t w = t->width, h = t->height, l, levels = t->levels ? t->levels : 1;
-    size_t n = 0;
-    for (l = 0; l < levels; l++) {
-        n += level_bytes(t->color, w, h);
-        w = w > 1 ? w / 2 : 1;
-        h = h > 1 ? h / 2 : 1;
-    }
-    return (n + 127) & ~(size_t)127;
+    return ch_nv2a_cube_face_bytes(t);
 }
 
 /* 64 slices of 16 bytes spread over the texture: cheap enough for every

@@ -1,0 +1,12 @@
+[Vulkan] completed frame 1: 640x480, guest=80408000
+[Vulkan] completed frame 60: 640x480, guest=80534000
+[Vulkan] completed frame 120: 640x480, guest=80660000
+[Vulkan] completed frame 180: 640x480, guest=80534000
+[Vulkan] completed frame 240: 640x480, guest=80408000
+[INPUT] auto coin at 30.0s
+[INPUT] auto start at 33.0s
+[Vulkan] completed frame 300: 640x480, guest=80660000
+[INPUT] auto start at 35.0s
+[Vulkan] completed frame 360: 640x480, guest=80660000
+[Vulkan] completed frame 420: 640x480, guest=80660000
+[Vulkan] fatal color surface layout: VkResult=-3, frame=460

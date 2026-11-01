@@ -14,6 +14,7 @@ layout(location=1) in vec2 uv;
 #include "combiner.glsl"
 layout(std430,set=0,binding=1) readonly buffer Combiner { ChRc rc; uint pad[2]; vec4 fog_color; uvec4 stage_on; } params;
 layout(set=0,binding=0) uniform sampler2D stage_images[4];
+layout(set=0,binding=2) uniform samplerCube cube_images[4];
 layout(location=2) in vec4 spec;
 layout(location=3) in float fog;
 layout(location=4) in vec4 tc[4];
@@ -33,6 +34,12 @@ void main() {
             float q=mode==3 || tc[i].w==0?1:tc[i].w;
             vec2 uv=tc[i].xy/q;
             if(params.stage_on[i]==0) texels[i]=vec4(1);
+            else if((params.stage_on[i]&2u)!=0) {
+                if(i==0) texels[i]=texture(cube_images[0],tc[i].xyz);
+                else if(i==1) texels[i]=texture(cube_images[1],tc[i].xyz);
+                else if(i==2) texels[i]=texture(cube_images[2],tc[i].xyz);
+                else texels[i]=texture(cube_images[3],tc[i].xyz);
+            }
             else if(i==0) texels[i]=texture(stage_images[0],uv);
             else if(i==1) texels[i]=texture(stage_images[1],uv);
             else if(i==2) texels[i]=texture(stage_images[2],uv);

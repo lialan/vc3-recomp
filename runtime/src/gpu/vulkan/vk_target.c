@@ -22,7 +22,7 @@ struct ChVkTarget {
     VkImageView view;
     VkFramebuffer framebuffer;
     const ChVkTexture *const *stage_images;
-    ChVkTexture *dummy;
+    ChVkTexture *dummy,*dummy_cube;
     const Nv2aCombiner *rc;
     VkDeviceSize vertex_offset;
     VkDescriptorSetLayout descriptor_layout;
@@ -89,6 +89,7 @@ void ch_vk_target_destroy(ChVkTarget *t) {
     if(t->view) vkDestroyImageView(t->device,t->view,NULL);
     if(t->pass) vkDestroyRenderPass(t->device,t->pass,NULL);
     ch_vk_texture_destroy(t->dummy);
+    ch_vk_texture_destroy(t->dummy_cube);
     if(t->queries) vkDestroyQueryPool(t->device,t->queries,NULL);
     if(t->timing) vkDestroyQueryPool(t->device,t->timing,NULL);
     if(t->fence) vkDestroyFence(t->device,t->fence,NULL);
@@ -422,13 +423,14 @@ static VkResult create_pipeline(ChVkTarget *t, const VkPipelineColorBlendAttachm
         .pushConstantRangeCount=1,.pPushConstantRanges=&alpha_range};
     t->textured=texture!=NULL || t->rc!=NULL;
     if(texture || t->rc) {
-        VkDescriptorSetLayoutBinding bindings[2]={
+        VkDescriptorSetLayoutBinding bindings[3]={
             {.binding=0,.descriptorType=VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,.descriptorCount=t->rc?4:1,.stageFlags=VK_SHADER_STAGE_FRAGMENT_BIT},
-            {.binding=1,.descriptorType=VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,.descriptorCount=1,.stageFlags=VK_SHADER_STAGE_FRAGMENT_BIT}};
+            {.binding=1,.descriptorType=VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,.descriptorCount=1,.stageFlags=VK_SHADER_STAGE_FRAGMENT_BIT},
+            {.binding=2,.descriptorType=VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,.descriptorCount=4,.stageFlags=VK_SHADER_STAGE_FRAGMENT_BIT}};
         VkDescriptorSetLayoutCreateInfo dsl={.sType=VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
-            .bindingCount=t->rc?2:1,.pBindings=bindings};
+            .bindingCount=t->rc?3:1,.pBindings=bindings};
         TRY(vkCreateDescriptorSetLayout(t->device,&dsl,NULL,&t->descriptor_layout));
-        VkDescriptorPoolSize sizes[2]={{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,t->rc?4:1},{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,1}};
+        VkDescriptorPoolSize sizes[2]={{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,t->rc?8:1},{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,1}};
         VkDescriptorPoolCreateInfo pool={.sType=VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
             .maxSets=1,.poolSizeCount=t->rc?2:1,.pPoolSizes=sizes};
         TRY(vkCreateDescriptorPool(t->device,&pool,NULL,&t->descriptor_pool));
@@ -458,15 +460,18 @@ fail:
 static void update_images(ChVkTarget *t,const ChVkTexture *texture)
 {
     if(!texture && !t->rc) return;
-    VkDescriptorImageInfo images[4];
+    VkDescriptorImageInfo images[4],cubes[4];
     unsigned count=t->rc?4:1;
-    for(unsigned i=0;i<count;i++)
-        images[i]=ch_vk_texture_descriptor(t->rc?
-            (t->stage_images && t->stage_images[i]?t->stage_images[i]:t->dummy):texture);
+    for(unsigned i=0;i<count;i++) {
+        const ChVkTexture *stage=t->rc?(t->stage_images?t->stage_images[i]:NULL):texture;
+        images[i]=ch_vk_texture_descriptor(stage && !ch_vk_texture_is_cube(stage)?stage:t->dummy);
+        if(t->rc) cubes[i]=ch_vk_texture_descriptor(ch_vk_texture_is_cube(stage)?stage:t->dummy_cube);
+    }
     VkWriteDescriptorSet write={.sType=VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
         .dstSet=t->descriptor_set,.dstBinding=0,.descriptorCount=count,
         .descriptorType=VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,.pImageInfo=images};
     vkUpdateDescriptorSets(t->device,1,&write,0,NULL);
+    if(t->rc) {write.dstBinding=2;write.pImageInfo=cubes;vkUpdateDescriptorSets(t->device,1,&write,0,NULL);}
 }
 static VkResult draw_full(ChVkTarget *t, const float rgba[4],
     const ChVkColorVertex *vertices, uint32_t vertex_count,
@@ -486,12 +491,18 @@ static VkResult draw_full(ChVkTarget *t, const float rgba[4],
         }
     }
     if(effect && (effect->kind<1 || effect->kind>2 || rc || texture)) return VK_ERROR_FEATURE_NOT_PRESENT;
+    if(texture && ch_vk_texture_is_cube(texture)) return VK_ERROR_FEATURE_NOT_PRESENT;
     t->effect=effect!=NULL;
     if(effect) t->push.effect=*effect; else memset(&t->push.effect,0,sizeof(t->push.effect));
     t->rc=rc; t->stage_images=stage_images; t->vertex_offset=rc?256:0;
     if(rc && !t->dummy) {
         const uint32_t white=0xffffffff;
         VkResult r=ch_vk_target_upload_texture(t,1,1,&white,&t->dummy);
+        if(r!=VK_SUCCESS) return r;
+    }
+    if(rc && !t->dummy_cube) {
+        const uint32_t white[6]={0xffffffff,0xffffffff,0xffffffff,0xffffffff,0xffffffff,0xffffffff};
+        VkResult r=ch_vk_target_upload_cube(t,1,white,&t->dummy_cube);
         if(r!=VK_SUCCESS) return r;
     }
     t->count_requested=samples!=NULL;
@@ -577,7 +588,8 @@ static VkResult draw_full(ChVkTarget *t, const float rgba[4],
         fog[0]=((fog_color>>16)&255)/255.f; fog[1]=((fog_color>>8)&255)/255.f;
         fog[2]=(fog_color&255)/255.f; fog[3]=(fog_color>>24)/255.f;
         uint32_t *on=(uint32_t *)((char *)mapped+240);
-        for(unsigned i=0;i<4;i++) on[i]=stage_images && stage_images[i];
+        for(unsigned i=0;i<4;i++) on[i]=stage_images && stage_images[i]?
+            (ch_vk_texture_is_cube(stage_images[i])?3:1):0;
         VkDescriptorBufferInfo info={buffer,0,256};
         VkWriteDescriptorSet write={.sType=VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,.dstSet=t->descriptor_set,
             .dstBinding=1,.descriptorCount=1,.descriptorType=VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,.pBufferInfo=&info};
@@ -632,6 +644,10 @@ VkResult ch_vk_target_upload_texture_mips(ChVkTarget *t,uint32_t width,uint32_t 
     const uint32_t *argb,uint32_t levels,ChVkTexture **out) {
     if(!t || t->failed) return VK_ERROR_INITIALIZATION_FAILED;
     return ch_vk_texture_upload_mips(t->physical,t->device,t->queue,t->family,width,height,argb,levels,out);
+}
+VkResult ch_vk_target_upload_cube(ChVkTarget *t,uint32_t size,const uint32_t *faces,ChVkTexture **out) {
+    if(!t || t->failed) return VK_ERROR_INITIALIZATION_FAILED;
+    return ch_vk_texture_upload_cube(t->physical,t->device,t->queue,t->family,size,faces,out);
 }
 
 VkResult ch_vk_target_enable_queries(ChVkTarget *t) {

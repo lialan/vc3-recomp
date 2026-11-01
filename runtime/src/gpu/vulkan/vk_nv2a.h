@@ -15,8 +15,10 @@ VkResult ch_vk_nv2a_draw_read(ChVkTarget *target, const Nv2aSurface *surface,
     const Nv2aBatch *batch, void *pixels, VkDeviceSize bytes);
 /* Supply nv2a_backend_decode_texture in the runtime; dependency injection keeps
  * standalone GPU fixtures independent of the executor's guest-memory globals.
- * Current sampler subset is single-level nearest/linear, repeat/mirror/clamp. */
+ * Sampling supports generated 2D mips and six-face directional cube maps. */
 typedef int (*ChVkDecodeTexture)(const Nv2aTexture *, uint32_t *argb);
+/* Output capacity: width*height uint32 pixels, or six such planes for cube. */
+int ch_vk_decode_texture_faces(const Nv2aTexture *,ChVkDecodeTexture,uint32_t *);
 VkResult ch_vk_nv2a_draw_decoded_read(ChVkTarget *target, const Nv2aSurface *surface,
     const Nv2aBatch *batch, ChVkDecodeTexture decode, void *pixels, VkDeviceSize bytes);
 /* Explicit linear color-surface writeback after a completed readback.

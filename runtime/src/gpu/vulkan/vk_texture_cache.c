@@ -1,4 +1,5 @@
 #include "vk_texture_cache.h"
+#include "../nv2a_texture_cube.h"
 #include "../d3d/d3d8_swizzle.h"
 #include <stdlib.h>
 #include <string.h>
@@ -19,7 +20,13 @@ struct ChVkTextureCache {
 VkResult ch_vk_texture_storage_span(const Nv2aTexture *t,size_t *span,size_t *palette) {
     if(!span || !palette || !t || !t->width || !t->height || (uint64_t)t->width*t->height>SIZE_MAX/4)
         return VK_ERROR_INITIALIZATION_FAILED;
-    if(t->cube) return VK_NOT_READY;
+    if(t->cube) {
+        size_t face=ch_nv2a_cube_face_bytes(t);
+        if(!face || (!d3d8_format_is_swizzled(t->color) && !d3d8_format_dxt_block_bytes(t->color)))
+            return VK_ERROR_FEATURE_NOT_PRESENT;
+        *span=face*6;*palette=t->color==0x0b?1024:0;
+        return *palette && !t->palette?VK_ERROR_FORMAT_NOT_SUPPORTED:VK_SUCCESS;
+    }
     uint64_t n;
     uint32_t block=d3d8_format_dxt_block_bytes(t->color),bpp;
     if(block) n=(((uint64_t)t->width+3)/4)*(((uint64_t)t->height+3)/4)*block;
@@ -123,12 +130,12 @@ VkResult ch_vk_texture_cache_resolve(void *context,const Nv2aTexture *t,ChVkSamp
     size_t pixels=0;
     uint32_t levels=ch_nv2a_texture_mip_levels(t,1),width=t->width,height=t->height;
     for(uint32_t i=0;i<levels;i++) {
-        uint64_t size=(uint64_t)width*height*4;
+        uint64_t size=(uint64_t)width*height*4*(t->cube?6:1);
         if(size>c->config.max_bytes || pixels>c->config.max_bytes-size) return VK_NOT_READY;
         pixels+=(size_t)size;width=width>1?width/2:1;height=height>1?height/2:1;
     }
     /* The immutable upload retains a base-level staging/readback buffer. */
-    size_t staging=(size_t)t->width*t->height*4;
+    size_t staging=(size_t)t->width*t->height*4*(t->cube?6:1);
     if(staging>c->config.max_bytes-pixels) return VK_NOT_READY;
     pixels+=staging;
     if(span>c->config.max_bytes || palette>c->config.max_bytes-span ||
@@ -140,15 +147,16 @@ VkResult ch_vk_texture_cache_resolve(void *context,const Nv2aTexture *t,ChVkSamp
         drop(c,e);if(!slot) slot=e;
     }
     unsigned char *raw=malloc(span+palette);
-    uint32_t *argb=malloc((size_t)t->width*t->height*4);
+    uint32_t *argb=malloc(staging);
     if(!raw || !argb) {free(raw);free(argb);return VK_ERROR_OUT_OF_HOST_MEMORY;}
     memcpy(raw,guest(c,t->offset),span);
     if(palette) memcpy(raw+span,guest(c,t->palette),palette);
-    if(!c->config.decode(t,argb)) {free(raw);free(argb);return VK_ERROR_FORMAT_NOT_SUPPORTED;}
+    if(!ch_vk_decode_texture_faces(t,c->config.decode,argb)) {free(raw);free(argb);return VK_ERROR_FORMAT_NOT_SUPPORTED;}
     struct Entry snapshot={.raw=raw,.span=span,.palette=palette};
     if(!unchanged(c,&snapshot,t)) {free(raw);free(argb);return VK_NOT_READY;}
     ChVkTexture *image=NULL;
-    r=ch_vk_texture_upload_mips(c->config.physical,c->config.device,c->config.queue,c->config.family,
+    if(t->cube) r=ch_vk_texture_upload_cube(c->config.physical,c->config.device,c->config.queue,c->config.family,t->width,argb,&image);
+    else r=ch_vk_texture_upload_mips(c->config.physical,c->config.device,c->config.queue,c->config.family,
         t->width,t->height,argb,levels,&image);
     free(argb);
     if(r==VK_SUCCESS) r=ch_vk_texture_set_sampler(image,&sampler);

@@ -807,6 +807,10 @@ int ch_test_guest_textures(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,ui
         failed=ch_test_depth_resident(gpu,device,queue,family,guest.bytes,sizeof guest.bytes,nv2a_backend_decode_texture);
     }
     if(!failed) failed=check_simple_combiner(gpu,device,queue,family);
+    if(!failed) {
+        extern int ch_test_cube_cache(VkPhysicalDevice,VkDevice,VkQueue,uint32_t,void *,size_t,ChVkDecodeTexture);
+        failed=ch_test_cube_cache(gpu,device,queue,family,guest.bytes,sizeof guest.bytes,nv2a_backend_decode_texture);
+    }
     if(!failed && getenv("CHIHIRO_VULKAN_BENCH")) failed=bench_guest_draws(gpu,device,queue,family);
     ch_vk_target_destroy(target);
     if(!failed) puts("PASS: real executor decoder + Vulkan sampled draws: padded linear ARGB, Morton ARGB, DXT1/3/5, repeat/mirror/clamp, bilinear, guest ARGB8888/RGB565 render-to-texture");

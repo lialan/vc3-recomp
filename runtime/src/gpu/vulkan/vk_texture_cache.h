@@ -10,7 +10,8 @@ typedef struct {
 } ChVkTextureCacheConfig;
 typedef struct { uint64_t hits,misses,uploads,evictions; size_t bytes; } ChVkTextureCacheStats;
 VkResult ch_vk_texture_cache_create(const ChVkTextureCacheConfig *,ChVkTextureCache **);
-/* Encoded level-zero byte range, with an optional 1024-byte P8 palette.
+/* Encoded level-zero byte range (full padded six-face footprint for cubes),
+ * with an optional 1024-byte P8 palette.
  * Metadata only; does not dereference guest memory. VK_NOT_READY means the
  * caller must conservatively handle aliasing or retain its decoder fallback. */
 VkResult ch_vk_texture_storage_span(const Nv2aTexture *,size_t *span,size_t *palette);

@@ -108,6 +108,14 @@ static int address_mode(uint32_t guest,VkSamplerAddressMode *out) {
 VkResult ch_vk_sampler_state(const Nv2aTexture *s,VkSamplerCreateInfo *out) {
     if(!s || !out) return VK_ERROR_INITIALIZATION_FAILED;
     uint32_t min=(s->filter>>16)&255,mag=(s->filter>>24)&15;
+    if(s->cube) {
+        if(!s->width || s->width!=s->height || s->width>2048) return VK_ERROR_FEATURE_NOT_PRESENT;
+        *out=(VkSamplerCreateInfo){.sType=VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
+            .magFilter=VK_FILTER_LINEAR,.minFilter=VK_FILTER_LINEAR,.mipmapMode=VK_SAMPLER_MIPMAP_MODE_NEAREST,
+            .addressModeU=VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,.addressModeV=VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+            .addressModeW=VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE};
+        return VK_SUCCESS;
+    }
     /* Point/linear filters use level zero. Filters 3-6 select the reference
      * generated chain when eligible, otherwise the reference linear fallback. */
     if(s->cube || min<1 || min>6 || (mag!=1 && mag!=2))
