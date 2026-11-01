@@ -22,6 +22,7 @@ typedef struct {
     ChVkDecodeTexture decode;
     /* Set only when host enabled VkPhysicalDeviceFeatures.occlusionQueryPrecise. */
     int precise_queries;
+    int gpu_texture_decode; /* common ARGB/XRGB on compute-capable graphics queue */
     int gpu_depth_pack; /* D32 guest Z24/S8 conversion on compute-capable graphics queue */
     int raw_fixed; /* raw fixed/program GPU transforms; device enabled shaderClipDistance + depthClamp */
     /* Keep ARGB8888 targets resident between draws. Flush publishes guest

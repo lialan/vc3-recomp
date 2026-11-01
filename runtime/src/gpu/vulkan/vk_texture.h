@@ -2,6 +2,7 @@
 #define CHIHIRO_VK_TEXTURE_H
 #include <vulkan/vulkan.h>
 #include <stddef.h>
+#include "nv2a_backend.h"
 /* Texture immutable throughout every sampling lease, optionally with a mip chain. Host owns
  * device/queue; calls are serialized.
  * CPU Nv2a decoder output is native uint32 ARGB, not byte-order-dependent RGBA.
@@ -26,6 +27,14 @@ VkResult ch_vk_texture_upload_queued(VkPhysicalDevice,VkDevice,VkQueue,uint32_t 
  * Waits for any previous upload before reusing staging; queued follows the
  * same-queue contract above. pixels counts all six faces for cube images. */
 VkResult ch_vk_texture_replace_argb(ChVkTexture *,const uint32_t *argb,size_t pixels,int queued);
+/* Shared compute decoder for 2D ARGB/XRGB, linear or rectangular Morton.
+ * Raw bytes are snapshotted before return; sampling/replacement contracts match
+ * upload_queued/replace_argb. Requires a compute-capable graphics queue.
+ * Other formats deliberately return FEATURE_NOT_PRESENT before GPU work. */
+int ch_vk_texture_can_decode32(const Nv2aTexture *);
+VkResult ch_vk_texture_replace_encoded32(ChVkTexture *,VkPipelineCache,const Nv2aTexture *,const void *,size_t,int queued);
+VkResult ch_vk_texture_upload_encoded32(VkPhysicalDevice,VkDevice,VkQueue,uint32_t family,VkPipelineCache,
+    const Nv2aTexture *,const void *,size_t,uint32_t levels,int queued,ChVkTexture **);
 /* Immutable RGBA8 snapshot of a completed, same-device single-layer source in
  * TRANSFER_SRC_OPTIMAL. No CPU readback/upload. Source layout is unchanged;
  * optional mips use the same generation policy as CPU uploads. */

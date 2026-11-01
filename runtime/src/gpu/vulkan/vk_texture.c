@@ -1,4 +1,5 @@
 #include "vk_texture.h"
+#include "vk_texture_decode.h"
 #include <stdlib.h>
 #include <stdint.h>
 #include <string.h>
@@ -9,7 +10,11 @@ struct ChVkTexture {
     VkBuffer staging; VkDeviceMemory staging_memory;
     VkCommandPool pool; VkCommandBuffer command; VkFence fence;
     uint32_t width,height,levels,layers; VkDeviceSize bytes;
-    int failed, pending, deferred_upload;
+    int failed, pending, deferred_upload,raw_decode;
+    uint32_t decode_pitch,decode_flags;
+    VkDeviceSize staging_bytes;
+    ChVkTextureDecode *decoder;
+    uint32_t decode_max_bytes,decode_max_groups[2];
 };
 #define TRY(x) do { result=(x); if(result!=VK_SUCCESS) goto fail; } while(0)
 static int memory_type(VkPhysicalDevice gpu,uint32_t bits,VkMemoryPropertyFlags flags,uint32_t *out) {
@@ -36,15 +41,16 @@ void ch_vk_texture_destroy(ChVkTexture *t) {
     if(t->view) vkDestroyImageView(t->device,t->view,NULL);
     if(t->image) vkDestroyImage(t->device,t->image,NULL);
     if(t->image_memory) vkFreeMemory(t->device,t->image_memory,NULL);
+    ch_vk_texture_decode_destroy(t->decoder);
     if(t->staging) vkDestroyBuffer(t->device,t->staging,NULL);
     if(t->staging_memory) vkFreeMemory(t->device,t->staging_memory,NULL);
     free(t);
 }
-static VkResult ensure_staging(ChVkTexture *t) {
-    if(t->staging) return VK_SUCCESS;
+static VkResult ensure_staging_size(ChVkTexture *t,VkDeviceSize bytes) {
+    if(t->staging && t->staging_bytes>=bytes) return VK_SUCCESS;
     VkResult result;VkBuffer buffer=VK_NULL_HANDLE;VkDeviceMemory memory=VK_NULL_HANDLE;
-    VkBufferCreateInfo info={.sType=VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,.size=t->bytes,
-        .usage=VK_BUFFER_USAGE_TRANSFER_SRC_BIT|VK_BUFFER_USAGE_TRANSFER_DST_BIT,.sharingMode=VK_SHARING_MODE_EXCLUSIVE};
+    VkBufferCreateInfo info={.sType=VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,.size=bytes,
+        .usage=VK_BUFFER_USAGE_TRANSFER_SRC_BIT|VK_BUFFER_USAGE_TRANSFER_DST_BIT|VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,.sharingMode=VK_SHARING_MODE_EXCLUSIVE};
     TRY(vkCreateBuffer(t->device,&info,NULL,&buffer));
     VkMemoryRequirements req;vkGetBufferMemoryRequirements(t->device,buffer,&req);
     VkMemoryAllocateInfo alloc={.sType=VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,.allocationSize=req.size};
@@ -53,12 +59,16 @@ static VkResult ensure_staging(ChVkTexture *t) {
     }
     TRY(vkAllocateMemory(t->device,&alloc,NULL,&memory));
     TRY(vkBindBufferMemory(t->device,buffer,memory,0));
-    t->staging=buffer;t->staging_memory=memory;return VK_SUCCESS;
+    ch_vk_texture_decode_destroy(t->decoder);t->decoder=NULL;
+    if(t->staging) vkDestroyBuffer(t->device,t->staging,NULL);
+    if(t->staging_memory) vkFreeMemory(t->device,t->staging_memory,NULL);
+    t->staging=buffer;t->staging_memory=memory;t->staging_bytes=bytes;return VK_SUCCESS;
 fail:
     if(buffer) vkDestroyBuffer(t->device,buffer,NULL);
     if(memory) vkFreeMemory(t->device,memory,NULL);
     return result;
 }
+static VkResult ensure_staging(ChVkTexture *t) {return ensure_staging_size(t,t->bytes);}
 static void finish_upload(ChVkTexture *t) {
     uint32_t width=t->width,height=t->height;
     VkImageMemoryBarrier image={.sType=VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
@@ -101,6 +111,15 @@ static VkResult transfer(ChVkTexture *t,int upload,uint32_t level) {
     VkCommandBufferBeginInfo begin={.sType=VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
         .flags=VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT};
     TRY(vkBeginCommandBuffer(t->command,&begin));
+    if(t->decoder) {
+        VkBufferMemoryBarrier reuse={.sType=VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
+            .srcAccessMask=VK_ACCESS_SHADER_READ_BIT|VK_ACCESS_SHADER_WRITE_BIT,
+            .dstAccessMask=VK_ACCESS_TRANSFER_READ_BIT|VK_ACCESS_TRANSFER_WRITE_BIT,
+            .srcQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED,.dstQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED,
+            .buffer=t->staging,.size=VK_WHOLE_SIZE};
+        vkCmdPipelineBarrier(t->command,VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,VK_PIPELINE_STAGE_TRANSFER_BIT,0,0,NULL,1,&reuse,0,NULL);
+    }
+    if(upload && t->raw_decode) ch_vk_texture_decode_record(t->decoder,t->command,t->width,t->height,t->decode_pitch,t->decode_flags);
     VkImageMemoryBarrier image={.sType=VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
         .srcAccessMask=upload?0:VK_ACCESS_SHADER_READ_BIT,
         .dstAccessMask=upload?VK_ACCESS_TRANSFER_WRITE_BIT:VK_ACCESS_TRANSFER_READ_BIT,
@@ -323,4 +342,45 @@ VkResult ch_vk_texture_set_sampler(ChVkTexture *t,const VkSamplerCreateInfo *inf
     vkDestroySampler(t->device,t->sampler,NULL);
     t->sampler=sampler;
     return VK_SUCCESS;
+}
+
+int ch_vk_texture_can_decode32(const Nv2aTexture *s) {
+    if(!s || s->cube || !s->width || !s->height || (uint64_t)s->width*s->height>UINT32_MAX/3) return 0;
+    if(s->color==6 || s->color==7) return !(s->width&(s->width-1)) && !(s->height&(s->height-1));
+    return (s->color==0x12 || s->color==0x1e) && !(s->pitch&3) && (uint64_t)s->width*4<=s->pitch;
+}
+VkResult ch_vk_texture_replace_encoded32(ChVkTexture *t,VkPipelineCache cache,const Nv2aTexture *s,const void *raw,size_t bytes,int queued) {
+    if(!t || t->failed || !raw) return VK_ERROR_INITIALIZATION_FAILED;
+    if(!ch_vk_texture_can_decode32(s)) return VK_ERROR_FEATURE_NOT_PRESENT;
+    if(t->layers!=1 || t->width!=s->width || t->height!=s->height) return VK_ERROR_INITIALIZATION_FAILED;
+    int swizzled=s->color==6 || s->color==7;
+    uint64_t span=swizzled?t->bytes:(uint64_t)(s->height-1)*s->pitch+(uint64_t)s->width*4;
+    if(span>bytes || span>SIZE_MAX-t->bytes || span/4+t->bytes/4>UINT32_MAX) return VK_ERROR_INITIALIZATION_FAILED;
+    if(!t->decode_max_bytes) {
+        VkPhysicalDeviceProperties properties;
+        vkGetPhysicalDeviceProperties(t->physical,&properties);
+        t->decode_max_bytes=properties.limits.maxStorageBufferRange;
+        t->decode_max_groups[0]=properties.limits.maxComputeWorkGroupCount[0];
+        t->decode_max_groups[1]=properties.limits.maxComputeWorkGroupCount[1];
+    }
+    if(t->bytes+span>t->decode_max_bytes || (s->width+7u)/8u>t->decode_max_groups[0] ||
+       (s->height+7u)/8u>t->decode_max_groups[1]) return VK_ERROR_FEATURE_NOT_PRESENT;
+    VkResult result;TRY(wait_transfer(t));TRY(ensure_staging_size(t,t->bytes+span));
+    if(!t->decoder) TRY(ch_vk_texture_decode_create(t->device,cache,t->staging,t->staging_bytes,&t->decoder));
+    void *mapped;TRY(vkMapMemory(t->device,t->staging_memory,0,VK_WHOLE_SIZE,0,&mapped));
+    memcpy((char *)mapped+t->bytes,raw,(size_t)span);
+    VkMappedMemoryRange flush={.sType=VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE,.memory=t->staging_memory,.size=VK_WHOLE_SIZE};
+    result=vkFlushMappedMemoryRanges(t->device,1,&flush);vkUnmapMemory(t->device,t->staging_memory);if(result!=VK_SUCCESS) goto fail;
+    t->decode_pitch=s->pitch/4;t->decode_flags=swizzled|((s->color==7 || s->color==0x1e)?2:0);
+    t->raw_decode=1;t->deferred_upload=!!queued;result=transfer(t,1,0);t->raw_decode=0;return result;
+fail:
+    t->failed=1;return result;
+}
+VkResult ch_vk_texture_upload_encoded32(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,uint32_t family,VkPipelineCache cache,
+    const Nv2aTexture *s,const void *raw,size_t bytes,uint32_t levels,int queued,ChVkTexture **out) {
+    if(!out) return VK_ERROR_INITIALIZATION_FAILED;*out=NULL;
+    if(!ch_vk_texture_can_decode32(s)) return VK_ERROR_FEATURE_NOT_PRESENT;
+    ChVkTexture *t=NULL;VkResult r=allocate_texture(gpu,device,queue,family,s->width,s->height,levels,1,&t);
+    if(r==VK_SUCCESS) r=ch_vk_texture_replace_encoded32(t,cache,s,raw,bytes,queued);
+    if(r!=VK_SUCCESS) {ch_vk_texture_destroy(t);return r;}*out=t;return VK_SUCCESS;
 }

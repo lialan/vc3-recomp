@@ -187,6 +187,9 @@ static VkResult attach(ChVkBackendConfig config)
     vkGetPhysicalDeviceQueueFamilyProperties(config.physical,&queue_count,queues);
     config.gpu_depth_pack=(!pack || atoi(pack)) && config.family<queue_count &&
         (queues[config.family].queueFlags&VK_QUEUE_COMPUTE_BIT);
+    const char *decode=ch_env("VULKAN_GPU_TEXTURE_DECODE");
+    config.gpu_texture_decode=(!decode || atoi(decode)) && config.family<queue_count &&
+        (queues[config.family].queueFlags&VK_QUEUE_COMPUTE_BIT);
     free(queues);
     fprintf(stderr,"[Vulkan] D32 guest depth GPU conversion: %s\n",config.gpu_depth_pack?"enabled":"disabled");
     const char *fixed=ch_env("VULKAN_GPU_FIXED");

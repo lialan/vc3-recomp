@@ -1,0 +1,2 @@
+device=llvmpipe (LLVM 23.1.4, 128 bits) vendor=10005 deviceID=0000 api=1.4.354
+PASS: 96 GPU texture decode cases, ARGB/XRGB, rectangular Morton/pitched/odd sizes, exact mips, queued replacement and bounds

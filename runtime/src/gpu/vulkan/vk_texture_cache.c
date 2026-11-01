@@ -175,25 +175,31 @@ VkResult ch_vk_texture_cache_resolve(void *context,const Nv2aTexture *t,ChVkSamp
     size_t staging=(size_t)t->width*t->height*4*(t->cube?6:1);
     if(span>c->config.max_bytes || palette>c->config.max_bytes-span ||
        pixels>c->config.max_bytes-span-palette) return VK_NOT_READY;
+    int gpu_decode=c->config.gpu_decode && ch_vk_texture_can_decode32(t);
     size_t cost=span+palette+pixels;
+    // Encoded GPU staging is retained in addition to the existing CPU snapshot.
+    if(gpu_decode) {if(span>c->config.max_bytes-cost) return VK_NOT_READY;cost+=span;}
     struct Entry *slot=reusable?reusable:make_room(c,cost);if(!slot) return VK_NOT_READY;
     unsigned char *raw=malloc(span+palette);
-    uint32_t *argb=malloc(staging);
-    if(!raw || !argb) {free(raw);free(argb);return VK_ERROR_OUT_OF_HOST_MEMORY;}
+    uint32_t *argb=gpu_decode?NULL:malloc(staging);
+    if(!raw || (!gpu_decode && !argb)) {free(raw);free(argb);return VK_ERROR_OUT_OF_HOST_MEMORY;}
     memcpy(raw,guest(c,t->offset),span);
     if(palette) memcpy(raw+span,guest(c,t->palette),palette);
-    if(!ch_vk_decode_texture_faces(t,c->config.decode,argb)) {free(raw);free(argb);return VK_ERROR_FORMAT_NOT_SUPPORTED;}
+    if(!gpu_decode && !ch_vk_decode_texture_faces(t,c->config.decode,argb)) {free(raw);free(argb);return VK_ERROR_FORMAT_NOT_SUPPORTED;}
     struct Entry snapshot={.raw=raw,.span=span,.palette=palette};
     if(!unchanged(c,&snapshot,t)) {free(raw);free(argb);return VK_NOT_READY;}
     if(reusable) {
-        r=ch_vk_texture_replace_argb(reusable->image,argb,staging/4,c->config.queued_uploads);
+        r=gpu_decode?ch_vk_texture_replace_encoded32(reusable->image,c->config.pipeline_cache,t,raw,span,c->config.queued_uploads):
+            ch_vk_texture_replace_argb(reusable->image,argb,staging/4,c->config.queued_uploads);
         free(argb);
         if(r!=VK_SUCCESS) {free(raw);drop(c,reusable);return r;}
         free(reusable->raw);reusable->raw=raw;reusable->observed_valid=0;
-        c->stats.uploads++;c->stats.cpu_reuses++;pin(c,reusable,out);return VK_SUCCESS;
+        c->stats.uploads++;c->stats.cpu_reuses++;c->stats.gpu_decodes+=gpu_decode;pin(c,reusable,out);return VK_SUCCESS;
     }
     ChVkTexture *image=NULL;
-    if(c->config.queued_uploads) r=ch_vk_texture_upload_queued(c->config.physical,c->config.device,c->config.queue,c->config.family,
+    if(gpu_decode) r=ch_vk_texture_upload_encoded32(c->config.physical,c->config.device,c->config.queue,c->config.family,
+        c->config.pipeline_cache,t,raw,span,levels,c->config.queued_uploads,&image);
+    else if(c->config.queued_uploads) r=ch_vk_texture_upload_queued(c->config.physical,c->config.device,c->config.queue,c->config.family,
         t->width,t->height,argb,levels,t->cube,&image);
     else if(t->cube) r=ch_vk_texture_upload_cube(c->config.physical,c->config.device,c->config.queue,c->config.family,t->width,argb,&image);
     else r=ch_vk_texture_upload_mips(c->config.physical,c->config.device,c->config.queue,c->config.family,
@@ -205,7 +211,7 @@ VkResult ch_vk_texture_cache_resolve(void *context,const Nv2aTexture *t,ChVkSamp
     slot->raw_watch=ch_guest_write_range_create(c->config.guest_write_watch,guest(c,t->offset),span);
     if(palette) slot->palette_watch=ch_guest_write_range_create(c->config.guest_write_watch,guest(c,t->palette),palette);
     if(slot==c->entries+c->extent) c->extent++;
-    c->stats.entries++;c->stats.bytes+=(size_t)cost;c->stats.uploads++;pin(c,slot,out);return VK_SUCCESS;
+    c->stats.entries++;c->stats.bytes+=(size_t)cost;c->stats.uploads++;c->stats.gpu_decodes+=gpu_decode;pin(c,slot,out);return VK_SUCCESS;
 }
 VkResult ch_vk_texture_cache_resolve_target(ChVkTextureCache *c,const Nv2aTexture *t,
     ChVkTarget *source,uint64_t serial,ChVkSampleImage *out) {

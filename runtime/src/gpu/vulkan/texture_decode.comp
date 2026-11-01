@@ -1,0 +1,19 @@
+#version 450
+layout(local_size_x=8,local_size_y=8) in;
+layout(std430,set=0,binding=0) buffer Storage {uint words[];} data;
+layout(push_constant) uniform Params {uint width,height,pitch,flags;} pc;
+void main() {
+    uint x=gl_GlobalInvocationID.x,y=gl_GlobalInvocationID.y;
+    if(x>=pc.width || y>=pc.height) return;
+    uint at=y*pc.pitch+x;
+    if((pc.flags&1u)!=0u) {
+        at=0u;uint destination_bit=1u;
+        for(uint bit=1u;bit<pc.width || bit<pc.height;bit<<=1u) {
+            if(bit<pc.width) {if((x&bit)!=0u)at|=destination_bit;destination_bit<<=1u;}
+            if(bit<pc.height) {if((y&bit)!=0u)at|=destination_bit;destination_bit<<=1u;}
+        }
+    }
+    uint word=data.words[pc.width*pc.height+at];
+    if((pc.flags&2u)!=0u) word|=0xff000000u;
+    data.words[y*pc.width+x]=(word&0xff00ff00u)|((word&255u)<<16)|((word>>16)&255u);
+}

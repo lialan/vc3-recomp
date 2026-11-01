@@ -42,7 +42,7 @@ int ch_test_texture_watch(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,uin
     REQUIRE(!sigaction(SIGSEGV,&sa,&segv));
     if(sigaction(SIGBUS,&sa,&bus)) {sigaction(SIGSEGV,&segv,NULL);goto done;} installed=1;
     ChVkTextureCacheConfig cfg={.physical=gpu,.device=device,.queue=queue,.family=family,
-        .guest_base=memory,.guest_bytes=bytes,.decode=decode,.guest_write_watch=watch,.reuse_uploads=1,.queued_uploads=1};
+        .guest_base=memory,.guest_bytes=bytes,.decode=decode,.guest_write_watch=watch,.reuse_uploads=1,.queued_uploads=1,.gpu_decode=1};
     REQUIRE(ch_vk_texture_cache_create(&cfg,&cache)==VK_SUCCESS);
     uint32_t red=0xffff0000,green=0xff00ff00;
     for(unsigned palette=0;palette<2;palette++) {
@@ -74,7 +74,7 @@ int ch_test_texture_watch(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,uin
         REQUIRE(ch_vk_texture_cache_resolve(cache,&t,&probe)==VK_SUCCESS && probe.gpu==reuse && pixel(&probe,0,255));
         release(&probe);release(&old);
     }
-    ChVkTextureCacheStats stats;ch_vk_texture_cache_stats(cache,&stats);REQUIRE(stats.tracked_checks>=4 && stats.cpu_changes && stats.cpu_reuses>=4);
+    ChVkTextureCacheStats stats;ch_vk_texture_cache_stats(cache,&stats);REQUIRE(stats.tracked_checks>=4 && stats.cpu_changes && stats.cpu_reuses>=4 && stats.gpu_decodes>=4);
     ch_guest_write_watch_invalidate(watch,alias+page,page);
     Nv2aTexture t={.offset=(uint32_t)page,.width=1,.height=1,.pitch=4,.color=0x12,.levels=1,.filter=0x01010000,.addr_u=3,.addr_v=3};
     for(unsigned n=0;n<4;n++) {
