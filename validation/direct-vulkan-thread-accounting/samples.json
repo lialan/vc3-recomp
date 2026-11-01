@@ -1,0 +1,132 @@
+[
+  {
+    "near_completed_frame": 1320,
+    "nv2a exec": {
+      "cpu_ms_per_s": 336,
+      "object_ms_per_s": 0,
+      "sleep_ms_per_s": 404
+    },
+    "guest main": {
+      "cpu_ms_per_s": 81,
+      "object_ms_per_s": 915,
+      "sleep_ms_per_s": 0
+    }
+  },
+  {
+    "near_completed_frame": 1380,
+    "nv2a exec": {
+      "cpu_ms_per_s": 360,
+      "object_ms_per_s": 0,
+      "sleep_ms_per_s": 368
+    },
+    "guest main": {
+      "cpu_ms_per_s": 84,
+      "object_ms_per_s": 912,
+      "sleep_ms_per_s": 0
+    }
+  },
+  {
+    "near_completed_frame": 1440,
+    "nv2a exec": {
+      "cpu_ms_per_s": 339,
+      "object_ms_per_s": 0,
+      "sleep_ms_per_s": 377
+    },
+    "guest main": {
+      "cpu_ms_per_s": 77,
+      "object_ms_per_s": 918,
+      "sleep_ms_per_s": 0
+    }
+  },
+  {
+    "near_completed_frame": 1500,
+    "nv2a exec": {
+      "cpu_ms_per_s": 322,
+      "object_ms_per_s": 0,
+      "sleep_ms_per_s": 418
+    },
+    "guest main": {
+      "cpu_ms_per_s": 77,
+      "object_ms_per_s": 935,
+      "sleep_ms_per_s": 0
+    }
+  },
+  {
+    "near_completed_frame": 1560,
+    "nv2a exec": {
+      "cpu_ms_per_s": 436,
+      "object_ms_per_s": 0,
+      "sleep_ms_per_s": 250
+    },
+    "guest main": {
+      "cpu_ms_per_s": 84,
+      "object_ms_per_s": 910,
+      "sleep_ms_per_s": 0
+    }
+  },
+  {
+    "near_completed_frame": 1620,
+    "nv2a exec": {
+      "cpu_ms_per_s": 488,
+      "object_ms_per_s": 0,
+      "sleep_ms_per_s": 191
+    },
+    "guest main": {
+      "cpu_ms_per_s": 95,
+      "object_ms_per_s": 900,
+      "sleep_ms_per_s": 0
+    }
+  },
+  {
+    "near_completed_frame": 1680,
+    "nv2a exec": {
+      "cpu_ms_per_s": 476,
+      "object_ms_per_s": 0,
+      "sleep_ms_per_s": 203
+    },
+    "guest main": {
+      "cpu_ms_per_s": 93,
+      "object_ms_per_s": 918,
+      "sleep_ms_per_s": 0
+    }
+  },
+  {
+    "near_completed_frame": 1740,
+    "nv2a exec": {
+      "cpu_ms_per_s": 475,
+      "object_ms_per_s": 0,
+      "sleep_ms_per_s": 210
+    },
+    "guest main": {
+      "cpu_ms_per_s": 96,
+      "object_ms_per_s": 901,
+      "sleep_ms_per_s": 0
+    }
+  },
+  {
+    "near_completed_frame": 1800,
+    "nv2a exec": {
+      "cpu_ms_per_s": 474,
+      "object_ms_per_s": 0,
+      "sleep_ms_per_s": 102
+    },
+    "guest main": {
+      "cpu_ms_per_s": 95,
+      "object_ms_per_s": 904,
+      "sleep_ms_per_s": 0
+    }
+  },
+  {
+    "near_completed_frame": 1860,
+    "nv2a exec": {
+      "cpu_ms_per_s": 479,
+      "object_ms_per_s": 0,
+      "sleep_ms_per_s": 186
+    },
+    "guest main": {
+      "cpu_ms_per_s": 96,
+      "object_ms_per_s": 903,
+      "sleep_ms_per_s": 0
+    }
+  }
+]
