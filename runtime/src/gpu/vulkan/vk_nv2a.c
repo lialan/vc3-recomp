@@ -339,6 +339,12 @@ VkResult ch_vk_nv2a_load_color(const Nv2aSurface *s,void *rgba,
     return ch_vk_nv2a_load_color_state(s,NULL,rgba,bytes,guest,guest_bytes);
 }
 
+int ch_vk_nv2a_clear_depth_full(const Nv2aSurface *s,const Nv2aRenderState *rs,uint32_t flags) {
+    if(!s || !rs || !s->width || !s->height || (flags&~0xf3u) || (flags&3)!=3) return 0;
+    if(!rs->clear_rect_set) return 1;
+    return rs->clear_rect_set==3 && !(rs->clear_rect_h&65535) && !(rs->clear_rect_v&65535) &&
+        (rs->clear_rect_h>>16)+1>=s->width && (rs->clear_rect_v>>16)+1>=s->height;
+}
 static VkResult clear_state(ChVkTarget *t,const Nv2aSurface *s,
     const Nv2aRenderState *rs,uint32_t flags,uint32_t argb,uint32_t zs,int panel,void *pixels,VkDeviceSize bytes) {
     if(!t || !rs || !s || !s->width || !s->height || (!panel && !matches(t,s))) return VK_ERROR_INITIALIZATION_FAILED;

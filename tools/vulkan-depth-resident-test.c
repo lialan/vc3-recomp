@@ -154,6 +154,36 @@ int ch_test_depth_resident(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,ui
     REQUIRE(depth[8]==(float)(4194304.0/16777215.0) && stencil[8]==0x2a && stencil[2]==7);
     REQUIRE(ch_vk_depth_resident_flush(z)==VK_SUCCESS && read_word(ram+256+8*4)==0x4000002a);
     REQUIRE(ch_vk_depth_resident_release(z)==VK_SUCCESS);
+    /* An all-component/full-extent clear supersedes dirty GPU data and CPU
+     * edits. It must not import old pixels or publish superseded contents. */
+    ram[1040]=0xcd;ram[1041]=0xab; /* prior shifted-zeta case used these bytes */
+    ChVkDepthResidentStats before;ch_vk_depth_resident_stats(z,&before);
+    REQUIRE(ch_vk_depth_resident_bind_clear(z,a,&surface,&state)==VK_SUCCESS);
+    REQUIRE(ch_vk_target_clear_aspects_read(a,6,NULL,.25f,0x31,rgba,sizeof rgba)==VK_SUCCESS);
+    REQUIRE(ch_vk_depth_resident_dirty(z,a)==VK_SUCCESS);
+    put_word(ram+1024,0xabcdef12);
+    REQUIRE(ch_vk_depth_resident_bind_clear(z,b,&surface,&state)==VK_SUCCESS);
+    REQUIRE(ch_vk_target_clear_aspects_read(b,6,NULL,.5f,0x42,rgba,sizeof rgba)==VK_SUCCESS);
+    REQUIRE(ch_vk_depth_resident_dirty(z,b)==VK_SUCCESS);
+    REQUIRE(read_word(ram+1024)==0xabcdef12);
+    REQUIRE(ch_vk_depth_resident_bind(z,b,&surface,&state)==VK_SUCCESS);
+    REQUIRE(ch_vk_target_read_depth_stencil(b,depth,stencil,N)==VK_SUCCESS);
+    for(unsigned i=0;i<N;i++) REQUIRE(depth[i]==(float)(8388608.0/16777215.0) && stencil[i]==0x42);
+    ch_vk_depth_resident_stats(z,&stats);
+    REQUIRE(stats.imports==before.imports && stats.writebacks==before.writebacks &&
+        stats.clear_skips==before.clear_skips+2 && stats.cpu_merges==before.cpu_merges);
+    REQUIRE(ch_vk_depth_resident_flush(z)==VK_SUCCESS && read_word(ram+1024)==0x80000042);
+    REQUIRE(ram[1040]==0xcd && ram[1041]==0xab);
+    REQUIRE(ch_vk_depth_resident_release(z)==VK_SUCCESS);
+    Nv2aRenderState rect=state;
+    REQUIRE(ch_vk_nv2a_clear_depth_full(&surface,&rect,3));
+    REQUIRE(!ch_vk_nv2a_clear_depth_full(&surface,&rect,1) && !ch_vk_nv2a_clear_depth_full(&surface,&rect,2));
+    rect.clear_rect_set=3;rect.clear_rect_h=rect.clear_rect_v=3u<<16;
+    REQUIRE(ch_vk_nv2a_clear_depth_full(&surface,&rect,0xf3));
+    rect.clear_rect_h=2u<<16;REQUIRE(!ch_vk_nv2a_clear_depth_full(&surface,&rect,3));
+    rect.clear_rect_h=(3u<<16)|1;REQUIRE(!ch_vk_nv2a_clear_depth_full(&surface,&rect,3));
+    rect.clear_rect_h=rect.clear_rect_v=65535u<<16;REQUIRE(ch_vk_nv2a_clear_depth_full(&surface,&rect,3));
+    rect.clear_rect_set=1;REQUIRE(!ch_vk_nv2a_clear_depth_full(&surface,&rect,3));
     /* Registered backend must publish depth before the real executor's
      * semaphore write; precise query results remain synchronous. */
     ChVkBackendConfig config={.physical=gpu,.device=device,.queue=queue,.family=family,

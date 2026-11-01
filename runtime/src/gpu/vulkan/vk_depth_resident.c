@@ -68,10 +68,12 @@ VkResult ch_vk_depth_resident_release(ChVkDepthResident *d) {
     d->target=NULL;free(d->depth);free(d->stencil);free(d->raw);free(d->edits);
     d->depth=NULL;d->stencil=d->raw=d->edits=NULL;return VK_SUCCESS;
 }
-VkResult ch_vk_depth_resident_bind(ChVkDepthResident *d,ChVkTarget *target,
-    const Nv2aSurface *surface,const Nv2aRenderState *state) {
+static VkResult bind_depth(ChVkDepthResident *d,ChVkTarget *target,
+    const Nv2aSurface *surface,const Nv2aRenderState *state,int overwrite) {
     if(!d || !target || !surface || !state || !state->zeta_va || ((state->surface_format>>4)&15)!=2)
         return VK_ERROR_INITIALIZATION_FAILED;
+    uint32_t width,height;ch_vk_target_size(target,&width,&height);
+    if(width!=surface->width || height!=surface->height) return VK_ERROR_INITIALIZATION_FAILED;
     ChVkGuestLayout layout;
     VkResult r=ch_vk_guest_layout(state->surface_format,surface->width,surface->height,state->zeta_pitch,4,&layout);
     if(r!=VK_SUCCESS) return r;
@@ -82,6 +84,14 @@ VkResult ch_vk_depth_resident_bind(ChVkDepthResident *d,ChVkTarget *target,
        d->surface.width==surface->width && d->surface.height==surface->height &&
        d->state.zeta_pitch==state->zeta_pitch &&
         (d->state.surface_format&0xffffff00u)==(state->surface_format&0xffffff00u);
+    if(same && overwrite) {
+        /* The following full clear supersedes every logical pixel, including
+         * intervening CPU edits. Snapshot RAM so those old edits cannot be
+         * misidentified as new writes after the clear. Padding is untouched. */
+        memcpy(d->raw,(uint8_t *)d->guest+state->zeta_va,(size_t)layout.span);
+        d->target=target;d->surface=*surface;d->state=*state;d->layout=layout;
+        d->dirty=0;d->stats.clear_skips++;return VK_SUCCESS;
+    }
     if(same && d->target==target) return observe(d);
     if(same && d->gpu_copies) {
         /* RAM remains the last published snapshot. Merge any intervening CPU
@@ -99,11 +109,21 @@ VkResult ch_vk_depth_resident_bind(ChVkDepthResident *d,ChVkTarget *target,
     d->depth=malloc(count*4);d->stencil=malloc(count);
     d->raw=malloc((size_t)layout.span);d->edits=malloc((size_t)layout.span);
     if(!d->depth || !d->stencil || !d->raw || !d->edits) return VK_ERROR_OUT_OF_HOST_MEMORY;
-    r=ch_vk_guest_depth_load(surface,state,d->guest,d->bytes,d->depth,d->stencil);
-    if(r==VK_SUCCESS) r=ch_vk_target_write_depth_stencil(target,d->depth,d->stencil,count);
-    if(r!=VK_SUCCESS) return r;
+    if(!overwrite) {
+        r=ch_vk_guest_depth_load(surface,state,d->guest,d->bytes,d->depth,d->stencil);
+        if(r==VK_SUCCESS) r=ch_vk_target_write_depth_stencil(target,d->depth,d->stencil,count);
+        if(r!=VK_SUCCESS) return r;
+    }
     d->surface=*surface;d->state=*state;d->layout=layout;d->target=target;
-    memcpy(d->raw,storage(d),(size_t)layout.span);d->stats.imports++;return VK_SUCCESS;
+    memcpy(d->raw,storage(d),(size_t)layout.span);
+    if(overwrite) d->stats.clear_skips++;else d->stats.imports++;
+    return VK_SUCCESS;
+}
+VkResult ch_vk_depth_resident_bind(ChVkDepthResident *d,ChVkTarget *t,const Nv2aSurface *s,const Nv2aRenderState *r) {
+    return bind_depth(d,t,s,r,0);
+}
+VkResult ch_vk_depth_resident_bind_clear(ChVkDepthResident *d,ChVkTarget *t,const Nv2aSurface *s,const Nv2aRenderState *r) {
+    return bind_depth(d,t,s,r,1);
 }
 VkResult ch_vk_depth_resident_dirty(ChVkDepthResident *d,ChVkTarget *target) {
     if(!d || !target || d->target!=target) return VK_ERROR_INITIALIZATION_FAILED;

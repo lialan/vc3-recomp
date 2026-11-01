@@ -25,6 +25,7 @@ def main():
     parser.add_argument("--game", default="/sdcard/VirtuaCop3")
     parser.add_argument("--build-dir", type=Path)
     parser.add_argument("--strict-depth-switches", action="store_true")
+    parser.add_argument("--strict-depth-clears", action="store_true")
     args = parser.parse_args()
     if args.frames < 1 or not 1 <= args.timeout <= 3600 or args.capture_first < 0 or args.capture_count < 0:
         parser.error("invalid frame/capture/timeout range")
@@ -59,6 +60,7 @@ def main():
            "CHIHIRO_VULKAN_DUMP_COUNT": str(args.capture_count), "CHIHIRO_AUTOKEYS_CLOCK": "flips",
            "CHIHIRO_AUTOKEYS": args.autokeys, "CHIHIRO_AUTOAIM": "0.2,0.5", "CHIHIRO_AUTOFIRE_MS": "700"}
     env["CHIHIRO_VULKAN_DEPTH_GPU_COPY"] = "0" if args.strict_depth_switches else "1"
+    env["CHIHIRO_VULKAN_DEPTH_CLEAR_SKIP"] = "0" if args.strict_depth_clears else "1"
     report = {"serial": "2G97C5ZJ0G02DQ", "binary_hashes": hashes, "environment": env,
               "requested_frames": args.frames, "game": args.game,
               "scope": "Actual Quest guest/Vulkan; no XR session or VR performance acceptance"}

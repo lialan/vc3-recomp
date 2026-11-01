@@ -10,6 +10,11 @@ Latest bounded command batching and its validation are recorded in
 [`direct-vulkan-command-batches/`](direct-vulkan-command-batches/README.md).
 The Quest overlay now uses resident batches and the shared GL/Vulkan display
 cadence; see [`direct-vulkan-resident-overlay/`](direct-vulkan-resident-overlay/README.md).
+Exact shared-zeta ownership now copies on the GPU, and full depth/stencil clears
+skip importing superseded pixels. Their controls and Quest evidence are in
+[`direct-vulkan-depth-copy/`](direct-vulkan-depth-copy/README.md) and
+[`direct-vulkan-depth-clear/`](direct-vulkan-depth-clear/README.md). Startup still
+falls well below the combat FPS target; these are incremental transfer fixes.
 
 Android offscreen diagnostics can now boot the real guest on Adreno without
 creating an XR session. Configure `CHIHIRO_VULKAN_OFFSCREEN_CLI=ON` and build

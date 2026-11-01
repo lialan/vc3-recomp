@@ -22,6 +22,7 @@ typedef struct {
     int resident_color;
     int resident_depth; /* D24S8 only; strict fallback when native D24 unavailable */
     int strict_depth_switches; /* diagnostic: CPU roundtrips even for identical zeta */
+    int strict_depth_clears; /* diagnostic: import depth before full replacement */
     int batch_draws; /* resident no-query draws, complete before guest fences */
     int cache_textures; /* exact level-zero storage/palette/sampler cache */
     uint32_t texture_cache_entries; /* zero: default capacity; byte budget unchanged */

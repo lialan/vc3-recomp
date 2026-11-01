@@ -11,6 +11,8 @@
  * No guest memory is written by these readback APIs. */
 VkResult ch_vk_nv2a_clear_read(ChVkTarget *target, const Nv2aSurface *surface,
     uint32_t flags, uint32_t argb, uint32_t zstencil, void *pixels, VkDeviceSize bytes);
+/* True only for a valid clear replacing both components across the full target. */
+int ch_vk_nv2a_clear_depth_full(const Nv2aSurface *,const Nv2aRenderState *,uint32_t flags);
 VkResult ch_vk_nv2a_draw_read(ChVkTarget *target, const Nv2aSurface *surface,
     const Nv2aBatch *batch, void *pixels, VkDeviceSize bytes);
 /* Supply nv2a_backend_decode_texture in the runtime; dependency injection keeps

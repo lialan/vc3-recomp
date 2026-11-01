@@ -279,7 +279,7 @@ static void import_color(struct Surface *f) {
     r=ch_vk_target_import_color(f->target,f->rgba,f->bytes);
     if(r!=VK_SUCCESS) fatal(r,"guest color import");
 }
-static void import_depth(struct Surface *f) {
+static void import_depth(struct Surface *f,int overwrite) {
     if(!f->state.zeta_va) return;
     if(active->zeta) {
         ChVkGuestLayout depth_layout;
@@ -299,7 +299,8 @@ static void import_depth(struct Surface *f) {
                 fatal(VK_ERROR_FEATURE_NOT_PRESENT,"color/depth storage alias");
         }
         if(f->native_z24 && format==2) {
-            r=ch_vk_depth_resident_bind(active->zeta,f->target,&f->guest,&f->state);
+            r=overwrite?ch_vk_depth_resident_bind_clear(active->zeta,f->target,&f->guest,&f->state):
+                ch_vk_depth_resident_bind(active->zeta,f->target,&f->guest,&f->state);
             if(r!=VK_SUCCESS) fatal(r,"resident depth bind");
             return;
         }
@@ -316,7 +317,7 @@ static void clear(const Nv2aSurface *s,const Nv2aRenderState *rs,uint32_t flags,
     struct Surface *f=surface(s,rs);
     observe_target_color(f);
     if((flags & 0xf0)!=0xf0 || rs->clear_rect_set) import_color(f);
-    if(flags & 3) import_depth(f);
+    if(flags & 3) import_depth(f,!active->host.strict_depth_clears && ch_vk_nv2a_clear_depth_full(s,rs,flags));
     store(f,ch_vk_nv2a_clear_state_read(f->target,s,rs,flags,argb,zs,f->rgba,f->bytes),"clear",flags & 3);
     if(active->host.render_clear) {
         VkResult r=active->host.render_clear(active->host.render_context,s,rs,flags,argb,zs);
@@ -333,7 +334,7 @@ static void draw_batch(const Nv2aSurface *s,const Nv2aBatch *b,const ChVkFixedGe
     if(active->profile.enabled) t[2]=now_us();
     import_color(f);
     flush_sampled_colors(b);
-    if(b->state->depth_test_enable || b->state->stencil_enable) import_depth(f);
+    if(b->state->depth_test_enable || b->state->stencil_enable) import_depth(f,0);
     if(active->profile.enabled) t[3]=now_us();
     VkResult result=fixed?ch_vk_nv2a_draw_fixed_resolved_read(f->target,s,b,fixed,active->host.decode,
         active->textures?ch_vk_texture_cache_resolve:NULL,active->textures,f->rgba,f->bytes):
@@ -381,9 +382,10 @@ static void flip(void) {
     }
     if(active->zeta && active->profile.enabled && (active->frames==1 || active->frames%60==0)) {
         ChVkDepthResidentStats stats;ch_vk_depth_resident_stats(active->zeta,&stats);
-        fprintf(stderr,"[Vulkan depth residency] binds=%llu imports=%llu writebacks=%llu CPU merges=%llu GPU copies=%llu\n",
+        fprintf(stderr,"[Vulkan depth residency] binds=%llu imports=%llu writebacks=%llu CPU merges=%llu GPU copies=%llu clear skips=%llu\n",
             (unsigned long long)stats.binds,(unsigned long long)stats.imports,
-            (unsigned long long)stats.writebacks,(unsigned long long)stats.cpu_merges,(unsigned long long)stats.gpu_copies);
+            (unsigned long long)stats.writebacks,(unsigned long long)stats.cpu_merges,(unsigned long long)stats.gpu_copies,
+            (unsigned long long)stats.clear_skips);
     }
     if(active->textures && profile && atoi(profile) && (active->frames==1 || active->frames%60==0)) {
         ChVkTextureCacheStats stats;ch_vk_texture_cache_stats(active->textures,&stats);
