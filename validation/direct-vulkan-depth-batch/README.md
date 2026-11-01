@@ -305,3 +305,22 @@ main and Android offscreen builds pass. No new game performance claim yet.
 /tmp/vc3-depth-draw-integrated-vc3, session 95115. GPU timestamps are disabled,
 matching the prior 2400-frame profile. Run the compute control with the SAME
 binary after this run completes; do not overlap benchmarks or restart a live run.
+
+## Same-binary graphics/compute comparison
+
+/tmp/vc3-depth-draw-on and /tmp/vc3-depth-draw-off both completed 2400 frames
+(exit 0), with identical executable SHA256 and timestamps disabled. Graphics
+roundtrip regresses actual guest throughput despite the isolated benchmark:
+1921..2041 / 2041..2161 / 2161..2281 = 29.59/30.77/29.87 FPS graphics versus
+34.93/34.85/34.89 FPS compute. Frame 1200 matches exactly; 1680/2160 do not,
+consistent with the previously observed run-to-run variation but not proving
+whole-game parity. Compute remains the default; do not recommend graphics mode
+for this local driver based on the microbenchmark. All runs are terminal.
+
+Next investigation: a depth input attachment plus a fullscreen quantization
+shader might avoid the image-to-buffer copy and eventually keep quantization in
+the same render pass. This is NOT implemented or validated. The core input
+attachment/self-dependency rules must be checked carefully, especially depth/
+stencil aspects, per-pixel ordering and BY_REGION barriers. Do not substitute
+sampled-image feedback without the required features/layouts/pipeline flags.
+Reference: https://docs.vulkan.org/spec/latest/chapters/renderpass.html
