@@ -730,3 +730,25 @@ Next candidate: predecode immutable instruction fields/source descriptors when
 uploaded, avoiding repeated field extraction without per-vertex demand branches.
 Retain paired-unit read-before-write, relative addressing, context writes,
 partial program uploads and all output/constant semantics.
+
+## Instruction-predecode experiment: no established game gain
+
+A shared interpreter candidate predecoded opcode, source mux/index/swizzle and
+output fields on every instruction upload, including each partial word.
+It passed25600 randomized program comparisons plus12288 partial-word-update
+comparisons against the unchanged interpreter under ASan/UBSan. Artifacts:
+`/tmp/vsh-predecode-differential.c`, `/tmp/vsh-predecode-sanitized`,
+`/tmp/vsh-eager-reference.c`. A small synthetic loop improved roughly2-8%
+for DP4/MOV/MAD; that does not imply a comparable whole-frame benefit.
+
+`/tmp/vc3-vsh-predecode-es` completed2100 frames, exit0. Held E.S. windows
+1681/1801:41.95/45.60FPS, p95 28.16/24.19ms. Previous queued baseline:
+42.04/45.29FPS, p95 28.96/24.38ms. Activation33.91FPS/max136.05ms.
+This does not establish a material game improvement. Removed the candidate
+rather than retaining extra cached instruction state for an uncertain gain.
+Patch `/tmp/vc3-vsh-predecode-rejected.patch`, immutable binary
+`/tmp/vc3-vsh-predecode-vc3`. Runtime remains71cdba7, Vulkan9472b8f.
+Next focus is the larger surface/coherence/queue-wait contribution, with
+profiling sufficient to distinguish actual GPU work from submission latency.
+CPU VSH remains a possible larger GPU-offload task, but these two small
+interpreter changes did not solve the E.S. bottleneck. No headset/device use.
