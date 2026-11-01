@@ -89,3 +89,7 @@ hashes, settings and window metrics. The 256-entry table is retained.
 Immutable binaries: `/tmp/vc3-vertex256-vc3` and `/tmp/vc3-vertex-reuse-vc3`.
 The latter enables the old 64-entry implementation explicitly with flag=1.
 No headset/device use; sustained E.S. is still below 60 FPS.
+
+## Larger-capacity follow-up after texture tracking
+
+A diagnostic shadow comparison of 256 versus 1024 entries completed 2100 frames: /tmp/vc3-vertex1024-profile/report.json and game.log. Reports emitted between completed frames 1560 and 1920 total 18636648 indices, 10173960 hits at 256 and 10428840 at 1024. This is 254880 extra hits (1.37 percentage points of input indices, about 3.01% of remaining transforms). Wall-clock reporting intervals straddle the frame boundaries, so these are not exact frame-sliced counters. No performance claim from the instrumented run. Retained 256 entries; shadow code removed and saved as /tmp/vc3-vertex1024-profile.patch.
