@@ -1457,6 +1457,13 @@ static int hud_panel(const Frame *f, float c[3], float *w, float *h)
     return 1;
 }
 
+/* Shared GL/Vulkan display policy: preserve the last image and render pose
+ * between half-rate overlay updates at refresh rates above 83 Hz. */
+static int overlay_reuse_frame(int have_last,int full,int menu_open,uint32_t frame,XrDuration period)
+{
+    return have_last && !full && !menu_open && period>0 && period<12000000 && (frame&1);
+}
+
 #ifndef CHIHIRO_RENDERER_VULKAN
 /* The overlay's layer: one swapchain per eye, multisampled where the GPU
  * resolves it on chip (EXT_multisampled_render_to_texture, free on Adreno). */
@@ -2435,7 +2442,8 @@ static void xr_frame(void)
 #ifdef CHIHIRO_RENDERER_VULKAN
     pthread_mutex_lock(&s_vk_queue);
     if(s_vk_profile.enabled) s_vk_profile.host_begin=pace_now_us();
-    if(fs.shouldRender) nl=vk_present(f,layers);
+    if(fs.shouldRender) nl=vk_present(f,layers,fs.predictedDisplayPeriod);
+    else vk_overlay_skip_frame();
 #else
     if (fs.shouldRender && f && (f->direct || chain_fit((uint32_t)f->w, (uint32_t)f->h))) {
         XrSwapchainImageAcquireInfo ai = { XR_TYPE_SWAPCHAIN_IMAGE_ACQUIRE_INFO };
@@ -2530,13 +2538,12 @@ static void xr_frame(void)
         static uint32_t n;
         int want = fs.shouldRender && s_overlay_ok > 0 && s_views_ok
                    && (s_qo.gun_valid || s_menu.open);
-        int fast = fs.predictedDisplayPeriod > 0 && fs.predictedDisplayPeriod < 12000000;
         if (full < 0)
             full = ch_env("OVERLAY_FULLRATE") && *ch_env("OVERLAY_FULLRATE") == '1';
         n++;
         if (!want) {
             have_last = 0;
-        } else if (!full && fast && !s_menu.open && have_last && (n & 1)) {
+        } else if (overlay_reuse_frame(have_last,full,s_menu.open,n,fs.predictedDisplayPeriod)) {
             memcpy(pv, last_pv, sizeof last_pv);   /* the image drawn last frame */
             proj.layerFlags = XR_COMPOSITION_LAYER_BLEND_TEXTURE_SOURCE_ALPHA_BIT;
             proj.space = s_local;

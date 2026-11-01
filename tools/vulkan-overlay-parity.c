@@ -13,9 +13,10 @@ int ch_vk_overlay_parity(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,uint
     enum {W=320,H=256}; const size_t bytes=W*H*4;
     EGLDisplay display=eglGetDisplay(EGL_DEFAULT_DISPLAY);
     EGLContext context=EGL_NO_CONTEXT; EGLSurface surface=EGL_NO_SURFACE;
-    ChVkTarget *target=NULL; unsigned char *glpixels=malloc(bytes),*vkpixels=malloc(bytes);
+    ChVkTarget *target=NULL,*resident=NULL;
+    unsigned char *glpixels=malloc(bytes),*vkpixels=malloc(bytes),*resident_pixels=malloc(bytes);
     int failed=1; EGLConfig config; EGLint count;
-    if(!glpixels || !vkpixels || display==EGL_NO_DISPLAY || !eglInitialize(display,NULL,NULL)) goto done;
+    if(!glpixels || !vkpixels || !resident_pixels || display==EGL_NO_DISPLAY || !eglInitialize(display,NULL,NULL)) goto done;
     const EGLint attrs[]={EGL_SURFACE_TYPE,EGL_PBUFFER_BIT,EGL_RENDERABLE_TYPE,EGL_OPENGL_ES3_BIT,
         EGL_RED_SIZE,8,EGL_GREEN_SIZE,8,EGL_BLUE_SIZE,8,EGL_ALPHA_SIZE,8,EGL_DEPTH_SIZE,24,EGL_NONE};
     const EGLint ctx[]={EGL_CONTEXT_CLIENT_VERSION,3,EGL_NONE};
@@ -26,6 +27,9 @@ int ch_vk_overlay_parity(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,uint
     if(context==EGL_NO_CONTEXT || surface==EGL_NO_SURFACE || !eglMakeCurrent(display,surface,surface,context)) goto done;
     printf("overlay reference GL=%s renderer=%s\n",glGetString(GL_VERSION),glGetString(GL_RENDERER));
     if(!qo_init() || ch_vk_target_create(gpu,device,queue,family,W,H,&target)!=VK_SUCCESS) goto done;
+    if(ch_vk_target_create(gpu,device,queue,family,W,H,&resident)!=VK_SUCCESS ||
+        ch_vk_target_batching(resident,1)!=VK_SUCCESS) goto done;
+    ch_vk_target_defer_color_readback(resident,1);
     glViewport(0,0,W,H); glDisable(GL_DITHER);
     float projection[16]; vr_proj_fov(-.7f,.7f,.7f,-.7f,.01f,10,projection);
     failed=0;
@@ -44,6 +48,13 @@ int ch_vk_overlay_parity(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,uint
         qo_draw(&f,vp,eye); glReadPixels(0,0,W,H,GL_RGBA,GL_UNSIGNED_BYTE,glpixels);
         if(glGetError()!=GL_NO_ERROR || ch_vk_target_clear_read(target,bg,vkpixels,bytes)!=VK_SUCCESS ||
             ch_vk_overlay_read(target,&f,vp,eye,qo_sight_height((int)sight),vkpixels,bytes)!=VK_SUCCESS) {failed=1;goto done;}
+        memset(resident_pixels,0xa5,bytes);
+        if(ch_vk_target_clear_read(resident,bg,resident_pixels,bytes)!=VK_SUCCESS ||
+           ch_vk_overlay_read(resident,&f,vp,eye,qo_sight_height((int)sight),resident_pixels,bytes)!=VK_SUCCESS ||
+           !ch_vk_target_pending(resident) || ch_vk_target_completion_fence(resident)) {failed=1;goto done;}
+        for(size_t i=0;i<bytes;i++) if(resident_pixels[i]!=0xa5) {failed=1;goto done;}
+        if(ch_vk_target_read_color(resident,resident_pixels,bytes)!=VK_SUCCESS ||
+           memcmp(resident_pixels,vkpixels,bytes)) {failed=1;goto done;}
         unsigned bad=0,maxdelta=0,covered=0;
         for(unsigned y=0;y<H;y++) for(unsigned x=0;x<W;x++) {
             const unsigned char *a=glpixels+((H-1-y)*W+x)*4,*b=vkpixels+(y*W+x)*4;
@@ -60,6 +71,12 @@ int ch_vk_overlay_parity(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,uint
     }
     if(!failed) puts("PASS: actual GLES/Vulkan overlay readbacks, 48 cases, all pixels RGBA within 3 UNORM steps");
     if(!failed) {
+        ChVkTargetResourceStats stats;ch_vk_target_resource_stats(resident,&stats);
+        if(stats.batch_submissions!=48 || stats.batch_draws<=48 || stats.geometry_allocations!=1) {failed=1;goto done;}
+        printf("PASS: resident overlay matches all 48 synchronous images byte-for-byte, no intermediate CPU writes, %llu draws in %llu submissions, one geometry allocation\n",
+            (unsigned long long)stats.batch_draws,(unsigned long long)stats.batch_submissions);
+    }
+    if(!failed) {
         extern int ch_test_mipmap_parity(VkPhysicalDevice,VkDevice,VkQueue,uint32_t);
         failed=ch_test_mipmap_parity(gpu,device,queue,family);
         extern int ch_test_cube_parity(VkPhysicalDevice,VkDevice,VkQueue,uint32_t);
@@ -69,9 +86,9 @@ int ch_vk_overlay_parity(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,uint
     }
 done:
     if(failed) fprintf(stderr,"FAIL: GLES/Vulkan overlay parity (EGL error 0x%x)\n",eglGetError());
-    ch_vk_target_destroy(target);
+    ch_vk_target_destroy(target);ch_vk_target_destroy(resident);
     if(display!=EGL_NO_DISPLAY) { eglMakeCurrent(display,EGL_NO_SURFACE,EGL_NO_SURFACE,EGL_NO_CONTEXT);
         if(surface!=EGL_NO_SURFACE) eglDestroySurface(display,surface);
         if(context!=EGL_NO_CONTEXT) eglDestroyContext(display,context); eglTerminate(display); }
-    free(glpixels);free(vkpixels);return failed;
+    free(glpixels);free(vkpixels);free(resident_pixels);return failed;
 }

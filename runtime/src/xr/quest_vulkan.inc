@@ -13,6 +13,11 @@ static struct {
 } s_vk_eye[2];
 static XrCompositionLayerProjection s_vk_overlay_layer;
 static XrCompositionLayerProjectionView s_vk_overlay_views[2];
+static int s_vk_overlay_have_last;
+static uint32_t s_vk_overlay_frame;
+static void vk_overlay_skip_frame(void) {
+    s_vk_overlay_have_last=0;s_vk_overlay_frame++;
+}
 
 static struct {
     int enabled;
@@ -112,13 +117,15 @@ static int vk_overlay_init(void)
         if(!s_vk_eye[e].pixels) abort();
         vk_check(ch_vk_target_create(s_vk.physical,s_vk.device,s_vk.queue,s_vk.family,
             width,height,&s_vk_eye[e].target),"overlay target");
+        vk_check(ch_vk_target_batching(s_vk_eye[e].target,1),"overlay command batches");
+        ch_vk_target_defer_color_readback(s_vk_eye[e].target,1);
         vk_xr_check(ch_vk_xr_swapchain_create(s_inst,s_sess,xrGetInstanceProcAddr,s_vk.device,
             width,height,&s_vk_eye[e].chain),"overlay swapchain");
     }
     pthread_mutex_unlock(&s_vk_queue);
     return 1;
 }
-static unsigned vk_present(const Frame *f,const XrCompositionLayerBaseHeader **layers)
+static unsigned vk_present(const Frame *f,const XrCompositionLayerBaseHeader **layers,XrDuration display_period)
 {
     unsigned count=0;
     VkResult result=VK_SUCCESS;
@@ -147,7 +154,15 @@ static unsigned vk_present(const Frame *f,const XrCompositionLayerBaseHeader **l
         const XrCompositionLayerBaseHeader *layer=ch_vk_xr_quad_layer(s_vk_screen);
         if(layer) layers[count++]=layer;
     }
-    if(s_overlay_ok>0 && s_views_ok && s_qo.gun_valid) {
+    /* Match the GL host's high-refresh overlay cadence. Reuse both the image
+     * and its render pose between draws; the compositor handles reprojection. */
+    static int overlay_full=-1;
+    if(overlay_full<0) overlay_full=ch_env("OVERLAY_FULLRATE") && *ch_env("OVERLAY_FULLRATE")=='1';
+    s_vk_overlay_frame++;
+    int overlay_want=s_overlay_ok>0 && s_views_ok && s_qo.gun_valid;
+    int overlay_reuse=overlay_want && overlay_reuse_frame(s_vk_overlay_have_last,overlay_full,s_menu.open,s_vk_overlay_frame,display_period);
+    if(!overlay_want) s_vk_overlay_have_last=0;
+    if(overlay_want && !overlay_reuse) {
         for(unsigned e=0;e<2;e++) {
             float vp[16],eye[3]={s_views[e].pose.position.x,s_views[e].pose.position.y,s_views[e].pose.position.z};
             uint32_t index;VkImage image;
@@ -168,8 +183,9 @@ static unsigned vk_present(const Frame *f,const XrCompositionLayerBaseHeader **l
         s_vk_overlay_layer=(XrCompositionLayerProjection){.type=XR_TYPE_COMPOSITION_LAYER_PROJECTION,
             .layerFlags=XR_COMPOSITION_LAYER_BLEND_TEXTURE_SOURCE_ALPHA_BIT,.space=s_local,
             .viewCount=2,.views=s_vk_overlay_views};
-        layers[count++]=(const XrCompositionLayerBaseHeader *)&s_vk_overlay_layer;
+        s_vk_overlay_have_last=1;
     }
+    if(overlay_want) layers[count++]=(const XrCompositionLayerBaseHeader *)&s_vk_overlay_layer;
     if(s_menu.open && s_vk_menu_target) {
         float yaw=atan2f(s_menu.n[0],s_menu.n[2]);
         pose=(XrPosef){.orientation={0,sinf(yaw*.5f),0,cosf(yaw*.5f)},

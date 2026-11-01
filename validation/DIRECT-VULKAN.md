@@ -8,6 +8,8 @@ work/vulkan-zink-render-diagnosis-20261031 (db0f4a9).
 
 Latest bounded command batching and its validation are recorded in
 [`direct-vulkan-command-batches/`](direct-vulkan-command-batches/README.md).
+The Quest overlay now uses resident batches and the shared GL/Vulkan display
+cadence; see [`direct-vulkan-resident-overlay/`](direct-vulkan-resident-overlay/README.md).
 This adds resident draw submission reuse; full Quest combat and frame-time
 acceptance remain open. Earlier measurements below describe their original
 checkpoints, not the latest performance state.
