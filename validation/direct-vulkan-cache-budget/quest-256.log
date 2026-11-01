@@ -1,0 +1,758 @@
+=== Virtua Cop 3 (recomp) ===
+game: /storage/emulated/0/VirtuaCop3
+save: /data/local/tmp/vc3-offscreen-8a273da3e0c7448c82e35c3aa6773fbc/save
+entry 0x000B6407, esp 0x00F7FFF0
+[VC3] display 60 fps (game 60), 640x480 internal, 4:3
+[Vulkan] Android offscreen diagnostic: no XR session or VR performance acceptance
+xbox_MemoryLayoutInit: mapped 131072 KB at 0x0x7ad1180000 (offset +527494021120 from Xbox base)
+  XBE header: 2584 bytes at 0x7ad1190000 (Xbox VA 0x00010000)
+  XBE sections: 13 (headers at file offset 0x0000036C)
+  [ 0] .text        VA=0x00011000 vsize=1004560  raw=0x00001000 rsize=1004560 
+  [ 1] D3D          VA=0x00106420 vsize=80516    raw=0x000F7000 rsize=66584    (BSS)
+  [ 2] D3DX         VA=0x00119EC0 vsize=49669    raw=0x00108000 rsize=49668    (BSS)
+  [ 3] XGRPH        VA=0x001260E0 vsize=4708     raw=0x00115000 rsize=4708    
+  [ 4] DSOUND       VA=0x00127360 vsize=40084    raw=0x00117000 rsize=39500    (BSS)
+  [ 5] PSGSFD00     VA=0x00131000 vsize=13072    raw=0x00121000 rsize=13072   
+  [ 6] PSGSFD_I     VA=0x00134320 vsize=976      raw=0x00125000 rsize=976     
+  [ 7] PSGSFD_B     VA=0x00134700 vsize=2256     raw=0x00126000 rsize=2256    
+  [ 8] PSGSFD_P     VA=0x00134FE0 vsize=1616     raw=0x00127000 rsize=1616    
+  [ 9] XPP          VA=0x00135640 vsize=43945    raw=0x00128000 rsize=43944    (BSS)
+  [10] .rdata       VA=0x00140200 vsize=73901    raw=0x00133000 rsize=73900    (BSS)
+  [11] .data        VA=0x001522C0 vsize=4007344  raw=0x00146000 rsize=806004   (BSS)
+  [12] DOLBY        VA=0x00524880 vsize=29056    raw=0x0020B000 rsize=29036    (BSS)
+  Loaded 13/13 sections (2135824 bytes total)
+  Toolkit region: 0x00700000 (image ends 0x0052BA00)
+  Kernel thunks: 110 entries at Xbox VA 0x00140200
+  Stack: 8192 KB at Xbox VA 0x00780000 (ESP = 0x00F7FFF0)
+  TLS: 20-byte block at 0x00770000, fs:[4] = 0x00770014 (index will be -5)
+  TIB: fake TIB at VA 0x4000, TLS at 0x00760000, RW data at 0x00700000
+  Contiguous window: 128 MB at Xbox VA 0x80000000
+  NV2A register aperture: 16 MB at Xbox VA 0xFD000000 (zeroed, no register semantics)
+  APU: 0xFE800000..0xFE830000 trapped for MMIO (GP/EP DSP memory left as RAM)
+  AC97: bus-master writes trapped at 0xFEC00000 (POSIX; channel reset completes on write)
+  AC97: codec reported ready at 0xFEC00130 (DirectSound will initialise)
+  MCPX device aperture: 8 MB at Xbox VA 0xFE800000 (APU/AC97/USB/NIC, zeroed)
+  Flash ROM aperture: 1 MB at Xbox VA 0xFF000000 (zeroed, not a real BIOS image)
+  NV2A busy-bit ack: 6 register(s) acknowledged
+  Kernel: fake PE header at Xbox VA 0x80010000 (native 0x7b51190000)
+  Heap: 112 MB at Xbox VA 0x00F80000-0x08000000
+  Mirror 2: FAILED at 0x7ae1180000 (error 8)
+  Mirror 16: skipped, overlaps the contiguous window at 0x80000000
+[Vulkan depth residency] binds=3 imports=0 writebacks=2 CPU merges=0 GPU copies=0 clear skips=2
+[Vulkan texture cache] hits=0 uploads=1 evictions=0 live=0.0MiB entries=1/2048
+[Vulkan] captured /data/local/tmp/vc3-offscreen-8a273da3e0c7448c82e35c3aa6773fbc/frames/frame-000000.ppm
+[Vulkan] completed frame 1: 640x480, guest=80408000
+[Vulkan draw] 602 batches (602 reduced): geometry 0.6ms textures 47.7ms raster 125.0ms
+[Vulkan backend] 602 batches: surface 7.5ms CPU edits 61.0ms imports 134.1ms draw 174.3ms writeback 0.0ms
+[Vulkan draw] 1670 batches (1670 reduced): geometry 1.2ms textures 30.3ms raster 7.3ms
+[Vulkan backend] 1670 batches: surface 13.2ms CPU edits 165.5ms imports 357.2ms draw 41.2ms writeback 0.1ms
+[Vulkan depth residency] binds=3282 imports=146 writebacks=333 CPU merges=0 GPU copies=0 clear skips=293
+[Vulkan texture cache] hits=3121 uploads=14 evictions=0 live=10.6MiB entries=14/2048
+[Vulkan] completed frame 60: 640x480, guest=80534000
+[Vulkan draw] 1671 batches (1671 reduced): geometry 1.1ms textures 26.1ms raster 7.8ms
+[Vulkan backend] 1671 batches: surface 14.1ms CPU edits 164.3ms imports 362.6ms draw 37.5ms writeback 0.1ms
+[Vulkan draw] 1673 batches (1673 reduced): geometry 1.2ms textures 27.3ms raster 7.3ms
+[Vulkan backend] 1673 batches: surface 15.1ms CPU edits 165.7ms imports 358.0ms draw 38.2ms writeback 0.1ms
+[Vulkan depth residency] binds=6663 imports=293 writebacks=669 CPU merges=0 GPU copies=1 clear skips=588
+[Vulkan texture cache] hits=6354 uploads=14 evictions=0 live=10.6MiB entries=14/2048
+[Vulkan] completed frame 120: 640x480, guest=80408000
+[Vulkan frame intervals] flips 1..121: 26.88 fps mean 37.21ms p95 41.75ms p99 183.34ms max 308.33ms >20ms=119 >33ms=53 (guest completions, not XR display)
+[Vulkan draw] 1704 batches (1704 reduced): geometry 1.1ms textures 26.2ms raster 7.0ms
+[Vulkan backend] 1704 batches: surface 12.9ms CPU edits 162.0ms imports 363.0ms draw 36.7ms writeback 0.1ms
+[Vulkan draw] 1642 batches (1642 reduced): geometry 1.2ms textures 27.5ms raster 7.4ms
+[Vulkan backend] 1642 batches: surface 14.1ms CPU edits 161.6ms imports 366.1ms draw 38.5ms writeback 0.1ms
+[Vulkan depth residency] binds=10090 imports=444 writebacks=1008 CPU merges=0 GPU copies=2 clear skips=889
+[Vulkan texture cache] hits=9628 uploads=15 evictions=0 live=11.4MiB entries=15/2048
+[Vulkan] completed frame 180: 640x480, guest=80660000
+[Vulkan draw] 1656 batches (1656 reduced): geometry 1.2ms textures 30.5ms raster 7.2ms
+[Vulkan backend] 1656 batches: surface 13.0ms CPU edits 161.0ms imports 362.5ms draw 41.3ms writeback 0.1ms
+[Vulkan draw] 1674 batches (1674 reduced): geometry 1.2ms textures 27.0ms raster 7.3ms
+[Vulkan backend] 1674 batches: surface 14.0ms CPU edits 165.8ms imports 365.4ms draw 37.8ms writeback 0.1ms
+[Vulkan depth residency] binds=13456 imports=594 writebacks=1349 CPU merges=0 GPU copies=2 clear skips=1189
+[Vulkan texture cache] hits=12844 uploads=15 evictions=0 live=11.4MiB entries=15/2048
+[Vulkan] completed frame 240: 640x480, guest=80660000
+[Vulkan frame intervals] flips 121..241: 30.65 fps mean 32.62ms p95 37.93ms p99 40.54ms max 63.36ms >20ms=120 >33ms=51 (guest completions, not XR display)
+[Vulkan draw] 1648 batches (1648 reduced): geometry 1.1ms textures 27.0ms raster 7.1ms
+[Vulkan backend] 1648 batches: surface 13.5ms CPU edits 161.6ms imports 357.5ms draw 37.6ms writeback 0.1ms
+[Vulkan draw] 1675 batches (1675 reduced): geometry 1.1ms textures 27.9ms raster 7.1ms
+[Vulkan backend] 1675 batches: surface 13.8ms CPU edits 161.0ms imports 363.5ms draw 38.4ms writeback 0.1ms
+[Vulkan depth residency] binds=16821 imports=744 writebacks=1691 CPU merges=0 GPU copies=2 clear skips=1489
+[Vulkan texture cache] hits=16059 uploads=15 evictions=0 live=11.4MiB entries=15/2048
+[Vulkan] completed frame 300: 640x480, guest=80660000
+[Vulkan draw] 1638 batches (1638 reduced): geometry 1.1ms textures 27.1ms raster 6.9ms
+[Vulkan backend] 1638 batches: surface 14.6ms CPU edits 161.8ms imports 364.3ms draw 37.4ms writeback 0.1ms
+[Vulkan draw] 1683 batches (1683 reduced): geometry 1.1ms textures 27.4ms raster 7.1ms
+[Vulkan backend] 1683 batches: surface 12.6ms CPU edits 161.3ms imports 362.6ms draw 37.9ms writeback 0.2ms
+[Vulkan depth residency] binds=20171 imports=894 writebacks=2027 CPU merges=0 GPU copies=2 clear skips=1786
+[Vulkan texture cache] hits=19261 uploads=16 evictions=0 live=13.9MiB entries=16/2048
+[Vulkan] completed frame 360: 640x480, guest=80660000
+[Vulkan frame intervals] flips 241..361: 30.82 fps mean 32.44ms p95 38.20ms p99 40.86ms max 42.86ms >20ms=120 >33ms=55 (guest completions, not XR display)
+[Vulkan draw] 1185 batches (1185 reduced): geometry 0.9ms textures 41.6ms raster 6.6ms
+[Vulkan backend] 1185 batches: surface 15.0ms CPU edits 123.7ms imports 360.9ms draw 51.0ms writeback 0.1ms
+[Vulkan depth residency] binds=22121 imports=1044 writebacks=2363 CPU merges=0 GPU copies=2 clear skips=2086
+[Vulkan texture cache] hits=21061 uploads=16 evictions=0 live=13.9MiB entries=16/2048
+[Vulkan] completed frame 420: 640x480, guest=80660000
+[Vulkan draw] 1111 batches (1111 reduced): geometry 0.8ms textures 24.5ms raster 6.2ms
+[Vulkan backend] 1111 batches: surface 16.1ms CPU edits 116.4ms imports 352.0ms draw 33.4ms writeback 0.1ms
+[Vulkan draw] 1110 batches (1110 reduced): geometry 0.9ms textures 24.3ms raster 6.1ms
+[Vulkan backend] 1110 batches: surface 16.0ms CPU edits 114.3ms imports 352.3ms draw 33.0ms writeback 0.1ms
+[Vulkan depth residency] binds=24047 imports=1194 writebacks=2697 CPU merges=0 GPU copies=2 clear skips=2386
+[Vulkan texture cache] hits=22837 uploads=16 evictions=0 live=13.9MiB entries=16/2048
+[Vulkan] completed frame 480: 640x480, guest=80660000
+[Vulkan frame intervals] flips 361..481: 37.05 fps mean 26.99ms p95 31.76ms p99 34.09ms max 36.04ms >20ms=120 >33ms=3 (guest completions, not XR display)
+[Vulkan] captured /data/local/tmp/vc3-offscreen-8a273da3e0c7448c82e35c3aa6773fbc/frames/frame-000480.ppm
+[Vulkan draw] 1084 batches (1084 reduced): geometry 0.8ms textures 24.9ms raster 6.2ms
+[Vulkan backend] 1084 batches: surface 16.6ms CPU edits 116.2ms imports 355.1ms draw 33.7ms writeback 0.1ms
+[Vulkan draw] 1092 batches (1092 reduced): geometry 0.9ms textures 24.8ms raster 6.8ms
+[Vulkan backend] 1092 batches: surface 14.5ms CPU edits 117.1ms imports 353.6ms draw 34.4ms writeback 0.1ms
+[Vulkan depth residency] binds=25987 imports=1342 writebacks=3029 CPU merges=0 GPU copies=2 clear skips=2683
+[Vulkan texture cache] hits=24629 uploads=16 evictions=0 live=13.9MiB entries=16/2048
+[Vulkan] completed frame 540: 640x480, guest=80660000
+[Vulkan draw] 162 batches (127 reduced): geometry 0.3ms textures 11.8ms raster 1048.0ms
+[Vulkan backend] 162 batches: surface 2.8ms CPU edits 18.0ms imports 55.5ms draw 1060.4ms writeback 0.0ms
+[Vulkan draw] 64 batches (0 reduced): geometry 0.1ms textures 1.4ms raster 1065.7ms
+[Vulkan backend] 64 batches: surface 1.0ms CPU edits 7.0ms imports 31.4ms draw 1067.4ms writeback 0.0ms
+[Vulkan draw] 125 batches (0 reduced): geometry 0.1ms textures 3.2ms raster 798.8ms
+[Vulkan backend] 125 batches: surface 1.6ms CPU edits 16.0ms imports 62.1ms draw 802.5ms writeback 0.0ms
+[Vulkan draw] 356 batches (0 reduced): geometry 0.6ms textures 39.4ms raster 258.4ms
+[Vulkan backend] 356 batches: surface 6.7ms CPU edits 58.7ms imports 212.7ms draw 299.4ms writeback 0.1ms
+[Vulkan draw] 529 batches (0 reduced): geometry 0.9ms textures 17.8ms raster 6.3ms
+[Vulkan backend] 529 batches: surface 9.2ms CPU edits 94.5ms imports 318.7ms draw 26.6ms writeback 0.1ms
+[Vulkan draw] 540 batches (0 reduced): geometry 0.8ms textures 17.0ms raster 5.7ms
+[Vulkan backend] 540 batches: surface 8.7ms CPU edits 93.0ms imports 304.7ms draw 25.2ms writeback 0.1ms
+[Vulkan depth residency] binds=28326 imports=1492 writebacks=3363 CPU merges=0 GPU copies=2 clear skips=2983
+[Vulkan texture cache] hits=26811 uploads=23 evictions=0 live=20.8MiB entries=23/2048
+[Vulkan] completed frame 600: 640x480, guest=80660000
+[Vulkan draw] 541 batches (0 reduced): geometry 0.9ms textures 17.9ms raster 6.3ms
+[Vulkan backend] 541 batches: surface 9.7ms CPU edits 95.4ms imports 306.7ms draw 26.7ms writeback 0.1ms
+[Vulkan frame intervals] flips 481..601: 13.13 fps mean 76.18ms p95 85.72ms p99 601.46ms max 871.56ms >20ms=120 >33ms=63 (guest completions, not XR display)
+[Vulkan draw] 541 batches (0 reduced): geometry 0.8ms textures 17.2ms raster 5.9ms
+[Vulkan backend] 541 batches: surface 9.2ms CPU edits 92.9ms imports 294.9ms draw 25.5ms writeback 0.1ms
+[Vulkan draw] 540 batches (0 reduced): geometry 0.9ms textures 17.2ms raster 5.9ms
+[Vulkan backend] 540 batches: surface 9.1ms CPU edits 96.0ms imports 297.6ms draw 25.5ms writeback 0.1ms
+[Vulkan draw] 488 batches (0 reduced): geometry 0.8ms textures 17.5ms raster 5.7ms
+[Vulkan backend] 488 batches: surface 9.0ms CPU edits 87.2ms imports 293.6ms draw 25.7ms writeback 0.1ms
+[Vulkan draw] 530 batches (0 reduced): geometry 0.9ms textures 17.2ms raster 6.2ms
+[Vulkan backend] 530 batches: surface 9.4ms CPU edits 92.6ms imports 305.2ms draw 25.9ms writeback 0.1ms
+[Vulkan depth residency] binds=30792 imports=1641 writebacks=3697 CPU merges=0 GPU copies=2 clear skips=3280
+[Vulkan texture cache] hits=29127 uploads=24 evictions=0 live=20.8MiB entries=24/2048
+[Vulkan] completed frame 660: 640x480, guest=80660000
+[Vulkan draw] 654 batches (0 reduced): geometry 1.0ms textures 17.6ms raster 6.7ms
+[Vulkan backend] 654 batches: surface 7.8ms CPU edits 102.8ms imports 294.9ms draw 27.1ms writeback 0.1ms
+[Vulkan draw] 729 batches (0 reduced): geometry 1.1ms textures 22.4ms raster 6.8ms
+[Vulkan backend] 729 batches: surface 8.3ms CPU edits 111.6ms imports 309.2ms draw 32.1ms writeback 0.1ms
+[Vulkan draw] 703 batches (0 reduced): geometry 1.0ms textures 18.0ms raster 6.6ms
+[Vulkan backend] 703 batches: surface 8.1ms CPU edits 107.1ms imports 305.5ms draw 27.4ms writeback 0.1ms
+[Vulkan draw] 777 batches (0 reduced): geometry 1.0ms textures 19.8ms raster 7.0ms
+[Vulkan backend] 777 batches: surface 7.6ms CPU edits 117.6ms imports 309.6ms draw 29.6ms writeback 0.1ms
+[Vulkan depth residency] binds=34315 imports=1789 writebacks=4035 CPU merges=0 GPU copies=2 clear skips=3580
+[Vulkan texture cache] hits=32496 uploads=25 evictions=0 live=21.2MiB entries=25/2048
+[Vulkan] completed frame 720: 640x480, guest=80660000
+[Vulkan frame intervals] flips 601..721: 13.29 fps mean 75.25ms p95 88.07ms p99 92.93ms max 95.85ms >20ms=120 >33ms=120 (guest completions, not XR display)
+[Vulkan draw] 785 batches (0 reduced): geometry 1.0ms textures 19.4ms raster 6.9ms
+[Vulkan backend] 785 batches: surface 8.2ms CPU edits 121.5ms imports 303.9ms draw 29.4ms writeback 0.1ms
+[Vulkan draw] 789 batches (0 reduced): geometry 1.2ms textures 20.3ms raster 9.8ms
+[Vulkan backend] 789 batches: surface 9.3ms CPU edits 121.6ms imports 303.6ms draw 33.3ms writeback 0.1ms
+[Vulkan draw] 802 batches (0 reduced): geometry 1.0ms textures 19.6ms raster 6.7ms
+[Vulkan backend] 802 batches: surface 7.7ms CPU edits 120.2ms imports 301.8ms draw 29.3ms writeback 0.1ms
+[Vulkan draw] 840 batches (0 reduced): geometry 1.1ms textures 19.6ms raster 7.1ms
+[Vulkan backend] 840 batches: surface 7.8ms CPU edits 120.5ms imports 307.0ms draw 29.9ms writeback 0.1ms
+[Vulkan draw] 779 batches (0 reduced): geometry 1.0ms textures 19.6ms raster 6.9ms
+[Vulkan backend] 779 batches: surface 9.0ms CPU edits 120.8ms imports 297.8ms draw 29.5ms writeback 0.1ms
+[Vulkan depth residency] binds=38313 imports=1938 writebacks=4375 CPU merges=0 GPU copies=3 clear skips=3879
+[Vulkan texture cache] hits=36345 uploads=25 evictions=0 live=21.2MiB entries=25/2048
+[Vulkan] completed frame 780: 640x480, guest=80660000
+[Vulkan draw] 731 batches (0 reduced): geometry 1.0ms textures 58.2ms raster 283.1ms
+[Vulkan backend] 731 batches: surface 8.1ms CPU edits 113.6ms imports 308.3ms draw 344.1ms writeback 0.1ms
+[Vulkan draw] 310 batches (0 reduced): geometry 0.7ms textures 196.7ms raster 4.2ms
+[Vulkan backend] 310 batches: surface 6.6ms CPU edits 45.5ms imports 305.1ms draw 202.5ms writeback 0.0ms
+[Vulkan draw] 324 batches (0 reduced): geometry 0.5ms textures 248.4ms raster 3.9ms
+[Vulkan backend] 324 batches: surface 5.1ms CPU edits 41.7ms imports 272.7ms draw 253.8ms writeback 0.0ms
+[Vulkan draw] 333 batches (0 reduced): geometry 0.6ms textures 248.3ms raster 3.9ms
+[Vulkan backend] 333 batches: surface 6.6ms CPU edits 43.2ms imports 278.4ms draw 253.8ms writeback 0.0ms
+[Vulkan draw] 324 batches (0 reduced): geometry 0.6ms textures 238.2ms raster 3.8ms
+[Vulkan backend] 324 batches: surface 5.5ms CPU edits 40.8ms imports 287.1ms draw 243.4ms writeback 0.0ms
+[Vulkan depth residency] binds=40237 imports=2090 writebacks=4713 CPU merges=0 GPU copies=3 clear skips=4183
+[Vulkan texture cache] hits=37978 uploads=164 evictions=77 live=254.3MiB entries=87/2048
+[Vulkan] completed frame 840: 640x480, guest=80534000
+[Vulkan draw] 329 batches (0 reduced): geometry 0.6ms textures 267.8ms raster 4.1ms
+[Vulkan backend] 329 batches: surface 5.5ms CPU edits 43.5ms imports 285.7ms draw 273.5ms writeback 0.0ms
+[Vulkan frame intervals] flips 721..841: 11.45 fps mean 87.37ms p95 100.34ms p99 113.94ms max 379.11ms >20ms=120 >33ms=120 (guest completions, not XR display)
+[Vulkan draw] 340 batches (0 reduced): geometry 0.6ms textures 258.4ms raster 4.1ms
+[Vulkan backend] 340 batches: surface 5.7ms CPU edits 42.0ms imports 278.0ms draw 264.0ms writeback 0.0ms
+[Vulkan draw] 316 batches (0 reduced): geometry 0.6ms textures 249.2ms raster 3.8ms
+[Vulkan backend] 316 batches: surface 6.8ms CPU edits 42.4ms imports 281.6ms draw 254.5ms writeback 0.0ms
+[Vulkan draw] 337 batches (0 reduced): geometry 0.6ms textures 255.7ms raster 5.2ms
+[Vulkan backend] 337 batches: surface 4.3ms CPU edits 43.3ms imports 281.7ms draw 262.5ms writeback 0.1ms
+[Vulkan draw] 320 batches (0 reduced): geometry 0.6ms textures 252.1ms raster 4.2ms
+[Vulkan backend] 320 batches: surface 6.3ms CPU edits 42.3ms imports 269.6ms draw 257.9ms writeback 0.1ms
+[Vulkan draw] 322 batches (0 reduced): geometry 0.6ms textures 243.6ms raster 3.9ms
+[Vulkan backend] 322 batches: surface 6.5ms CPU edits 43.9ms imports 282.6ms draw 249.0ms writeback 0.0ms
+[Vulkan depth residency] binds=42119 imports=2238 writebacks=5043 CPU merges=0 GPU copies=3 clear skips=4480
+[Vulkan texture cache] hits=39564 uploads=312 evictions=224 live=255.0MiB entries=88/2048
+[Vulkan] completed frame 900: 640x480, guest=80534000
+[Vulkan draw] 410 batches (0 reduced): geometry 0.6ms textures 211.2ms raster 4.6ms
+[Vulkan backend] 410 batches: surface 6.0ms CPU edits 56.4ms imports 324.4ms draw 217.6ms writeback 0.1ms
+[Vulkan draw] 534 batches (0 reduced): geometry 0.8ms textures 175.1ms raster 5.3ms
+[Vulkan backend] 534 batches: surface 5.4ms CPU edits 77.0ms imports 359.8ms draw 182.8ms writeback 0.1ms
+[Vulkan draw] 501 batches (0 reduced): geometry 0.8ms textures 163.9ms raster 5.1ms
+[Vulkan backend] 501 batches: surface 6.7ms CPU edits 74.0ms imports 366.6ms draw 171.3ms writeback 0.1ms
+[Vulkan draw] 494 batches (0 reduced): geometry 0.8ms textures 156.0ms raster 5.5ms
+[Vulkan backend] 494 batches: surface 6.5ms CPU edits 77.2ms imports 367.1ms draw 164.0ms writeback 0.1ms
+[Vulkan draw] 523 batches (0 reduced): geometry 0.8ms textures 164.5ms raster 5.5ms
+[Vulkan backend] 523 batches: surface 6.5ms CPU edits 80.0ms imports 367.5ms draw 172.2ms writeback 0.1ms
+[Vulkan draw] 437 batches (0 reduced): geometry 0.8ms textures 93.8ms raster 5.6ms
+[Vulkan backend] 437 batches: surface 8.4ms CPU edits 77.8ms imports 403.0ms draw 101.7ms writeback 0.1ms
+[Vulkan depth residency] binds=45165 imports=2390 writebacks=5386 CPU merges=0 GPU copies=4 clear skips=4783
+[Vulkan texture cache] hits=42375 uploads=397 evictions=292 live=254.2MiB entries=105/2048
+[Vulkan] completed frame 960: 640x480, guest=80408000
+[Vulkan frame intervals] flips 841..961: 10.62 fps mean 94.13ms p95 114.53ms p99 118.58ms max 170.47ms >20ms=120 >33ms=120 (guest completions, not XR display)
+[Vulkan] captured /data/local/tmp/vc3-offscreen-8a273da3e0c7448c82e35c3aa6773fbc/frames/frame-000960.ppm
+[Vulkan draw] 486 batches (0 reduced): geometry 0.9ms textures 59.6ms raster 5.9ms
+[Vulkan backend] 486 batches: surface 7.6ms CPU edits 89.2ms imports 392.8ms draw 68.0ms writeback 0.1ms
+[Vulkan draw] 533 batches (0 reduced): geometry 1.0ms textures 42.2ms raster 6.2ms
+[Vulkan backend] 533 batches: surface 8.6ms CPU edits 93.8ms imports 377.6ms draw 51.1ms writeback 0.1ms
+[Vulkan draw] 585 batches (0 reduced): geometry 1.0ms textures 47.2ms raster 6.3ms
+[Vulkan backend] 585 batches: surface 7.4ms CPU edits 103.4ms imports 430.2ms draw 56.3ms writeback 0.1ms
+[Vulkan draw] 617 batches (0 reduced): geometry 1.0ms textures 41.9ms raster 7.1ms
+[Vulkan backend] 617 batches: surface 8.9ms CPU edits 106.9ms imports 406.4ms draw 51.8ms writeback 0.1ms
+[Vulkan draw] 650 batches (0 reduced): geometry 1.0ms textures 41.2ms raster 6.6ms
+[Vulkan backend] 650 batches: surface 7.3ms CPU edits 108.2ms imports 423.9ms draw 50.7ms writeback 0.1ms
+[Vulkan depth residency] binds=48526 imports=2539 writebacks=5723 CPU merges=0 GPU copies=4 clear skips=5081
+[Vulkan texture cache] hits=45584 uploads=399 evictions=292 live=255.3MiB entries=107/2048
+[Vulkan] completed frame 1020: 640x480, guest=80408000
+[Vulkan draw] 639 batches (0 reduced): geometry 1.1ms textures 42.6ms raster 6.9ms
+[Vulkan backend] 639 batches: surface 8.6ms CPU edits 108.5ms imports 432.9ms draw 52.5ms writeback 0.1ms
+[Vulkan draw] 665 batches (0 reduced): geometry 1.0ms textures 40.3ms raster 6.7ms
+[Vulkan backend] 665 batches: surface 7.3ms CPU edits 110.5ms imports 402.8ms draw 50.1ms writeback 0.1ms
+[Vulkan draw] 591 batches (0 reduced): geometry 0.9ms textures 66.2ms raster 5.7ms
+[Vulkan backend] 591 batches: surface 6.9ms CPU edits 97.2ms imports 375.3ms draw 74.5ms writeback 0.1ms
+[Vulkan draw] 611 batches (0 reduced): geometry 1.0ms textures 37.3ms raster 6.2ms
+[Vulkan backend] 611 batches: surface 7.7ms CPU edits 108.5ms imports 395.6ms draw 46.2ms writeback 0.1ms
+[Vulkan draw] 625 batches (0 reduced): geometry 1.0ms textures 39.4ms raster 6.4ms
+[Vulkan backend] 625 batches: surface 7.4ms CPU edits 109.1ms imports 391.1ms draw 48.7ms writeback 0.1ms
+[Vulkan draw] 626 batches (0 reduced): geometry 1.0ms textures 39.9ms raster 6.6ms
+[Vulkan backend] 626 batches: surface 7.4ms CPU edits 108.3ms imports 394.4ms draw 49.4ms writeback 0.1ms
+[Vulkan depth residency] binds=52482 imports=2690 writebacks=6069 CPU merges=0 GPU copies=5 clear skips=5384
+[Vulkan texture cache] hits=49387 uploads=400 evictions=293 live=254.3MiB entries=107/2048
+[Vulkan] completed frame 1080: 640x480, guest=80660000
+[Vulkan frame intervals] flips 961..1081: 10.24 fps mean 97.70ms p95 113.17ms p99 116.54ms max 173.54ms >20ms=120 >33ms=120 (guest completions, not XR display)
+[Vulkan draw] 627 batches (0 reduced): geometry 1.0ms textures 38.4ms raster 6.4ms
+[Vulkan backend] 627 batches: surface 7.2ms CPU edits 103.7ms imports 394.4ms draw 47.7ms writeback 0.1ms
+[Vulkan draw] 627 batches (0 reduced): geometry 1.0ms textures 40.6ms raster 6.4ms
+[Vulkan backend] 627 batches: surface 7.2ms CPU edits 107.4ms imports 406.8ms draw 49.8ms writeback 0.1ms
+[Vulkan draw] 616 batches (0 reduced): geometry 1.0ms textures 49.1ms raster 6.6ms
+[Vulkan backend] 616 batches: surface 7.3ms CPU edits 107.7ms imports 389.5ms draw 58.5ms writeback 0.1ms
+[Vulkan draw] 506 batches (0 reduced): geometry 0.9ms textures 49.1ms raster 5.8ms
+[Vulkan backend] 506 batches: surface 8.0ms CPU edits 90.3ms imports 385.9ms draw 57.5ms writeback 0.1ms
+[Vulkan draw] 300 batches (0 reduced): geometry 0.6ms textures 36.7ms raster 258.3ms
+[Vulkan backend] 300 batches: surface 7.0ms CPU edits 63.1ms imports 363.5ms draw 296.9ms writeback 0.1ms
+[Vulkan draw] 349 batches (0 reduced): geometry 0.7ms textures 38.9ms raster 4.9ms
+[Vulkan backend] 349 batches: surface 9.0ms CPU edits 63.0ms imports 285.5ms draw 45.6ms writeback 0.1ms
+[Vulkan depth residency] binds=55256 imports=2840 writebacks=6404 CPU merges=0 GPU copies=5 clear skips=5684
+[Vulkan texture cache] hits=52003 uploads=407 evictions=297 live=254.3MiB entries=110/2048
+[Vulkan] completed frame 1140: 640x480, guest=80660000
+[Vulkan draw] 445 batches (0 reduced): geometry 0.9ms textures 259.2ms raster 366.8ms
+[Vulkan backend] 445 batches: surface 2.8ms CPU edits 52.4ms imports 106.2ms draw 627.9ms writeback 0.1ms
+[Vulkan draw] 1027 batches (0 reduced): geometry 0.6ms textures 149.9ms raster 393.4ms
+[Vulkan backend] 1027 batches: surface 1.9ms CPU edits 100.1ms imports 240.2ms draw 545.6ms writeback 0.1ms
+[Vulkan draw] 1629 batches (0 reduced): geometry 1.0ms textures 80.4ms raster 152.8ms
+[Vulkan backend] 1629 batches: surface 2.7ms CPU edits 175.8ms imports 323.0ms draw 237.2ms writeback 0.2ms
+[Vulkan draw] 1591 batches (0 reduced): geometry 0.9ms textures 110.6ms raster 107.1ms
+[Vulkan backend] 1591 batches: surface 2.5ms CPU edits 172.4ms imports 344.0ms draw 221.5ms writeback 0.2ms
+[Vulkan draw] 1525 batches (0 reduced): geometry 1.1ms textures 89.3ms raster 148.2ms
+[Vulkan backend] 1525 batches: surface 1.7ms CPU edits 169.5ms imports 319.2ms draw 241.4ms writeback 0.2ms
+[Vulkan draw] 1689 batches (0 reduced): geometry 0.9ms textures 98.5ms raster 186.6ms
+[Vulkan backend] 1689 batches: surface 2.7ms CPU edits 180.1ms imports 341.9ms draw 289.0ms writeback 0.2ms
+[Vulkan draw] 1509 batches (0 reduced): geometry 1.0ms textures 106.9ms raster 159.5ms
+[Vulkan backend] 1509 batches: surface 2.6ms CPU edits 159.3ms imports 347.8ms draw 270.1ms writeback 0.1ms
+[Vulkan draw] 1727 batches (0 reduced): geometry 0.9ms textures 91.0ms raster 127.2ms
+[Vulkan backend] 1727 batches: surface 2.6ms CPU edits 183.9ms imports 330.2ms draw 222.3ms writeback 0.2ms
+[Vulkan draw] 1496 batches (0 reduced): geometry 1.0ms textures 103.1ms raster 117.8ms
+[Vulkan backend] 1496 batches: surface 1.6ms CPU edits 161.3ms imports 346.7ms draw 224.8ms writeback 0.1ms
+[Vulkan draw] 1636 batches (0 reduced): geometry 0.9ms textures 91.6ms raster 138.8ms
+[Vulkan backend] 1636 batches: surface 2.6ms CPU edits 174.4ms imports 309.7ms draw 234.2ms writeback 0.1ms
+[Vulkan draw] 1378 batches (0 reduced): geometry 0.8ms textures 246.0ms raster 155.9ms
+[Vulkan backend] 1378 batches: surface 1.5ms CPU edits 139.7ms imports 288.1ms draw 405.1ms writeback 0.2ms
+[Vulkan draw] 1542 batches (0 reduced): geometry 1.1ms textures 112.4ms raster 134.6ms
+[Vulkan backend] 1542 batches: surface 2.4ms CPU edits 167.9ms imports 359.9ms draw 251.1ms writeback 0.1ms
+[Vulkan draw] 1634 batches (0 reduced): geometry 1.0ms textures 88.4ms raster 95.8ms
+[Vulkan backend] 1634 batches: surface 2.9ms CPU edits 178.4ms imports 326.5ms draw 188.2ms writeback 0.2ms
+[Vulkan draw] 1580 batches (0 reduced): geometry 1.0ms textures 108.5ms raster 109.8ms
+[Vulkan backend] 1580 batches: surface 2.4ms CPU edits 166.7ms imports 341.8ms draw 222.1ms writeback 0.2ms
+[Vulkan draw] 1765 batches (0 reduced): geometry 0.9ms textures 89.4ms raster 185.6ms
+[Vulkan backend] 1765 batches: surface 1.7ms CPU edits 180.0ms imports 335.1ms draw 278.8ms writeback 0.2ms
+[Vulkan draw] 1516 batches (0 reduced): geometry 1.1ms textures 103.3ms raster 144.5ms
+[Vulkan backend] 1516 batches: surface 2.7ms CPU edits 152.9ms imports 343.4ms draw 251.8ms writeback 0.2ms
+[Vulkan draw] 1702 batches (0 reduced): geometry 0.9ms textures 105.8ms raster 106.4ms
+[Vulkan backend] 1702 batches: surface 2.5ms CPU edits 173.5ms imports 348.8ms draw 215.9ms writeback 0.2ms
+[Vulkan draw] 1573 batches (0 reduced): geometry 1.0ms textures 97.0ms raster 101.5ms
+[Vulkan backend] 1573 batches: surface 2.7ms CPU edits 169.1ms imports 321.6ms draw 202.2ms writeback 0.2ms
+[Vulkan depth residency] binds=82536 imports=2990 writebacks=6863 CPU merges=0 GPU copies=5 clear skips=5984
+[Vulkan texture cache] hits=85561 uploads=930 evictions=731 live=255.7MiB entries=199/2048
+[Vulkan] completed frame 1200: 640x480, guest=80660000
+[Vulkan frame intervals] flips 1081..1201: 5.00 fps mean 200.07ms p95 303.37ms p99 445.60ms max 1177.00ms >20ms=120 >33ms=120 (guest completions, not XR display)
+[Vulkan draw] 1657 batches (0 reduced): geometry 0.8ms textures 111.1ms raster 129.5ms
+[Vulkan backend] 1657 batches: surface 2.6ms CPU edits 172.2ms imports 358.1ms draw 244.4ms writeback 0.2ms
+[Vulkan draw] 1253 batches (0 reduced): geometry 0.8ms textures 296.8ms raster 192.0ms
+[Vulkan backend] 1253 batches: surface 1.5ms CPU edits 128.1ms imports 216.6ms draw 492.0ms writeback 0.1ms
+[Vulkan draw] 1732 batches (0 reduced): geometry 1.0ms textures 107.8ms raster 231.0ms
+[Vulkan backend] 1732 batches: surface 2.8ms CPU edits 170.9ms imports 227.4ms draw 342.9ms writeback 0.2ms
+[Vulkan draw] 1807 batches (0 reduced): geometry 0.8ms textures 38.8ms raster 166.6ms
+[Vulkan backend] 1807 batches: surface 2.0ms CPU edits 188.5ms imports 236.7ms draw 209.5ms writeback 0.2ms
+[Vulkan draw] 1682 batches (0 reduced): geometry 0.9ms textures 48.0ms raster 195.6ms
+[Vulkan backend] 1682 batches: surface 3.0ms CPU edits 178.7ms imports 246.4ms draw 247.6ms writeback 0.2ms
+[Vulkan draw] 1735 batches (0 reduced): geometry 0.9ms textures 48.5ms raster 270.5ms
+[Vulkan backend] 1735 batches: surface 2.1ms CPU edits 177.3ms imports 239.2ms draw 323.0ms writeback 0.2ms
+[Vulkan draw] 1815 batches (0 reduced): geometry 0.9ms textures 52.1ms raster 229.2ms
+[Vulkan backend] 1815 batches: surface 3.0ms CPU edits 185.9ms imports 242.6ms draw 285.2ms writeback 0.2ms
+[Vulkan draw] 1785 batches (0 reduced): geometry 0.8ms textures 42.6ms raster 194.7ms
+[Vulkan backend] 1785 batches: surface 2.9ms CPU edits 188.3ms imports 230.8ms draw 241.2ms writeback 0.2ms
+[Vulkan draw] 1720 batches (0 reduced): geometry 1.0ms textures 51.5ms raster 193.1ms
+[Vulkan backend] 1720 batches: surface 3.0ms CPU edits 176.1ms imports 241.5ms draw 248.4ms writeback 0.2ms
+[Vulkan draw] 1740 batches (0 reduced): geometry 0.9ms textures 49.3ms raster 262.3ms
+[Vulkan backend] 1740 batches: surface 2.1ms CPU edits 174.5ms imports 240.0ms draw 315.5ms writeback 0.2ms
+[Vulkan draw] 1748 batches (0 reduced): geometry 0.8ms textures 51.2ms raster 272.1ms
+[Vulkan backend] 1748 batches: surface 3.0ms CPU edits 179.7ms imports 232.8ms draw 327.0ms writeback 0.2ms
+[Vulkan draw] 1444 batches (0 reduced): geometry 1.1ms textures 65.7ms raster 229.6ms
+[Vulkan backend] 1444 batches: surface 3.1ms CPU edits 162.6ms imports 232.2ms draw 299.2ms writeback 0.2ms
+[Vulkan draw] 1413 batches (0 reduced): geometry 0.9ms textures 72.3ms raster 255.1ms
+[Vulkan backend] 1413 batches: surface 4.3ms CPU edits 153.9ms imports 218.7ms draw 330.9ms writeback 0.1ms
+[Vulkan draw] 1508 batches (0 reduced): geometry 1.1ms textures 67.4ms raster 231.1ms
+[Vulkan backend] 1508 batches: surface 3.3ms CPU edits 161.0ms imports 216.3ms draw 302.5ms writeback 0.2ms
+[Vulkan draw] 1417 batches (0 reduced): geometry 1.1ms textures 72.5ms raster 210.2ms
+[Vulkan backend] 1417 batches: surface 3.9ms CPU edits 159.8ms imports 240.0ms draw 286.6ms writeback 0.2ms
+[Vulkan depth residency] binds=107113 imports=3140 writebacks=7304 CPU merges=0 GPU copies=5 clear skips=6284
+[Vulkan texture cache] hits=116264 uploads=1187 evictions=971 live=254.7MiB entries=216/2048
+[Vulkan] completed frame 1260: 640x480, guest=80660000
+[Vulkan draw] 1453 batches (0 reduced): geometry 1.0ms textures 57.7ms raster 194.9ms
+[Vulkan backend] 1453 batches: surface 3.5ms CPU edits 154.5ms imports 250.1ms draw 256.4ms writeback 0.2ms
+[Vulkan draw] 1701 batches (0 reduced): geometry 1.1ms textures 77.4ms raster 155.2ms
+[Vulkan backend] 1701 batches: surface 5.5ms CPU edits 165.1ms imports 258.7ms draw 236.5ms writeback 0.2ms
+[Vulkan draw] 1374 batches (0 reduced): geometry 0.9ms textures 70.1ms raster 168.9ms
+[Vulkan backend] 1374 batches: surface 2.9ms CPU edits 148.2ms imports 241.4ms draw 242.6ms writeback 0.1ms
+[Vulkan draw] 1185 batches (0 reduced): geometry 1.0ms textures 70.5ms raster 183.9ms
+[Vulkan backend] 1185 batches: surface 3.9ms CPU edits 136.7ms imports 235.9ms draw 257.8ms writeback 0.1ms
+[Vulkan draw] 1172 batches (0 reduced): geometry 1.0ms textures 81.5ms raster 162.1ms
+[Vulkan backend] 1172 batches: surface 4.1ms CPU edits 138.3ms imports 248.3ms draw 247.2ms writeback 0.1ms
+[Vulkan draw] 1131 batches (0 reduced): geometry 1.0ms textures 81.6ms raster 154.4ms
+[Vulkan backend] 1131 batches: surface 4.2ms CPU edits 133.2ms imports 234.0ms draw 239.5ms writeback 0.1ms
+[Vulkan draw] 1075 batches (0 reduced): geometry 1.0ms textures 71.2ms raster 213.6ms
+[Vulkan backend] 1075 batches: surface 4.1ms CPU edits 128.6ms imports 221.3ms draw 288.2ms writeback 0.1ms
+[Vulkan draw] 1111 batches (0 reduced): geometry 0.9ms textures 81.3ms raster 188.7ms
+[Vulkan backend] 1111 batches: surface 4.3ms CPU edits 134.3ms imports 229.9ms draw 273.3ms writeback 0.1ms
+[Vulkan draw] 1123 batches (0 reduced): geometry 1.0ms textures 85.7ms raster 198.5ms
+[Vulkan backend] 1123 batches: surface 4.1ms CPU edits 137.2ms imports 233.9ms draw 287.6ms writeback 0.1ms
+[Vulkan draw] 494 batches (0 reduced): geometry 0.3ms textures 42.9ms raster 780.6ms
+[Vulkan backend] 494 batches: surface 1.7ms CPU edits 54.5ms imports 119.1ms draw 825.0ms writeback 0.1ms
+[Vulkan draw] 661 batches (0 reduced): geometry 0.8ms textures 40.3ms raster 466.6ms
+[Vulkan backend] 661 batches: surface 2.7ms CPU edits 78.8ms imports 148.2ms draw 508.9ms writeback 0.1ms
+[Vulkan depth residency] binds=119946 imports=3298 writebacks=7701 CPU merges=0 GPU copies=5 clear skips=6584
+[Vulkan texture cache] hits=133299 uploads=1274 evictions=1085 live=252.8MiB entries=189/2048
+[Vulkan] completed frame 1320: 640x480, guest=80660000
+[Vulkan frame intervals] flips 1201..1321: 4.51 fps mean 221.83ms p95 286.52ms p99 536.76ms max 537.85ms >20ms=120 >33ms=120 (guest completions, not XR display)
+[Vulkan draw] 998 batches (0 reduced): geometry 0.9ms textures 29.1ms raster 203.4ms
+[Vulkan backend] 998 batches: surface 3.0ms CPU edits 131.3ms imports 261.8ms draw 235.8ms writeback 0.1ms
+[Vulkan draw] 995 batches (0 reduced): geometry 0.9ms textures 77.9ms raster 202.4ms
+[Vulkan backend] 995 batches: surface 4.2ms CPU edits 124.9ms imports 242.5ms draw 283.4ms writeback 0.1ms
+[Vulkan draw] 1081 batches (0 reduced): geometry 0.9ms textures 16.1ms raster 208.1ms
+[Vulkan backend] 1081 batches: surface 3.2ms CPU edits 141.8ms imports 268.4ms draw 227.6ms writeback 0.1ms
+[Vulkan draw] 1020 batches (0 reduced): geometry 0.9ms textures 38.2ms raster 176.4ms
+[Vulkan backend] 1020 batches: surface 4.3ms CPU edits 133.1ms imports 257.0ms draw 217.8ms writeback 0.1ms
+[Vulkan draw] 1029 batches (0 reduced): geometry 0.9ms textures 22.5ms raster 173.4ms
+[Vulkan backend] 1029 batches: surface 4.3ms CPU edits 134.6ms imports 283.6ms draw 199.2ms writeback 0.2ms
+[Vulkan draw] 1052 batches (0 reduced): geometry 0.9ms textures 16.6ms raster 214.5ms
+[Vulkan backend] 1052 batches: surface 3.5ms CPU edits 132.1ms imports 264.3ms draw 234.7ms writeback 0.1ms
+[Vulkan draw] 1055 batches (0 reduced): geometry 0.8ms textures 43.0ms raster 250.9ms
+[Vulkan backend] 1055 batches: surface 4.3ms CPU edits 134.8ms imports 242.6ms draw 297.0ms writeback 0.1ms
+[Vulkan draw] 1058 batches (0 reduced): geometry 1.0ms textures 25.4ms raster 218.8ms
+[Vulkan backend] 1058 batches: surface 3.2ms CPU edits 131.5ms imports 262.6ms draw 247.6ms writeback 0.1ms
+[Vulkan draw] 1059 batches (0 reduced): geometry 0.9ms textures 39.0ms raster 200.5ms
+[Vulkan backend] 1059 batches: surface 3.0ms CPU edits 133.6ms imports 243.9ms draw 242.7ms writeback 0.1ms
+[Vulkan draw] 1024 batches (0 reduced): geometry 0.8ms textures 37.9ms raster 258.9ms
+[Vulkan backend] 1024 batches: surface 4.2ms CPU edits 133.5ms imports 243.0ms draw 300.0ms writeback 0.1ms
+[Vulkan draw] 1064 batches (0 reduced): geometry 0.9ms textures 22.6ms raster 172.0ms
+[Vulkan backend] 1064 batches: surface 2.9ms CPU edits 135.7ms imports 264.0ms draw 198.0ms writeback 0.2ms
+[Vulkan draw] 1038 batches (0 reduced): geometry 1.0ms textures 17.7ms raster 217.6ms
+[Vulkan backend] 1038 batches: surface 4.5ms CPU edits 136.7ms imports 257.6ms draw 238.7ms writeback 0.1ms
+[Vulkan depth residency] binds=132556 imports=3508 writebacks=8199 CPU merges=0 GPU copies=5 clear skips=6883
+[Vulkan texture cache] hits=149856 uploads=1301 evictions=1125 live=254.6MiB entries=176/2048
+[Vulkan] completed frame 1380: 640x480, guest=80660000
+[Vulkan draw] 1077 batches (0 reduced): geometry 0.9ms textures 50.7ms raster 212.4ms
+[Vulkan backend] 1077 batches: surface 3.0ms CPU edits 130.7ms imports 252.1ms draw 266.4ms writeback 0.1ms
+[Vulkan draw] 1075 batches (0 reduced): geometry 1.0ms textures 24.3ms raster 170.9ms
+[Vulkan backend] 1075 batches: surface 4.6ms CPU edits 135.3ms imports 274.4ms draw 198.5ms writeback 0.1ms
+[Vulkan draw] 1061 batches (0 reduced): geometry 0.9ms textures 33.3ms raster 237.8ms
+[Vulkan backend] 1061 batches: surface 3.2ms CPU edits 138.5ms imports 259.1ms draw 274.4ms writeback 0.1ms
+[Vulkan draw] 1087 batches (0 reduced): geometry 0.8ms textures 22.0ms raster 215.2ms
+[Vulkan backend] 1087 batches: surface 4.3ms CPU edits 136.0ms imports 256.1ms draw 240.4ms writeback 0.1ms
+[Vulkan draw] 1046 batches (0 reduced): geometry 0.9ms textures 16.8ms raster 185.3ms
+[Vulkan backend] 1046 batches: surface 3.3ms CPU edits 136.7ms imports 265.1ms draw 205.3ms writeback 0.1ms
+[Vulkan draw] 1018 batches (0 reduced): geometry 0.9ms textures 55.5ms raster 167.2ms
+[Vulkan backend] 1018 batches: surface 4.3ms CPU edits 128.1ms imports 259.1ms draw 226.0ms writeback 0.1ms
+[Vulkan draw] 1053 batches (0 reduced): geometry 0.9ms textures 24.5ms raster 235.8ms
+[Vulkan backend] 1053 batches: surface 2.5ms CPU edits 137.4ms imports 254.7ms draw 263.7ms writeback 0.1ms
+[Vulkan draw] 1209 batches (0 reduced): geometry 0.9ms textures 160.6ms raster 198.8ms
+[Vulkan backend] 1209 batches: surface 3.0ms CPU edits 138.8ms imports 224.4ms draw 362.7ms writeback 0.1ms
+[Vulkan draw] 1308 batches (0 reduced): geometry 0.9ms textures 50.1ms raster 186.4ms
+[Vulkan backend] 1308 batches: surface 2.8ms CPU edits 156.5ms imports 242.9ms draw 240.0ms writeback 0.1ms
+[Vulkan draw] 1318 batches (0 reduced): geometry 0.9ms textures 60.2ms raster 220.7ms
+[Vulkan backend] 1318 batches: surface 3.1ms CPU edits 155.3ms imports 231.6ms draw 284.5ms writeback 0.1ms
+[Vulkan draw] 1363 batches (0 reduced): geometry 0.9ms textures 54.2ms raster 255.5ms
+[Vulkan backend] 1363 batches: surface 3.0ms CPU edits 152.4ms imports 227.3ms draw 313.1ms writeback 0.2ms
+[Vulkan draw] 1360 batches (0 reduced): geometry 0.8ms textures 62.9ms raster 262.0ms
+[Vulkan backend] 1360 batches: surface 3.9ms CPU edits 152.6ms imports 234.4ms draw 328.5ms writeback 0.1ms
+[Vulkan draw] 1785 batches (0 reduced): geometry 0.8ms textures 79.0ms raster 245.7ms
+[Vulkan backend] 1785 batches: surface 2.0ms CPU edits 184.6ms imports 238.7ms draw 328.7ms writeback 0.2ms
+[Vulkan draw] 1774 batches (0 reduced): geometry 0.9ms textures 50.3ms raster 238.6ms
+[Vulkan backend] 1774 batches: surface 2.9ms CPU edits 183.2ms imports 239.1ms draw 292.7ms writeback 0.2ms
+[Vulkan depth residency] binds=149674 imports=3694 writebacks=8674 CPU merges=0 GPU copies=5 clear skips=7186
+[Vulkan texture cache] hits=171689 uploads=1410 evictions=1191 live=254.8MiB entries=219/2048
+[Vulkan] completed frame 1440: 640x480, guest=80534000
+[Vulkan frame intervals] flips 1321..1441: 4.65 fps mean 215.22ms p95 265.66ms p99 308.93ms max 370.21ms >20ms=120 >33ms=120 (guest completions, not XR display)
+[Vulkan] captured /data/local/tmp/vc3-offscreen-8a273da3e0c7448c82e35c3aa6773fbc/frames/frame-001440.ppm
+[Vulkan draw] 1722 batches (0 reduced): geometry 1.0ms textures 54.3ms raster 237.9ms
+[Vulkan backend] 1722 batches: surface 3.0ms CPU edits 180.8ms imports 236.5ms draw 296.5ms writeback 0.2ms
+[Vulkan draw] 1695 batches (0 reduced): geometry 0.9ms textures 53.3ms raster 245.1ms
+[Vulkan backend] 1695 batches: surface 2.8ms CPU edits 179.7ms imports 236.3ms draw 302.3ms writeback 0.2ms
+[Vulkan draw] 1757 batches (0 reduced): geometry 1.0ms textures 54.7ms raster 220.5ms
+[Vulkan backend] 1757 batches: surface 3.0ms CPU edits 182.1ms imports 246.9ms draw 279.2ms writeback 0.2ms
+[Vulkan draw] 1744 batches (0 reduced): geometry 0.9ms textures 50.6ms raster 171.4ms
+[Vulkan backend] 1744 batches: surface 3.4ms CPU edits 185.9ms imports 252.7ms draw 226.2ms writeback 0.2ms
+[Vulkan draw] 1753 batches (0 reduced): geometry 1.0ms textures 49.4ms raster 127.4ms
+[Vulkan backend] 1753 batches: surface 3.1ms CPU edits 182.9ms imports 257.5ms draw 180.9ms writeback 0.2ms
+[Vulkan draw] 1753 batches (0 reduced): geometry 0.9ms textures 50.1ms raster 136.3ms
+[Vulkan backend] 1753 batches: surface 2.9ms CPU edits 181.9ms imports 257.3ms draw 190.4ms writeback 0.2ms
+[Vulkan draw] 1766 batches (0 reduced): geometry 0.9ms textures 51.1ms raster 216.2ms
+[Vulkan backend] 1766 batches: surface 3.0ms CPU edits 184.4ms imports 249.6ms draw 271.4ms writeback 0.2ms
+[Vulkan draw] 1749 batches (0 reduced): geometry 0.9ms textures 51.0ms raster 230.5ms
+[Vulkan backend] 1749 batches: surface 2.9ms CPU edits 185.1ms imports 246.0ms draw 285.5ms writeback 0.2ms
+[Vulkan draw] 1793 batches (0 reduced): geometry 0.9ms textures 52.1ms raster 234.7ms
+[Vulkan backend] 1793 batches: surface 2.9ms CPU edits 184.4ms imports 234.4ms draw 291.0ms writeback 0.2ms
+[Vulkan draw] 1778 batches (0 reduced): geometry 0.9ms textures 50.4ms raster 247.8ms
+[Vulkan backend] 1778 batches: surface 2.2ms CPU edits 183.7ms imports 245.1ms draw 302.2ms writeback 0.2ms
+[Vulkan draw] 1858 batches (0 reduced): geometry 0.8ms textures 49.7ms raster 224.3ms
+[Vulkan backend] 1858 batches: surface 2.7ms CPU edits 185.7ms imports 252.7ms draw 278.0ms writeback 0.2ms
+[Vulkan draw] 1791 batches (0 reduced): geometry 1.0ms textures 50.2ms raster 186.7ms
+[Vulkan backend] 1791 batches: surface 2.8ms CPU edits 183.3ms imports 249.6ms draw 241.0ms writeback 0.2ms
+[Vulkan draw] 1792 batches (0 reduced): geometry 0.9ms textures 50.5ms raster 169.1ms
+[Vulkan backend] 1792 batches: surface 3.2ms CPU edits 182.5ms imports 239.4ms draw 223.6ms writeback 0.2ms
+[Vulkan draw] 1574 batches (0 reduced): geometry 0.9ms textures 95.4ms raster 229.4ms
+[Vulkan backend] 1574 batches: surface 3.4ms CPU edits 168.7ms imports 218.8ms draw 328.9ms writeback 0.2ms
+[Vulkan draw] 1645 batches (0 reduced): geometry 0.8ms textures 45.5ms raster 191.0ms
+[Vulkan backend] 1645 batches: surface 2.3ms CPU edits 182.2ms imports 253.7ms draw 240.2ms writeback 0.2ms
+[Vulkan depth residency] binds=177035 imports=3844 writebacks=9134 CPU merges=0 GPU copies=5 clear skips=7486
+[Vulkan texture cache] hits=205686 uploads=1534 evictions=1300 live=253.7MiB entries=234/2048
+[Vulkan] completed frame 1500: 640x480, guest=80534000
+[Vulkan draw] 1653 batches (0 reduced): geometry 0.9ms textures 40.8ms raster 258.4ms
+[Vulkan backend] 1653 batches: surface 1.8ms CPU edits 177.3ms imports 237.2ms draw 303.1ms writeback 0.2ms
+[Vulkan draw] 1646 batches (0 reduced): geometry 0.8ms textures 44.9ms raster 256.2ms
+[Vulkan backend] 1646 batches: surface 3.8ms CPU edits 174.7ms imports 219.5ms draw 304.9ms writeback 0.1ms
+[Vulkan draw] 1702 batches (0 reduced): geometry 0.9ms textures 38.7ms raster 228.0ms
+[Vulkan backend] 1702 batches: surface 1.9ms CPU edits 183.5ms imports 240.8ms draw 270.7ms writeback 0.2ms
+[Vulkan draw] 1718 batches (0 reduced): geometry 0.8ms textures 45.8ms raster 265.4ms
+[Vulkan backend] 1718 batches: surface 3.0ms CPU edits 179.6ms imports 236.6ms draw 314.8ms writeback 0.2ms
+[Vulkan draw] 1764 batches (0 reduced): geometry 0.9ms textures 38.9ms raster 226.7ms
+[Vulkan backend] 1764 batches: surface 1.9ms CPU edits 182.9ms imports 237.5ms draw 269.7ms writeback 0.2ms
+[Vulkan draw] 1722 batches (0 reduced): geometry 0.8ms textures 51.4ms raster 229.4ms
+[Vulkan backend] 1722 batches: surface 2.7ms CPU edits 180.8ms imports 240.5ms draw 284.6ms writeback 0.2ms
+[Vulkan draw] 1673 batches (0 reduced): geometry 1.0ms textures 45.6ms raster 269.0ms
+[Vulkan backend] 1673 batches: surface 3.3ms CPU edits 177.8ms imports 250.3ms draw 318.8ms writeback 0.2ms
+[Vulkan draw] 1684 batches (0 reduced): geometry 0.9ms textures 40.4ms raster 233.1ms
+[Vulkan backend] 1684 batches: surface 1.9ms CPU edits 179.0ms imports 235.4ms draw 277.4ms writeback 0.2ms
+[Vulkan draw] 1567 batches (0 reduced): geometry 0.8ms textures 71.4ms raster 230.6ms
+[Vulkan backend] 1567 batches: surface 2.9ms CPU edits 166.8ms imports 244.5ms draw 305.7ms writeback 0.2ms
+[Vulkan draw] 1749 batches (0 reduced): geometry 0.7ms textures 92.1ms raster 244.5ms
+[Vulkan backend] 1749 batches: surface 1.7ms CPU edits 178.2ms imports 284.2ms draw 339.9ms writeback 0.1ms
+[Vulkan draw] 1630 batches (0 reduced): geometry 0.7ms textures 102.5ms raster 224.6ms
+[Vulkan backend] 1630 batches: surface 2.4ms CPU edits 168.9ms imports 295.9ms draw 330.2ms writeback 0.1ms
+[Vulkan draw] 1573 batches (0 reduced): geometry 0.7ms textures 91.8ms raster 212.4ms
+[Vulkan backend] 1573 batches: surface 1.5ms CPU edits 160.8ms imports 304.3ms draw 307.2ms writeback 0.1ms
+[Vulkan draw] 1544 batches (0 reduced): geometry 0.6ms textures 104.1ms raster 237.5ms
+[Vulkan backend] 1544 batches: surface 2.6ms CPU edits 160.7ms imports 296.6ms draw 344.4ms writeback 0.1ms
+[Vulkan draw] 1428 batches (0 reduced): geometry 0.7ms textures 119.3ms raster 198.5ms
+[Vulkan backend] 1428 batches: surface 2.7ms CPU edits 145.9ms imports 324.4ms draw 320.6ms writeback 0.1ms
+[Vulkan draw] 1418 batches (0 reduced): geometry 0.6ms textures 103.2ms raster 171.1ms
+[Vulkan backend] 1418 batches: surface 1.6ms CPU edits 146.0ms imports 311.3ms draw 277.1ms writeback 0.1ms
+[Vulkan draw] 1461 batches (0 reduced): geometry 0.7ms textures 124.4ms raster 151.9ms
+[Vulkan backend] 1461 batches: surface 2.5ms CPU edits 150.4ms imports 334.0ms draw 279.1ms writeback 0.1ms
+[Vulkan draw] 1543 batches (0 reduced): geometry 0.8ms textures 124.2ms raster 171.3ms
+[Vulkan backend] 1543 batches: surface 3.1ms CPU edits 158.8ms imports 358.0ms draw 298.6ms writeback 0.1ms
+[Vulkan draw] 1240 batches (0 reduced): geometry 0.7ms textures 157.0ms raster 132.7ms
+[Vulkan backend] 1240 batches: surface 3.5ms CPU edits 127.3ms imports 363.5ms draw 292.3ms writeback 0.1ms
+[Vulkan depth residency] binds=205031 imports=3994 writebacks=9594 CPU merges=0 GPU copies=5 clear skips=7784
+[Vulkan texture cache] hits=240614 uploads=1768 evictions=1559 live=254.0MiB entries=209/2048
+[Vulkan] completed frame 1560: 640x480, guest=80534000
+[Vulkan frame intervals] flips 1441..1561: 3.60 fps mean 278.04ms p95 341.25ms p99 380.17ms max 384.14ms >20ms=120 >33ms=120 (guest completions, not XR display)
+[Vulkan draw] 1213 batches (0 reduced): geometry 0.7ms textures 159.4ms raster 118.9ms
+[Vulkan backend] 1213 batches: surface 2.4ms CPU edits 123.8ms imports 372.2ms draw 280.9ms writeback 0.1ms
+[Vulkan draw] 1626 batches (0 reduced): geometry 1.1ms textures 30.7ms raster 176.3ms
+[Vulkan backend] 1626 batches: surface 3.8ms CPU edits 171.6ms imports 297.1ms draw 210.5ms writeback 0.1ms
+[Vulkan draw] 1544 batches (0 reduced): geometry 0.9ms textures 41.4ms raster 182.2ms
+[Vulkan backend] 1544 batches: surface 5.1ms CPU edits 163.4ms imports 322.0ms draw 226.8ms writeback 0.1ms
+[Vulkan draw] 1643 batches (0 reduced): geometry 1.2ms textures 21.0ms raster 206.9ms
+[Vulkan backend] 1643 batches: surface 3.7ms CPU edits 172.4ms imports 298.9ms draw 231.6ms writeback 0.1ms
+[Vulkan draw] 1618 batches (0 reduced): geometry 1.2ms textures 15.1ms raster 193.0ms
+[Vulkan backend] 1618 batches: surface 3.6ms CPU edits 169.3ms imports 297.0ms draw 211.7ms writeback 0.1ms
+[Vulkan draw] 1576 batches (0 reduced): geometry 1.1ms textures 16.3ms raster 185.1ms
+[Vulkan backend] 1576 batches: surface 3.7ms CPU edits 166.9ms imports 283.5ms draw 205.0ms writeback 0.1ms
+[Vulkan draw] 1616 batches (0 reduced): geometry 1.1ms textures 15.3ms raster 193.5ms
+[Vulkan backend] 1616 batches: surface 3.8ms CPU edits 173.5ms imports 292.5ms draw 212.4ms writeback 0.1ms
+[Vulkan draw] 1594 batches (0 reduced): geometry 0.9ms textures 15.7ms raster 182.3ms
+[Vulkan backend] 1594 batches: surface 5.0ms CPU edits 168.6ms imports 288.1ms draw 201.2ms writeback 0.1ms
+[Vulkan draw] 1683 batches (0 reduced): geometry 1.0ms textures 16.0ms raster 154.7ms
+[Vulkan backend] 1683 batches: surface 4.0ms CPU edits 177.8ms imports 303.0ms draw 174.2ms writeback 0.1ms
+[Vulkan depth residency] binds=220194 imports=4144 writebacks=9985 CPU merges=0 GPU copies=5 clear skips=8084
+[Vulkan texture cache] hits=260122 uploads=1792 evictions=1606 live=252.8MiB entries=186/2048
+[Vulkan] completed frame 1620: 640x480, guest=80534000
+[Vulkan draw] 1625 batches (0 reduced): geometry 1.1ms textures 16.8ms raster 144.6ms
+[Vulkan backend] 1625 batches: surface 3.9ms CPU edits 172.5ms imports 341.2ms draw 164.9ms writeback 0.1ms
+[Vulkan draw] 1642 batches (0 reduced): geometry 1.0ms textures 15.6ms raster 201.4ms
+[Vulkan backend] 1642 batches: surface 3.9ms CPU edits 176.6ms imports 310.1ms draw 220.4ms writeback 0.1ms
+[Vulkan draw] 1563 batches (0 reduced): geometry 1.1ms textures 21.9ms raster 203.7ms
+[Vulkan backend] 1563 batches: surface 4.5ms CPU edits 165.8ms imports 303.6ms draw 229.2ms writeback 0.1ms
+[Vulkan draw] 1592 batches (0 reduced): geometry 1.1ms textures 15.9ms raster 184.4ms
+[Vulkan backend] 1592 batches: surface 3.9ms CPU edits 165.7ms imports 289.8ms draw 203.8ms writeback 0.1ms
+[Vulkan draw] 1642 batches (0 reduced): geometry 1.1ms textures 15.3ms raster 201.5ms
+[Vulkan backend] 1642 batches: surface 3.9ms CPU edits 174.2ms imports 283.2ms draw 220.3ms writeback 0.1ms
+[Vulkan draw] 1579 batches (0 reduced): geometry 1.1ms textures 16.6ms raster 173.1ms
+[Vulkan backend] 1579 batches: surface 3.9ms CPU edits 167.8ms imports 284.6ms draw 193.3ms writeback 0.1ms
+[Vulkan draw] 1614 batches (0 reduced): geometry 1.2ms textures 17.2ms raster 202.2ms
+[Vulkan backend] 1614 batches: surface 3.8ms CPU edits 171.4ms imports 285.0ms draw 223.1ms writeback 0.1ms
+[Vulkan draw] 1652 batches (0 reduced): geometry 1.1ms textures 24.0ms raster 196.2ms
+[Vulkan backend] 1652 batches: surface 4.0ms CPU edits 175.0ms imports 301.2ms draw 223.7ms writeback 0.1ms
+[Vulkan draw] 1725 batches (0 reduced): geometry 1.2ms textures 20.6ms raster 205.7ms
+[Vulkan backend] 1725 batches: surface 3.8ms CPU edits 181.2ms imports 306.8ms draw 230.0ms writeback 0.1ms
+[Vulkan draw] 1716 batches (0 reduced): geometry 1.2ms textures 20.5ms raster 207.7ms
+[Vulkan backend] 1716 batches: surface 3.7ms CPU edits 180.5ms imports 287.7ms draw 231.9ms writeback 0.1ms
+[Vulkan depth residency] binds=236368 imports=4294 writebacks=10371 CPU merges=0 GPU copies=5 clear skips=8384
+[Vulkan texture cache] hits=280642 uploads=1794 evictions=1608 live=255.5MiB entries=186/2048
+[Vulkan] completed frame 1680: 640x480, guest=80534000
+[Vulkan frame intervals] flips 1561..1681: 6.21 fps mean 161.00ms p95 182.69ms p99 203.08ms max 208.95ms >20ms=120 >33ms=120 (guest completions, not XR display)
+[Vulkan draw] 1702 batches (0 reduced): geometry 1.3ms textures 21.9ms raster 193.2ms
+[Vulkan backend] 1702 batches: surface 3.6ms CPU edits 177.7ms imports 292.4ms draw 219.0ms writeback 0.1ms
+[Vulkan draw] 1690 batches (0 reduced): geometry 1.2ms textures 20.6ms raster 210.3ms
+[Vulkan backend] 1690 batches: surface 3.7ms CPU edits 178.3ms imports 305.6ms draw 234.6ms writeback 0.1ms
+[Vulkan draw] 1733 batches (0 reduced): geometry 1.2ms textures 21.9ms raster 199.7ms
+[Vulkan backend] 1733 batches: surface 2.8ms CPU edits 182.6ms imports 288.3ms draw 225.6ms writeback 0.1ms
+[Vulkan draw] 1717 batches (0 reduced): geometry 1.2ms textures 21.8ms raster 167.7ms
+[Vulkan backend] 1717 batches: surface 3.7ms CPU edits 179.8ms imports 310.8ms draw 193.0ms writeback 0.1ms
+[Vulkan draw] 1718 batches (0 reduced): geometry 1.2ms textures 26.1ms raster 194.4ms
+[Vulkan backend] 1718 batches: surface 4.1ms CPU edits 179.6ms imports 286.1ms draw 224.4ms writeback 0.2ms
+[Vulkan draw] 1696 batches (0 reduced): geometry 1.2ms textures 26.3ms raster 184.4ms
+[Vulkan backend] 1696 batches: surface 3.8ms CPU edits 179.8ms imports 314.5ms draw 214.5ms writeback 0.1ms
+[Vulkan draw] 1718 batches (0 reduced): geometry 1.1ms textures 20.3ms raster 191.9ms
+[Vulkan backend] 1718 batches: surface 3.8ms CPU edits 178.8ms imports 311.2ms draw 215.8ms writeback 0.1ms
+[Vulkan draw] 1719 batches (0 reduced): geometry 1.2ms textures 27.2ms raster 189.8ms
+[Vulkan backend] 1719 batches: surface 2.8ms CPU edits 180.0ms imports 305.1ms draw 220.7ms writeback 0.1ms
+[Vulkan draw] 1718 batches (0 reduced): geometry 1.3ms textures 21.5ms raster 180.6ms
+[Vulkan backend] 1718 batches: surface 4.0ms CPU edits 179.3ms imports 312.6ms draw 206.0ms writeback 0.1ms
+[Vulkan draw] 1680 batches (0 reduced): geometry 1.2ms textures 21.1ms raster 177.3ms
+[Vulkan backend] 1680 batches: surface 3.6ms CPU edits 177.5ms imports 291.8ms draw 202.3ms writeback 0.1ms
+[Vulkan draw] 1709 batches (0 reduced): geometry 1.2ms textures 21.6ms raster 174.6ms
+[Vulkan backend] 1709 batches: surface 3.7ms CPU edits 180.0ms imports 318.2ms draw 200.0ms writeback 0.1ms
+[Vulkan depth residency] binds=254921 imports=4444 writebacks=10773 CPU merges=0 GPU copies=5 clear skips=8684
+[Vulkan texture cache] hits=303527 uploads=1798 evictions=1612 live=255.5MiB entries=186/2048
+[Vulkan] completed frame 1740: 640x480, guest=80534000
+[Vulkan draw] 1697 batches (0 reduced): geometry 1.2ms textures 26.0ms raster 213.9ms
+[Vulkan backend] 1697 batches: surface 2.7ms CPU edits 178.4ms imports 282.6ms draw 243.6ms writeback 0.1ms
+[Vulkan draw] 1714 batches (0 reduced): geometry 1.2ms textures 27.9ms raster 181.7ms
+[Vulkan backend] 1714 batches: surface 4.0ms CPU edits 180.8ms imports 310.0ms draw 213.3ms writeback 0.2ms
+[Vulkan draw] 1710 batches (0 reduced): geometry 1.1ms textures 26.4ms raster 185.4ms
+[Vulkan backend] 1710 batches: surface 3.5ms CPU edits 180.7ms imports 297.4ms draw 215.6ms writeback 0.1ms
+[Vulkan draw] 1675 batches (0 reduced): geometry 1.1ms textures 27.2ms raster 172.3ms
+[Vulkan backend] 1675 batches: surface 3.5ms CPU edits 176.1ms imports 311.5ms draw 203.0ms writeback 0.1ms
+[Vulkan draw] 1712 batches (0 reduced): geometry 1.2ms textures 20.5ms raster 192.6ms
+[Vulkan backend] 1712 batches: surface 3.8ms CPU edits 182.1ms imports 319.7ms draw 216.8ms writeback 0.1ms
+[Vulkan draw] 1737 batches (0 reduced): geometry 1.3ms textures 22.1ms raster 189.6ms
+[Vulkan backend] 1737 batches: surface 3.0ms CPU edits 182.3ms imports 292.2ms draw 215.5ms writeback 0.1ms
+[Vulkan draw] 1673 batches (0 reduced): geometry 1.2ms textures 20.8ms raster 168.4ms
+[Vulkan backend] 1673 batches: surface 3.5ms CPU edits 173.9ms imports 307.1ms draw 192.8ms writeback 0.1ms
+[Vulkan draw] 1744 batches (0 reduced): geometry 1.3ms textures 21.8ms raster 196.2ms
+[Vulkan backend] 1744 batches: surface 3.6ms CPU edits 183.4ms imports 292.9ms draw 221.7ms writeback 0.2ms
+[Vulkan draw] 1706 batches (0 reduced): geometry 1.1ms textures 22.4ms raster 190.4ms
+[Vulkan backend] 1706 batches: surface 3.8ms CPU edits 179.6ms imports 316.2ms draw 216.3ms writeback 0.1ms
+[Vulkan draw] 1716 batches (0 reduced): geometry 1.1ms textures 20.2ms raster 199.8ms
+[Vulkan backend] 1716 batches: surface 3.2ms CPU edits 180.7ms imports 297.2ms draw 223.9ms writeback 0.1ms
+[Vulkan draw] 1725 batches (0 reduced): geometry 1.2ms textures 22.5ms raster 182.2ms
+[Vulkan backend] 1725 batches: surface 3.2ms CPU edits 182.6ms imports 306.4ms draw 208.6ms writeback 0.1ms
+[Vulkan depth residency] binds=273474 imports=4594 writebacks=11175 CPU merges=0 GPU copies=5 clear skips=8984
+[Vulkan texture cache] hits=326413 uploads=1801 evictions=1615 live=252.8MiB entries=186/2048
+[Vulkan] completed frame 1800: 640x480, guest=80534000
+[Vulkan frame intervals] flips 1681..1801: 5.55 fps mean 180.27ms p95 189.03ms p99 194.70ms max 195.19ms >20ms=120 >33ms=120 (guest completions, not XR display)
+[Vulkan draw] 1721 batches (0 reduced): geometry 1.2ms textures 21.5ms raster 182.6ms
+[Vulkan backend] 1721 batches: surface 4.0ms CPU edits 180.4ms imports 317.0ms draw 207.8ms writeback 0.1ms
+[Vulkan draw] 1689 batches (0 reduced): geometry 1.2ms textures 20.9ms raster 181.7ms
+[Vulkan backend] 1689 batches: surface 3.6ms CPU edits 178.6ms imports 297.9ms draw 206.3ms writeback 0.1ms
+[Vulkan draw] 1700 batches (0 reduced): geometry 1.2ms textures 21.8ms raster 188.2ms
+[Vulkan backend] 1700 batches: surface 3.6ms CPU edits 179.5ms imports 318.9ms draw 213.8ms writeback 0.2ms
+[Vulkan draw] 1758 batches (0 reduced): geometry 1.2ms textures 20.8ms raster 184.4ms
+[Vulkan backend] 1758 batches: surface 3.9ms CPU edits 183.9ms imports 301.2ms draw 209.0ms writeback 0.1ms
+[Vulkan draw] 1717 batches (0 reduced): geometry 1.2ms textures 21.9ms raster 182.2ms
+[Vulkan backend] 1717 batches: surface 2.5ms CPU edits 179.9ms imports 300.0ms draw 207.9ms writeback 0.1ms
+[Vulkan draw] 1730 batches (0 reduced): geometry 1.2ms textures 21.4ms raster 201.2ms
+[Vulkan backend] 1730 batches: surface 3.6ms CPU edits 181.2ms imports 316.2ms draw 226.4ms writeback 0.1ms
+[Vulkan draw] 1706 batches (0 reduced): geometry 1.1ms textures 20.9ms raster 187.7ms
+[Vulkan backend] 1706 batches: surface 4.1ms CPU edits 179.7ms imports 293.3ms draw 212.0ms writeback 0.1ms
+[Vulkan draw] 1713 batches (0 reduced): geometry 1.2ms textures 22.0ms raster 183.6ms
+[Vulkan backend] 1713 batches: surface 4.2ms CPU edits 179.7ms imports 309.5ms draw 209.3ms writeback 0.1ms
+[Vulkan draw] 1715 batches (0 reduced): geometry 1.2ms textures 20.2ms raster 185.1ms
+[Vulkan backend] 1715 batches: surface 2.8ms CPU edits 181.9ms imports 304.4ms draw 209.2ms writeback 0.1ms
+[Vulkan draw] 1720 batches (0 reduced): geometry 1.2ms textures 22.7ms raster 173.4ms
+[Vulkan backend] 1720 batches: surface 3.9ms CPU edits 184.7ms imports 309.2ms draw 199.9ms writeback 0.1ms
+[Vulkan depth residency] binds=292027 imports=4744 writebacks=11580 CPU merges=0 GPU copies=5 clear skips=9284
+[Vulkan texture cache] hits=349302 uploads=1801 evictions=1615 live=252.8MiB entries=186/2048
+[Vulkan] completed frame 1860: 640x480, guest=80534000
+[Vulkan draw] 1675 batches (0 reduced): geometry 1.2ms textures 20.6ms raster 191.5ms
+[Vulkan backend] 1675 batches: surface 3.8ms CPU edits 178.0ms imports 315.1ms draw 215.9ms writeback 0.2ms
+[Vulkan draw] 1701 batches (0 reduced): geometry 1.2ms textures 21.6ms raster 189.1ms
+[Vulkan backend] 1701 batches: surface 3.8ms CPU edits 180.5ms imports 291.1ms draw 214.5ms writeback 0.2ms
+[Vulkan draw] 1722 batches (0 reduced): geometry 1.2ms textures 21.2ms raster 193.4ms
+[Vulkan backend] 1722 batches: surface 4.3ms CPU edits 180.4ms imports 312.8ms draw 218.4ms writeback 0.1ms
+[Vulkan draw] 1737 batches (0 reduced): geometry 1.2ms textures 20.9ms raster 186.0ms
+[Vulkan backend] 1737 batches: surface 2.8ms CPU edits 182.0ms imports 297.8ms draw 210.6ms writeback 0.1ms
+[Vulkan draw] 1698 batches (0 reduced): geometry 1.4ms textures 22.4ms raster 177.1ms
+[Vulkan backend] 1698 batches: surface 4.0ms CPU edits 179.2ms imports 319.3ms draw 203.5ms writeback 0.1ms
+[Vulkan draw] 1523 batches (0 reduced): geometry 1.5ms textures 22.3ms raster 178.6ms
+[Vulkan backend] 1523 batches: surface 4.3ms CPU edits 179.6ms imports 302.7ms draw 205.3ms writeback 0.1ms
+[Vulkan draw] 1550 batches (0 reduced): geometry 1.3ms textures 21.9ms raster 176.8ms
+[Vulkan backend] 1550 batches: surface 3.3ms CPU edits 180.2ms imports 298.1ms draw 202.8ms writeback 0.1ms
+[Vulkan draw] 1521 batches (0 reduced): geometry 1.4ms textures 22.0ms raster 163.3ms
+[Vulkan backend] 1521 batches: surface 4.2ms CPU edits 173.8ms imports 303.0ms draw 189.5ms writeback 0.2ms
+[Vulkan draw] 1596 batches (0 reduced): geometry 1.3ms textures 21.6ms raster 184.0ms
+[Vulkan backend] 1596 batches: surface 3.4ms CPU edits 179.5ms imports 305.0ms draw 209.8ms writeback 0.2ms
+[Vulkan draw] 1844 batches (0 reduced): geometry 1.2ms textures 21.4ms raster 172.7ms
+[Vulkan backend] 1844 batches: surface 3.9ms CPU edits 184.3ms imports 313.9ms draw 198.3ms writeback 0.2ms
+[Vulkan draw] 1686 batches (0 reduced): geometry 1.5ms textures 22.1ms raster 155.7ms
+[Vulkan backend] 1686 batches: surface 4.2ms CPU edits 185.3ms imports 316.9ms draw 182.5ms writeback 0.2ms
+[Vulkan draw] 1592 batches (0 reduced): geometry 1.5ms textures 23.4ms raster 186.1ms
+[Vulkan backend] 1592 batches: surface 4.6ms CPU edits 183.3ms imports 303.5ms draw 214.0ms writeback 0.2ms
+[Vulkan depth residency] binds=310576 imports=4894 writebacks=11983 CPU merges=0 GPU copies=5 clear skips=9584
+[Vulkan texture cache] hits=372184 uploads=1801 evictions=1615 live=252.8MiB entries=186/2048
+[Vulkan] completed frame 1920: 640x480, guest=80534000
+[Vulkan frame intervals] flips 1801..1921: 5.45 fps mean 183.38ms p95 209.19ms p99 212.62ms max 213.90ms >20ms=120 >33ms=120 (guest completions, not XR display)
+[Vulkan] captured /data/local/tmp/vc3-offscreen-8a273da3e0c7448c82e35c3aa6773fbc/frames/frame-001920.ppm
+[Vulkan draw] 1565 batches (0 reduced): geometry 1.4ms textures 22.6ms raster 166.6ms
+[Vulkan backend] 1565 batches: surface 3.3ms CPU edits 181.9ms imports 310.8ms draw 193.8ms writeback 0.2ms
+[Vulkan draw] 1536 batches (0 reduced): geometry 1.5ms textures 21.8ms raster 170.2ms
+[Vulkan backend] 1536 batches: surface 4.7ms CPU edits 178.9ms imports 310.2ms draw 196.5ms writeback 0.1ms
+[Vulkan draw] 1560 batches (0 reduced): geometry 1.4ms textures 22.1ms raster 180.4ms
+[Vulkan backend] 1560 batches: surface 3.2ms CPU edits 178.5ms imports 298.2ms draw 206.8ms writeback 0.2ms
+[Vulkan draw] 1503 batches (0 reduced): geometry 1.3ms textures 21.0ms raster 178.3ms
+[Vulkan backend] 1503 batches: surface 4.2ms CPU edits 172.3ms imports 298.6ms draw 203.6ms writeback 0.1ms
+[Vulkan draw] 1591 batches (0 reduced): geometry 1.3ms textures 22.2ms raster 178.0ms
+[Vulkan backend] 1591 batches: surface 3.1ms CPU edits 179.4ms imports 303.8ms draw 204.3ms writeback 0.2ms
+[Vulkan draw] 1565 batches (0 reduced): geometry 1.4ms textures 21.6ms raster 164.6ms
+[Vulkan backend] 1565 batches: surface 4.5ms CPU edits 175.6ms imports 298.8ms draw 190.6ms writeback 0.2ms
+[Vulkan draw] 1298 batches (0 reduced): geometry 1.0ms textures 171.6ms raster 188.4ms
+[Vulkan backend] 1298 batches: surface 3.2ms CPU edits 145.3ms imports 249.1ms draw 363.5ms writeback 0.2ms
+[Vulkan draw] 1449 batches (0 reduced): geometry 0.9ms textures 54.2ms raster 214.4ms
+[Vulkan backend] 1449 batches: surface 3.3ms CPU edits 160.6ms imports 251.4ms draw 272.1ms writeback 0.1ms
+[Vulkan draw] 1528 batches (0 reduced): geometry 1.1ms textures 42.9ms raster 227.4ms
+[Vulkan backend] 1528 batches: surface 3.0ms CPU edits 171.3ms imports 271.6ms draw 274.3ms writeback 0.1ms
+[Vulkan draw] 1543 batches (0 reduced): geometry 0.9ms textures 41.1ms raster 302.7ms
+[Vulkan backend] 1543 batches: surface 1.9ms CPU edits 166.8ms imports 207.5ms draw 347.5ms writeback 0.1ms
+[Vulkan draw] 1457 batches (0 reduced): geometry 0.8ms textures 57.9ms raster 279.4ms
+[Vulkan backend] 1457 batches: surface 3.1ms CPU edits 157.6ms imports 215.4ms draw 341.0ms writeback 0.2ms
+[Vulkan draw] 1525 batches (0 reduced): geometry 0.8ms textures 61.5ms raster 235.7ms
+[Vulkan backend] 1525 batches: surface 2.8ms CPU edits 162.6ms imports 240.2ms draw 300.9ms writeback 0.2ms
+[Vulkan draw] 1798 batches (0 reduced): geometry 1.0ms textures 78.0ms raster 197.8ms
+[Vulkan backend] 1798 batches: surface 2.8ms CPU edits 179.2ms imports 249.7ms draw 279.7ms writeback 0.2ms
+[Vulkan depth residency] binds=331972 imports=5044 writebacks=12403 CPU merges=0 GPU copies=5 clear skips=9884
+[Vulkan texture cache] hits=399626 uploads=1929 evictions=1664 live=256.0MiB entries=265/2048
+[Vulkan] completed frame 1980: 640x480, guest=80534000
+[Vulkan draw] 1887 batches (0 reduced): geometry 1.0ms textures 51.4ms raster 186.0ms
+[Vulkan backend] 1887 batches: surface 2.8ms CPU edits 188.0ms imports 251.5ms draw 241.5ms writeback 0.1ms
+[Vulkan draw] 1978 batches (0 reduced): geometry 0.9ms textures 50.4ms raster 226.9ms
+[Vulkan backend] 1978 batches: surface 2.9ms CPU edits 196.9ms imports 261.3ms draw 281.8ms writeback 0.2ms
+[Vulkan draw] 1947 batches (0 reduced): geometry 0.9ms textures 44.8ms raster 231.1ms
+[Vulkan backend] 1947 batches: surface 2.8ms CPU edits 192.9ms imports 242.4ms draw 280.1ms writeback 0.2ms
+[Vulkan draw] 1896 batches (0 reduced): geometry 0.9ms textures 50.7ms raster 189.7ms
+[Vulkan backend] 1896 batches: surface 2.9ms CPU edits 188.8ms imports 246.6ms draw 244.3ms writeback 0.2ms
+[Vulkan draw] 1933 batches (0 reduced): geometry 1.0ms textures 52.8ms raster 213.6ms
+[Vulkan backend] 1933 batches: surface 2.8ms CPU edits 190.4ms imports 252.3ms draw 270.6ms writeback 0.2ms
+[Vulkan draw] 1981 batches (0 reduced): geometry 1.0ms textures 49.2ms raster 195.3ms
+[Vulkan backend] 1981 batches: surface 2.8ms CPU edits 193.9ms imports 264.5ms draw 248.8ms writeback 0.2ms
+[Vulkan draw] 1974 batches (0 reduced): geometry 0.9ms textures 53.9ms raster 213.0ms
+[Vulkan backend] 1974 batches: surface 3.0ms CPU edits 194.2ms imports 251.9ms draw 270.8ms writeback 0.2ms
+[Vulkan draw] 1972 batches (0 reduced): geometry 0.9ms textures 37.9ms raster 214.7ms
+[Vulkan backend] 1972 batches: surface 1.8ms CPU edits 196.1ms imports 251.6ms draw 257.0ms writeback 0.2ms
+[Vulkan draw] 1901 batches (0 reduced): geometry 0.9ms textures 49.7ms raster 211.7ms
+[Vulkan backend] 1901 batches: surface 2.8ms CPU edits 189.3ms imports 247.6ms draw 265.6ms writeback 0.2ms
+[Vulkan draw] 1881 batches (0 reduced): geometry 1.0ms textures 53.5ms raster 177.0ms
+[Vulkan backend] 1881 batches: surface 3.2ms CPU edits 187.9ms imports 248.5ms draw 234.9ms writeback 0.1ms
+[Vulkan draw] 1978 batches (0 reduced): geometry 0.9ms textures 49.9ms raster 205.0ms
+[Vulkan backend] 1978 batches: surface 2.7ms CPU edits 193.3ms imports 257.0ms draw 258.8ms writeback 0.2ms
+[Vulkan draw] 1938 batches (0 reduced): geometry 0.9ms textures 51.9ms raster 212.3ms
+[Vulkan backend] 1938 batches: surface 3.1ms CPU edits 191.9ms imports 251.3ms draw 268.3ms writeback 0.2ms
+[Vulkan draw] 1943 batches (0 reduced): geometry 1.0ms textures 50.6ms raster 204.4ms
+[Vulkan backend] 1943 batches: surface 3.2ms CPU edits 190.9ms imports 249.1ms draw 259.4ms writeback 0.2ms
+[Vulkan draw] 1982 batches (0 reduced): geometry 0.8ms textures 49.9ms raster 214.9ms
+[Vulkan backend] 1982 batches: surface 3.0ms CPU edits 191.4ms imports 249.2ms draw 268.8ms writeback 0.2ms
+[Vulkan draw] 1905 batches (0 reduced): geometry 0.8ms textures 54.5ms raster 220.6ms
+[Vulkan backend] 1905 batches: surface 2.9ms CPU edits 192.7ms imports 237.2ms draw 278.9ms writeback 0.2ms
+[Vulkan draw] 1615 batches (0 reduced): geometry 0.9ms textures 75.2ms raster 255.0ms
+[Vulkan backend] 1615 batches: surface 1.9ms CPU edits 174.1ms imports 232.7ms draw 334.1ms writeback 0.2ms
+[Vulkan depth residency] binds=363054 imports=5194 writebacks=12878 CPU merges=0 GPU copies=5 clear skips=10184
+[Vulkan texture cache] hits=440340 uploads=2053 evictions=1790 live=255.6MiB entries=263/2048
+[Vulkan] completed frame 2040: 640x480, guest=80534000
+[Vulkan draw] 1722 batches (0 reduced): geometry 0.8ms textures 48.2ms raster 263.4ms
+[Vulkan backend] 1722 batches: surface 3.1ms CPU edits 179.9ms imports 229.0ms draw 315.4ms writeback 0.1ms
+[Vulkan frame intervals] flips 1921..2041: 3.98 fps mean 251.29ms p95 339.19ms p99 408.12ms max 416.46ms >20ms=120 >33ms=120 (guest completions, not XR display)
+[Vulkan draw] 1776 batches (0 reduced): geometry 0.7ms textures 39.9ms raster 264.7ms
+[Vulkan backend] 1776 batches: surface 1.7ms CPU edits 182.5ms imports 226.6ms draw 308.4ms writeback 0.2ms
+[Vulkan draw] 1738 batches (0 reduced): geometry 0.9ms textures 49.5ms raster 253.4ms
+[Vulkan backend] 1738 batches: surface 3.1ms CPU edits 182.4ms imports 231.0ms draw 307.4ms writeback 0.2ms
+[Vulkan draw] 1787 batches (0 reduced): geometry 0.9ms textures 40.8ms raster 271.4ms
+[Vulkan backend] 1787 batches: surface 2.1ms CPU edits 182.4ms imports 233.4ms draw 316.2ms writeback 0.2ms
+[Vulkan draw] 1782 batches (0 reduced): geometry 0.8ms textures 47.4ms raster 286.9ms
+[Vulkan backend] 1782 batches: surface 3.1ms CPU edits 183.9ms imports 237.2ms draw 338.2ms writeback 0.2ms
+[Vulkan draw] 1786 batches (0 reduced): geometry 0.9ms textures 41.9ms raster 275.3ms
+[Vulkan backend] 1786 batches: surface 1.8ms CPU edits 184.4ms imports 240.4ms draw 321.4ms writeback 0.2ms
+[Vulkan draw] 1754 batches (0 reduced): geometry 0.9ms textures 35.4ms raster 252.5ms
+[Vulkan backend] 1754 batches: surface 1.9ms CPU edits 184.6ms imports 226.4ms draw 292.0ms writeback 0.2ms
+[Vulkan draw] 1727 batches (0 reduced): geometry 0.9ms textures 45.2ms raster 254.9ms
+[Vulkan backend] 1727 batches: surface 3.0ms CPU edits 181.0ms imports 235.9ms draw 304.2ms writeback 0.2ms
+[Vulkan draw] 1707 batches (0 reduced): geometry 0.8ms textures 40.9ms raster 271.6ms
+[Vulkan backend] 1707 batches: surface 1.9ms CPU edits 179.6ms imports 238.9ms draw 316.6ms writeback 0.2ms
+[Vulkan draw] 1689 batches (0 reduced): geometry 0.9ms textures 45.3ms raster 281.1ms
+[Vulkan backend] 1689 batches: surface 3.0ms CPU edits 178.2ms imports 225.6ms draw 330.4ms writeback 0.2ms
+[Vulkan draw] 1593 batches (0 reduced): geometry 0.7ms textures 95.5ms raster 220.5ms
+[Vulkan backend] 1593 batches: surface 1.8ms CPU edits 165.1ms imports 277.7ms draw 319.5ms writeback 0.1ms
+[Vulkan draw] 1592 batches (0 reduced): geometry 0.7ms textures 91.6ms raster 260.8ms
+[Vulkan backend] 1592 batches: surface 1.6ms CPU edits 162.5ms imports 244.7ms draw 356.0ms writeback 0.2ms
+[Vulkan draw] 1479 batches (0 reduced): geometry 0.7ms textures 137.2ms raster 235.2ms
+[Vulkan backend] 1479 batches: surface 2.8ms CPU edits 148.8ms imports 278.7ms draw 375.9ms writeback 0.2ms
+[Vulkan draw] 1554 batches (0 reduced): geometry 0.8ms textures 92.1ms raster 244.1ms
+[Vulkan backend] 1554 batches: surface 1.9ms CPU edits 162.7ms imports 250.6ms draw 339.8ms writeback 0.2ms
+[Vulkan draw] 1408 batches (0 reduced): geometry 0.7ms textures 126.2ms raster 211.1ms
+[Vulkan backend] 1408 batches: surface 1.7ms CPU edits 147.5ms imports 294.9ms draw 340.6ms writeback 0.2ms
+[Vulkan draw] 1409 batches (0 reduced): geometry 0.8ms textures 137.9ms raster 189.3ms
+[Vulkan backend] 1409 batches: surface 3.0ms CPU edits 150.4ms imports 301.0ms draw 330.6ms writeback 0.2ms
+[Vulkan draw] 1504 batches (0 reduced): geometry 0.8ms textures 124.1ms raster 206.7ms
+[Vulkan backend] 1504 batches: surface 1.6ms CPU edits 153.4ms imports 295.8ms draw 334.1ms writeback 0.2ms
+[Vulkan draw] 1502 batches (0 reduced): geometry 0.8ms textures 141.7ms raster 183.9ms
+[Vulkan backend] 1502 batches: surface 2.9ms CPU edits 158.6ms imports 306.3ms draw 329.0ms writeback 0.2ms
+[Vulkan draw] 1297 batches (0 reduced): geometry 0.8ms textures 164.5ms raster 165.1ms
+[Vulkan backend] 1297 batches: surface 2.7ms CPU edits 137.3ms imports 325.6ms draw 332.9ms writeback 0.1ms
+[Vulkan draw] 1492 batches (0 reduced): geometry 0.8ms textures 132.1ms raster 207.3ms
+[Vulkan backend] 1492 batches: surface 1.7ms CPU edits 151.4ms imports 297.0ms draw 342.7ms writeback 0.1ms
+[Vulkan draw] 1151 batches (0 reduced): geometry 0.8ms textures 173.0ms raster 130.8ms
+[Vulkan backend] 1151 batches: surface 2.7ms CPU edits 123.3ms imports 337.9ms draw 306.9ms writeback 0.1ms
+[Vulkan depth residency] binds=395116 imports=5344 writebacks=13344 CPU merges=0 GPU copies=5 clear skips=10484
+[Vulkan texture cache] hits=482428 uploads=2279 evictions=2069 live=253.8MiB entries=210/2048
+[Vulkan] completed frame 2100: 640x480, guest=80534000
+[Vulkan draw] 1134 batches (0 reduced): geometry 0.7ms textures 180.6ms raster 173.3ms
+[Vulkan backend] 1134 batches: surface 2.7ms CPU edits 122.6ms imports 316.8ms draw 356.9ms writeback 0.1ms
+[Vulkan draw] 1436 batches (0 reduced): geometry 1.1ms textures 85.0ms raster 207.9ms
+[Vulkan backend] 1436 batches: surface 2.9ms CPU edits 158.2ms imports 320.9ms draw 296.7ms writeback 0.1ms
+[Vulkan draw] 1498 batches (0 reduced): geometry 1.0ms textures 38.4ms raster 208.6ms
+[Vulkan backend] 1498 batches: surface 4.5ms CPU edits 172.5ms imports 298.9ms draw 250.8ms writeback 0.1ms
+[Vulkan draw] 1540 batches (0 reduced): geometry 1.2ms textures 33.4ms raster 245.9ms
+[Vulkan backend] 1540 batches: surface 3.1ms CPU edits 176.1ms imports 257.0ms draw 283.5ms writeback 0.1ms
+[Vulkan draw] 1619 batches (0 reduced): geometry 1.2ms textures 25.8ms raster 221.6ms
+[Vulkan backend] 1619 batches: surface 3.2ms CPU edits 178.4ms imports 291.6ms draw 251.7ms writeback 0.2ms
+[Vulkan draw] 1616 batches (0 reduced): geometry 1.4ms textures 21.1ms raster 232.6ms
+[Vulkan backend] 1616 batches: surface 3.1ms CPU edits 178.3ms imports 273.1ms draw 258.1ms writeback 0.2ms
+[Vulkan draw] 1679 batches (0 reduced): geometry 1.2ms textures 30.4ms raster 241.9ms
+[Vulkan backend] 1679 batches: surface 3.0ms CPU edits 180.6ms imports 288.5ms draw 276.2ms writeback 0.2ms

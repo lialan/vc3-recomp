@@ -29,10 +29,13 @@ def main():
     parser.add_argument("--strict-depth-clears", action="store_true")
     parser.add_argument("--float-depth-transfers", action="store_true")
     parser.add_argument("--generic-color-transfers", action="store_true")
+    parser.add_argument("--texture-cache-mib", type=int, default=64, help="Bounded encoded snapshots, image and staging budget (1..1024MiB)")
     parser.add_argument("--simpleperf", action="store_true", help="Profile only this workload with the bundled NDK tool; no system permission changes")
     args = parser.parse_args()
     if args.frames < 1 or not 1 <= args.timeout <= 3600 or args.capture_first < 0 or args.capture_count < 0 or args.capture_every < 0:
         parser.error("invalid frame/capture/timeout range")
+    if not 1 <= args.texture_cache_mib <= 1024:
+        parser.error("texture cache budget must be 1..1024MiB")
     output = args.output.resolve()
     if output.exists() and any(output.iterdir()):
         parser.error("output must be a fresh directory")
@@ -69,6 +72,7 @@ def main():
     env["CHIHIRO_VULKAN_DEPTH_CLEAR_SKIP"] = "0" if args.strict_depth_clears else "1"
     env["CHIHIRO_VULKAN_DEPTH_PACKED"] = "0" if args.float_depth_transfers else "1"
     env["CHIHIRO_VULKAN_COLOR_FAST_IO"] = "0" if args.generic_color_transfers else "1"
+    env["CHIHIRO_VULKAN_TEXTURE_CACHE_MIB"] = str(args.texture_cache_mib)
     env["CHIHIRO_VULKAN_DUMP_EVERY"] = str(args.capture_every)
     report = {"serial": "2G97C5ZJ0G02DQ", "binary_hashes": hashes, "environment": env,
               "requested_frames": args.frames, "game": args.game,

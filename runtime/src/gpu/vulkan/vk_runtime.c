@@ -123,6 +123,15 @@ static VkResult attach(ChVkBackendConfig config)
             return VK_ERROR_INITIALIZATION_FAILED;
         config.texture_cache_entries=(uint32_t)value;
     }
+    const char *budget=ch_env("VULKAN_TEXTURE_CACHE_MIB");
+    if(budget) {
+        char *end;errno=0;unsigned long value=strtoul(budget,&end,10);
+        if(errno || end==budget || *end || value<1 || value>1024)
+            return VK_ERROR_INITIALIZATION_FAILED;
+        config.texture_cache_bytes=(size_t)value<<20;
+    }
+    fprintf(stderr,"[Vulkan] texture cache budget: %zuMiB\n",
+        config.texture_cache_bytes?config.texture_cache_bytes>>20:(size_t)64);
     const char *fixed=ch_env("VULKAN_GPU_FIXED");
     if(fixed && !strcmp(fixed,"0")) config.raw_fixed=0;
     fprintf(stderr,"[Vulkan] raw fixed-function GPU transforms: %s\n",config.raw_fixed?"enabled":"disabled");

@@ -34,3 +34,5 @@ requirement is plainly unmet; immersive XR and sustained pacing remain open.
 
 Both Quest sessions used the whole-session shared lock and cleaned their UUID
 files. The original OpenGL APK hash remained unchanged. No app was installed.
+`quest-periodic.log` retains the boot header and relevant Vulkan frame/cache/
+draw/capture rows; the full runner log remains at the report's local output.
