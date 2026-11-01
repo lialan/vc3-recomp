@@ -25,3 +25,11 @@ Normal combat windows remain near 60 FPS. Activation improves in both comparison
 
 Shared runtime enables this for compute-capable graphics queues. Set CHIHIRO_VULKAN_GPU_TEXTURE_DECODE=0 for the CPU control. Direct backend callers select gpu_texture_decode. Resource bounds are checked against maxStorageBufferRange and compute dispatch limits before staging mutation. Other formats, CPU snapshots, guest color conversion and memory coherence still consume CPU work.
 
+
+## Follow-up diagnostics
+
+Retained CPU profile (four seconds after flip1560): memmove147, swap_color_rows79, command dispatch52, memcmp43 self samples. Texture decoding and ch_vk_texture_replace_argb no longer appear in the collapsed >=5 table. These are sampling counts, not frame percentages; sampling perturbs timing heavily, so its FPS is not used for acceptance.
+
+RECOMP_FRAME_TRACE initially produced invalid huge timing values under DMA walk because nv2a_pb_scan did not initialize the baseline. Shared executor fix f629e13 initializes it once per DMA walk, including resumed partial methods. The pushbuffer regression checks both cases; missing optional bulk-offer stubs in that standalone fixture were also restored. Native and Android offscreen builds pass.
+
+The corrected, unsampled trace reports last-segment execution averages around11-13ms on time and13-20ms for late flips during slow motion. This includes CPU execution and synchronous Vulkan waits; it is not a GPU measurement or a full-frame duration. Captured trace is included. It supports further investigation of rendering/transfer work but does not isolate guest simulation as the cause.

@@ -1,0 +1,9 @@
+[Vulkan frame intervals] flips 1441..1561: 59.98 fps mean 16.67ms p95 22.61ms p99 25.07ms max 25.57ms >20ms=24 >33ms=0 (guest completions, not XR display)
+[FRAMES] 59 flips, 9 late | on time: arrived -2.0 ms after the vblank, executed in 12.5 | late: arrived -16.2, executed in 19.5
+[FRAMES] 60 flips, 13 late | on time: arrived 2.5 ms after the vblank, executed in 11.3 | late: arrived -13.0, executed in 14.2
+[Vulkan frame intervals] flips 1561..1681: 59.44 fps mean 16.82ms p95 22.22ms p99 33.24ms max 44.96ms >20ms=14 >33ms=1 (guest completions, not XR display)
+[FRAMES] 61 flips, 8 late | on time: arrived 3.0 ms after the vblank, executed in 11.3 | late: arrived -13.0, executed in 15.2
+[FRAMES] 60 flips, 16 late | on time: arrived 1.6 ms after the vblank, executed in 11.5 | late: arrived -12.4, executed in 13.8
+[Vulkan frame intervals] flips 1681..1801: 59.89 fps mean 16.70ms p95 20.99ms p99 24.23ms max 26.25ms >20ms=14 >33ms=0 (guest completions, not XR display)
+[FRAMES] 60 flips, 14 late | on time: arrived -0.9 ms after the vblank, executed in 12.7 | late: arrived -11.9, executed in 13.3
+[FRAMES] 61 flips, 15 late | on time: arrived 2.1 ms after the vblank, executed in 11.4 | late: arrived -12.8, executed in 14.0
