@@ -256,13 +256,22 @@ static VkResult draw_decoded(ChVkTarget *t, const Nv2aSurface *s,
         b->zpass_out?&samples:NULL,rc,b->fog_color,(const ChVkTexture *const *)stage_images,pixels,bytes);
     if(profile) profile_draw(start,vertices_done,textures_done,profile_us(),modulate);
     if(result==VK_SUCCESS && b->zpass_out) *b->zpass_out+=samples;
-done:
-    for(unsigned i=0;i<4;i++) {
-        if(leases[i].gpu) {if(leases[i].release) leases[i].release(leases[i].release_context,leases[i].gpu);}
-        else ch_vk_texture_destroy(stage_images[i]);
+done:;
+    /* Cache pins and owned uploads must outlive all recorded draws. A resolver
+     * exposing a bare borrowed GPU image keeps the old synchronous lifetime. */
+    int bare=plain_lease.gpu && !plain_lease.release;
+    for(unsigned i=0;i<4;i++) bare|=leases[i].gpu && !leases[i].release;
+    if(bare && ch_vk_target_pending(t)) {
+        VkResult r=ch_vk_target_finish(t);if(result==VK_SUCCESS) result=r;
     }
-    if(plain_lease.gpu) {if(plain_lease.release) plain_lease.release(plain_lease.release_context,plain_lease.gpu);}
-    else ch_vk_texture_destroy(texture);
+    for(unsigned i=0;i<4;i++) {
+        ChVkTexture *image=leases[i].gpu?leases[i].gpu:stage_images[i];
+        VkResult r=ch_vk_target_retire_sample(t,image,leases[i].release,leases[i].release_context,!leases[i].gpu);
+        if(result==VK_SUCCESS) result=r;
+    }
+    VkResult retired=ch_vk_target_retire_sample(t,plain_lease.gpu?plain_lease.gpu:texture,
+        plain_lease.release,plain_lease.release_context,!plain_lease.gpu);
+    if(result==VK_SUCCESS) result=retired;
     free(v); free(indices); return result;
 }
 

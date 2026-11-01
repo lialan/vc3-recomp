@@ -438,7 +438,7 @@ int ch_test_guest_textures(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,ui
         ChVkBackend *backend=NULL;
         ChVkBackendConfig config={.physical=gpu,.device=device,.queue=queue,.family=family,
             .guest_base=guest.bytes,.guest_bytes=sizeof guest.bytes,.decode=nv2a_backend_decode_texture,
-            .precise_queries=1,.resident_color=1,.cache_textures=1};
+            .precise_queries=1,.resident_color=1,.batch_draws=1,.cache_textures=1};
         Nv2aRenderState rs={.surface_format=0x128,.color_mask=0x01010101};
         Nv2aSurface a=surface,b=surface; a.color_va=2048;b.color_va=2304;
         memset(guest.bytes+2048,0,64);memset(guest.bytes+2304,0,64);

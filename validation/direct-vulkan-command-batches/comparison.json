@@ -1,0 +1,6 @@
+{
+  "scope": "Local startup only; not combat or Quest performance acceptance",
+  "same_binary": true,
+  "captures_equal": true,
+  "both_reached_240_frames": true
+}

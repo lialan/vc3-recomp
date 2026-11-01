@@ -1,0 +1,17 @@
+[Vulkan] resident command batches: disabled
+[Vulkan command batches] live targets: draws=0 submissions=0
+[Vulkan depth residency] binds=0 imports=0 writebacks=0 CPU merges=0
+[Vulkan] completed frame 1: 640x480, guest=80408000
+[Vulkan command batches] live targets: draws=0 submissions=0
+[Vulkan depth residency] binds=0 imports=0 writebacks=0 CPU merges=0
+[Vulkan] completed frame 60: 640x480, guest=80534000
+[Vulkan command batches] live targets: draws=0 submissions=0
+[Vulkan depth residency] binds=0 imports=0 writebacks=0 CPU merges=0
+[Vulkan] completed frame 120: 640x480, guest=80660000
+[Vulkan command batches] live targets: draws=0 submissions=0
+[Vulkan depth residency] binds=0 imports=0 writebacks=0 CPU merges=0
+[Vulkan] completed frame 180: 640x480, guest=80534000
+[Vulkan command batches] live targets: draws=0 submissions=0
+[Vulkan depth residency] binds=0 imports=0 writebacks=0 CPU merges=0
+[Vulkan] completed frame 240: 640x480, guest=80408000
+[Vulkan] diagnostic frame limit reached: 240

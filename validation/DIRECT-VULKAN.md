@@ -6,6 +6,12 @@ work/vulkan-zink-render-diagnosis-20261031 (db0f4a9).
 
 ## Current implementation
 
+Latest bounded command batching and its validation are recorded in
+[`direct-vulkan-command-batches/`](direct-vulkan-command-batches/README.md).
+This adds resident draw submission reuse; full Quest combat and frame-time
+acceptance remain open. Earlier measurements below describe their original
+checkpoints, not the latest performance state.
+
 `CHIHIRO_RENDERER=opengl` retains the existing renderer and is the default.
 `CHIHIRO_RENDERER=vulkan` now builds a separate macOS VC3 executable, registers
 the native Nv2aBackend before guest execution, and excludes the GL renderer,

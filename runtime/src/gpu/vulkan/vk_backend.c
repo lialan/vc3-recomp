@@ -121,6 +121,10 @@ static struct Surface *surface(const Nv2aSurface *s,const Nv2aRenderState *rs) {
     if(r==VK_ERROR_FORMAT_NOT_SUPPORTED) r=ch_vk_target_create(active->host.physical,active->host.device,active->host.queue,
         active->host.family,s->width,s->height,&f->target);
     if(r!=VK_SUCCESS) fatal(r,"target creation");
+    if(f->resident && active->host.batch_draws) {
+        r=ch_vk_target_batching(f->target,1);
+        if(r!=VK_SUCCESS) fatal(r,"resident command batch setup");
+    }
     if(active->host.precise_queries) {
         r=ch_vk_target_enable_queries(f->target);
         if(r!=VK_SUCCESS) fatal(r,"query creation");
@@ -210,6 +214,10 @@ static void observe_target_color(struct Surface *f) {
     else observe_guest_color(f);
 }
 static void flush(void) {
+    for(unsigned i=0;i<active->count;i++) {
+        VkResult r=ch_vk_target_finish(active->surfaces[i].target);
+        if(r!=VK_SUCCESS) fatal(r,"pending guest command completion");
+    }
     observe_guest_colors();
     for(unsigned i=0;i<active->count;i++) flush_color(&active->surfaces[i]);
     if(active->zeta) {
@@ -346,6 +354,11 @@ static void flip(void) {
         fprintf(stderr,"[Vulkan raw vertices] GPU fixed batches=%llu CPU declined batches=%llu\n",
             (unsigned long long)active->raw_draws,(unsigned long long)active->raw_declined);
     const char *profile=getenv("CHIHIRO_VULKAN_PROFILE");
+    if(active->profile.enabled && (active->frames==1 || active->frames%60==0)) {
+        uint64_t draws=0,submits=0;
+        for(unsigned i=0;i<active->count;i++) {ChVkTargetResourceStats stats;ch_vk_target_resource_stats(active->surfaces[i].target,&stats);draws+=stats.batch_draws;submits+=stats.batch_submissions;}
+        fprintf(stderr,"[Vulkan command batches] live targets: draws=%llu submissions=%llu\n",(unsigned long long)draws,(unsigned long long)submits);
+    }
     if(active->zeta && active->profile.enabled && (active->frames==1 || active->frames%60==0)) {
         ChVkDepthResidentStats stats;ch_vk_depth_resident_stats(active->zeta,&stats);
         fprintf(stderr,"[Vulkan depth residency] binds=%llu imports=%llu writebacks=%llu CPU merges=%llu\n",

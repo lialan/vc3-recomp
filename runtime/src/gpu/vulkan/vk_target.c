@@ -17,12 +17,14 @@ typedef struct {
     unsigned shader,fixed;
 } PipelineKey;
 #define PIPELINE_SLOTS 32u
+#define BATCH_DRAWS 64u
 typedef struct {
     PipelineKey key;
     uint64_t used;
     VkDescriptorSetLayout descriptor_layout;
     VkDescriptorPool descriptor_pool;
-    VkDescriptorSet descriptor_set;
+    VkDescriptorSet descriptor_set,sets[BATCH_DRAWS];
+    uint32_t set_count,set_used;
     VkPipelineLayout pipeline_layout;
     VkPipeline pipeline;
     int has_descriptors;
@@ -72,6 +74,10 @@ struct ChVkTarget {
     struct { uint32_t alpha[3]; ChVkEffect effect; } push;
     int effect;
     int defer_color_readback;
+    int batch_enabled;
+    uint32_t pending,retired_count;
+    VkDeviceSize geometry_used;
+    struct {ChVkTexture *image;void (*release)(void *,ChVkTexture *);void *context;int owned;} retired[BATCH_DRAWS*5];
     int initialized;
     int failed;
 };
@@ -106,7 +112,7 @@ static void destroy_geometry(ChVkTarget *t) {
 }
 static VkResult reserve_geometry(ChVkTarget *t,VkDeviceSize size) {
     if(size<=t->geometry_capacity) return VK_SUCCESS;
-    VkDeviceSize capacity=t->reuse_resources?65536:size;
+    VkDeviceSize capacity=t->reuse_resources?(t->batch_enabled?(4u<<20):65536):size;
     while(capacity<size) {
         if(capacity>SIZE_MAX/2) {capacity=size;break;}
         capacity*=2;
@@ -127,8 +133,8 @@ static VkResult reserve_geometry(ChVkTarget *t,VkDeviceSize size) {
     TRY(vkAllocateMemory(t->device,&alloc,NULL,&memory));
     TRY(vkBindBufferMemory(t->device,buffer,memory,0));
     TRY(vkMapMemory(t->device,memory,0,VK_WHOLE_SIZE,0,&mapped));
-    /* The prior draw completed its fence before returning, so its storage can
-     * be replaced. Publish only a fully allocated/mapped replacement. */
+    /* The caller finishes pending work before growing the arena. Publish only
+     * a fully allocated/mapped replacement. */
     destroy_geometry(t);
     t->geometry=buffer;t->geometry_memory=memory;t->geometry_map=mapped;
     t->geometry_capacity=capacity;t->geometry_coherent=coherent;
@@ -145,10 +151,37 @@ void ch_vk_target_resource_stats(const ChVkTarget *t,ChVkTargetResourceStats *ou
     *out=t?t->resource_stats:(ChVkTargetResourceStats){0};
     if(t) out->geometry_capacity=t->geometry_capacity;
 }
+static void retire_samples(ChVkTarget *t) {
+    for(unsigned i=0;i<t->retired_count;i++) {
+        if(t->retired[i].owned) ch_vk_texture_destroy(t->retired[i].image);
+        else if(t->retired[i].release) t->retired[i].release(t->retired[i].context,t->retired[i].image);
+    }
+    t->retired_count=0;
+}
+uint32_t ch_vk_target_pending(const ChVkTarget *t) {return t?t->pending:0;}
+VkResult ch_vk_target_batching(ChVkTarget *t,int enabled) {
+    if(!t || t->failed || (enabled && !t->batch_enabled && t->resource_stats.pipeline_builds)) return VK_ERROR_INITIALIZATION_FAILED;
+    VkResult r=ch_vk_target_finish(t);if(r==VK_SUCCESS) t->batch_enabled=!!enabled;return r;
+}
+VkResult ch_vk_target_retire_sample(ChVkTarget *t,ChVkTexture *image,
+    void (*release)(void *,ChVkTexture *),void *context,int owned) {
+    if(!image) return VK_SUCCESS;
+    VkResult r=VK_SUCCESS;
+    if(t && t->pending && t->retired_count==BATCH_DRAWS*5) r=ch_vk_target_finish(t);
+    if(t && t->pending && r==VK_SUCCESS) {
+        unsigned i=t->retired_count++;
+        t->retired[i].image=image;t->retired[i].release=release;t->retired[i].context=context;t->retired[i].owned=owned;
+    } else {
+        if(owned) ch_vk_texture_destroy(image);else if(release) release(context,image);
+    }
+    return r;
+}
 void ch_vk_target_destroy(ChVkTarget *t) {
     if(!t) return;
-    /* Also covers an error after submission: never free pending resources. */
+    /* Finish deferred work before destroying anything it references. */
+    if(!t->failed) (void)ch_vk_target_finish(t);
     if(t->failed) vkQueueWaitIdle(t->queue);
+    retire_samples(t);
     for(unsigned i=0;i<PIPELINE_SLOTS;i++) destroy_pipeline(t,&t->pipelines[i]);
     if(t->pipeline_cache) vkDestroyPipelineCache(t->device,t->pipeline_cache,NULL);
     destroy_geometry(t);
@@ -268,6 +301,67 @@ VkResult ch_vk_target_create_depth(VkPhysicalDevice physical, VkDevice device,
 fail:
     ch_vk_target_destroy(t); return result;
 }
+VkResult ch_vk_target_finish(ChVkTarget *t) {
+    if(!t || t->failed) return VK_ERROR_INITIALIZATION_FAILED;
+    if(!t->pending) return VK_SUCCESS;
+    VkResult result;
+    vkCmdEndRenderPass(t->command);
+    VkImageMemoryBarrier barrier={.sType=VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+        .srcAccessMask=VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,.dstAccessMask=VK_ACCESS_TRANSFER_READ_BIT,
+        .oldLayout=VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,.newLayout=VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+        .srcQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED,.dstQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED,
+        .image=t->image,.subresourceRange={VK_IMAGE_ASPECT_COLOR_BIT,0,1,0,1}};
+    vkCmdPipelineBarrier(t->command,VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,VK_PIPELINE_STAGE_TRANSFER_BIT,0,0,NULL,0,NULL,1,&barrier);
+    TRY(vkEndCommandBuffer(t->command));
+    VkSubmitInfo submit={.sType=VK_STRUCTURE_TYPE_SUBMIT_INFO,.commandBufferCount=1,.pCommandBuffers=&t->command};
+    TRY(vkQueueSubmit(t->queue,1,&submit,t->fence));
+    TRY(vkWaitForFences(t->device,1,&t->fence,VK_TRUE,5000000000ULL));
+    t->layout=VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;t->resource_stats.batch_submissions++;
+    t->pending=0;t->geometry_used=0;
+    for(unsigned i=0;i<PIPELINE_SLOTS;i++) t->pipelines[i].set_used=0;
+    retire_samples(t);return VK_SUCCESS;
+fail:
+    t->failed=1;vkQueueWaitIdle(t->queue);t->pending=0;
+    retire_samples(t);return result;
+}
+static VkResult record_batch(ChVkTarget *t,VkBuffer geometry,VkDeviceSize index_offset,uint32_t index_count) {
+    VkResult result;
+    if(!t->pending) {
+        TRY(vkResetCommandBuffer(t->command,0));TRY(vkResetFences(t->device,1,&t->fence));
+        VkCommandBufferBeginInfo begin={.sType=VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,.flags=VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT};
+        TRY(vkBeginCommandBuffer(t->command,&begin));
+        VkImageMemoryBarrier barriers[2]={
+            {.sType=VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,.srcAccessMask=VK_ACCESS_TRANSFER_READ_BIT,
+                .dstAccessMask=VK_ACCESS_COLOR_ATTACHMENT_READ_BIT|VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+                .oldLayout=t->layout,.newLayout=VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+                .srcQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED,.dstQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED,
+                .image=t->image,.subresourceRange={VK_IMAGE_ASPECT_COLOR_BIT,0,1,0,1}},
+            {.sType=VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+                .srcAccessMask=VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT|VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
+                .dstAccessMask=VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT|VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
+                .oldLayout=VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,.newLayout=VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+                .srcQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED,.dstQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED,
+                .image=t->depth,.subresourceRange={VK_IMAGE_ASPECT_DEPTH_BIT|VK_IMAGE_ASPECT_STENCIL_BIT,0,1,0,1}}};
+        vkCmdPipelineBarrier(t->command,VK_PIPELINE_STAGE_TRANSFER_BIT|VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT|VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
+            VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT|VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT|VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
+            0,0,NULL,0,NULL,2,barriers);
+        VkRenderPassBeginInfo pass={.sType=VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,.renderPass=t->pass,
+            .framebuffer=t->framebuffer,.renderArea={{0,0},{t->width,t->height}}};
+        vkCmdBeginRenderPass(t->command,&pass,VK_SUBPASS_CONTENTS_INLINE);
+    }
+    vkCmdBindPipeline(t->command,VK_PIPELINE_BIND_POINT_GRAPHICS,t->active_pipeline->pipeline);
+    if(t->active_pipeline->has_descriptors) vkCmdBindDescriptorSets(t->command,VK_PIPELINE_BIND_POINT_GRAPHICS,
+        t->active_pipeline->pipeline_layout,0,1,&t->active_pipeline->descriptor_set,0,NULL);
+    vkCmdPushConstants(t->command,t->active_pipeline->pipeline_layout,VK_SHADER_STAGE_FRAGMENT_BIT,0,sizeof(t->push),t->push.alpha);
+    VkDeviceSize vertex_offset=t->vertex_offset;
+    vkCmdBindVertexBuffers(t->command,0,1,&geometry,&vertex_offset);
+    vkCmdBindIndexBuffer(t->command,geometry,index_offset,VK_INDEX_TYPE_UINT16);
+    vkCmdDrawIndexed(t->command,index_count,1,0,0,0);
+    t->pending++;t->resource_stats.batch_draws++;
+    return VK_SUCCESS;
+fail:
+    t->failed=1;return result;
+}
 static VkResult render_read(ChVkTarget *t, const float rgba[4], uint32_t clear_flags, float clear_depth, uint32_t clear_stencil,
     VkBuffer geometry, VkDeviceSize index_offset, uint32_t index_count,
     void *pixels, VkDeviceSize bytes) {
@@ -276,6 +370,7 @@ static VkResult render_read(ChVkTarget *t, const float rgba[4], uint32_t clear_f
        (!t->initialized && clear_flags!=7))
         return VK_ERROR_INITIALIZATION_FAILED;
     VkResult result;
+    TRY(ch_vk_target_finish(t));
     uint64_t cpu_start=t->timing?time_ns():0;
     TRY(vkResetCommandBuffer(t->command,0));
     TRY(vkResetFences(t->device,1,&t->fence));
@@ -381,7 +476,7 @@ static VkResult render_read(ChVkTarget *t, const float rgba[4], uint32_t clear_f
         t->timing_cpu+=now-cpu_start;t->timing_calls++;
         if(!t->timing_start) t->timing_start=cpu_start;
         if(now-t->timing_start>=1000000000) {
-            fprintf(stderr,"[Vulkan GPU] %ux%u %llu submissions: GPU %.2fms host record/submit/wait %.2fms\n",
+            fprintf(stderr,"[Vulkan GPU] %ux%u %llu synchronous submissions (excludes command batches): GPU %.2fms host record/submit/wait %.2fms\n",
                 t->width,t->height,(unsigned long long)t->timing_calls,t->timing_gpu/1e6,t->timing_cpu/1e6);
             fprintf(stderr,"[Vulkan resources] %ux%u: pipelines builds=%llu hits=%llu evictions=%llu geometry allocations=%llu capacity=%lluKiB\n",
                 t->width,t->height,(unsigned long long)t->resource_stats.pipeline_builds,
@@ -395,6 +490,7 @@ static VkResult render_read(ChVkTarget *t, const float rgba[4], uint32_t clear_f
             sizeof(t->samples),VK_QUERY_RESULT_64_BIT|VK_QUERY_RESULT_WAIT_BIT));
     t->layout=VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
     t->initialized=1;
+    for(unsigned i=0;i<PIPELINE_SLOTS;i++) t->pipelines[i].set_used=0;
     if(t->defer_color_readback) return VK_SUCCESS;
     void *mapped;
     TRY(vkMapMemory(t->device,t->read_mem,0,VK_WHOLE_SIZE,0,&mapped));
@@ -410,7 +506,7 @@ fail:
 }
 
 void ch_vk_target_defer_color_readback(ChVkTarget *t,int enabled) {
-    if(t) t->defer_color_readback=!!enabled;
+    if(t) {if(!enabled && t->pending) (void)ch_vk_target_finish(t);t->defer_color_readback=!!enabled;}
 }
 VkResult ch_vk_target_read_color(ChVkTarget *t,void *pixels,VkDeviceSize bytes) {
     if(!t) return VK_ERROR_INITIALIZATION_FAILED;
@@ -515,11 +611,13 @@ static VkResult create_pipeline(ChVkTarget *t, const VkPipelineColorBlendAttachm
         VkDescriptorPoolSize sizes[2];n=0;
         if(images) sizes[n++]=(VkDescriptorPoolSize){VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,images};
         if(buffers) sizes[n++]=(VkDescriptorPoolSize){VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,buffers};
-        VkDescriptorPoolCreateInfo pool={.sType=VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,.maxSets=1,.poolSizeCount=n,.pPoolSizes=sizes};
+        for(unsigned i=0;i<n;i++) sizes[i].descriptorCount*=t->batch_enabled?BATCH_DRAWS:1;
+        VkDescriptorPoolCreateInfo pool={.sType=VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,.maxSets=t->batch_enabled?BATCH_DRAWS:1,.poolSizeCount=n,.pPoolSizes=sizes};
         TRY(vkCreateDescriptorPool(t->device,&pool,NULL,&t->active_pipeline->descriptor_pool));
         VkDescriptorSetAllocateInfo alloc={.sType=VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
             .descriptorPool=t->active_pipeline->descriptor_pool,.descriptorSetCount=1,.pSetLayouts=&t->active_pipeline->descriptor_layout};
         TRY(vkAllocateDescriptorSets(t->device,&alloc,&t->active_pipeline->descriptor_set));
+        t->active_pipeline->sets[0]=t->active_pipeline->descriptor_set;t->active_pipeline->set_count=1;
         layout.setLayoutCount=1;layout.pSetLayouts=&t->active_pipeline->descriptor_layout;
     }
     TRY(vkCreatePipelineLayout(t->device,&layout,NULL,&t->active_pipeline->pipeline_layout));
@@ -587,6 +685,8 @@ static VkResult draw_full(ChVkTarget *t, const float rgba[4],
     t->count_requested=samples!=NULL;
     VkResult result;
     if(!state) return VK_ERROR_INITIALIZATION_FAILED;
+    int batched=t->batch_enabled && t->reuse_resources && t->defer_color_readback && !samples && !rgba && t->initialized;
+    if((!batched || t->pending==BATCH_DRAWS) && t->pending) TRY(ch_vk_target_finish(t));
     if(state->alpha_test_enable && (state->alpha_func<0x200 || state->alpha_func>0x207))
         return VK_ERROR_FEATURE_NOT_PRESENT;
     VkCullModeFlags cull=VK_CULL_MODE_NONE;
@@ -636,13 +736,29 @@ static VkResult draw_full(ChVkTarget *t, const float rgba[4],
     if(entry) t->resource_stats.pipeline_hits++;
     else {
         entry=oldest;
-        if(entry->pipeline) t->resource_stats.pipeline_evictions++;
+        if(entry->pipeline) {
+            TRY(ch_vk_target_finish(t));t->resource_stats.pipeline_evictions++;
+        }
         destroy_pipeline(t,entry);t->active_pipeline=entry;
         result=create_pipeline(t,&blend,constants,&depth_state,cull,front,texture);
         if(result!=VK_SUCCESS) return result;
         entry->key=key;t->resource_stats.pipeline_builds++;
     }
     t->active_pipeline=entry;entry->used=++t->pipeline_clock;
+    VkDeviceSize header=t->fixed?(256+sizeof(*t->fixed)+255)/256*256:t->rc?256:0;
+    VkDeviceSize payload=header+(VkDeviceSize)vertex_count*vertex_stride+(VkDeviceSize)index_count*sizeof(*indices);
+    VkDeviceSize base=t->pending?(t->geometry_used+255)/256*256:0;
+    if(base>UINT64_MAX-payload) {result=VK_ERROR_OUT_OF_HOST_MEMORY;goto fail;}
+    if(t->pending && base+payload>t->geometry_capacity) {TRY(ch_vk_target_finish(t));base=0;}
+    if(entry->has_descriptors) {
+        if(entry->set_used==entry->set_count) {
+            VkDescriptorSetAllocateInfo alloc={.sType=VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+                .descriptorPool=entry->descriptor_pool,.descriptorSetCount=1,.pSetLayouts=&entry->descriptor_layout};
+            TRY(vkAllocateDescriptorSets(t->device,&alloc,&entry->sets[entry->set_count]));entry->set_count++;
+        }
+        entry->descriptor_set=entry->sets[entry->set_used++];
+    }
+    t->vertex_offset=base+header;
     update_images(t,texture);
     VkDeviceSize offset=t->vertex_offset+(VkDeviceSize)vertex_count*vertex_stride;
     VkDeviceSize size=offset+(VkDeviceSize)index_count*sizeof(*indices);
@@ -651,21 +767,21 @@ static VkResult draw_full(ChVkTarget *t, const float rgba[4],
     VkBuffer buffer=t->geometry;
     void *mapped=t->geometry_map;
     if(rc) {
-        memset(mapped,0,256); memcpy(mapped,rc,sizeof(*rc));
-        float *fog=(float *)((char *)mapped+224);
+        memset((char *)mapped+base,0,256); memcpy((char *)mapped+base,rc,sizeof(*rc));
+        float *fog=(float *)((char *)mapped+base+224);
         fog[0]=((fog_color>>16)&255)/255.f; fog[1]=((fog_color>>8)&255)/255.f;
         fog[2]=(fog_color&255)/255.f; fog[3]=(fog_color>>24)/255.f;
-        uint32_t *on=(uint32_t *)((char *)mapped+240);
+        uint32_t *on=(uint32_t *)((char *)mapped+base+240);
         for(unsigned i=0;i<4;i++) on[i]=stage_images && stage_images[i]?
             (ch_vk_texture_is_cube(stage_images[i])?3:1):0;
-        VkDescriptorBufferInfo info={buffer,0,256};
+        VkDescriptorBufferInfo info={buffer,base,256};
         VkWriteDescriptorSet write={.sType=VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,.dstSet=t->active_pipeline->descriptor_set,
             .dstBinding=1,.descriptorCount=1,.descriptorType=VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,.pBufferInfo=&info};
         vkUpdateDescriptorSets(t->device,1,&write,0,NULL);
     }
     if(fixed) {
-        memcpy((char *)mapped+256,fixed,sizeof *fixed);
-        VkDescriptorBufferInfo info={buffer,256,sizeof *fixed};
+        memcpy((char *)mapped+base+256,fixed,sizeof *fixed);
+        VkDescriptorBufferInfo info={buffer,base+256,sizeof *fixed};
         VkWriteDescriptorSet write={.sType=VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,.dstSet=t->active_pipeline->descriptor_set,
             .dstBinding=3,.descriptorCount=1,.descriptorType=VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,.pBufferInfo=&info};
         vkUpdateDescriptorSets(t->device,1,&write,0,NULL);
@@ -680,10 +796,13 @@ static VkResult draw_full(ChVkTarget *t, const float rgba[4],
             .memory=t->geometry_memory,.size=flushed<=t->geometry_capacity?flushed:VK_WHOLE_SIZE};
         TRY(vkFlushMappedMemoryRanges(t->device,1,&flush));
     }
-    result=render_read(t,rgba,rgba?7:0,1.0f,0,buffer,offset,index_count,pixels,bytes);
+    if(batched) {
+        result=record_batch(t,buffer,offset,index_count);t->geometry_used=size;
+    } else result=render_read(t,rgba,rgba?7:0,1.0f,0,buffer,offset,index_count,pixels,bytes);
     if(result==VK_SUCCESS && samples) *samples=(uint32_t)t->samples;
 fail:
     if(t->failed) vkQueueWaitIdle(t->queue);
+    if(!t->pending) for(unsigned i=0;i<PIPELINE_SLOTS;i++) t->pipelines[i].set_used=0;
     if(!t->reuse_resources || t->failed) destroy_geometry(t);
     return result;
 }
@@ -742,11 +861,12 @@ VkResult ch_vk_target_draw_texture_read(ChVkTarget *t, const float rgba[4],
 }
 
 VkDevice ch_vk_target_device(const ChVkTarget *t) { return t?t->device:VK_NULL_HANDLE; }
-VkFence ch_vk_target_completion_fence(const ChVkTarget *t) { return t?t->fence:VK_NULL_HANDLE; }
+VkFence ch_vk_target_completion_fence(const ChVkTarget *t) { return t && !t->pending?t->fence:VK_NULL_HANDLE; }
 VkResult ch_vk_target_export_image(ChVkTarget *t,VkImage destination,void *verify,VkDeviceSize bytes) {
     if(!t || t->failed || !t->initialized || !destination || destination==t->image ||
         (verify && bytes<t->bytes)) return VK_ERROR_INITIALIZATION_FAILED;
     VkResult result;
+    TRY(ch_vk_target_finish(t));
     TRY(vkResetCommandBuffer(t->command,0));
     TRY(vkResetFences(t->device,1,&t->fence));
     VkCommandBufferBeginInfo begin={.sType=VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
@@ -818,6 +938,7 @@ VkResult ch_vk_target_import_color(ChVkTarget *t,const void *rgba,VkDeviceSize b
     result=vkFlushMappedMemoryRanges(t->device,1,&range);
     vkUnmapMemory(t->device,t->read_mem);
     if(result!=VK_SUCCESS) goto fail;
+    TRY(ch_vk_target_finish(t));
     TRY(vkResetCommandBuffer(t->command,0)); TRY(vkResetFences(t->device,1,&t->fence));
     VkCommandBufferBeginInfo begin={.sType=VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,.flags=VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT};
     TRY(vkBeginCommandBuffer(t->command,&begin));
@@ -862,6 +983,7 @@ static VkResult transfer_depth_stencil(ChVkTarget *t,void *depth,void *stencil,s
         vkUnmapMemory(t->device,t->read_mem);
         if(result!=VK_SUCCESS) goto fail;
     }
+    TRY(ch_vk_target_finish(t));
     TRY(vkResetCommandBuffer(t->command,0)); TRY(vkResetFences(t->device,1,&t->fence));
     VkCommandBufferBeginInfo begin={.sType=VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,.flags=VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT};
     TRY(vkBeginCommandBuffer(t->command,&begin));

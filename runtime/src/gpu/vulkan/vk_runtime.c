@@ -110,6 +110,9 @@ static VkResult attach(ChVkBackendConfig config)
     const char *fixed=ch_env("VULKAN_GPU_FIXED");
     if(fixed && !strcmp(fixed,"0")) config.raw_fixed=0;
     fprintf(stderr,"[Vulkan] raw fixed-function GPU transforms: %s\n",config.raw_fixed?"enabled":"disabled");
+    const char *batch=ch_env("VULKAN_BATCH_DRAWS");
+    config.batch_draws=!batch || strcmp(batch,"0");
+    fprintf(stderr,"[Vulkan] resident command batches: %s\n",config.batch_draws?"enabled":"disabled");
     const char *depth=ch_env("VULKAN_RESIDENT_DEPTH");
     config.resident_depth=depth && !strcmp(depth,"1");
     fprintf(stderr,"[Vulkan] resident color targets: %s\n",config.resident_color?"enabled":"disabled");

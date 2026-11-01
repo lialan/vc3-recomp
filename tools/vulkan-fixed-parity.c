@@ -51,7 +51,7 @@ static int unused_decode(const Nv2aTexture *tx,uint32_t *pixels) {(void)tx;(void
 static int registered_fixed(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,uint32_t family) {
     unsigned char guest[4096]={0};ChVkBackend *backend=NULL;int failed=1;
     ChVkBackendConfig config={.physical=gpu,.device=device,.queue=queue,.family=family,
-        .guest_base=guest,.guest_bytes=sizeof guest,.decode=unused_decode,.raw_fixed=1,.precise_queries=1,.resident_color=1};
+        .guest_base=guest,.guest_bytes=sizeof guest,.decode=unused_decode,.raw_fixed=1,.precise_queries=1,.resident_color=1,.batch_draws=1};
     if(ch_vk_backend_create(&config,&backend)!=VK_SUCCESS || ch_vk_backend_attach(backend)!=VK_SUCCESS) goto done;
     const Nv2aBackend *cb=ch_vk_backend_callbacks();
     Nv2aFixedState ff={.use_composite=1,.tex0_slot=9};identity(ff.composite);
@@ -71,6 +71,14 @@ static int registered_fixed(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,u
         cb->flush();
         for(unsigned i=0;i<256;i++) {uint32_t pixel;memcpy(&pixel,guest+128+i*4,4);if(pixel!=0xffffffff) goto done;}
     }
+    batch.zpass_out=NULL;ff.has_color=1;ff.color_slot=3;
+    raw.attr[3]=(Nv2aAttrib){.value={1,0,0,1}};
+    if(cb->draw_raw(&surface,&batch)!=1) goto done;
+    ff.has_color=0; /* Shader constants must already have been snapshotted. */
+    for(unsigned i=0;i<256;i++) {uint32_t pixel;memcpy(&pixel,guest+128+i*4,4);if(pixel!=0xffffffff) goto done;}
+    cb->flush();
+    for(unsigned i=0;i<256;i++) {uint32_t pixel;memcpy(&pixel,guest+128+i*4,4);if(pixel!=0xffff0000) goto done;}
+    batch.zpass_out=&samples;
     raw.kind=NV2A_RAW_PROGRAM;samples=19;
     if(cb->draw_raw(&surface,&batch)!=0 || samples!=19) goto done;
     raw.kind=NV2A_RAW_FIXED;raw.attr[0].bytes=4;

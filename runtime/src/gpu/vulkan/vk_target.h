@@ -10,9 +10,10 @@
 typedef struct ChVkTarget ChVkTarget;
 typedef struct {
     uint64_t pipeline_builds,pipeline_hits,pipeline_evictions,geometry_allocations;
+    uint64_t batch_draws,batch_submissions;
     VkDeviceSize geometry_capacity;
 } ChVkTargetResourceStats;
-/* Diagnostic counters; calls remain synchronous. Geometry is persistently mapped
+/* Diagnostic counters. Geometry is persistently mapped
  * and reused only after completion. Pipeline objects have a bounded LRU. */
 void ch_vk_target_resource_stats(const ChVkTarget *,ChVkTargetResourceStats *);
 typedef struct {
@@ -33,10 +34,24 @@ VkResult ch_vk_target_create_depth(VkPhysicalDevice physical, VkDevice device,
 VkResult ch_vk_target_clear_read(ChVkTarget *target, const float rgba[4],
                                  void *pixels, VkDeviceSize bytes);
 void ch_vk_target_destroy(ChVkTarget *target);
-/* Opt-in resident color path. Existing draw/clear entry points still finish GPU
- * execution/query results, but leave their pixel output untouched. Explicit
+/* Opt-in resident color path. Without command batching, draw/clear entry points
+ * still finish GPU execution/query results but leave their pixel output untouched. Explicit
  * read_color copies the completed target; depth/stencil APIs stay synchronous. */
 void ch_vk_target_defer_color_readback(ChVkTarget *,int enabled);
+/* Opt-in bounded command batches for resident color, no-query draws. Enable
+ * before the first pipeline is created. Explicit reads/clears/transfers and
+ * queries finish pending work; guest completion must call finish. Resource
+ * reuse must remain enabled. Vertex/state data is copied before return; sampled
+ * images must remain alive and immutable until finish. Default callers retain
+ * synchronous semantics. */
+VkResult ch_vk_target_batching(ChVkTarget *,int enabled);
+VkResult ch_vk_target_finish(ChVkTarget *);
+uint32_t ch_vk_target_pending(const ChVkTarget *);
+/* Transfer one immutable sampled-image lease to the completion boundary.
+ * owned selects destruction; borrowed cache leases invoke release if non-NULL.
+ * A call consumes the lease even if submission fails. */
+VkResult ch_vk_target_retire_sample(ChVkTarget *,ChVkTexture *,
+    void (*release)(void *,ChVkTexture *),void *,int owned);
 VkResult ch_vk_target_read_color(ChVkTarget *,void *,VkDeviceSize);
 /* Initial untextured indexed triangle path: clip-space xyzw and float RGBA (w=0 is shorthand for 1).
  * Non-NULL rgba clears all attachments (depth=1, stencil=0).
@@ -61,7 +76,8 @@ VkResult ch_vk_target_clear_aspects_read(ChVkTarget *target, uint32_t flags,
     const float rgba[4], float depth, uint32_t stencil, void *pixels, VkDeviceSize bytes);
 void ch_vk_target_size(const ChVkTarget *target, uint32_t *width, uint32_t *height);
 /* xy[0..3]=clip position; xy[4..5]=normalized UV. Texture must belong to
- * the same device and outlive this synchronous call. NULL means untextured. */
+ * the same device and outlive the call, or finish when batching is enabled.
+ * NULL means untextured. */
 VkResult ch_vk_target_draw_texture_read(ChVkTarget *target, const float rgba[4],
     const ChVkColorVertex *vertices, uint32_t vertex_count,
     const uint16_t *indices, uint32_t index_count, const Nv2aRenderState *state,
