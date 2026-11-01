@@ -150,6 +150,19 @@ int ch_test_specialized_combiners(VkPhysicalDevice gpu,VkDevice device,VkQueue q
     REQUIRE(after.pipeline_builds-stats.pipeline_builds==1 && after.pipeline_hits-stats.pipeline_hits==2);
     const unsigned char blended[]={1,1,1,3};
     for(unsigned i=0;i<64;i++) REQUIRE(rgba[1][i]==blended[i%4]);
+    /* Pending depth/stencil writes and readback share one real submission. */
+    Nv2aRenderState zs={.color_mask=0x01010101,.depth_test_enable=1,.depth_write=1,.depth_func=0x207,
+        .stencil_enable=1,.stencil_func=0x207,.stencil_ref=0xab,.stencil_func_mask=255,.stencil_write_mask=255,
+        .stencil_fail=0x1e00,.stencil_zfail=0x1e00,.stencil_zpass=0x1e01};
+    ch_vk_target_resource_stats(t[1],&stats);
+    for(unsigned mode=0;mode<2;mode++) {
+        REQUIRE(ch_vk_target_draw_combiner_read(t[mode],NULL,v,3,indices,3,&zs,NULL,NULL,&project,0,NULL,rgba[mode],64)==VK_SUCCESS);
+        REQUIRE(ch_vk_target_read_depth_stencil(t[mode],depth[mode],stencil[mode],16)==VK_SUCCESS);
+    }
+    REQUIRE(!memcmp(depth[0],depth[1],sizeof depth[0]) && !memcmp(stencil[0],stencil[1],16));
+    for(unsigned i=0;i<16;i++) REQUIRE(stencil[1][i]==0xab && fabsf(depth[1][i]-.25f)<1e-6f);
+    ch_vk_target_resource_stats(t[1],&after);
+    REQUIRE(after.combined_depth_readbacks-stats.combined_depth_readbacks==1 && after.batch_submissions-stats.batch_submissions==1);
     puts("PASS: 32 specialized combiner cases match interpreter/CPU across 0..8 stages, dynamic factors/fog, fetch modes/cube/missing samplers and exact alpha/depth/stencil; inactive edits reuse pipelines, NOAT retains projective q, 140 pending factor updates survive bounded LRU eviction and three batches");failed=0;
 done:
     for(unsigned i=0;i<2;i++) ch_vk_target_destroy(t[i]);
