@@ -1,0 +1,10 @@
+[INPUT] auto coin at 30.0s
+[INPUT] auto start at 31.0s
+[INPUT] auto fire at 40.0s
+[INPUT] auto start at 60.0s
+[INPUT] auto start at 62.0s
+[INPUT] auto fire at 65.0s
+[INPUT] auto fire at 70.0s
+[INPUT] auto fire at 75.0s
+[INPUT] auto reload at 80.0s
+[INPUT] auto fire at 85.0s
