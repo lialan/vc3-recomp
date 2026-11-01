@@ -167,11 +167,11 @@ int ch_test_specialized_combiners(VkPhysicalDevice gpu,VkDevice device,VkQueue q
     for(unsigned round=0;round<128;round++) {
         for(unsigned i=0;i<16;i++) {
             uint32_t bits=random_word(&seed)%0x3f800001u;
-            if(round==0) bits=i==0?0:i==1?0x3f800000u:0x3f000000u+i-8;
+            if(round<2) bits=i==0?0:i==1?0x3f800000u:0x3f000000u+i-8;
             memcpy(&depth[0][i],&bits,4);stencil[0][i]=(uint8_t)(round+i*17);
         }
         REQUIRE(ch_vk_target_write_depth_stencil(t[0],depth[0],stencil[0],16)==VK_SUCCESS);
-        REQUIRE(ch_vk_target_quantize_depth(t[0])==VK_SUCCESS);
+        REQUIRE((round&1?ch_vk_target_quantize_depth_draw(t[0]):ch_vk_target_quantize_depth(t[0]))==VK_SUCCESS);
         REQUIRE(ch_vk_target_read_depth_stencil(t[0],depth[1],stencil[1],16)==VK_SUCCESS);
         for(unsigned i=0;i<16;i++) {
             uint32_t q=(uint32_t)((double)depth[0][i]*16777215.0+0.5);

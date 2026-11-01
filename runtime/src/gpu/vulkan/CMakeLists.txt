@@ -75,7 +75,15 @@ add_custom_command(OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/depth_roundtrip.spv"
 add_custom_command(OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/depth_roundtrip_spv.h"
  COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/embed_binary_spirv.py" "${CMAKE_CURRENT_BINARY_DIR}/depth_roundtrip.spv" "${CMAKE_CURRENT_BINARY_DIR}/depth_roundtrip_spv.h"
  DEPENDS "${CMAKE_CURRENT_BINARY_DIR}/depth_roundtrip.spv" embed_binary_spirv.py VERBATIM)
-add_library(chihiro_vulkan STATIC vk_depth_quant.c "${CMAKE_CURRENT_BINARY_DIR}/depth_roundtrip_spv.h" vk_fixed.c vk_target.c vk_texture.c vk_texture_cache.c vk_state.c vk_nv2a.c vk_backend.c vk_depth_guest.c vk_depth_resident.c vk_menu.c vk_overlay.c vk_frame_mailbox.c vk_scene.c vk_submission.c "${header}" "${fixed_asserts}" "${combiner_asserts}")
+foreach(stage vert frag)
+ add_custom_command(OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/depth_roundtrip_${stage}.spv"
+  COMMAND "${CHIHIRO_GLSLC}" --target-env=vulkan1.0 "${CMAKE_CURRENT_SOURCE_DIR}/depth_roundtrip.${stage}" -o "${CMAKE_CURRENT_BINARY_DIR}/depth_roundtrip_${stage}.spv"
+  DEPENDS "depth_roundtrip.${stage}" depth_quant.glsl VERBATIM)
+ add_custom_command(OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/depth_roundtrip_${stage}.h"
+  COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/embed_binary_spirv.py" "${CMAKE_CURRENT_BINARY_DIR}/depth_roundtrip_${stage}.spv" "${CMAKE_CURRENT_BINARY_DIR}/depth_roundtrip_${stage}.h" "depth_roundtrip_${stage}_spv"
+  DEPENDS "${CMAKE_CURRENT_BINARY_DIR}/depth_roundtrip_${stage}.spv" embed_binary_spirv.py VERBATIM)
+endforeach()
+add_library(chihiro_vulkan STATIC "${CMAKE_CURRENT_BINARY_DIR}/depth_roundtrip_vert.h" "${CMAKE_CURRENT_BINARY_DIR}/depth_roundtrip_frag.h" vk_depth_quant.c "${CMAKE_CURRENT_BINARY_DIR}/depth_roundtrip_spv.h" vk_fixed.c vk_target.c vk_texture.c vk_texture_cache.c vk_state.c vk_nv2a.c vk_backend.c vk_depth_guest.c vk_depth_resident.c vk_menu.c vk_overlay.c vk_frame_mailbox.c vk_scene.c vk_submission.c "${header}" "${fixed_asserts}" "${combiner_asserts}")
 target_sources(chihiro_vulkan PRIVATE ../guest_write_watch.c)
 target_compile_features(chihiro_vulkan PUBLIC c_std_11)
 target_compile_options(chihiro_vulkan PRIVATE -Wall -Wextra -Werror)
@@ -146,6 +154,10 @@ endif()
 
 option(CHIHIRO_VULKAN_SHADER_TESTS "Build headless Vulkan shader fixtures without EGL/OpenGL" OFF)
 if(CHIHIRO_VULKAN_TESTS OR CHIHIRO_VULKAN_SHADER_TESTS)
+    add_executable(vulkan_depth_roundtrip_bench "${CH_VK_ROOT}/tools/vulkan-combiner-driver.c" "${CH_VK_ROOT}/tools/vulkan-depth-roundtrip-bench.c")
+    target_compile_definitions(vulkan_depth_roundtrip_bench PRIVATE CH_VK_DEPTH_ROUNDTRIP_BENCH=1)
+    target_compile_options(vulkan_depth_roundtrip_bench PRIVATE -Wall -Wextra -Werror)
+    target_link_libraries(vulkan_depth_roundtrip_bench PRIVATE chihiro_vulkan)
     add_executable(vulkan_command_batch_check "${CH_VK_ROOT}/tools/vulkan-combiner-driver.c" "${CH_VK_ROOT}/tools/vulkan-command-batch-test.c")
     target_compile_definitions(vulkan_command_batch_check PRIVATE CH_VK_BATCH_TEST=1)
     target_compile_options(vulkan_command_batch_check PRIVATE -Wall -Wextra -Werror)

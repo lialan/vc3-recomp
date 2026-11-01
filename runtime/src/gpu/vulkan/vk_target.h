@@ -11,6 +11,8 @@ typedef struct ChVkTarget ChVkTarget;
 /* Exact D32 -> guest Z24 -> D32 GPU round-trip, preserving stencil.
  * Synchronous validation entry point; does not enable resident rendering. */
 VkResult ch_vk_target_quantize_depth(ChVkTarget *);
+/* Synchronous validation path: buffer-to-depth fullscreen draw alternative. */
+VkResult ch_vk_target_quantize_depth_draw(ChVkTarget *);
 /* Opt-in per-draw round-trip without an additional host submission/wait. */
 VkResult ch_vk_target_depth_quantization(ChVkTarget *,int);
 /* Before the first pipeline creation, borrow a same-device driver cache.

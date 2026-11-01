@@ -65,7 +65,7 @@ struct ChVkTarget {
     VkQueue queue;
     VkImage depth;
     VkFormat depth_format;
-    ChVkDepthQuant *depth_quant;
+    ChVkDepthQuant *depth_quant,*depth_quant_draw;
     int quantized_depth;
     VkDeviceMemory depth_mem;
     VkImageView depth_view;
@@ -245,6 +245,7 @@ void ch_vk_target_destroy(ChVkTarget *t) {
     if(t->timing) vkDestroyQueryPool(t->device,t->timing,NULL);
     if(t->fence) vkDestroyFence(t->device,t->fence,NULL);
     if(t->pool) vkDestroyCommandPool(t->device,t->pool,NULL);
+    ch_vk_depth_quant_destroy(t->depth_quant_draw);
     ch_vk_depth_quant_destroy(t->depth_quant);
     if(t->read) vkDestroyBuffer(t->device,t->read,NULL);
     if(t->read_mem) vkFreeMemory(t->device,t->read_mem,NULL);
@@ -468,7 +469,8 @@ VkResult ch_vk_target_depth_quantization(ChVkTarget *t,int enabled) {
     t->quantized_depth=1;return VK_SUCCESS;
 fail:return result;
 }
-VkResult ch_vk_target_quantize_depth(ChVkTarget *t) {
+static VkResult quantize_depth(ChVkTarget *t,int draw) {
+    if(!t)return VK_ERROR_INITIALIZATION_FAILED;
     VkResult result;int enabled=t?t->quantized_depth:0;
     TRY(ch_vk_target_depth_quantization(t,1));
     t->quantized_depth=enabled;
@@ -476,7 +478,8 @@ VkResult ch_vk_target_quantize_depth(ChVkTarget *t) {
     TRY(vkResetCommandBuffer(t->command,0));TRY(vkResetFences(t->device,1,&t->fence));
     VkCommandBufferBeginInfo begin={.sType=VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,.flags=VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT};
     TRY(vkBeginCommandBuffer(t->command,&begin));
-    ch_vk_depth_quant_record(t->depth_quant,t->command,t->depth,t->width,t->height);
+    if(draw && !t->depth_quant_draw) TRY(ch_vk_depth_quant_create_draw(t->device,t->read,t->bytes,t->depth_view,t->width,t->height,&t->depth_quant_draw));
+    ch_vk_depth_quant_record(draw?t->depth_quant_draw:t->depth_quant,t->command,t->depth,t->width,t->height);
     TRY(vkEndCommandBuffer(t->command));
     VkSubmitInfo submit={.sType=VK_STRUCTURE_TYPE_SUBMIT_INFO,.commandBufferCount=1,.pCommandBuffers=&t->command};
     TRY(vkQueueSubmit(t->queue,1,&submit,t->fence));
@@ -484,6 +487,8 @@ VkResult ch_vk_target_quantize_depth(ChVkTarget *t) {
     return VK_SUCCESS;
 fail:t->failed=1;return result;
 }
+VkResult ch_vk_target_quantize_depth(ChVkTarget *t) {return quantize_depth(t,0);}
+VkResult ch_vk_target_quantize_depth_draw(ChVkTarget *t) {return quantize_depth(t,1);}
 static VkResult record_batch(ChVkTarget *t,VkBuffer geometry,VkDeviceSize index_offset,uint32_t index_count) {
     VkResult result;
     uint64_t record_start=t->timing?time_ns():0;

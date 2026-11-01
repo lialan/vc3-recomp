@@ -252,3 +252,35 @@ against control frame 1200. This supports the visible animation timing shift,
 but residual differences remain and whole-game parity is not established.
 Comparison details are in /tmp/vc3-sequence-combined/comparison.json. All runs
 are terminal. Continue shared backend profiling; smooth 60 FPS remains open.
+
+## Depth-only draw round-trip prototype
+
+The shared depth helper now has a graphics alternative: depth image -> existing
+storage buffer -> fullscreen depth-only draw. The fragment shader applies the
+same exact pack/unpack arithmetic and writes gl_FragDepth; stencil and color are
+preserved. This removes the compute dispatch and buffer-to-image transfer. It
+uses separate buffer/image resources, not attachment feedback or interlock.
+The synchronous `ch_vk_target_quantize_depth_draw` API is validation-only; normal
+resident rendering still uses compute. Its initial validation currently also
+initializes/checks the compute path; runtime selection is not integrated yet.
+
+128 small-image roundtrips alternate compute/draw, including rounding boundaries.
+The full-size `vulkan_depth_roundtrip_bench` validates 640x480 depth/stencil and
+untouched color after 128 repeats. Both pass with validation and sync validation
+requested, without VUID/SYNC diagnostics in /tmp/vc3-depth-draw-{,full-}validation.log.
+Android offscreen build passes (build only). Initial warm synchronous timings:
+compute 0.280 ms/call, draw 0.257; validation run 0.266 vs 0.244. These isolated
+measurements do not prove a game benefit. Next integrate as a shared opt-in and
+compare actual batches, including graphics binding restoration and guest parity.
+
+The local capability dump /tmp/vc3-kosmickrisp-capabilities.txt advertises feedback
+extensions but not fragment interlock. The Vulkan render-pass synchronization
+rules were consulted: https://docs.vulkan.org/spec/latest/chapters/renderpass.html
+The prototype avoids those optional feedback features entirely.
+
+/tmp/vc3-no-timestamps-profile completed 2400 frames using immutable
+/tmp/vc3-depth-load-vc3 (CPU load improvement included), GPU timestamps disabled.
+Final windows: 34.24, 34.47, 35.33, 35.16 FPS. CPU sample cpu-late.txt still shows
+substantial depth completion/wait cost. This is not a same-binary on/off timestamp
+comparison, so do not attribute the entire difference to instrumentation. No
+headset used. All runs are terminal; performance goal remains open.
