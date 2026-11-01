@@ -1,0 +1,34 @@
+[Vulkan texture cache] hits=0 uploads=1 evictions=0 live=0.0MiB entries=1/64
+[Vulkan] completed frame 1: 640x480, guest=80408000
+[Vulkan texture cache] hits=3121 uploads=14 evictions=0 live=10.6MiB entries=14/64
+[Vulkan] completed frame 60: 640x480, guest=80534000
+[Vulkan texture cache] hits=6354 uploads=14 evictions=0 live=10.6MiB entries=14/64
+[Vulkan] completed frame 120: 640x480, guest=80660000
+[Vulkan texture cache] hits=9593 uploads=15 evictions=0 live=11.4MiB entries=15/64
+[Vulkan] completed frame 180: 640x480, guest=80534000
+[Vulkan texture cache] hits=12834 uploads=15 evictions=0 live=11.4MiB entries=15/64
+[Vulkan] completed frame 240: 640x480, guest=80408000
+[Vulkan texture cache] hits=15610 uploads=57 evictions=34 live=62.5MiB entries=23/64
+[Vulkan] completed frame 300: 640x480, guest=80408000
+[Vulkan texture cache] hits=17185 uploads=204 evictions=181 live=62.5MiB entries=23/64
+[Vulkan] completed frame 360: 640x480, guest=80408000
+[Vulkan texture cache] hits=18776 uploads=353 evictions=330 live=62.5MiB entries=23/64
+[Vulkan] completed frame 420: 640x480, guest=80408000
+[Vulkan texture cache] hits=20366 uploads=503 evictions=480 live=62.5MiB entries=23/64
+[Vulkan] completed frame 480: 640x480, guest=80408000
+[Vulkan texture cache] hits=23070 uploads=602 evictions=572 live=60.9MiB entries=30/64
+[Vulkan] completed frame 540: 640x480, guest=80408000
+[Vulkan texture cache] hits=26098 uploads=608 evictions=574 live=60.8MiB entries=34/64
+[Vulkan] completed frame 600: 640x480, guest=80408000
+[Vulkan texture cache] hits=29848 uploads=609 evictions=574 live=63.3MiB entries=35/64
+[Vulkan] completed frame 660: 640x480, guest=80408000
+[Vulkan texture cache] hits=32802 uploads=614 evictions=577 live=62.5MiB entries=37/64
+[Vulkan] completed frame 720: 640x480, guest=80408000
+[Vulkan texture cache] hits=45585 uploads=2870 evictions=2806 live=31.0MiB entries=64/64
+[Vulkan] completed frame 780: 640x480, guest=80408000
+[Vulkan texture cache] hits=59806 uploads=6339 evictions=6275 live=29.6MiB entries=64/64
+[Vulkan] completed frame 840: 640x480, guest=80408000
+[Vulkan texture cache] hits=73011 uploads=11256 evictions=11192 live=29.6MiB entries=64/64
+[Vulkan] completed frame 900: 640x480, guest=80408000
+[Vulkan texture cache] hits=86883 uploads=15720 evictions=15656 live=23.3MiB entries=64/64
+[Vulkan] completed frame 960: 640x480, guest=80408000

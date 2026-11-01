@@ -10,6 +10,29 @@ static int pixel(ChVkSampleImage *image,unsigned r,unsigned g,unsigned b) {
     return ch_vk_texture_read_rgba(image->gpu,rgba,sizeof rgba)==VK_SUCCESS &&
         rgba[0]==r && rgba[1]==g && rgba[2]==b && rgba[3]==255;
 }
+static int working_set(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,uint32_t family,
+    void *guest,size_t bytes,ChVkDecodeTexture decode) {
+    ChVkTextureCache *cache=NULL;
+    ChVkTextureCacheConfig config={.physical=gpu,.device=device,.queue=queue,.family=family,
+        .guest_base=guest,.guest_bytes=bytes,.decode=decode,.max_bytes=4096};
+    if(ch_vk_texture_cache_create(&config,&cache)!=VK_SUCCESS) return 1;
+    int failed=0;
+    for(unsigned pass=0;pass<2 && !failed;pass++) for(unsigned i=0;i<96;i++) {
+        Nv2aTexture tx={.offset=256+i*4,.width=1,.height=1,.pitch=4,.color=0x12,
+            .filter=0x01010000,.addr_u=3,.addr_v=3};
+        uint32_t color=0xff000000|i;memcpy((unsigned char *)guest+tx.offset,&color,4);
+        ChVkSampleImage image={0};
+        if(ch_vk_texture_cache_resolve(cache,&tx,&image)!=VK_SUCCESS) failed=1;
+        unpin(&image);
+    }
+    ChVkTextureCacheStats stats;ch_vk_texture_cache_stats(cache,&stats);
+    if(stats.uploads!=96 || stats.hits!=96 || stats.evictions || stats.entries!=96 ||
+       stats.bytes>config.max_bytes || stats.capacity!=CH_VK_TEXTURE_CACHE_DEFAULT_ENTRIES) failed=1;
+    ch_vk_texture_cache_destroy(cache);
+    if(failed) fprintf(stderr,"FAIL: small-texture working set churned within byte budget\n");
+    else puts("PASS: 96-texture working set retained within a 4096-byte payload budget, second pass hits all images without eviction");
+    return failed;
+}
 int ch_test_texture_cache(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,uint32_t family,
     void *guest,size_t bytes,ChVkDecodeTexture decode) {
     ChVkTextureCache *cache=NULL,*small=NULL;
@@ -92,6 +115,7 @@ int ch_test_texture_cache(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,uin
     REQUIRE(stats.hits>=1 && stats.uploads>=7 && stats.evictions>=5 && stats.bytes<=config.max_bytes);
 done:
     unpin(&a);unpin(&b);unpin(&c);ch_vk_texture_cache_destroy(cache);ch_vk_texture_cache_destroy(small);
+    if(!failed) failed=working_set(gpu,device,queue,family,guest,bytes,decode);
     if(!failed) puts("PASS: immutable texture cache hits, same-VA texel/palette edits, sampler keys, pinned eviction/budget fallback and guest bounds");
     return failed;
 #undef REQUIRE

@@ -152,6 +152,14 @@ it does not request removal of artificial caps. Preserve this requirement throug
 FPS, offscreen tests and compositor refresh rate do not establish combat FPS.
 Record comparable combat scenarios and frame-time distributions on the headset,
 including sustained rate, long frames and regularity, then obtain user acceptance.
+`CHIHIRO_PACE_LOG=1` reports game-frame p50/p95/max and now also p99 plus
+counts above 33.3 and 50 ms, retaining the existing 20-ms count. These are
+one-second diagnostic windows, not aggregate combat percentiles. Collect a
+sustained, visibly verified combat interval after loading; compare the same
+scene, resolution, refresh rate and equivalent optimization settings with GL.
+Check headset frame repeats alongside producer timing and session focus:
+an unfocused/loading run cannot establish smooth gameplay. Do not average
+per-window percentiles and describe the result as an aggregate percentile.
 The present 1-2 FPS native startup candidate fails this performance requirement.
 
 ## Resident color and measured combiner reduction
@@ -548,3 +556,55 @@ completion as a correctness requirement; it does not establish full-game or
 performance acceptance. Native Vulkan now selects strict completion by default
 while the GL default remains unchanged. CPU fixtures explicitly cover each
 renderer default and the `0`/`1` overrides, in addition to ABI/wrap/watchdog.
+
+
+## Texture-cache capacity and pacing diagnostics
+
+The native immutable texture cache now defaults to 2,048 slots, matching the
+GL slot count, while retaining the 64-MiB estimated payload budget and pinned
+image ownership rules. Lookup/retirement scan only the populated table extent.
+`CHIHIRO_VULKAN_TEXTURE_CACHE_ENTRIES=1..4096` allows a same-binary capacity
+control; invalid values fail initialization. Profile output records occupancy
+and capacity. The byte budget includes encoded snapshots, estimated image mip
+payload and retained upload staging; driver allocation overhead and table
+metadata are additional memory, so this does not claim a 64-MiB total process
+or driver footprint.
+
+The actual Quest GPU fixture retains a 96-image working set within a 4,096-byte
+estimated payload budget and hits all 96 images on its second pass with no
+new uploads or evictions. The former 64-slot default cannot satisfy this case.
+Existing immutable-edit, palette, sampler, pinned eviction, mip/cube and byte
+budget checks also pass. This validates retention and correctness, not FPS.
+
+A same-binary Mac comparison uses strict actual fence completion in both runs,
+the same timed input script and a 220-second external limit. The 2,048-slot run
+reaches at least frame 1,080, recording 2,069 uploads and 1,982 evictions versus
+124,933 hits, with 87 entries and 63.7 MiB of estimated payload live. It times
+out before the requested 1,100 frames, so execution is correctly incomplete.
+The frame-800 image is the city cinematic/attract sequence (zero credits),
+not verified active combat. The matching 64-slot control also times out before 1,100 frames. At frame
+900, its counters record 11,256 uploads and 11,192 evictions versus 1,588
+uploads and 1,490 evictions with 2,048 slots; the corresponding lookup totals
+are 84,267 and 87,134. This supports removing the capacity bottleneck while
+retaining byte-budget eviction. Both runs used executable SHA256
+`827301eaba007edfc1377bb12bfa1b91a02479111f58d996ba4b087803dfe3b1`.
+Reports and sample counters are in `validation/direct-vulkan-cache-capacity/`.
+Timed inputs can land at different guest states as throughput changes; the
+comparison must not be described as deterministic pixel or combat parity.
+
+The current isolated APK builds and passes the no-OpenGL-import audit. Its
+SHA256 is `ff8140cef23cfc35655e44ac58fb453d895e33ce9aeecb066c614d30e78844e9`.
+No sustained Quest combat or smooth-frame-time acceptance is established.
+
+
+The fresh-marker Quest startup check installed this APK and confirmed the new
+p99/long-frame diagnostics and 2,048-slot configuration. Warm startup windows
+show roughly 114–136 ms p50, still far short of the target; texture uploads are
+already low there, and synchronous surface import/draw/fence work remains.
+The XR session briefly reached focused state and then lost running/focus;
+the inspected screenshot shows “Finding position in room.” No tracking dialog
+was bypassed, and this is not a combat comparison. The candidate was stopped,
+its per-app environment restored, automation proximity override disabled and
+the whole-session lock released. The installed original GL APK retained its
+preserved SHA256. Only diagnostic log excerpts are retained in versioned
+validation; no headset/system screenshot is committed.

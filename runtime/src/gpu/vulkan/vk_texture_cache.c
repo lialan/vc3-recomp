@@ -15,6 +15,7 @@ struct ChVkTextureCache {
     ChVkTextureCacheConfig config;
     struct Entry *entries;
     uint64_t clock;
+    uint32_t extent; /* Skip the never-populated tail of the bounded table. */
     ChVkTextureCacheStats stats;
 };
 VkResult ch_vk_texture_storage_span(const Nv2aTexture *t,size_t *span,size_t *palette) {
@@ -66,12 +67,12 @@ static void drop(ChVkTextureCache *c,struct Entry *e) {
     if(!e->image) return;
     if(e->pins) abort();
     ch_vk_texture_destroy(e->image);free(e->raw);
-    c->stats.bytes-=e->cost;c->stats.evictions++;
+    c->stats.bytes-=e->cost;c->stats.evictions++;c->stats.entries--;
     memset(e,0,sizeof *e);
 }
 static struct Entry *oldest(ChVkTextureCache *c) {
     struct Entry *found=NULL;
-    for(uint32_t i=0;i<c->config.max_entries;i++) {
+    for(uint32_t i=0;i<c->extent;i++) {
         struct Entry *e=&c->entries[i];
         if(e->image && !e->pins && (!found || e->used<found->used)) found=e;
     }
@@ -79,7 +80,7 @@ static struct Entry *oldest(ChVkTextureCache *c) {
 }
 static void release(void *context,ChVkTexture *image) {
     ChVkTextureCache *c=context;
-    for(uint32_t i=0;i<c->config.max_entries;i++) if(c->entries[i].image==image) {
+    for(uint32_t i=0;i<c->extent;i++) if(c->entries[i].image==image) {
         if(!c->entries[i].pins) abort();
         c->entries[i].pins--;return;
     }
@@ -100,7 +101,7 @@ VkResult ch_vk_texture_cache_create(const ChVkTextureCacheConfig *config,ChVkTex
     if(!c) return VK_ERROR_OUT_OF_HOST_MEMORY;
     c->config=*config;
     if(!c->config.max_bytes) c->config.max_bytes=64u<<20;
-    if(!c->config.max_entries) c->config.max_entries=64;
+    if(!c->config.max_entries) c->config.max_entries=CH_VK_TEXTURE_CACHE_DEFAULT_ENTRIES;
     c->entries=calloc(c->config.max_entries,sizeof *c->entries);
     if(!c->entries) {free(c);return VK_ERROR_OUT_OF_HOST_MEMORY;}
     *out=c;return VK_SUCCESS;
@@ -119,13 +120,14 @@ VkResult ch_vk_texture_cache_resolve(void *context,const Nv2aTexture *t,ChVkSamp
     VkSamplerCreateInfo sampler;
     r=ch_vk_sampler_state(t,&sampler);if(r!=VK_SUCCESS) return r;
     struct Entry *slot=NULL;
-    for(uint32_t i=0;i<c->config.max_entries;i++) {
+    for(uint32_t i=0;i<c->extent;i++) {
         struct Entry *e=&c->entries[i];
         if(!e->image) {if(!slot) slot=e;continue;}
         if(!memcmp(&e->key,t,sizeof *t) && unchanged(c,e,t)) {
             c->stats.hits++;pin(c,e,out);return VK_SUCCESS;
         }
     }
+    if(!slot && c->extent<c->config.max_entries) slot=&c->entries[c->extent];
     c->stats.misses++;
     size_t pixels=0;
     uint32_t levels=ch_nv2a_texture_mip_levels(t,1),width=t->width,height=t->height;
@@ -162,13 +164,15 @@ VkResult ch_vk_texture_cache_resolve(void *context,const Nv2aTexture *t,ChVkSamp
     if(r==VK_SUCCESS) r=ch_vk_texture_set_sampler(image,&sampler);
     if(r!=VK_SUCCESS) {ch_vk_texture_destroy(image);free(raw);return r;}
     *slot=(struct Entry){.key=*t,.image=image,.raw=raw,.span=span,.palette=palette,.cost=(size_t)cost};
-    c->stats.bytes+=(size_t)cost;c->stats.uploads++;pin(c,slot,out);return VK_SUCCESS;
+    if(slot==c->entries+c->extent) c->extent++;
+    c->stats.entries++;c->stats.bytes+=(size_t)cost;c->stats.uploads++;pin(c,slot,out);return VK_SUCCESS;
 }
 void ch_vk_texture_cache_stats(const ChVkTextureCache *c,ChVkTextureCacheStats *out) {
     if(out) *out=c?c->stats:(ChVkTextureCacheStats){0};
+    if(out && c) out->capacity=c->config.max_entries;
 }
 void ch_vk_texture_cache_destroy(ChVkTextureCache *c) {
     if(!c) return;
-    for(uint32_t i=0;i<c->config.max_entries;i++) drop(c,&c->entries[i]);
+    for(uint32_t i=0;i<c->extent;i++) drop(c,&c->entries[i]);
     free(c->entries);free(c);
 }

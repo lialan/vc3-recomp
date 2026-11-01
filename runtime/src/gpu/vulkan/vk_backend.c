@@ -349,9 +349,9 @@ static void flip(void) {
     }
     if(active->textures && profile && atoi(profile) && (active->frames==1 || active->frames%60==0)) {
         ChVkTextureCacheStats stats;ch_vk_texture_cache_stats(active->textures,&stats);
-        fprintf(stderr,"[Vulkan texture cache] hits=%llu uploads=%llu evictions=%llu live=%.1fMiB\n",
+        fprintf(stderr,"[Vulkan texture cache] hits=%llu uploads=%llu evictions=%llu live=%.1fMiB entries=%u/%u\n",
             (unsigned long long)stats.hits,(unsigned long long)stats.uploads,
-            (unsigned long long)stats.evictions,stats.bytes/(1024.*1024.));
+            (unsigned long long)stats.evictions,stats.bytes/(1024.*1024.),stats.entries,stats.capacity);
     }
     uint32_t presented=nv2a_backend_presented_va();
     if(active->host.present_rgba && presented) {
@@ -417,7 +417,7 @@ VkResult ch_vk_backend_create(const ChVkBackendConfig *config,ChVkBackend **out)
     if(config->cache_textures) {
         ChVkTextureCacheConfig texture_config={.physical=config->physical,.device=config->device,
             .queue=config->queue,.family=config->family,.guest_base=config->guest_base,
-            .guest_bytes=config->guest_bytes,.decode=config->decode};
+            .guest_bytes=config->guest_bytes,.decode=config->decode,.max_entries=config->texture_cache_entries};
         VkResult r=ch_vk_texture_cache_create(&texture_config,&b->textures);
         if(r!=VK_SUCCESS) {ch_vk_depth_resident_destroy(b->zeta);free(b);return r;}
     }

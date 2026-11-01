@@ -1,0 +1,40 @@
+{
+  "binary": "/Users/lialan/Downloads/VR/vc3-vulkan/build-vulkan-direct/vc3",
+  "binary_sha256": "827301eaba007edfc1377bb12bfa1b91a02479111f58d996ba4b087803dfe3b1",
+  "game": "/Users/lialan/Downloads/VR/VC3/extracted",
+  "environment": {
+    "RECOMP_HEADLESS": "1",
+    "RECOMP_FB_WINDOW": "0",
+    "VC3_SOUND": "0",
+    "VC3_SCALE": "1",
+    "VC3_ASPECT": "4:3",
+    "VC3_STEREO": "0",
+    "VC3_FPS": "60",
+    "VC3_SAVE_DIR": "/private/tmp/vc3-vulkan-cache2048-mission/save",
+    "VC3_CONFIG_DIR": "/private/tmp/vc3-vulkan-cache2048-mission/config",
+    "VC3_VULKAN_DUMP_DIR": "/private/tmp/vc3-vulkan-cache2048-mission/frames",
+    "VC3_VULKAN_DUMP_FIRST": "800",
+    "VC3_VULKAN_DUMP_COUNT": "3",
+    "VC3_VULKAN_FRAME_LIMIT": "1100",
+    "VK_ICD_FILENAMES": "/opt/homebrew/Cellar/mesa/26.2.6/share/vulkan/icd.d/kosmickrisp_mesa_icd.aarch64.json",
+    "CHIHIRO_VULKAN_PROFILE": "1",
+    "CHIHIRO_VULKAN_RESIDENT_DEPTH": "1",
+    "CHIHIRO_AUTOKEYS": "30:coin,33:start,35:start,50:fire,55:fire,60:start,62:start,70:fire,75:fire,80:reload,90:fire,95:fire,100:fire,105:fire,110:fire,115:reload,120:fire,125:fire,130:fire,135:fire,140:fire,145:reload,150:fire,155:fire,160:fire,165:fire,170:fire,175:reload",
+    "CHIHIRO_AUTOFIRE_MS": "700",
+    "CHIHIRO_AUTOAIM": "0.2,0.5",
+    "CHIHIRO_STRICT_GPU_FENCES": "1",
+    "CHIHIRO_FENCE_LOG": "1",
+    "CHIHIRO_VULKAN_TEXTURE_CACHE_ENTRIES": "2048"
+  },
+  "requested_frames": 1100,
+  "scope": "Local VC3 guest execution; no Quest or VR acceptance",
+  "opengl_imports": [],
+  "exit_code": "timeout",
+  "reached_frame_limit": false,
+  "captures": {
+    "frame-000800.ppm": "cd06503e2f9316056e93c31e8d444915431bd1633ffe163c0e4aa37af8deaaa6",
+    "frame-000801.ppm": "f5b7f385058baf774a770f038aad17a7c1831f407d1f63bfcd55d11ba0453432",
+    "frame-000802.ppm": "6270fa25808ee55ba9b20d9ec2c1bf887e97b166632dc631891b75575e45e82e"
+  },
+  "passed_execution": false
+}

@@ -100,6 +100,13 @@ static VkResult attach(ChVkBackendConfig config)
     config.resident_color=!resident || strcmp(resident,"0");
     const char *cache=ch_env("VULKAN_TEXTURE_CACHE");
     config.cache_textures=!cache || strcmp(cache,"0");
+    const char *entries=ch_env("VULKAN_TEXTURE_CACHE_ENTRIES");
+    if(entries) {
+        char *end;errno=0;unsigned long value=strtoul(entries,&end,10);
+        if(errno || end==entries || *end || value<1 || value>4096)
+            return VK_ERROR_INITIALIZATION_FAILED;
+        config.texture_cache_entries=(uint32_t)value;
+    }
     const char *depth=ch_env("VULKAN_RESIDENT_DEPTH");
     config.resident_depth=depth && !strcmp(depth,"1");
     fprintf(stderr,"[Vulkan] resident color targets: %s\n",config.resident_color?"enabled":"disabled");

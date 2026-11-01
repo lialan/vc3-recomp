@@ -230,12 +230,16 @@ static void pace_game_frame(void)
     if (!t0)
         t0 = now;
     if (now - t0 >= 1000000 && n > 0) {
-        int over = 0, i;
+        int over = 0, over33 = 0, over50 = 0, i;
         qsort(dt, (size_t)n, sizeof dt[0], cmp_u32);
-        for (i = 0; i < n; i++)
+        for (i = 0; i < n; i++) {
             over += dt[i] > 20000;
-        fprintf(stderr, "[pace] game %d frames: ms p50 %.1f p95 %.1f max %.1f, >20 ms %d\n", n,
-                dt[n / 2] / 1000.0, dt[n * 95 / 100] / 1000.0, dt[n - 1] / 1000.0, over);
+            over33 += dt[i] > 33333;
+            over50 += dt[i] > 50000;
+        }
+        fprintf(stderr, "[pace] game %d frames: ms p50 %.1f p95 %.1f max %.1f, >20 ms %d, p99 %.1f >33.3 ms %d >50 ms %d\n", n,
+                dt[n / 2] / 1000.0, dt[n * 95 / 100] / 1000.0, dt[n - 1] / 1000.0, over,
+                dt[n * 99 / 100] / 1000.0, over33, over50);
         n = 0;
         t0 = now;
     }

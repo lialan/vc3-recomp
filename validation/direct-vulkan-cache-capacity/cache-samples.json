@@ -1,0 +1,297 @@
+{
+  "scope": "Cumulative cache counters at reported frame numbers; timed inputs can change guest workload. No Quest FPS or combat acceptance.",
+  "samples": {
+    "64": {
+      "1": {
+        "hits": "0",
+        "uploads": "1",
+        "evictions": "0",
+        "estimated_live_MiB": "0.0",
+        "entries": "1",
+        "capacity": "64"
+      },
+      "60": {
+        "hits": "3121",
+        "uploads": "14",
+        "evictions": "0",
+        "estimated_live_MiB": "10.6",
+        "entries": "14",
+        "capacity": "64"
+      },
+      "120": {
+        "hits": "6354",
+        "uploads": "14",
+        "evictions": "0",
+        "estimated_live_MiB": "10.6",
+        "entries": "14",
+        "capacity": "64"
+      },
+      "180": {
+        "hits": "9593",
+        "uploads": "15",
+        "evictions": "0",
+        "estimated_live_MiB": "11.4",
+        "entries": "15",
+        "capacity": "64"
+      },
+      "240": {
+        "hits": "12834",
+        "uploads": "15",
+        "evictions": "0",
+        "estimated_live_MiB": "11.4",
+        "entries": "15",
+        "capacity": "64"
+      },
+      "300": {
+        "hits": "15610",
+        "uploads": "57",
+        "evictions": "34",
+        "estimated_live_MiB": "62.5",
+        "entries": "23",
+        "capacity": "64"
+      },
+      "360": {
+        "hits": "17185",
+        "uploads": "204",
+        "evictions": "181",
+        "estimated_live_MiB": "62.5",
+        "entries": "23",
+        "capacity": "64"
+      },
+      "420": {
+        "hits": "18776",
+        "uploads": "353",
+        "evictions": "330",
+        "estimated_live_MiB": "62.5",
+        "entries": "23",
+        "capacity": "64"
+      },
+      "480": {
+        "hits": "20366",
+        "uploads": "503",
+        "evictions": "480",
+        "estimated_live_MiB": "62.5",
+        "entries": "23",
+        "capacity": "64"
+      },
+      "540": {
+        "hits": "23070",
+        "uploads": "602",
+        "evictions": "572",
+        "estimated_live_MiB": "60.9",
+        "entries": "30",
+        "capacity": "64"
+      },
+      "600": {
+        "hits": "26098",
+        "uploads": "608",
+        "evictions": "574",
+        "estimated_live_MiB": "60.8",
+        "entries": "34",
+        "capacity": "64"
+      },
+      "660": {
+        "hits": "29848",
+        "uploads": "609",
+        "evictions": "574",
+        "estimated_live_MiB": "63.3",
+        "entries": "35",
+        "capacity": "64"
+      },
+      "720": {
+        "hits": "32802",
+        "uploads": "614",
+        "evictions": "577",
+        "estimated_live_MiB": "62.5",
+        "entries": "37",
+        "capacity": "64"
+      },
+      "780": {
+        "hits": "45585",
+        "uploads": "2870",
+        "evictions": "2806",
+        "estimated_live_MiB": "31.0",
+        "entries": "64",
+        "capacity": "64"
+      },
+      "840": {
+        "hits": "59806",
+        "uploads": "6339",
+        "evictions": "6275",
+        "estimated_live_MiB": "29.6",
+        "entries": "64",
+        "capacity": "64"
+      },
+      "900": {
+        "hits": "73011",
+        "uploads": "11256",
+        "evictions": "11192",
+        "estimated_live_MiB": "29.6",
+        "entries": "64",
+        "capacity": "64"
+      },
+      "960": {
+        "hits": "86883",
+        "uploads": "15720",
+        "evictions": "15656",
+        "estimated_live_MiB": "23.3",
+        "entries": "64",
+        "capacity": "64"
+      }
+    },
+    "2048": {
+      "1": {
+        "hits": "0",
+        "uploads": "1",
+        "evictions": "0",
+        "estimated_live_MiB": "0.0",
+        "entries": "1",
+        "capacity": "2048"
+      },
+      "60": {
+        "hits": "3121",
+        "uploads": "14",
+        "evictions": "0",
+        "estimated_live_MiB": "10.6",
+        "entries": "14",
+        "capacity": "2048"
+      },
+      "120": {
+        "hits": "6354",
+        "uploads": "14",
+        "evictions": "0",
+        "estimated_live_MiB": "10.6",
+        "entries": "14",
+        "capacity": "2048"
+      },
+      "180": {
+        "hits": "9593",
+        "uploads": "15",
+        "evictions": "0",
+        "estimated_live_MiB": "11.4",
+        "entries": "15",
+        "capacity": "2048"
+      },
+      "240": {
+        "hits": "12834",
+        "uploads": "15",
+        "evictions": "0",
+        "estimated_live_MiB": "11.4",
+        "entries": "15",
+        "capacity": "2048"
+      },
+      "300": {
+        "hits": "15496",
+        "uploads": "67",
+        "evictions": "44",
+        "estimated_live_MiB": "62.5",
+        "entries": "23",
+        "capacity": "2048"
+      },
+      "360": {
+        "hits": "17075",
+        "uploads": "215",
+        "evictions": "192",
+        "estimated_live_MiB": "62.5",
+        "entries": "23",
+        "capacity": "2048"
+      },
+      "420": {
+        "hits": "18663",
+        "uploads": "364",
+        "evictions": "341",
+        "estimated_live_MiB": "62.5",
+        "entries": "23",
+        "capacity": "2048"
+      },
+      "480": {
+        "hits": "20265",
+        "uploads": "515",
+        "evictions": "491",
+        "estimated_live_MiB": "62.5",
+        "entries": "24",
+        "capacity": "2048"
+      },
+      "540": {
+        "hits": "23070",
+        "uploads": "592",
+        "evictions": "558",
+        "estimated_live_MiB": "63.9",
+        "entries": "34",
+        "capacity": "2048"
+      },
+      "600": {
+        "hits": "26373",
+        "uploads": "593",
+        "evictions": "559",
+        "estimated_live_MiB": "60.8",
+        "entries": "34",
+        "capacity": "2048"
+      },
+      "660": {
+        "hits": "30119",
+        "uploads": "595",
+        "evictions": "560",
+        "estimated_live_MiB": "63.3",
+        "entries": "35",
+        "capacity": "2048"
+      },
+      "720": {
+        "hits": "33875",
+        "uploads": "727",
+        "evictions": "648",
+        "estimated_live_MiB": "63.8",
+        "entries": "79",
+        "capacity": "2048"
+      },
+      "780": {
+        "hits": "49891",
+        "uploads": "1037",
+        "evictions": "963",
+        "estimated_live_MiB": "60.6",
+        "entries": "74",
+        "capacity": "2048"
+      },
+      "840": {
+        "hits": "67580",
+        "uploads": "1328",
+        "evictions": "1234",
+        "estimated_live_MiB": "62.7",
+        "entries": "94",
+        "capacity": "2048"
+      },
+      "900": {
+        "hits": "85546",
+        "uploads": "1588",
+        "evictions": "1490",
+        "estimated_live_MiB": "62.9",
+        "entries": "98",
+        "capacity": "2048"
+      },
+      "960": {
+        "hits": "103473",
+        "uploads": "1768",
+        "evictions": "1667",
+        "estimated_live_MiB": "62.3",
+        "entries": "101",
+        "capacity": "2048"
+      },
+      "1020": {
+        "hits": "114678",
+        "uploads": "1918",
+        "evictions": "1830",
+        "estimated_live_MiB": "63.3",
+        "entries": "88",
+        "capacity": "2048"
+      },
+      "1080": {
+        "hits": "124933",
+        "uploads": "2069",
+        "evictions": "1982",
+        "estimated_live_MiB": "63.7",
+        "entries": "87",
+        "capacity": "2048"
+      }
+    }
+  }
+}

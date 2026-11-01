@@ -2,13 +2,14 @@
 #define CH_VK_TEXTURE_CACHE_H
 #include "vk_nv2a.h"
 typedef struct ChVkTextureCache ChVkTextureCache;
+#define CH_VK_TEXTURE_CACHE_DEFAULT_ENTRIES 2048u
 typedef struct {
     VkPhysicalDevice physical; VkDevice device; VkQueue queue; uint32_t family;
     const void *guest_base; size_t guest_bytes;
     ChVkDecodeTexture decode;
-    size_t max_bytes; uint32_t max_entries; /* zero: 64 MiB / 64 entries */
+    size_t max_bytes; uint32_t max_entries; /* zero: 64 MiB / 2048 entries */
 } ChVkTextureCacheConfig;
-typedef struct { uint64_t hits,misses,uploads,evictions; size_t bytes; } ChVkTextureCacheStats;
+typedef struct { uint64_t hits,misses,uploads,evictions; size_t bytes; uint32_t entries,capacity; } ChVkTextureCacheStats;
 VkResult ch_vk_texture_cache_create(const ChVkTextureCacheConfig *,ChVkTextureCache **);
 /* Encoded level-zero byte range (full padded six-face footprint for cubes),
  * with an optional 1024-byte P8 palette.

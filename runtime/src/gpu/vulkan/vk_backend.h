@@ -21,6 +21,7 @@ typedef struct {
     int resident_color;
     int resident_depth; /* D24S8 only; strict fallback when native D24 unavailable */
     int cache_textures; /* exact level-zero storage/palette/sampler cache */
+    uint32_t texture_cache_entries; /* zero: default capacity; byte budget unchanged */
     /* Synchronous host rendering hooks, after guest-visible completion.
      * All pointers borrowed until hook returns; never retain decoded pointers.
      * Host routes world/HUD/postprocess explicitly. Errors stop guest progress.
