@@ -60,6 +60,11 @@ if(CHIHIRO_VULKAN_CPU_TESTS)
 endif()
 option(CHIHIRO_VULKAN_TESTS "Build standalone offscreen tests; never installs an APK" OFF)
 if(CHIHIRO_VULKAN_TESTS)
+    add_executable(vulkan_fence_wait_test "${CH_VK_ROOT}/tools/vulkan-fence-wait-test.c"
+        "${CH_VK_ROOT}/runtime/src/chihiro/d3d_fence.c")
+    target_include_directories(vulkan_fence_wait_test PRIVATE "${CH_VK_ROOT}/runtime/src"
+        "${XBOXRECOMP_DIR}/templates/runtime" "${XBOXRECOMP_DIR}/src/platform")
+    target_compile_options(vulkan_fence_wait_test PRIVATE -Wall -Wextra -Werror)
     add_executable(vulkan_defer_flush_test "${CH_VK_ROOT}/tools/vulkan-defer-flush-test.c"
         "${XBOXRECOMP_DIR}/src/kernel/nv2a_pb_defer.c")
     target_include_directories(vulkan_defer_flush_test PRIVATE "${XBOXRECOMP_DIR}/src/kernel"

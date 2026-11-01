@@ -493,3 +493,28 @@ Both reference OpenGL and direct Vulkan Mac builds pass. The following timed
 mission replay is checking this behavior in the game, with the same explicit
 aim/coin/start inputs as the preceding failure. Performance acceptance remains
 unchanged and incomplete.
+
+## Fence completion diagnostic
+
+The shared-stage mission probe passed the mode-6 compatibility check, then
+rejected a postprocess draw at frame 766. Its state includes blend equation
+`1D30`, depth function `80001D10` and stencil operation `80001D30`, alongside
+valid texture metadata. Eight logged 250-ms SDK fence timeouts precede the
+failure. These command-like values make command-stream lifetime/synchronization
+the next investigation; they are not accepted as new blend/depth modes.
+The preceding color-layout rejection is also still open. The timeouts are a
+correlation, not yet proof that fence reuse caused the malformed state.
+
+`CHIHIRO_STRICT_GPU_FENCES=1` is an opt-in experiment: BlockOnTime waits for
+the actual semaphore instead of returning after 250 ms. A 30-second watchdog
+aborts a stuck wait rather than reporting successful completion. The default
+retains the existing 250-ms control on both renderers. This is a completion
+diagnostic, not an FPS cap/pacing adjustment or performance acceptance.
+
+The actual BlockOnTime implementation passes Mac and Quest CPU fixtures with
+a virtual clock/semaphore: delayed completion beyond 250 ms, fence-counter
+wraparound, already-complete fences, kickoff/return-stack behavior, unchanged
+legacy timeout and a child-process stuck-fence watchdog. This verifies the
+wait logic/ABI, not real GPU scheduling or game correctness. A fresh mission
+replay with the strict flag and fence logging is testing the hypothesis.
+Evidence is under `validation/direct-vulkan-fence-diagnostic/`.

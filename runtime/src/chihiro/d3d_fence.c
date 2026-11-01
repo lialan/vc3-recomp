@@ -28,6 +28,7 @@ void nv2a_pb_set_semaphore_target(uint32_t guest_va);
 #define DEV_WRITE_TIME   0x2C          /* newest fence time */
 #define DEV_SEMAPHORE    0x30          /* -> GPU's progress */
 #define WAIT_BOUND_NS    250000000ull
+#define STRICT_WAIT_BOUND_NS 30000000000ull
 
 /* VC3_FENCE_LOG=1: once a second, how many waits there were, how many had
  * to sleep, and the time spent in them. */
@@ -58,6 +59,10 @@ void vc3_d3d_block_on_time(void)
     uint32_t sem, head;
     uint64_t deadline, start;
     int slept = 0;
+    const char *strict_env = ch_env("STRICT_GPU_FENCES");
+    int strict = strict_env && atoi(strict_env) != 0;
+    int reported_slow = 0;
+    static unsigned slow_reports;
 
     if (!dev)
         goto out;
@@ -80,15 +85,26 @@ void vc3_d3d_block_on_time(void)
     /* Done once the fence is no newer than the GPU's progress, in ring order
      * relative to the newest time (the original's unsigned comparison). */
     start = xbox_HostNowNs();
-    deadline = start + WAIT_BOUND_NS;
+    deadline = start + (strict ? STRICT_WAIT_BOUND_NS : WAIT_BOUND_NS);
     for (;;) {
         head = MEM32(dev + DEV_WRITE_TIME);
         if (head - time >= head - MEM32(sem))
             break;
-        if (xbox_HostNowNs() >= deadline) {
+        uint64_t now = xbox_HostNowNs();
+        if (strict && !reported_slow && now - start >= WAIT_BOUND_NS) {
+            reported_slow = 1;
+            if (slow_reports++ < 8)
+                fprintf(stderr, "[D3D] BlockOnTime(0x%08X) awaiting actual GPU completion beyond 250 ms: head 0x%08X sem 0x%08X\n",
+                        time, head, MEM32(sem));
+        }
+        if (now >= deadline) {
             if (s_timeouts++ < 8)
                 fprintf(stderr, "[D3D] BlockOnTime(0x%08X) timed out: head 0x%08X "
                         "sem 0x%08X\n", time, head, MEM32(sem));
+            /* An experimental strict wait must never tell the SDK that an
+             * incomplete fence is reusable. Keep the legacy bound as the
+             * control; a stuck strict wait terminates with diagnostics. */
+            if (strict) abort();
             break;
         }
         xbox_HostSleepNs(50000);
