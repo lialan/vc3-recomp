@@ -1,0 +1,326 @@
+near frame 1320: [Vulkan batch boundaries] 256x256: transfer_depth_stencil/read3=61
+near frame 1320: [Vulkan depth uploads] 256x256 count=0 inclusive 0.00ms own_fence_wait 0.00ms
+near frame 1320: [Vulkan batch boundaries] 640x480: ch_vk_target_read_color/read2=64
+near frame 1320: [Vulkan depth uploads] 640x480 count=0 inclusive 0.00ms own_fence_wait 0.00ms
+near frame 1320: [Vulkan batch boundaries] 640x480: transfer_depth_stencil/read3=42 ch_vk_target_copy_depth_stencil/read0=20 ch_vk_target_read_color/read2=1
+near frame 1320: [Vulkan depth uploads] 640x480 count=11 inclusive 2.23ms own_fence_wait 1.85ms
+near frame 1320: [Vulkan batch boundaries] 640x480: ch_vk_target_copy_depth_stencil/read0=17 transfer_depth_stencil/read3=47 ch_vk_target_read_color/read2=2
+near frame 1320: [Vulkan depth uploads] 640x480 count=10 inclusive 2.24ms own_fence_wait 1.88ms
+near frame 1320: [Vulkan batch boundaries] 640x480: ch_vk_target_copy_depth_stencil/read0=20 transfer_depth_stencil/read3=40
+near frame 1320: [Vulkan depth uploads] 640x480 count=10 inclusive 2.30ms own_fence_wait 1.94ms
+near frame 1320: [Vulkan batch boundaries] 128x128: ch_vk_target_read_color/read2=16
+near frame 1320: [Vulkan depth uploads] 128x128 count=0 inclusive 0.00ms own_fence_wait 0.00ms
+near frame 1320: [Vulkan batch boundaries] 256x256: transfer_depth_stencil/read1=8 ch_vk_target_read_color/read2=8
+near frame 1320: [Vulkan depth uploads] 256x256 count=8 inclusive 1.45ms own_fence_wait 1.30ms
+near frame 1320: [Vulkan batch boundaries] 128x128: ch_vk_target_read_color/read2=16
+near frame 1320: [Vulkan depth uploads] 128x128 count=0 inclusive 0.00ms own_fence_wait 0.00ms
+near frame 1320: [Vulkan batch boundaries] 256x256: transfer_depth_stencil/read1=8 ch_vk_target_read_color/read2=8
+near frame 1320: [Vulkan depth uploads] 256x256 count=8 inclusive 1.41ms own_fence_wait 1.26ms
+near frame 1320: [Vulkan batch boundaries] 128x128: ch_vk_target_read_color/read2=16
+near frame 1320: [Vulkan depth uploads] 128x128 count=0 inclusive 0.00ms own_fence_wait 0.00ms
+near frame 1320: [Vulkan batch boundaries] 256x256: transfer_depth_stencil/read1=8 ch_vk_target_read_color/read2=8
+near frame 1320: [Vulkan depth uploads] 256x256 count=8 inclusive 1.33ms own_fence_wait 1.18ms
+near frame 1320: [Vulkan batch boundaries] 128x128: ch_vk_target_read_color/read2=16
+near frame 1320: [Vulkan depth uploads] 128x128 count=0 inclusive 0.00ms own_fence_wait 0.00ms
+near frame 1320: [Vulkan batch boundaries] 256x256: transfer_depth_stencil/read1=8 ch_vk_target_read_color/read2=8
+near frame 1320: [Vulkan depth uploads] 256x256 count=8 inclusive 1.35ms own_fence_wait 1.21ms
+near frame 1320: [Vulkan batch boundaries] 640x480: ch_vk_target_read_color/read2=73 ch_vk_target_copy_depth_stencil/read0=59 transfer_depth_stencil/read3=87 transfer_depth_stencil/read1=1 draw_full/read0=1
+near frame 1320: [Vulkan depth uploads] 640x480 count=0 inclusive 0.00ms own_fence_wait 0.00ms
+near frame 1320: [Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+near frame 1320: [Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+near frame 1320: [Vulkan CPU strict depth] pixels=0 (cumulative)
+near frame 1320: [Vulkan CPU graphics] texture_pixels=12019968 texture_ms=214.069 color_pixels=0 color_ms=0.000 (cumulative)
+near frame 1380: [Vulkan batch boundaries] 256x256: transfer_depth_stencil/read3=61
+near frame 1380: [Vulkan depth uploads] 256x256 count=0 inclusive 0.00ms own_fence_wait 0.00ms
+near frame 1380: [Vulkan batch boundaries] 640x480: ch_vk_target_read_color/read2=63
+near frame 1380: [Vulkan depth uploads] 640x480 count=0 inclusive 0.00ms own_fence_wait 0.00ms
+near frame 1380: [Vulkan batch boundaries] 640x480: transfer_depth_stencil/read3=42 ch_vk_target_copy_depth_stencil/read0=20
+near frame 1380: [Vulkan depth uploads] 640x480 count=10 inclusive 4.06ms own_fence_wait 3.67ms
+near frame 1380: [Vulkan batch boundaries] 640x480: ch_vk_target_copy_depth_stencil/read0=20 transfer_depth_stencil/read3=42
+near frame 1380: [Vulkan depth uploads] 640x480 count=10 inclusive 2.63ms own_fence_wait 2.27ms
+near frame 1380: [Vulkan batch boundaries] 640x480: ch_vk_target_copy_depth_stencil/read0=21 transfer_depth_stencil/read3=46
+near frame 1380: [Vulkan depth uploads] 640x480 count=11 inclusive 2.95ms own_fence_wait 2.55ms
+near frame 1380: [Vulkan batch boundaries] 128x128: ch_vk_target_read_color/read2=16
+near frame 1380: [Vulkan depth uploads] 128x128 count=0 inclusive 0.00ms own_fence_wait 0.00ms
+near frame 1380: [Vulkan batch boundaries] 256x256: transfer_depth_stencil/read1=8 ch_vk_target_read_color/read2=8
+near frame 1380: [Vulkan depth uploads] 256x256 count=8 inclusive 1.48ms own_fence_wait 1.33ms
+near frame 1380: [Vulkan batch boundaries] 128x128: ch_vk_target_read_color/read2=16
+near frame 1380: [Vulkan depth uploads] 128x128 count=0 inclusive 0.00ms own_fence_wait 0.00ms
+near frame 1380: [Vulkan batch boundaries] 256x256: transfer_depth_stencil/read1=8 ch_vk_target_read_color/read2=8
+near frame 1380: [Vulkan depth uploads] 256x256 count=8 inclusive 1.31ms own_fence_wait 1.17ms
+near frame 1380: [Vulkan batch boundaries] 128x128: ch_vk_target_read_color/read2=16
+near frame 1380: [Vulkan depth uploads] 128x128 count=0 inclusive 0.00ms own_fence_wait 0.00ms
+near frame 1380: [Vulkan batch boundaries] 256x256: transfer_depth_stencil/read1=8 ch_vk_target_read_color/read2=8
+near frame 1380: [Vulkan depth uploads] 256x256 count=8 inclusive 1.43ms own_fence_wait 1.26ms
+near frame 1380: [Vulkan batch boundaries] 128x128: ch_vk_target_read_color/read2=16
+near frame 1380: [Vulkan depth uploads] 128x128 count=0 inclusive 0.00ms own_fence_wait 0.00ms
+near frame 1380: [Vulkan batch boundaries] 256x256: transfer_depth_stencil/read1=8 ch_vk_target_read_color/read2=8
+near frame 1380: [Vulkan depth uploads] 256x256 count=8 inclusive 1.50ms own_fence_wait 1.34ms
+near frame 1380: [Vulkan batch boundaries] 640x480: ch_vk_target_read_color/read2=120 ch_vk_target_copy_depth_stencil/read0=59 transfer_depth_stencil/read3=80 transfer_depth_stencil/read1=1
+near frame 1380: [Vulkan depth uploads] 640x480 count=0 inclusive 0.00ms own_fence_wait 0.00ms
+near frame 1380: [Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+near frame 1380: [Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+near frame 1380: [Vulkan CPU strict depth] pixels=0 (cumulative)
+near frame 1380: [Vulkan CPU graphics] texture_pixels=12025088 texture_ms=214.147 color_pixels=0 color_ms=0.000 (cumulative)
+near frame 1440: [Vulkan batch boundaries] 640x480: ch_vk_target_read_color/read2=62
+near frame 1440: [Vulkan depth uploads] 640x480 count=0 inclusive 0.00ms own_fence_wait 0.00ms
+near frame 1440: [Vulkan batch boundaries] 256x256: transfer_depth_stencil/read3=60
+near frame 1440: [Vulkan depth uploads] 256x256 count=0 inclusive 0.00ms own_fence_wait 0.00ms
+near frame 1440: [Vulkan batch boundaries] 640x480: transfer_depth_stencil/read3=47 ch_vk_target_copy_depth_stencil/read0=20
+near frame 1440: [Vulkan depth uploads] 640x480 count=10 inclusive 2.20ms own_fence_wait 1.78ms
+near frame 1440: [Vulkan batch boundaries] 640x480: ch_vk_target_copy_depth_stencil/read0=19 transfer_depth_stencil/read3=45 ch_vk_target_read_color/read2=1
+near frame 1440: [Vulkan depth uploads] 640x480 count=10 inclusive 2.54ms own_fence_wait 2.12ms
+near frame 1440: [Vulkan batch boundaries] 640x480: ch_vk_target_copy_depth_stencil/read0=19 transfer_depth_stencil/read3=43 ch_vk_target_read_color/read2=1
+near frame 1440: [Vulkan depth uploads] 640x480 count=10 inclusive 2.46ms own_fence_wait 2.01ms
+near frame 1440: [Vulkan batch boundaries] 128x128: ch_vk_target_read_color/read2=16
+near frame 1440: [Vulkan depth uploads] 128x128 count=0 inclusive 0.00ms own_fence_wait 0.00ms
+near frame 1440: [Vulkan batch boundaries] 256x256: transfer_depth_stencil/read1=8 ch_vk_target_read_color/read2=8
+near frame 1440: [Vulkan depth uploads] 256x256 count=8 inclusive 1.31ms own_fence_wait 1.16ms
+near frame 1440: [Vulkan batch boundaries] 128x128: ch_vk_target_read_color/read2=16
+near frame 1440: [Vulkan depth uploads] 128x128 count=0 inclusive 0.00ms own_fence_wait 0.00ms
+near frame 1440: [Vulkan batch boundaries] 256x256: transfer_depth_stencil/read1=8 ch_vk_target_read_color/read2=8
+near frame 1440: [Vulkan depth uploads] 256x256 count=8 inclusive 1.28ms own_fence_wait 1.11ms
+near frame 1440: [Vulkan batch boundaries] 128x128: ch_vk_target_read_color/read2=16
+near frame 1440: [Vulkan depth uploads] 128x128 count=0 inclusive 0.00ms own_fence_wait 0.00ms
+near frame 1440: [Vulkan batch boundaries] 256x256: transfer_depth_stencil/read1=8 ch_vk_target_read_color/read2=8
+near frame 1440: [Vulkan depth uploads] 256x256 count=8 inclusive 1.28ms own_fence_wait 1.12ms
+near frame 1440: [Vulkan batch boundaries] 128x128: ch_vk_target_read_color/read2=16
+near frame 1440: [Vulkan depth uploads] 128x128 count=0 inclusive 0.00ms own_fence_wait 0.00ms
+near frame 1440: [Vulkan batch boundaries] 256x256: transfer_depth_stencil/read1=8 ch_vk_target_read_color/read2=8
+near frame 1440: [Vulkan depth uploads] 256x256 count=8 inclusive 1.29ms own_fence_wait 1.10ms
+near frame 1440: [Vulkan batch boundaries] 640x480: ch_vk_target_read_color/read2=119 ch_vk_target_copy_depth_stencil/read0=57 transfer_depth_stencil/read3=65 transfer_depth_stencil/read1=3
+near frame 1440: [Vulkan depth uploads] 640x480 count=0 inclusive 0.00ms own_fence_wait 0.00ms
+near frame 1440: [Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+near frame 1440: [Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+near frame 1440: [Vulkan CPU strict depth] pixels=0 (cumulative)
+near frame 1440: [Vulkan CPU graphics] texture_pixels=12107008 texture_ms=215.209 color_pixels=0 color_ms=0.000 (cumulative)
+near frame 1500: [Vulkan batch boundaries] 256x256: transfer_depth_stencil/read3=61
+near frame 1500: [Vulkan depth uploads] 256x256 count=0 inclusive 0.00ms own_fence_wait 0.00ms
+near frame 1500: [Vulkan batch boundaries] 640x480: ch_vk_target_read_color/read2=62
+near frame 1500: [Vulkan depth uploads] 640x480 count=0 inclusive 0.00ms own_fence_wait 0.00ms
+near frame 1500: [Vulkan batch boundaries] 640x480: transfer_depth_stencil/read3=44 ch_vk_target_copy_depth_stencil/read0=19 ch_vk_target_read_color/read2=1
+near frame 1500: [Vulkan depth uploads] 640x480 count=10 inclusive 2.41ms own_fence_wait 2.01ms
+near frame 1500: [Vulkan batch boundaries] 640x480: ch_vk_target_copy_depth_stencil/read0=21 transfer_depth_stencil/read3=43
+near frame 1500: [Vulkan depth uploads] 640x480 count=11 inclusive 2.98ms own_fence_wait 2.55ms
+near frame 1500: [Vulkan batch boundaries] 640x480: ch_vk_target_copy_depth_stencil/read0=19 transfer_depth_stencil/read3=45 ch_vk_target_read_color/read2=1
+near frame 1500: [Vulkan depth uploads] 640x480 count=10 inclusive 2.25ms own_fence_wait 1.85ms
+near frame 1500: [Vulkan batch boundaries] 128x128: ch_vk_target_read_color/read2=16
+near frame 1500: [Vulkan depth uploads] 128x128 count=0 inclusive 0.00ms own_fence_wait 0.00ms
+near frame 1500: [Vulkan batch boundaries] 256x256: transfer_depth_stencil/read1=8 ch_vk_target_read_color/read2=8
+near frame 1500: [Vulkan depth uploads] 256x256 count=8 inclusive 1.35ms own_fence_wait 1.19ms
+near frame 1500: [Vulkan batch boundaries] 128x128: ch_vk_target_read_color/read2=16
+near frame 1500: [Vulkan depth uploads] 128x128 count=0 inclusive 0.00ms own_fence_wait 0.00ms
+near frame 1500: [Vulkan batch boundaries] 256x256: transfer_depth_stencil/read1=8 ch_vk_target_read_color/read2=8
+near frame 1500: [Vulkan depth uploads] 256x256 count=8 inclusive 1.78ms own_fence_wait 1.54ms
+near frame 1500: [Vulkan batch boundaries] 128x128: ch_vk_target_read_color/read2=16
+near frame 1500: [Vulkan depth uploads] 128x128 count=0 inclusive 0.00ms own_fence_wait 0.00ms
+near frame 1500: [Vulkan batch boundaries] 256x256: transfer_depth_stencil/read1=8 ch_vk_target_read_color/read2=8
+near frame 1500: [Vulkan depth uploads] 256x256 count=8 inclusive 1.34ms own_fence_wait 1.17ms
+near frame 1500: [Vulkan batch boundaries] 128x128: ch_vk_target_read_color/read2=16
+near frame 1500: [Vulkan depth uploads] 128x128 count=0 inclusive 0.00ms own_fence_wait 0.00ms
+near frame 1500: [Vulkan batch boundaries] 256x256: transfer_depth_stencil/read1=8 ch_vk_target_read_color/read2=8
+near frame 1500: [Vulkan depth uploads] 256x256 count=8 inclusive 1.42ms own_fence_wait 1.24ms
+near frame 1500: [Vulkan batch boundaries] 640x480: ch_vk_target_read_color/read2=120 ch_vk_target_copy_depth_stencil/read0=60 transfer_depth_stencil/read3=63
+near frame 1500: [Vulkan depth uploads] 640x480 count=0 inclusive 0.00ms own_fence_wait 0.00ms
+near frame 1500: [Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+near frame 1500: [Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+near frame 1500: [Vulkan CPU strict depth] pixels=0 (cumulative)
+near frame 1500: [Vulkan CPU graphics] texture_pixels=12107008 texture_ms=215.209 color_pixels=0 color_ms=0.000 (cumulative)
+near frame 1560: [Vulkan batch boundaries] 256x256: ch_vk_target_snapshot_texture/read0=1 ch_vk_target_refresh_texture/read0=1
+near frame 1560: [Vulkan depth uploads] 256x256 count=0 inclusive 0.00ms own_fence_wait 0.00ms
+near frame 1560: [Vulkan batch boundaries] 640x480: ch_vk_target_read_color/read2=59 ch_vk_target_snapshot_texture/read0=1 ch_vk_target_refresh_texture/read0=3
+near frame 1560: [Vulkan depth uploads] 640x480 count=0 inclusive 0.00ms own_fence_wait 0.00ms
+near frame 1560: [Vulkan batch boundaries] 256x256: transfer_depth_stencil/read3=60
+near frame 1560: [Vulkan depth uploads] 256x256 count=0 inclusive 0.00ms own_fence_wait 0.00ms
+near frame 1560: [Vulkan batch boundaries] 640x480: transfer_depth_stencil/read3=40 ch_vk_target_copy_depth_stencil/read0=20 ch_vk_target_read_color/read2=2
+near frame 1560: [Vulkan depth uploads] 640x480 count=10 inclusive 2.54ms own_fence_wait 2.16ms
+near frame 1560: [Vulkan batch boundaries] 640x480: ch_vk_target_copy_depth_stencil/read0=19 transfer_depth_stencil/read3=57 ch_vk_target_read_color/read2=7
+near frame 1560: [Vulkan depth uploads] 640x480 count=10 inclusive 2.31ms own_fence_wait 1.92ms
+near frame 1560: [Vulkan batch boundaries] 640x480: ch_vk_target_copy_depth_stencil/read0=20 transfer_depth_stencil/read3=41 ch_vk_target_read_color/read2=10
+near frame 1560: [Vulkan depth uploads] 640x480 count=10 inclusive 2.26ms own_fence_wait 1.85ms
+near frame 1560: [Vulkan batch boundaries] 128x128: ch_vk_target_read_color/read2=16
+near frame 1560: [Vulkan depth uploads] 128x128 count=0 inclusive 0.00ms own_fence_wait 0.00ms
+near frame 1560: [Vulkan batch boundaries] 256x256: transfer_depth_stencil/read1=7 ch_vk_target_read_color/read2=8 transfer_depth_stencil/read3=1
+near frame 1560: [Vulkan depth uploads] 256x256 count=8 inclusive 1.18ms own_fence_wait 1.03ms
+near frame 1560: [Vulkan batch boundaries] 128x128: ch_vk_target_read_color/read2=16
+near frame 1560: [Vulkan depth uploads] 128x128 count=0 inclusive 0.00ms own_fence_wait 0.00ms
+near frame 1560: [Vulkan batch boundaries] 256x256: transfer_depth_stencil/read1=8 ch_vk_target_read_color/read2=8
+near frame 1560: [Vulkan depth uploads] 256x256 count=8 inclusive 1.27ms own_fence_wait 1.10ms
+near frame 1560: [Vulkan batch boundaries] 128x128: ch_vk_target_read_color/read2=16
+near frame 1560: [Vulkan depth uploads] 128x128 count=0 inclusive 0.00ms own_fence_wait 0.00ms
+near frame 1560: [Vulkan batch boundaries] 256x256: transfer_depth_stencil/read1=8 ch_vk_target_read_color/read2=8
+near frame 1560: [Vulkan depth uploads] 256x256 count=8 inclusive 1.60ms own_fence_wait 1.33ms
+near frame 1560: [Vulkan batch boundaries] 128x128: ch_vk_target_read_color/read2=16
+near frame 1560: [Vulkan depth uploads] 128x128 count=0 inclusive 0.00ms own_fence_wait 0.00ms
+near frame 1560: [Vulkan batch boundaries] 256x256: transfer_depth_stencil/read1=8 ch_vk_target_read_color/read2=8
+near frame 1560: [Vulkan depth uploads] 256x256 count=8 inclusive 1.35ms own_fence_wait 1.18ms
+near frame 1560: [Vulkan batch boundaries] 640x480: ch_vk_target_read_color/read2=164 ch_vk_target_copy_depth_stencil/read0=58 transfer_depth_stencil/read3=88 transfer_depth_stencil/read1=1 draw_full/read0=38
+near frame 1560: [Vulkan depth uploads] 640x480 count=0 inclusive 0.00ms own_fence_wait 0.00ms
+near frame 1560: [Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+near frame 1560: [Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+near frame 1560: [Vulkan CPU strict depth] pixels=0 (cumulative)
+near frame 1560: [Vulkan CPU graphics] texture_pixels=12165376 texture_ms=216.139 color_pixels=0 color_ms=0.000 (cumulative)
+near frame 1620: [Vulkan batch boundaries] 640x480: ch_vk_target_read_color/read2=61 ch_vk_target_refresh_texture/read0=92
+near frame 1620: [Vulkan depth uploads] 640x480 count=0 inclusive 0.00ms own_fence_wait 0.00ms
+near frame 1620: [Vulkan batch boundaries] 256x256: transfer_depth_stencil/read3=60
+near frame 1620: [Vulkan depth uploads] 256x256 count=0 inclusive 0.00ms own_fence_wait 0.00ms
+near frame 1620: [Vulkan batch boundaries] 640x480: transfer_depth_stencil/read3=45 ch_vk_target_copy_depth_stencil/read0=19 ch_vk_target_read_color/read2=30
+near frame 1620: [Vulkan depth uploads] 640x480 count=10 inclusive 1.80ms own_fence_wait 1.40ms
+near frame 1620: [Vulkan batch boundaries] 640x480: ch_vk_target_copy_depth_stencil/read0=20 transfer_depth_stencil/read3=45 ch_vk_target_read_color/read2=27
+near frame 1620: [Vulkan depth uploads] 640x480 count=9 inclusive 2.00ms own_fence_wait 1.63ms
+near frame 1620: [Vulkan batch boundaries] 640x480: ch_vk_target_copy_depth_stencil/read0=19 transfer_depth_stencil/read3=44 transfer_depth_stencil/read1=1 ch_vk_target_read_color/read2=28
+near frame 1620: [Vulkan depth uploads] 640x480 count=10 inclusive 1.85ms own_fence_wait 1.44ms
+near frame 1620: [Vulkan batch boundaries] 128x128: ch_vk_target_read_color/read2=16
+near frame 1620: [Vulkan depth uploads] 128x128 count=0 inclusive 0.00ms own_fence_wait 0.00ms
+near frame 1620: [Vulkan batch boundaries] 256x256: transfer_depth_stencil/read1=8 ch_vk_target_read_color/read2=8
+near frame 1620: [Vulkan depth uploads] 256x256 count=8 inclusive 1.38ms own_fence_wait 1.22ms
+near frame 1620: [Vulkan batch boundaries] 128x128: ch_vk_target_read_color/read2=16
+near frame 1620: [Vulkan depth uploads] 128x128 count=0 inclusive 0.00ms own_fence_wait 0.00ms
+near frame 1620: [Vulkan batch boundaries] 256x256: transfer_depth_stencil/read1=8 ch_vk_target_read_color/read2=8
+near frame 1620: [Vulkan depth uploads] 256x256 count=8 inclusive 1.16ms own_fence_wait 0.99ms
+near frame 1620: [Vulkan batch boundaries] 128x128: ch_vk_target_read_color/read2=16
+near frame 1620: [Vulkan depth uploads] 128x128 count=0 inclusive 0.00ms own_fence_wait 0.00ms
+near frame 1620: [Vulkan batch boundaries] 256x256: transfer_depth_stencil/read1=8 ch_vk_target_read_color/read2=8
+near frame 1620: [Vulkan depth uploads] 256x256 count=8 inclusive 2.17ms own_fence_wait 1.96ms
+near frame 1620: [Vulkan batch boundaries] 128x128: ch_vk_target_read_color/read2=16
+near frame 1620: [Vulkan depth uploads] 128x128 count=0 inclusive 0.00ms own_fence_wait 0.00ms
+near frame 1620: [Vulkan batch boundaries] 256x256: transfer_depth_stencil/read1=8 ch_vk_target_read_color/read2=8
+near frame 1620: [Vulkan depth uploads] 256x256 count=8 inclusive 1.27ms own_fence_wait 1.04ms
+near frame 1620: [Vulkan batch boundaries] 640x480: ch_vk_target_read_color/read2=177 ch_vk_target_copy_depth_stencil/read0=58 transfer_depth_stencil/read3=102 transfer_depth_stencil/read1=2 draw_full/read0=53
+near frame 1620: [Vulkan depth uploads] 640x480 count=0 inclusive 0.00ms own_fence_wait 0.00ms
+near frame 1620: [Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+near frame 1620: [Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+near frame 1620: [Vulkan CPU strict depth] pixels=0 (cumulative)
+near frame 1620: [Vulkan CPU graphics] texture_pixels=12230912 texture_ms=216.810 color_pixels=0 color_ms=0.000 (cumulative)
+near frame 1680: [Vulkan batch boundaries] 256x256: transfer_depth_stencil/read3=60
+near frame 1680: [Vulkan depth uploads] 256x256 count=0 inclusive 0.00ms own_fence_wait 0.00ms
+near frame 1680: [Vulkan batch boundaries] 640x480: ch_vk_target_read_color/read2=44 ch_vk_target_refresh_texture/read0=78
+near frame 1680: [Vulkan depth uploads] 640x480 count=0 inclusive 0.00ms own_fence_wait 0.00ms
+near frame 1680: [Vulkan batch boundaries] 640x480: transfer_depth_stencil/read3=43 ch_vk_target_copy_depth_stencil/read0=19 ch_vk_target_read_color/read2=22
+near frame 1680: [Vulkan depth uploads] 640x480 count=10 inclusive 1.87ms own_fence_wait 1.47ms
+near frame 1680: [Vulkan batch boundaries] 640x480: ch_vk_target_copy_depth_stencil/read0=20 transfer_depth_stencil/read3=44 ch_vk_target_read_color/read2=21
+near frame 1680: [Vulkan depth uploads] 640x480 count=11 inclusive 2.26ms own_fence_wait 1.73ms
+near frame 1680: [Vulkan batch boundaries] 640x480: ch_vk_target_copy_depth_stencil/read0=21 transfer_depth_stencil/read3=50 ch_vk_target_read_color/read2=20
+near frame 1680: [Vulkan depth uploads] 640x480 count=10 inclusive 2.25ms own_fence_wait 1.80ms
+near frame 1680: [Vulkan batch boundaries] 128x128: ch_vk_target_read_color/read2=16
+near frame 1680: [Vulkan depth uploads] 128x128 count=0 inclusive 0.00ms own_fence_wait 0.00ms
+near frame 1680: [Vulkan batch boundaries] 256x256: transfer_depth_stencil/read1=8 ch_vk_target_read_color/read2=8
+near frame 1680: [Vulkan depth uploads] 256x256 count=8 inclusive 1.31ms own_fence_wait 1.14ms
+near frame 1680: [Vulkan batch boundaries] 128x128: ch_vk_target_read_color/read2=16
+near frame 1680: [Vulkan depth uploads] 128x128 count=0 inclusive 0.00ms own_fence_wait 0.00ms
+near frame 1680: [Vulkan batch boundaries] 256x256: transfer_depth_stencil/read1=8 ch_vk_target_read_color/read2=8
+near frame 1680: [Vulkan depth uploads] 256x256 count=8 inclusive 1.18ms own_fence_wait 1.00ms
+near frame 1680: [Vulkan batch boundaries] 128x128: ch_vk_target_read_color/read2=16
+near frame 1680: [Vulkan depth uploads] 128x128 count=0 inclusive 0.00ms own_fence_wait 0.00ms
+near frame 1680: [Vulkan batch boundaries] 256x256: transfer_depth_stencil/read1=8 ch_vk_target_read_color/read2=8
+near frame 1680: [Vulkan depth uploads] 256x256 count=8 inclusive 1.33ms own_fence_wait 1.12ms
+near frame 1680: [Vulkan batch boundaries] 128x128: ch_vk_target_read_color/read2=16
+near frame 1680: [Vulkan depth uploads] 128x128 count=0 inclusive 0.00ms own_fence_wait 0.00ms
+near frame 1680: [Vulkan batch boundaries] 256x256: transfer_depth_stencil/read1=8 ch_vk_target_read_color/read2=8
+near frame 1680: [Vulkan depth uploads] 256x256 count=8 inclusive 1.88ms own_fence_wait 1.72ms
+near frame 1680: [Vulkan batch boundaries] 640x480: ch_vk_target_read_color/read2=182 ch_vk_target_copy_depth_stencil/read0=60 transfer_depth_stencil/read3=104 transfer_depth_stencil/read1=1 draw_full/read0=52
+near frame 1680: [Vulkan depth uploads] 640x480 count=0 inclusive 0.00ms own_fence_wait 0.00ms
+near frame 1680: [Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+near frame 1680: [Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+near frame 1680: [Vulkan CPU strict depth] pixels=0 (cumulative)
+near frame 1680: [Vulkan CPU graphics] texture_pixels=12247552 texture_ms=217.008 color_pixels=0 color_ms=0.000 (cumulative)
+near frame 1740: [Vulkan batch boundaries] 256x256: transfer_depth_stencil/read3=60
+near frame 1740: [Vulkan depth uploads] 256x256 count=0 inclusive 0.00ms own_fence_wait 0.00ms
+near frame 1740: [Vulkan batch boundaries] 640x480: ch_vk_target_read_color/read2=61 ch_vk_target_refresh_texture/read0=61
+near frame 1740: [Vulkan depth uploads] 640x480 count=0 inclusive 0.00ms own_fence_wait 0.00ms
+near frame 1740: [Vulkan batch boundaries] 640x480: transfer_depth_stencil/read3=43 ch_vk_target_copy_depth_stencil/read0=21 ch_vk_target_read_color/read2=20
+near frame 1740: [Vulkan depth uploads] 640x480 count=10 inclusive 2.03ms own_fence_wait 1.61ms
+near frame 1740: [Vulkan batch boundaries] 640x480: ch_vk_target_copy_depth_stencil/read0=21 transfer_depth_stencil/read3=49 ch_vk_target_read_color/read2=19
+near frame 1740: [Vulkan depth uploads] 640x480 count=10 inclusive 1.87ms own_fence_wait 1.48ms
+near frame 1740: [Vulkan batch boundaries] 640x480: ch_vk_target_copy_depth_stencil/read0=19 transfer_depth_stencil/read3=40 ch_vk_target_read_color/read2=21
+near frame 1740: [Vulkan depth uploads] 640x480 count=10 inclusive 1.95ms own_fence_wait 1.55ms
+near frame 1740: [Vulkan batch boundaries] 128x128: ch_vk_target_read_color/read2=16
+near frame 1740: [Vulkan depth uploads] 128x128 count=0 inclusive 0.00ms own_fence_wait 0.00ms
+near frame 1740: [Vulkan batch boundaries] 256x256: transfer_depth_stencil/read1=8 ch_vk_target_read_color/read2=8
+near frame 1740: [Vulkan depth uploads] 256x256 count=8 inclusive 1.19ms own_fence_wait 1.00ms
+near frame 1740: [Vulkan batch boundaries] 128x128: ch_vk_target_read_color/read2=16
+near frame 1740: [Vulkan depth uploads] 128x128 count=0 inclusive 0.00ms own_fence_wait 0.00ms
+near frame 1740: [Vulkan batch boundaries] 256x256: transfer_depth_stencil/read1=8 ch_vk_target_read_color/read2=8
+near frame 1740: [Vulkan depth uploads] 256x256 count=8 inclusive 1.15ms own_fence_wait 0.97ms
+near frame 1740: [Vulkan batch boundaries] 128x128: ch_vk_target_read_color/read2=16
+near frame 1740: [Vulkan depth uploads] 128x128 count=0 inclusive 0.00ms own_fence_wait 0.00ms
+near frame 1740: [Vulkan batch boundaries] 256x256: transfer_depth_stencil/read1=8 ch_vk_target_read_color/read2=8
+near frame 1740: [Vulkan depth uploads] 256x256 count=8 inclusive 1.29ms own_fence_wait 1.10ms
+near frame 1740: [Vulkan batch boundaries] 640x480: ch_vk_target_read_color/read2=180 ch_vk_target_copy_depth_stencil/read0=60 transfer_depth_stencil/read3=106 draw_full/read0=55
+near frame 1740: [Vulkan depth uploads] 640x480 count=0 inclusive 0.00ms own_fence_wait 0.00ms
+near frame 1740: [Vulkan batch boundaries] 128x128: ch_vk_target_read_color/read2=16
+near frame 1740: [Vulkan depth uploads] 128x128 count=0 inclusive 0.00ms own_fence_wait 0.00ms
+near frame 1740: [Vulkan batch boundaries] 256x256: transfer_depth_stencil/read1=8 ch_vk_target_read_color/read2=8
+near frame 1740: [Vulkan depth uploads] 256x256 count=8 inclusive 1.10ms own_fence_wait 0.95ms
+near frame 1740: [Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+near frame 1740: [Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+near frame 1740: [Vulkan CPU strict depth] pixels=0 (cumulative)
+near frame 1740: [Vulkan CPU graphics] texture_pixels=12247552 texture_ms=217.008 color_pixels=0 color_ms=0.000 (cumulative)
+near frame 1800: [Vulkan batch boundaries] 256x256: transfer_depth_stencil/read3=60
+near frame 1800: [Vulkan depth uploads] 256x256 count=0 inclusive 0.00ms own_fence_wait 0.00ms
+near frame 1800: [Vulkan batch boundaries] 640x480: ch_vk_target_read_color/read2=60 ch_vk_target_refresh_texture/read0=59
+near frame 1800: [Vulkan depth uploads] 640x480 count=0 inclusive 0.00ms own_fence_wait 0.00ms
+near frame 1800: [Vulkan batch boundaries] 640x480: transfer_depth_stencil/read3=41 ch_vk_target_copy_depth_stencil/read0=19 ch_vk_target_read_color/read2=20
+near frame 1800: [Vulkan depth uploads] 640x480 count=10 inclusive 1.95ms own_fence_wait 1.48ms
+near frame 1800: [Vulkan batch boundaries] 640x480: ch_vk_target_copy_depth_stencil/read0=20 transfer_depth_stencil/read3=48 ch_vk_target_read_color/read2=20
+near frame 1800: [Vulkan depth uploads] 640x480 count=10 inclusive 1.95ms own_fence_wait 1.55ms
+near frame 1800: [Vulkan batch boundaries] 640x480: ch_vk_target_copy_depth_stencil/read0=20 transfer_depth_stencil/read3=46 ch_vk_target_read_color/read2=20
+near frame 1800: [Vulkan depth uploads] 640x480 count=10 inclusive 1.86ms own_fence_wait 1.46ms
+near frame 1800: [Vulkan batch boundaries] 128x128: ch_vk_target_read_color/read2=14
+near frame 1800: [Vulkan depth uploads] 128x128 count=0 inclusive 0.00ms own_fence_wait 0.00ms
+near frame 1800: [Vulkan batch boundaries] 256x256: transfer_depth_stencil/read1=7 ch_vk_target_read_color/read2=7
+near frame 1800: [Vulkan depth uploads] 256x256 count=7 inclusive 1.15ms own_fence_wait 0.95ms
+near frame 1800: [Vulkan batch boundaries] 128x128: ch_vk_target_read_color/read2=14
+near frame 1800: [Vulkan depth uploads] 128x128 count=0 inclusive 0.00ms own_fence_wait 0.00ms
+near frame 1800: [Vulkan batch boundaries] 256x256: transfer_depth_stencil/read1=7 ch_vk_target_read_color/read2=7
+near frame 1800: [Vulkan depth uploads] 256x256 count=7 inclusive 1.04ms own_fence_wait 0.88ms
+near frame 1800: [Vulkan batch boundaries] 128x128: ch_vk_target_read_color/read2=14
+near frame 1800: [Vulkan depth uploads] 128x128 count=0 inclusive 0.00ms own_fence_wait 0.00ms
+near frame 1800: [Vulkan batch boundaries] 256x256: transfer_depth_stencil/read1=6 ch_vk_target_read_color/read2=7 transfer_depth_stencil/read3=1
+near frame 1800: [Vulkan depth uploads] 256x256 count=7 inclusive 1.20ms own_fence_wait 0.91ms
+near frame 1800: [Vulkan batch boundaries] 640x480: ch_vk_target_read_color/read2=163 ch_vk_target_copy_depth_stencil/read0=54 transfer_depth_stencil/read3=92 transfer_depth_stencil/read1=1 draw_full/read0=50
+near frame 1800: [Vulkan depth uploads] 640x480 count=0 inclusive 0.00ms own_fence_wait 0.00ms
+near frame 1800: [Vulkan batch boundaries] 128x128: ch_vk_target_read_color/read2=14
+near frame 1800: [Vulkan depth uploads] 128x128 count=0 inclusive 0.00ms own_fence_wait 0.00ms
+near frame 1800: [Vulkan batch boundaries] 256x256: transfer_depth_stencil/read1=7 ch_vk_target_read_color/read2=7
+near frame 1800: [Vulkan depth uploads] 256x256 count=7 inclusive 1.09ms own_fence_wait 0.93ms
+near frame 1800: [Vulkan batch boundaries] 256x256: transfer_depth_stencil/read3=55
+near frame 1800: [Vulkan depth uploads] 256x256 count=0 inclusive 0.00ms own_fence_wait 0.00ms
+near frame 1800: [Vulkan batch boundaries] 640x480: ch_vk_target_read_color/read2=55 ch_vk_target_refresh_texture/read0=55
+near frame 1800: [Vulkan depth uploads] 640x480 count=0 inclusive 0.00ms own_fence_wait 0.00ms
+near frame 1800: [Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+near frame 1800: [Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+near frame 1800: [Vulkan CPU strict depth] pixels=0 (cumulative)
+near frame 1800: [Vulkan CPU graphics] texture_pixels=12247552 texture_ms=217.008 color_pixels=0 color_ms=0.000 (cumulative)
+near frame 1860: [Vulkan batch boundaries] 640x480: transfer_depth_stencil/read3=43 ch_vk_target_copy_depth_stencil/read0=19 ch_vk_target_read_color/read2=18
+near frame 1860: [Vulkan depth uploads] 640x480 count=9 inclusive 1.85ms own_fence_wait 1.46ms
+near frame 1860: [Vulkan batch boundaries] 640x480: ch_vk_target_copy_depth_stencil/read0=18 transfer_depth_stencil/read3=41 ch_vk_target_read_color/read2=20
+near frame 1860: [Vulkan depth uploads] 640x480 count=9 inclusive 2.02ms own_fence_wait 1.59ms
+near frame 1860: [Vulkan batch boundaries] 640x480: ch_vk_target_copy_depth_stencil/read0=19 transfer_depth_stencil/read3=47 ch_vk_target_read_color/read2=21
+near frame 1860: [Vulkan depth uploads] 640x480 count=10 inclusive 3.86ms own_fence_wait 3.43ms
+near frame 1860: [Vulkan batch boundaries] 128x128: ch_vk_target_read_color/read2=16
+near frame 1860: [Vulkan depth uploads] 128x128 count=0 inclusive 0.00ms own_fence_wait 0.00ms
+near frame 1860: [Vulkan batch boundaries] 256x256: transfer_depth_stencil/read1=8 ch_vk_target_read_color/read2=8
+near frame 1860: [Vulkan depth uploads] 256x256 count=8 inclusive 1.25ms own_fence_wait 1.06ms
+near frame 1860: [Vulkan batch boundaries] 640x480: ch_vk_target_read_color/read2=178 ch_vk_target_copy_depth_stencil/read0=57 transfer_depth_stencil/read3=99 transfer_depth_stencil/read1=3 draw_full/read0=56
+near frame 1860: [Vulkan depth uploads] 640x480 count=0 inclusive 0.00ms own_fence_wait 0.00ms
+near frame 1860: [Vulkan batch boundaries] 128x128: ch_vk_target_read_color/read2=16
+near frame 1860: [Vulkan depth uploads] 128x128 count=0 inclusive 0.00ms own_fence_wait 0.00ms
+near frame 1860: [Vulkan batch boundaries] 256x256: transfer_depth_stencil/read1=7 ch_vk_target_read_color/read2=8 transfer_depth_stencil/read3=1
+near frame 1860: [Vulkan depth uploads] 256x256 count=8 inclusive 1.22ms own_fence_wait 1.05ms
+near frame 1860: [Vulkan batch boundaries] 128x128: ch_vk_target_read_color/read2=16
+near frame 1860: [Vulkan depth uploads] 128x128 count=0 inclusive 0.00ms own_fence_wait 0.00ms
+near frame 1860: [Vulkan batch boundaries] 256x256: transfer_depth_stencil/read1=8 ch_vk_target_read_color/read2=8
+near frame 1860: [Vulkan depth uploads] 256x256 count=8 inclusive 1.24ms own_fence_wait 1.06ms
+near frame 1860: [Vulkan batch boundaries] 128x128: ch_vk_target_read_color/read2=16
+near frame 1860: [Vulkan depth uploads] 128x128 count=0 inclusive 0.00ms own_fence_wait 0.00ms
+near frame 1860: [Vulkan batch boundaries] 256x256: transfer_depth_stencil/read1=7 ch_vk_target_read_color/read2=8 transfer_depth_stencil/read3=1
+near frame 1860: [Vulkan depth uploads] 256x256 count=8 inclusive 1.25ms own_fence_wait 1.10ms
+near frame 1860: [Vulkan batch boundaries] 256x256: transfer_depth_stencil/read3=61
+near frame 1860: [Vulkan depth uploads] 256x256 count=0 inclusive 0.00ms own_fence_wait 0.00ms
+near frame 1860: [Vulkan batch boundaries] 640x480: ch_vk_target_read_color/read2=61 ch_vk_target_refresh_texture/read0=61
+near frame 1860: [Vulkan depth uploads] 640x480 count=0 inclusive 0.00ms own_fence_wait 0.00ms
+near frame 1860: [Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+near frame 1860: [Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+near frame 1860: [Vulkan CPU strict depth] pixels=0 (cumulative)
+near frame 1860: [Vulkan CPU graphics] texture_pixels=12247552 texture_ms=217.008 color_pixels=0 color_ms=0.000 (cumulative)
