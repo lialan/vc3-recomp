@@ -150,6 +150,15 @@ if(CHIHIRO_VULKAN_TESTS OR CHIHIRO_VULKAN_SHADER_TESTS)
     target_compile_options(vulkan_combiner_check PRIVATE -Wall -Wextra -Werror)
     target_link_libraries(vulkan_combiner_check PRIVATE "${CHIHIRO_VULKAN_LIBRARY}" m)
     add_dependencies(vulkan_combiner_check vulkan_combiner_shader)
+    add_custom_command(OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/depth_quant_test.spv"
+        COMMAND "${CHIHIRO_GLSLC}" --target-env=vulkan1.0 "${CMAKE_CURRENT_SOURCE_DIR}/depth_quant_test.comp" -o "${CMAKE_CURRENT_BINARY_DIR}/depth_quant_test.spv"
+        DEPENDS depth_quant_test.comp depth_quant.glsl VERBATIM)
+    add_custom_target(vulkan_depth_quant_shader DEPENDS "${CMAKE_CURRENT_BINARY_DIR}/depth_quant_test.spv")
+    add_executable(vulkan_depth_quant_check "${CH_VK_ROOT}/tools/vulkan-combiner-driver.c" "${CH_VK_ROOT}/tools/vulkan-depth-quant-check.c")
+    target_include_directories(vulkan_depth_quant_check PRIVATE "${CHIHIRO_VULKAN_INCLUDE_DIR}")
+    target_compile_options(vulkan_depth_quant_check PRIVATE -Wall -Wextra -Werror)
+    target_link_libraries(vulkan_depth_quant_check PRIVATE "${CHIHIRO_VULKAN_LIBRARY}" m)
+    add_dependencies(vulkan_depth_quant_check vulkan_depth_quant_shader)
     add_executable(vulkan_specialized_combiner_check "${CH_VK_ROOT}/tools/vulkan-combiner-driver.c"
         "${CH_VK_ROOT}/tools/vulkan-specialized-combiner-test.c" "${XBOXRECOMP_DIR}/src/kernel/nv2a_combiner.c")
     target_compile_definitions(vulkan_specialized_combiner_check PRIVATE CH_VK_SPECIALIZATION_TEST=1)

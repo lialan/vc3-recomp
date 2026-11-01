@@ -34,3 +34,15 @@ only if scaled-q>0.5. Normalize q with bits(float(q)*2^-24)+(q!=0). This matches
 the existing double-precision CPU formulas bit-for-bit in that oracle.
 GPU implementation, driver arithmetic validation, transfers/barriers, guest
 coherence and performance are NOT implemented or established yet.
+
+Local GPU arithmetic check now passes 1,048,576 sampled/boundary Z24 packing
+and unpacking cases bit-for-bit against the double-precision CPU oracle.
+Build target vulkan_depth_quant_check; set CHIHIRO_DEPTH_QUANT_SHADER to
+<build>/depth_quant_test.spv and select the local ICD. The shader uses the
+shared depth_quant.glsl helper; no renderer integration is enabled yet.
+Unlike the CPU test, this GPU fixture is sampled, not exhaustive.
+
+The DMA baseline ended at its 480-second timeout after at least 2041 frames,
+without the prior invalid-state abort. Later windows were 2.56-2.92 FPS.
+The combined-readback comparison is /tmp/vc3-combined-depth-profile using
+immutable /tmp/vc3-combined-depth-vc3; inspect its report when terminal.

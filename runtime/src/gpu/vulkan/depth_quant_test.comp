@@ -1,0 +1,6 @@
+#version 450
+#extension GL_GOOGLE_include_directive : require
+#include "depth_quant.glsl"
+layout(local_size_x=64) in;
+layout(set=0,binding=0,std430) buffer Data { uvec4 cases[]; } data;
+void main(){uint i=gl_GlobalInvocationID.x;data.cases[i].z=ch_depth_pack(uintBitsToFloat(data.cases[i].x));data.cases[i].w=floatBitsToUint(ch_depth_unpack(data.cases[i].y));}
