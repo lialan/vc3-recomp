@@ -117,6 +117,22 @@ int ch_test_specialized_combiners(VkPhysicalDevice gpu,VkDevice device,VkQueue q
         after.batch_draws-stats.batch_draws==140 && after.batch_submissions-stats.batch_submissions==3);
     const unsigned char summed[]={47,47,46,140};
     for(unsigned i=0;i<64;i++) REQUIRE(rgba[1][i]==summed[i%4]);
+    /* Blend color changes must retain one pipeline and per-draw values even
+     * while multiple draws share a command buffer. */
+    REQUIRE(ch_vk_target_clear_read(t[1],black,rgba[1],64)==VK_SUCCESS);
+    project.control=1;project.factor0[0]=0xffffffff;
+    add.blend_src=0x8001; /* CONSTANT_COLOR */
+    ch_vk_target_resource_stats(t[1],&stats);
+    for(unsigned i=0;i<3;i++) {
+        const uint32_t colors[]={0x01010000,0x01000100,0x01000001};
+        add.blend_color=colors[i];
+        REQUIRE(ch_vk_target_draw_combiner_read(t[1],NULL,v,3,indices,3,&add,NULL,NULL,&project,0,NULL,rgba[1],64)==VK_SUCCESS);
+    }
+    REQUIRE(ch_vk_target_read_color(t[1],rgba[1],64)==VK_SUCCESS);
+    ch_vk_target_resource_stats(t[1],&after);
+    REQUIRE(after.pipeline_builds-stats.pipeline_builds==1 && after.pipeline_hits-stats.pipeline_hits==2);
+    const unsigned char blended[]={1,1,1,3};
+    for(unsigned i=0;i<64;i++) REQUIRE(rgba[1][i]==blended[i%4]);
     puts("PASS: 32 specialized combiner cases match interpreter/CPU across 0..8 stages, dynamic factors/fog, fetch modes/cube/missing samplers and exact alpha/depth/stencil; inactive edits reuse pipelines, NOAT retains projective q, 140 pending factor updates survive bounded LRU eviction and three batches");failed=0;
 done:
     for(unsigned i=0;i<2;i++) ch_vk_target_destroy(t[i]);

@@ -12,7 +12,6 @@
 #include "combiner_program_assert.h"
 typedef struct {
     VkPipelineColorBlendAttachmentState blend;
-    float constants[4];
     VkPipelineDepthStencilStateCreateInfo depth;
     VkCullModeFlags cull;
     VkFrontFace front;
@@ -47,6 +46,7 @@ struct ChVkTarget {
     VkDeviceSize vertex_offset;
     PipelineResources pipelines[PIPELINE_SLOTS], *active_pipeline;
     VkPipelineCache pipeline_cache;
+    float blend_constants[4];
     uint64_t pipeline_clock;
     int reuse_resources;
     int split_alpha;
@@ -415,6 +415,7 @@ static VkResult record_batch(ChVkTarget *t,VkBuffer geometry,VkDeviceSize index_
         vkCmdBeginRenderPass(t->command,&pass,VK_SUBPASS_CONTENTS_INLINE);
     }
     vkCmdBindPipeline(t->command,VK_PIPELINE_BIND_POINT_GRAPHICS,t->active_pipeline->pipeline);
+    vkCmdSetBlendConstants(t->command,t->blend_constants);
     if(t->active_pipeline->has_descriptors) vkCmdBindDescriptorSets(t->command,VK_PIPELINE_BIND_POINT_GRAPHICS,
         t->active_pipeline->pipeline_layout,0,1,&t->active_pipeline->descriptor_set,0,NULL);
     vkCmdPushConstants(t->command,t->active_pipeline->pipeline_layout,VK_SHADER_STAGE_FRAGMENT_BIT,0,sizeof(t->push),t->push.alpha);
@@ -500,6 +501,7 @@ static VkResult render_read(ChVkTarget *t, const float rgba[4], uint32_t clear_f
         if(t->count_requested) vkCmdResetQueryPool(t->command,t->queries,0,1);
         vkCmdBeginRenderPass(t->command,&rp,VK_SUBPASS_CONTENTS_INLINE);
         vkCmdBindPipeline(t->command,VK_PIPELINE_BIND_POINT_GRAPHICS,t->active_pipeline->pipeline);
+    vkCmdSetBlendConstants(t->command,t->blend_constants);
         if(t->active_pipeline->has_descriptors) vkCmdBindDescriptorSets(t->command,VK_PIPELINE_BIND_POINT_GRAPHICS,
             t->active_pipeline->pipeline_layout,0,1,&t->active_pipeline->descriptor_set,0,NULL);
         vkCmdPushConstants(t->command,t->active_pipeline->pipeline_layout,VK_SHADER_STAGE_FRAGMENT_BIT,0,sizeof(t->push),t->push.alpha);
@@ -723,10 +725,13 @@ static VkResult create_pipeline(ChVkTarget *t, const VkPipelineColorBlendAttachm
         layout.setLayoutCount=1;layout.pSetLayouts=&t->active_pipeline->descriptor_layout;
     }
     TRY(vkCreatePipelineLayout(t->device,&layout,NULL,&t->active_pipeline->pipeline_layout));
+    VkDynamicState dynamic_state=VK_DYNAMIC_STATE_BLEND_CONSTANTS;
+    VkPipelineDynamicStateCreateInfo dynamic={.sType=VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO,
+        .dynamicStateCount=1,.pDynamicStates=&dynamic_state};
     VkGraphicsPipelineCreateInfo pipeline={.sType=VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
         .stageCount=2,.pStages=stages,.pVertexInputState=&input,.pInputAssemblyState=&assembly,
         .pViewportState=&vp,.pRasterizationState=&raster,.pMultisampleState=&ms,
-        .pDepthStencilState=depth_state,.pColorBlendState=&cb,.layout=t->active_pipeline->pipeline_layout,.renderPass=t->pass};
+        .pDynamicState=&dynamic,.pDepthStencilState=depth_state,.pColorBlendState=&cb,.layout=t->active_pipeline->pipeline_layout,.renderPass=t->pass};
     /* Retain driver compilation results across synchronous pipeline changes.
      * This does not reuse a VkPipeline with a different render state. */
     if(!t->pipeline_cache) {
@@ -825,7 +830,7 @@ static VkResult draw_full(ChVkTarget *t, const float rgba[4],
      * pipelines across nonconsecutive state changes. Descriptor data is still
      * rewritten for every draw, after the previous synchronous fence. */
     PipelineKey key={0};
-    key.blend=blend; memcpy(key.constants,constants,sizeof constants);
+    key.blend=blend;
     key.depth=depth_state; key.cull=cull; key.front=front;
     key.shader=effect?3:rc?2:texture?1:0;key.fixed=fixed!=NULL;
     key.alpha_shader=!!state->alpha_test_enable || !t->split_alpha;
@@ -856,6 +861,7 @@ static VkResult draw_full(ChVkTarget *t, const float rgba[4],
         if(!key.alpha_shader) t->resource_stats.no_alpha_pipeline_builds++;
         if(key.specialized) t->resource_stats.specialized_pipeline_builds++;
     }
+    memcpy(t->blend_constants,constants,sizeof constants);
     t->active_pipeline=entry;entry->used=++t->pipeline_clock;
     VkDeviceSize header=t->fixed?(256+sizeof(*t->fixed)+255)/256*256:t->rc?256:0;
     VkDeviceSize payload=header+(VkDeviceSize)vertex_count*vertex_stride+(VkDeviceSize)index_count*sizeof(*indices);
