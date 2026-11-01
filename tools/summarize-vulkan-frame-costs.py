@@ -31,7 +31,11 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("log", type=Path)
     parser.add_argument("--window", action="append", default=[], metavar="NAME:START:END")
+    parser.add_argument("--tail-ms", type=float, default=20.0,
+                        help="Compare frames above this interval with shorter frames (default: 20 ms)")
     args = parser.parse_args()
+    if not math.isfinite(args.tail_ms) or args.tail_ms <= 0:
+        parser.error("tail-ms must be finite and positive")
     rows = []
     for line in args.log.read_text(errors="replace").splitlines():
         if "[Vulkan frame costs]" not in line:
@@ -59,8 +63,12 @@ def main():
         windows={})
     for name, start, end in windows:
         selected = [r for r in rows if start <= r["frame"] < end]
+        warm = [r for r in selected if r.get("pipeline_ms") == 0]
         output["windows"][name] = dict(all=summarize(selected),
-            zero_pipeline_creation=summarize([r for r in selected if r.get("pipeline_ms") == 0]),
+            zero_pipeline_creation=summarize(warm),
+            zero_creation_tail_comparison=dict(threshold_ms=args.tail_ms,
+                over=summarize([r for r in warm if r["interval_ms"] > args.tail_ms]),
+                at_or_under=summarize([r for r in warm if r["interval_ms"] <= args.tail_ms])),
             thread_cpu_timed_frames=sum(r.get("thread_cpu_timing", 0) == 1 for r in selected),
             gpu_timed_frames=sum(r.get("gpu_timing", 0) == 1 for r in selected))
     print(json.dumps(output, indent=2))
