@@ -4,9 +4,65 @@
 layout(local_size_x=8,local_size_y=8) in;
 layout(std430,set=0,binding=0) buffer Storage {uint words[];} data;
 layout(push_constant) uniform Params {uint width,height,pitch,flags;} pc;
+uint rd32(uint offset) {
+    uint base=pc.width*pc.height+(offset>>2),shift=(offset&3u)*8u;
+    uint value=data.words[base];
+    return shift==0u ? value : (value>>shift)|(data.words[base+1u]<<(32u-shift));
+}
+uint rd8(uint offset) {return (data.words[pc.width*pc.height+(offset>>2)]>>((offset&3u)*8u))&255u;}
+uint rd16(uint offset) {return rd32(offset)&65535u;}
+uint expand(uint value,uint bits) {return value*255u/((1u<<bits)-1u);}
+uint rgb565(uint c) {return (expand(c>>11,5u)<<16)|(expand((c>>5)&63u,6u)<<8)|expand(c&31u,5u);}
+uint dxt(uint x, uint y) {
+    uint bb = (pc.flags >> 8) == 0x0C ? 8u : 16u, bpr = (pc.width + 3u) / 4u;
+    uint b = 0u + ((y >> 2) * bpr + (x >> 2)) * bb, texel = (y & 3u) * 4u + (x & 3u);
+    uint alpha = 255u;
+    if (bb == 16u) {
+        if ((pc.flags >> 8) == 0x0E) {
+            uint nib = rd8(b + (texel >> 1));
+            alpha = expand((texel & 1u) != 0u ? (nib >> 4) : (nib & 0x0Fu), 4u);
+        } else {
+            uint a0 = rd8(b), a1 = rd8(b + 1u), sel, sh = 3u * texel;
+            uint lo = rd32(b + 2u), hi = rd16(b + 6u);
+            if (sh + 3u <= 32u) sel = (lo >> sh) & 7u;
+            else if (sh >= 32u) sel = (hi >> (sh - 32u)) & 7u;
+            else sel = ((lo >> sh) | (hi << (32u - sh))) & 7u;
+            if (sel == 0u) alpha = a0;
+            else if (sel == 1u) alpha = a1;
+            else if (a0 > a1) alpha = ((8u - sel) * a0 + (sel - 1u) * a1) / 7u;
+            else if (sel < 6u) alpha = ((6u - sel) * a0 + (sel - 1u) * a1) / 5u;
+            else alpha = sel == 6u ? 0u : 255u;
+        }
+        b += 8u;
+    }
+    uint c0 = rd16(b), c1 = rd16(b + 2u), e0 = rgb565(c0), e1 = rgb565(c1), c = 0u;
+    uint idx = (rd32(b + 4u) >> (2u * texel)) & 3u;
+    if (idx == 0u) c = e0;
+    else if (idx == 1u) c = e1;
+    else if (c0 > c1 || bb == 16u) {
+        for (uint i = 0u; i < 3u; i++) {
+            uint sh = i * 8u, m0 = (e0 >> sh) & 0xFFu, m1 = (e1 >> sh) & 0xFFu;
+            c |= (idx == 2u ? (2u * m0 + m1) / 3u : (m0 + 2u * m1) / 3u) << sh;
+        }
+    } else if (idx == 2u) {
+        for (uint i = 0u; i < 3u; i++) {
+            uint sh = i * 8u, m0 = (e0 >> sh) & 0xFFu, m1 = (e1 >> sh) & 0xFFu;
+            c |= ((m0 + m1) / 2u) << sh;
+        }
+    } else {
+        c = 0u;
+        alpha = bb == 8u ? 0u : alpha;
+    }
+    return (alpha << 24) | (c & 0xFFFFFFu);
+}
 void main() {
     uint x=gl_GlobalInvocationID.x,y=gl_GlobalInvocationID.y;
     if(x>=pc.width || y>=pc.height) return;
+    if((pc.flags>>8)!=0u) {
+        uint word=dxt(x,y);
+        data.words[y*pc.width+x]=(word&0xff00ff00u)|((word&255u)<<16)|((word>>16)&255u);
+        return;
+    }
     uint at=y*pc.pitch+x;
     if((pc.flags&1u)!=0u) {
         at=ch_morton_index(x,y,pc.width,pc.height);

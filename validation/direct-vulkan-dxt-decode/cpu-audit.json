@@ -1,0 +1,52 @@
+{
+  "samples": [
+    {
+      "frame": 1320,
+      "line": "[Vulkan CPU graphics] texture_pixels=1030144 texture_ms=6.320 color_pixels=0 color_ms=0.000 (cumulative)"
+    },
+    {
+      "frame": 1380,
+      "line": "[Vulkan CPU graphics] texture_pixels=1030144 texture_ms=6.320 color_pixels=0 color_ms=0.000 (cumulative)"
+    },
+    {
+      "frame": 1440,
+      "line": "[Vulkan CPU graphics] texture_pixels=1030144 texture_ms=6.320 color_pixels=0 color_ms=0.000 (cumulative)"
+    },
+    {
+      "frame": 1500,
+      "line": "[Vulkan CPU graphics] texture_pixels=1030144 texture_ms=6.320 color_pixels=0 color_ms=0.000 (cumulative)"
+    },
+    {
+      "frame": 1560,
+      "line": "[Vulkan CPU graphics] texture_pixels=1030144 texture_ms=6.320 color_pixels=0 color_ms=0.000 (cumulative)"
+    },
+    {
+      "frame": 1620,
+      "line": "[Vulkan CPU graphics] texture_pixels=1030144 texture_ms=6.320 color_pixels=0 color_ms=0.000 (cumulative)"
+    },
+    {
+      "frame": 1680,
+      "line": "[Vulkan CPU graphics] texture_pixels=1030144 texture_ms=6.320 color_pixels=0 color_ms=0.000 (cumulative)"
+    },
+    {
+      "frame": 1740,
+      "line": "[Vulkan CPU graphics] texture_pixels=1030144 texture_ms=6.320 color_pixels=0 color_ms=0.000 (cumulative)"
+    },
+    {
+      "frame": 1800,
+      "line": "[Vulkan CPU graphics] texture_pixels=1030144 texture_ms=6.320 color_pixels=0 color_ms=0.000 (cumulative)"
+    },
+    {
+      "frame": 1860,
+      "line": "[Vulkan CPU graphics] texture_pixels=1030144 texture_ms=6.320 color_pixels=0 color_ms=0.000 (cumulative)"
+    },
+    {
+      "frame": 1920,
+      "line": "[Vulkan CPU graphics] texture_pixels=1030144 texture_ms=6.320 color_pixels=0 color_ms=0.000 (cumulative)"
+    }
+  ],
+  "miss_formats": {
+    "format=0c target=0": 1,
+    "format=0f target=0": 2
+  }
+}

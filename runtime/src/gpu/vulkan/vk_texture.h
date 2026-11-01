@@ -27,13 +27,13 @@ VkResult ch_vk_texture_upload_queued(VkPhysicalDevice,VkDevice,VkQueue,uint32_t 
  * Waits for any previous upload before reusing staging; queued follows the
  * same-queue contract above. pixels counts all six faces for cube images. */
 VkResult ch_vk_texture_replace_argb(ChVkTexture *,const uint32_t *argb,size_t pixels,int queued);
-/* Shared compute decoder for 2D 32-bit ARGB/XRGB/ABGR/BGRA/RGBA, linear or rectangular Morton.
+/* Shared compute decoder for 2D 32-bit ARGB/XRGB/ABGR/BGRA/RGBA (linear or Morton) and DXT1/3/5.
  * Raw bytes are snapshotted before return; sampling/replacement contracts match
  * upload_queued/replace_argb. Requires a compute-capable graphics queue.
  * Other formats deliberately return FEATURE_NOT_PRESENT before GPU work. */
-int ch_vk_texture_can_decode32(const Nv2aTexture *);
-VkResult ch_vk_texture_replace_encoded32(ChVkTexture *,VkPipelineCache,const Nv2aTexture *,const void *,size_t,int queued);
-VkResult ch_vk_texture_upload_encoded32(VkPhysicalDevice,VkDevice,VkQueue,uint32_t family,VkPipelineCache,
+int ch_vk_texture_can_decode(const Nv2aTexture *);
+VkResult ch_vk_texture_replace_encoded(ChVkTexture *,VkPipelineCache,const Nv2aTexture *,const void *,size_t,int queued);
+VkResult ch_vk_texture_upload_encoded(VkPhysicalDevice,VkDevice,VkQueue,uint32_t family,VkPipelineCache,
     const Nv2aTexture *,const void *,size_t,uint32_t levels,int queued,ChVkTexture **);
 /* Immutable RGBA8 snapshot of a completed, same-device single-layer source in
  * TRANSFER_SRC_OPTIMAL. No CPU readback/upload. Source layout is unchanged;
@@ -57,4 +57,10 @@ VkResult ch_vk_texture_read_rgba(ChVkTexture *texture, void *rgba, VkDeviceSize 
 void ch_vk_texture_destroy(ChVkTexture *texture);
 /* Caller must have completed all previous sampling before replacing sampler. */
 VkResult ch_vk_texture_set_sampler(ChVkTexture *texture, const VkSamplerCreateInfo *info);
+
+/* Compatibility entry points for existing 32-bit callers. */
+int ch_vk_texture_can_decode32(const Nv2aTexture *);
+VkResult ch_vk_texture_replace_encoded32(ChVkTexture *,VkPipelineCache,const Nv2aTexture *,const void *,size_t,int);
+VkResult ch_vk_texture_upload_encoded32(VkPhysicalDevice,VkDevice,VkQueue,uint32_t,VkPipelineCache,const Nv2aTexture *,const void *,size_t,uint32_t,int,ChVkTexture **);
+
 #endif

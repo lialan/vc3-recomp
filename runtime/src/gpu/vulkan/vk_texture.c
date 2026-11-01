@@ -344,17 +344,19 @@ VkResult ch_vk_texture_set_sampler(ChVkTexture *t,const VkSamplerCreateInfo *inf
     return VK_SUCCESS;
 }
 
-int ch_vk_texture_can_decode32(const Nv2aTexture *s) {
+int ch_vk_texture_can_decode(const Nv2aTexture *s) {
     if(!s || s->cube || !s->width || !s->height || (uint64_t)s->width*s->height>UINT32_MAX/3) return 0;
+    if(s->color==0x0c || s->color==0x0e || s->color==0x0f) return 1;
     if(s->color==6 || s->color==7 || (s->color>=0x3a && s->color<=0x3c)) return !(s->width&(s->width-1)) && !(s->height&(s->height-1));
     return (s->color==0x12 || s->color==0x1e || (s->color>=0x3f && s->color<=0x41)) && !(s->pitch&3) && (uint64_t)s->width*4<=s->pitch;
 }
-VkResult ch_vk_texture_replace_encoded32(ChVkTexture *t,VkPipelineCache cache,const Nv2aTexture *s,const void *raw,size_t bytes,int queued) {
+VkResult ch_vk_texture_replace_encoded(ChVkTexture *t,VkPipelineCache cache,const Nv2aTexture *s,const void *raw,size_t bytes,int queued) {
     if(!t || t->failed || !raw) return VK_ERROR_INITIALIZATION_FAILED;
-    if(!ch_vk_texture_can_decode32(s)) return VK_ERROR_FEATURE_NOT_PRESENT;
+    if(!ch_vk_texture_can_decode(s)) return VK_ERROR_FEATURE_NOT_PRESENT;
     if(t->layers!=1 || t->width!=s->width || t->height!=s->height) return VK_ERROR_INITIALIZATION_FAILED;
     int swizzled=s->color==6 || s->color==7 || (s->color>=0x3a && s->color<=0x3c);
-    uint64_t span=swizzled?t->bytes:(uint64_t)(s->height-1)*s->pitch+(uint64_t)s->width*4;
+    uint32_t block=s->color==0x0c?8:(s->color==0x0e || s->color==0x0f)?16:0;
+    uint64_t span=block?(((uint64_t)s->width+3)/4)*(((uint64_t)s->height+3)/4)*block:swizzled?t->bytes:(uint64_t)(s->height-1)*s->pitch+(uint64_t)s->width*4;
     if(span>bytes || span>SIZE_MAX-t->bytes || span/4+t->bytes/4>UINT32_MAX) return VK_ERROR_INITIALIZATION_FAILED;
     if(!t->decode_max_bytes) {
         VkPhysicalDeviceProperties properties;
@@ -375,15 +377,29 @@ VkResult ch_vk_texture_replace_encoded32(ChVkTexture *t,VkPipelineCache cache,co
     /* Modes 1..3 normalize the alternate channel orders to ARGB. */
     if(s->color>=0x3a && s->color<=0x3c) t->decode_flags|=(s->color-0x39)<<2;
     if(s->color>=0x3f && s->color<=0x41) t->decode_flags|=(s->color-0x3e)<<2;
+    if(block) t->decode_flags=s->color<<8;
     t->raw_decode=1;t->deferred_upload=!!queued;result=transfer(t,1,0);t->raw_decode=0;return result;
 fail:
     t->failed=1;return result;
 }
-VkResult ch_vk_texture_upload_encoded32(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,uint32_t family,VkPipelineCache cache,
+VkResult ch_vk_texture_upload_encoded(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,uint32_t family,VkPipelineCache cache,
     const Nv2aTexture *s,const void *raw,size_t bytes,uint32_t levels,int queued,ChVkTexture **out) {
     if(!out) return VK_ERROR_INITIALIZATION_FAILED;*out=NULL;
-    if(!ch_vk_texture_can_decode32(s)) return VK_ERROR_FEATURE_NOT_PRESENT;
+    if(!ch_vk_texture_can_decode(s)) return VK_ERROR_FEATURE_NOT_PRESENT;
     ChVkTexture *t=NULL;VkResult r=allocate_texture(gpu,device,queue,family,s->width,s->height,levels,1,&t);
-    if(r==VK_SUCCESS) r=ch_vk_texture_replace_encoded32(t,cache,s,raw,bytes,queued);
+    if(r==VK_SUCCESS) r=ch_vk_texture_replace_encoded(t,cache,s,raw,bytes,queued);
     if(r!=VK_SUCCESS) {ch_vk_texture_destroy(t);return r;}*out=t;return VK_SUCCESS;
+}
+
+int ch_vk_texture_can_decode32(const Nv2aTexture *s) {
+    return s && s->color!=0x0c && s->color!=0x0e && s->color!=0x0f && ch_vk_texture_can_decode(s);
+}
+VkResult ch_vk_texture_replace_encoded32(ChVkTexture *t,VkPipelineCache cache,const Nv2aTexture *s,const void *raw,size_t bytes,int queued) {
+    if(!ch_vk_texture_can_decode32(s)) return VK_ERROR_FEATURE_NOT_PRESENT;
+    return ch_vk_texture_replace_encoded(t,cache,s,raw,bytes,queued);
+}
+VkResult ch_vk_texture_upload_encoded32(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,uint32_t family,VkPipelineCache cache,
+    const Nv2aTexture *s,const void *raw,size_t bytes,uint32_t levels,int queued,ChVkTexture **out) {
+    if(!ch_vk_texture_can_decode32(s)) {if(out)*out=NULL;return VK_ERROR_FEATURE_NOT_PRESENT;}
+    return ch_vk_texture_upload_encoded(gpu,device,queue,family,cache,s,raw,bytes,levels,queued,out);
 }

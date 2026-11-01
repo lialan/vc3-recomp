@@ -197,7 +197,7 @@ VkResult ch_vk_texture_cache_resolve(void *context,const Nv2aTexture *t,ChVkSamp
     size_t staging=(size_t)t->width*t->height*4*(t->cube?6:1);
     if(span>c->config.max_bytes || palette>c->config.max_bytes-span ||
        pixels>c->config.max_bytes-span-palette) return VK_NOT_READY;
-    int gpu_decode=c->config.gpu_decode && ch_vk_texture_can_decode32(t);
+    int gpu_decode=c->config.gpu_decode && ch_vk_texture_can_decode(t);
     size_t cost=span+palette+pixels;
     // Encoded GPU staging is retained in addition to the existing CPU snapshot.
     if(gpu_decode) {if(span>c->config.max_bytes-cost) return VK_NOT_READY;cost+=span;}
@@ -215,7 +215,7 @@ VkResult ch_vk_texture_cache_resolve(void *context,const Nv2aTexture *t,ChVkSamp
     if(!unchanged(c,&snapshot,t)) {free(raw);free(argb);return VK_NOT_READY;}
     uint64_t copied=c->trace?cache_us():0;
     if(reusable) {
-        r=gpu_decode?ch_vk_texture_replace_encoded32(reusable->image,c->config.pipeline_cache,t,raw,span,c->config.queued_uploads):
+        r=gpu_decode?ch_vk_texture_replace_encoded(reusable->image,c->config.pipeline_cache,t,raw,span,c->config.queued_uploads):
             ch_vk_texture_replace_argb(reusable->image,argb,staging/4,c->config.queued_uploads);
         free(argb);
         if(r!=VK_SUCCESS) {free(raw);drop(c,reusable);return r;}
@@ -224,7 +224,7 @@ VkResult ch_vk_texture_cache_resolve(void *context,const Nv2aTexture *t,ChVkSamp
         trace_miss(c,t,start,room,copied,c->trace?cache_us():0,0,1);return VK_SUCCESS;
     }
     ChVkTexture *image=NULL;
-    if(gpu_decode) r=ch_vk_texture_upload_encoded32(c->config.physical,c->config.device,c->config.queue,c->config.family,
+    if(gpu_decode) r=ch_vk_texture_upload_encoded(c->config.physical,c->config.device,c->config.queue,c->config.family,
         c->config.pipeline_cache,t,raw,span,levels,c->config.queued_uploads,&image);
     else if(c->config.queued_uploads) r=ch_vk_texture_upload_queued(c->config.physical,c->config.device,c->config.queue,c->config.family,
         t->width,t->height,argb,levels,t->cube,&image);
