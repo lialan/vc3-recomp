@@ -12,6 +12,9 @@ layout(location=1) in vec2 uv;
 #ifdef COMBINER
 #extension GL_GOOGLE_include_directive : require
 #include "combiner.glsl"
+#define CH_NV_SHADER_GLSL 1
+#include "../nv2a_stage_fetch.h"
+CH_NV_STAGE_FETCH_FUNCTION
 layout(std430,set=0,binding=1) readonly buffer Combiner { ChRc rc; uint pad[2]; vec4 fog_color; uvec4 stage_on; } params;
 layout(set=0,binding=0) uniform sampler2D stage_images[4];
 layout(set=0,binding=2) uniform samplerCube cube_images[4];
@@ -28,9 +31,8 @@ void main() {
     vec4 texels[4];
     for(uint i=0;i<4;i++) {
         uint mode=(params.rc.stage_program>>(i*5))&31u;
-        texels[i]=vec4(0,0,0,1);
-        if(mode==4) texels[i]=clamp(tc[i],0,1);
-        else if(mode>=1 && mode<=3) {
+        texels[i]=vec4(1);
+        if(mode>=1 && mode<=3) {
             float q=mode==3 || tc[i].w==0?1:tc[i].w;
             vec2 uv=tc[i].xy/q;
             if(params.stage_on[i]==0) texels[i]=vec4(1);
@@ -45,6 +47,7 @@ void main() {
             else if(i==2) texels[i]=texture(stage_images[2],uv);
             else texels[i]=texture(stage_images[3],uv);
         }
+        texels[i]=ch_nv_stage_fetch(mode,tc[i],texels[i],params.stage_on[i]);
     }
     shaded=ch_rc_eval(params.rc,diffuse,spec,vec4(params.fog_color.rgb,fog),texels);
 #endif

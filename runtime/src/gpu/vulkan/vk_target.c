@@ -483,13 +483,7 @@ static VkResult draw_full(ChVkTarget *t, const float rgba[4],
     for(uint32_t i=0;i<index_count;i++) if(indices[i]>=vertex_count)
         return VK_ERROR_INITIALIZATION_FAILED;
     if(samples && !t->queries) return VK_ERROR_FEATURE_NOT_PRESENT;
-    if(rc) {
-        if(texture) return VK_ERROR_FEATURE_NOT_PRESENT;
-        for(unsigned i=0;i<4;i++) {
-            uint32_t mode=(rc->stage_program>>(i*5))&31;
-            if(mode>4) return VK_ERROR_FEATURE_NOT_PRESENT;
-        }
-    }
+    if(rc && texture) return VK_ERROR_FEATURE_NOT_PRESENT;
     if(effect && (effect->kind<1 || effect->kind>2 || rc || texture)) return VK_ERROR_FEATURE_NOT_PRESENT;
     if(texture && ch_vk_texture_is_cube(texture)) return VK_ERROR_FEATURE_NOT_PRESENT;
     t->effect=effect!=NULL;

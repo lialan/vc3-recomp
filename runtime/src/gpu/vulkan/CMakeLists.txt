@@ -36,7 +36,7 @@ foreach(stage vert frag textured combiner effect)
     add_custom_command(OUTPUT "${output}"
         COMMAND "${CHIHIRO_GLSLC}" --target-env=vulkan1.0 ${defines}
                 "${CMAKE_CURRENT_SOURCE_DIR}/${input}" -o "${output}"
-        DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/${input}" "${CMAKE_CURRENT_SOURCE_DIR}/combiner.glsl" VERBATIM)
+        DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/${input}" "${CMAKE_CURRENT_SOURCE_DIR}/combiner.glsl" "${CMAKE_CURRENT_SOURCE_DIR}/../nv2a_stage_fetch.h" VERBATIM)
     list(APPEND spirv_outputs "${output}")
 endforeach()
 set(header "${CMAKE_CURRENT_BINARY_DIR}/color_spv.h")

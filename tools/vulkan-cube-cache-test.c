@@ -55,6 +55,9 @@ int ch_test_cube_cache(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,uint32
     for(unsigned i=0;i<16;i++) REQUIRE(pixels[i*4]==0 && pixels[i*4+1]==255 && pixels[i*4+2]==255 && pixels[i*4+3]==255);
     REQUIRE(ch_vk_nv2a_draw_resolved_read(target,&surface,&batch,decode,single_plane,NULL,pixels,sizeof pixels)==VK_SUCCESS);
     for(unsigned i=0;i<16;i++) REQUIRE(pixels[i*4]==0 && pixels[i*4+1]==255 && pixels[i*4+2]==255 && pixels[i*4+3]==255);
+    rc.stage_program=6<<5;
+    REQUIRE(ch_vk_nv2a_draw_decoded_read(target,&surface,&batch,decode,pixels,sizeof pixels)==VK_SUCCESS);
+    for(unsigned i=0;i<sizeof pixels;i++) REQUIRE(!pixels[i]);
 done:
     unpin(&a);unpin(&b);unpin(&c);ch_vk_target_destroy(target);ch_vk_texture_cache_destroy(cache);
     if(!failed) puts("PASS: actual DXT5 cube decoder, padded stored mip face strides, immutable edits, bounds and cached/uncached stage-one directional draws");

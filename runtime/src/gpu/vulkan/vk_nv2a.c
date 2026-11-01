@@ -114,15 +114,6 @@ static VkResult draw_decoded(ChVkTarget *t, const Nv2aSurface *s,
     if(b->raw || (b->ext && !b->rc) || (b->rc && !b->ext))
         return VK_ERROR_FEATURE_NOT_PRESENT;
     for(unsigned i=0;i<4;i++) if(!b->rc && b->stage[i] && (i!=0 || b->stage[i]!=b->texture)) return VK_ERROR_FEATURE_NOT_PRESENT;
-    if(b->rc) {
-        /* The executor supplies separate descriptors for texture and stage[0].
-         * Deferred submission also deep-copies them independently. Combiner
-         * draws use stage[], irrespective of convenience-descriptor identity. */
-        for(unsigned i=0;i<4;i++) {
-            uint32_t mode=(b->rc->stage_program>>(i*5))&31;
-            if(mode>4) return VK_ERROR_FEATURE_NOT_PRESENT;
-        }
-    }
     const char *force=getenv("CHIHIRO_VULKAN_FORCE_COMBINER");
     int modulate=b->ext && b->stage[0] && !b->stage[0]->cube && (!force || !atoi(force))?
         ch_nv2a_combiner_modulate(b->rc):0;
@@ -214,6 +205,8 @@ static VkResult draw_decoded(ChVkTarget *t, const Nv2aSurface *s,
         result=plain_lease.gpu?VK_SUCCESS:ch_vk_texture_set_sampler(texture,&sampler);
         if(result!=VK_SUCCESS) goto done;
     }
+    /* Combiner descriptors are independently copied: stage[] is authoritative
+     * rather than the convenience texture pointer's identity. */
     if(rc) for(unsigned st=0;st<4;st++) {
         uint32_t mode=(rc->stage_program>>(st*5))&31;
         const Nv2aTexture *tx=b->stage[st];

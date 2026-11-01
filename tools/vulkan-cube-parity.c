@@ -1,5 +1,6 @@
 #include <GLES3/gl3.h>
 #include "vk_target.h"
+#include "../nv2a_stage_fetch.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -27,7 +28,7 @@ int ch_test_cube_parity(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,uint3
     glTexParameteri(GL_TEXTURE_CUBE_MAP,GL_TEXTURE_WRAP_S,GL_CLAMP_TO_EDGE);glTexParameteri(GL_TEXTURE_CUBE_MAP,GL_TEXTURE_WRAP_T,GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_CUBE_MAP,GL_TEXTURE_WRAP_R,GL_CLAMP_TO_EDGE);
     vs=compile(GL_VERTEX_SHADER,"#version 300 es\nprecision highp float;uniform vec3 base,dx,dy;out highp vec3 dir;void main(){vec2 p=vec2(gl_VertexID==1?3.0:-1.0,gl_VertexID==2?3.0:-1.0);gl_Position=vec4(p,0,1);vec2 uv=p*.5+.5;dir=base+uv.x*dx+uv.y*dy;}");
-    fs=compile(GL_FRAGMENT_SHADER,"#version 300 es\nprecision highp float;uniform highp samplerCube tex;in highp vec3 dir;out vec4 color;void main(){color=texture(tex,dir);}");
+    fs=compile(GL_FRAGMENT_SHADER,"#version 300 es\nprecision highp float;uniform highp uint mode;uniform highp samplerCube tex;in highp vec3 dir;out vec4 color;\n" CH_NV_STAGE_FETCH_SOURCE "\nvoid main(){color=ch_nv_stage_fetch(mode,vec4(dir,1),texture(tex,dir),1u);}");
     REQUIRE(vs && fs);program=glCreateProgram();glAttachShader(program,vs);glAttachShader(program,fs);glLinkProgram(program);
     GLint linked=0;glGetProgramiv(program,GL_LINK_STATUS,&linked);REQUIRE(linked);
     glUseProgram(program);glUniform1i(glGetUniformLocation(program,"tex"),0);glGenVertexArrays(1,&vao);glBindVertexArray(vao);
@@ -43,8 +44,10 @@ int ch_test_cube_parity(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,uint3
         {1,.8f,-.4f,0,.4f,0,0,0,.8f},{1,-.4f,.8f,0,0,.4f,0,.8f,0},
         {1,.85f,.85f,0,.3f,0,0,0,.3f},{-1,-.85f,-.85f,0,-.3f,0,0,0,-.3f}};
     const float black[]={0,0,0,0};const uint16_t indices[]={0,1,2,0,2,3};
-    for(unsigned test=0;test<sizeof cases/sizeof cases[0];test++) {
-        const float *p=cases[test];
+    for(unsigned test=0;test<10+32;test++) {
+        unsigned mode=test<10?3:test-10;
+        rc.stage_program=mode;glUniform1ui(glGetUniformLocation(program,"mode"),mode);
+        const float *p=cases[test<10?test:0];
         glUniform3fv(glGetUniformLocation(program,"base"),1,p);glUniform3fv(glGetUniformLocation(program,"dx"),1,p+3);glUniform3fv(glGetUniformLocation(program,"dy"),1,p+6);
         glDrawArrays(GL_TRIANGLES,0,3);glReadPixels(0,0,W,H,GL_RGBA,GL_UNSIGNED_BYTE,reference);
         ChVkColorVertex quad[]={{{-1,-1,0,1},{1,1,1,1}},{{1,-1,0,1},{1,1,1,1}},{{1,1,0,1},{1,1,1,1}},{{-1,1,0,1},{1,1,1,1}}};
@@ -56,7 +59,7 @@ int ch_test_cube_parity(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,uint3
         REQUIRE(ch_vk_target_draw_combiner_read(target,NULL,quad,4,indices,6,&state,NULL,NULL,&rc,0,stages,native,sizeof native)==VK_SUCCESS);
         unsigned maximum=0;
         for(unsigned i=0;i<sizeof native;i++) {unsigned delta=(unsigned)abs(reference[i]-native[i]);if(delta>maximum) maximum=delta;}
-        printf("cube directional parity case=%u maximum=%u\n",test,maximum);
+        printf("cube directional parity case=%u mode=%u maximum=%u\n",test,mode,maximum);
         REQUIRE(glGetError()==GL_NO_ERROR && maximum<=3);
     }
 done:
@@ -66,7 +69,7 @@ done:
     if(vs) glDeleteShader(vs);
     if(fs) glDeleteShader(fs);
     if(texture) glDeleteTextures(1,&texture);
-    if(!failed) puts("PASS: GLES/Vulkan cube sampling, six face orientations, interpolated directions and seamless edges/corners");
+    if(!failed) puts("PASS: GLES/Vulkan cube sampling, six orientations and seamless edges/corners; shared stage contribution for all 32 modes");
     return failed;
 #undef REQUIRE
 }

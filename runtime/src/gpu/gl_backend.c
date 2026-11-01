@@ -79,6 +79,7 @@ extern void vc3_quest_frame(GLuint fbo, int pw, int ph, int eyes, int lw, int lh
 #include "nv2a_backend.h"
 #include "nv2a_texture_mips.h"
 #include "nv2a_texture_cube.h"
+#include "nv2a_stage_fetch.h"
 #include "gl_texdec.h"
 #include "nv2a_vsh_glsl.h"
 #include "nv2a_vsh_interp.h"
@@ -1050,12 +1051,10 @@ static const char *FS =
     "}\n"
     /* What texture stage st contributes, by its SHADER_STAGE_PROGRAM mode
      * (rc_stage_fetch). An unusable stage reads white, like rc_texel. */
+    CH_NV_STAGE_FETCH_SOURCE "\n"
     "vec4 stage(int st, vec4 tc, vec4 texel) {\n"
     "  uint mode = (u_sprog >> uint(st * 5)) & 31u;\n"
-    "  if (mode == 0u) return vec4(0.0, 0.0, 0.0, 1.0);\n"
-    "  if (mode == 4u) return clamp(tc, 0.0, 1.0);\n"
-    "  if (mode <= 3u) return u_on[st] != 0 ? texel : vec4(1.0);\n"
-    "  return vec4(0.0);\n"
+    "  return ch_nv_stage_fetch(mode, tc, texel, uint(u_on[st]));\n"
     "}\n"
     "vec2 sbs(int st, vec2 uv) {\n"
     "  vec2 e = st == 0 ? u_sbs[0].xy : st == 1 ? u_sbs[0].zw : st == 2 ? u_sbs[1].xy : u_sbs[1].zw;\n"

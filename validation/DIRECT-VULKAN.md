@@ -404,8 +404,8 @@ RGBA8 levels using filtered GPU blits, transitions every level to shader-read
 layout, and supports all four guest mip filters (3-6). Point/linear requests
 still sample level zero; small/single-level textures retain GL's linear fallback
 for a mip request without an eligible chain. No stored lower guest levels are
-decoded, matching the reference upload policy. Convolution/cube sampling still
-fails explicitly. Native anisotropy and GL's streamed/render-target exceptions
+decoded, matching the reference upload policy. Convolution sampling still
+fails explicitly; subsequent cube support is described below. Native anisotropy and GL's streamed/render-target exceptions
 remain separate parity work; the shared predicate establishes eligibility,
 not complete texture-cache policy equivalence.
 
@@ -475,3 +475,21 @@ color layout at frame 460, so a surface-description diagnostic has been added;
 that rejection has not been declared resolved. Full mission rendering and
 Quest combat performance remain open. The cube APK build/import audit passes;
 the production candidate has not yet been installed for a full game run.
+
+### Shared fragment-stage contribution
+
+The GL stage-fetch helper is now shared with the native Vulkan shader through
+`nv2a_stage_fetch.h`. NONE yields (0,0,0,1), PASSTHRU clamps the interpolant,
+sampling modes use the sampled texel or white for a missing texture, and the
+remaining modes yield (0,0,0,0), matching the existing GL shader. Native draws
+therefore accept the observed mode 6 without claiming implementation of NV2A
+bump/dot effects beyond the reference. No texture is decoded for a zero-result
+stage. The shader helper is compiled into each backend; it calls no GL API.
+
+Actual GLES/Vulkan output comparisons pass all 32 mode values through a full
+combiner draw, in addition to cube direction/edge coverage. The NV2A adapter
+test verifies an actual stage-one mode 6 draw yields zero in all RGBA channels.
+Both reference OpenGL and direct Vulkan Mac builds pass. The following timed
+mission replay is checking this behavior in the game, with the same explicit
+aim/coin/start inputs as the preceding failure. Performance acceptance remains
+unchanged and incomplete.
