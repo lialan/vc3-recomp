@@ -1,0 +1,17 @@
+[Vulkan command batches] live targets: draws=3 submissions=2
+[Vulkan depth residency] binds=3 imports=1 writebacks=2 CPU merges=0
+[Vulkan] completed frame 1: 640x480, guest=80408000
+[Vulkan command batches] live targets: draws=3592 submissions=552
+[Vulkan depth residency] binds=3275 imports=375 writebacks=386 CPU merges=0
+[Vulkan] completed frame 60: 640x480, guest=808D0000
+[Vulkan command batches] live targets: draws=7302 submissions=1098
+[Vulkan depth residency] binds=6662 imports=763 writebacks=785 CPU merges=0
+[Vulkan] completed frame 120: 640x480, guest=80534000
+[Vulkan frame intervals] flips 1..121: 12.66 fps mean 79.00ms p95 97.34ms p99 216.75ms max 320.66ms >20ms=120 >33ms=120 (guest completions, not XR display)
+[Vulkan command batches] live targets: draws=11026 submissions=1652
+[Vulkan depth residency] binds=10053 imports=1154 writebacks=1184 CPU merges=0
+[Vulkan] completed frame 180: 640x480, guest=80408000
+[Vulkan command batches] live targets: draws=14745 submissions=2225
+[Vulkan depth residency] binds=13442 imports=1544 writebacks=1585 CPU merges=0
+[Vulkan] completed frame 240: 640x480, guest=80660000
+[Vulkan] diagnostic frame limit reached: 240

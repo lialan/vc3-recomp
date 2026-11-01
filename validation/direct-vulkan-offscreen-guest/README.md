@@ -15,6 +15,14 @@ These binaries use generated-code O1 and single-thread submission, so this is
 not a release-build comparison or a measurement of VR/compositor frame times.
 The report identifies all copied binaries by hash.
 
+A separate O2 build with the existing Quest flags
+`-march=armv8.2-a+fp16+dotprod -mtune=cortex-a78` also passes240 frames. Its
+first120 intervals average12.66FPS, p99 216.75ms and max320.66ms. All120 exceed
+33ms. A single startup run is not a speedup benchmark, but these production
+compile settings clearly do not remove the large frame-time problem. Both the
+cache settings and copied binary hashes are recorded. Its refreshed APK also
+passes the no-GL import audit; it has not been installed.
+
 The longer run requested6100 frames with a240-second watchdog. It exited137
 at the watchdog after reporting frame1560, before the frame6000 capture gate.
 The retained trace has203025 GPU fixed batches by frame1440 and zero backend
