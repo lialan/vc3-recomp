@@ -657,8 +657,8 @@ passes with SHA256
 this APK has not been installed for gameplay validation.
 
 Synchronous surface transfer/submission costs remain. In addition, unlike GL's
-`gl_draw_raw`, native Vulkan still declines raw fixed-function/vertex-program
-batches and receives executor CPU-transformed triangles. The existing raw
+`gl_draw_raw`, at that checkpoint native Vulkan declined raw fixed-function/vertex-program
+batches and received executor CPU-transformed triangles. The existing raw
 batch ABI and reference shader arithmetic must be reused for the GPU vertex
 path; this remains part of the performance work rather than being hidden by
 the resource microbenchmark. Full gameplay, immersive host attachment and
@@ -699,10 +699,58 @@ Position, clipping, fog, guest bounds and sampler/state validation remain.
 The wider Quest GPU, guest completion/coherence, finite texture and injected-XR
 checks pass; both Mac renderer builds pass. Evidence, intermediate failures
 and binary identities are under `validation/direct-vulkan-unused-coordinates/`.
-A longer native game replay is verifying the final forwarding change. Neither
-unit tests nor cinematics establish Quest combat, full game or immersive
-acceptance.
+The final forwarding replay reached at least frame 1,380 with no rejected
+draw before its 280-second timeout, short of the requested 1,400-frame limit.
+Its inspected frame 1,250 remains the title cinematic. Neither unit tests nor
+cinematics establish Quest combat, full game or immersive acceptance.
 
 The final coordinate-forwarding APK passes the no-OpenGL-import audit with
 SHA256 `9c84df877480f5a17b7907572f83aec7e62d97369bbf65bcd4f9fb8c37e1b5d8`.
 It has not been installed for a full game session.
+
+
+## Shared fixed-function GPU vertex path
+
+The reference GL `VS_FF` arithmetic now lives in `nv2a_fixed_shader.h`; both
+backends compile that same skinning, lighting/material, transform, texgen and
+fog code. `nv2a_fixed_roles.h` likewise shares attribute role selection. Native
+Vulkan only unpacks raw attributes and converts strip/fan topology on the CPU;
+its new vertex pipeline transforms unique raw vertices on the GPU. The raw
+adapter reuses the decoded adapter's texture resolvers/cache leases and the
+backend's existing color/depth coherence, visibility, fence and host ownership
+rules. It performs no OpenGL calls. Shader state layout is generated from the
+canonical scalar C declarations with compiler offset/size assertions.
+
+Both native device factories enable supported clip-distance/depth-clamp
+features. Vulkan now defaults `RECOMP_GPU_XF=ff`; explicit overrides remain
+honored. `CHIHIRO_VULKAN_GPU_FIXED=0` disables the GPU callback for a diagnostic
+control. Unsupported devices/metadata, vertex programs and GPU transform-check
+requests use the shared executor CPU path. Host observation/draw hooks also
+retain the CPU route until raw immersive attachment is implemented. The
+OpenGL default remains `all` as before.
+
+Actual Quest comparisons use the GL backend's real vertex source against the
+new native pipeline: all 48 fixed-function cases pass within 1 UNORM step and
+visibility counts equal rasterized coverage exactly. Coverage includes all
+skin modes, lighting/materials, four-stage texgen/matrices, fog, w/near clipping
+and invalid w. Registered raw callbacks also pass rebased strip/fan geometry,
+query 256 and resident guest publication, with unsupported program/bounds
+requests declined before drawing. The wider guest coherence, completion,
+finite/nonfinite texture and injected-XR ownership suites remain passing.
+
+The initial integration replay exposed an old startup force of raw transforms
+to zero, despite the backend reporting enabled. After removing that force and
+selecting the fixed-only default, a new game run records 75,426 GPU fixed batches
+by frame 1,380, zero backend declines and no rejected draw before the 300-second
+external limit. It did not reach the requested 1,600 frames, so its report marks
+execution incomplete. The inspected frame 1,250 remains a title cinematic; this
+is not active-combat validation or an FPS comparison. The current APK build/
+import audit passes with SHA256
+`abd85d0adec285296d2e067a516009fb0858c565e33498c76dc722da08bbead1`;
+it has not been installed for a complete game session. Both Mac renderer builds
+and a fresh standalone Android test build pass. Evidence is under
+`validation/direct-vulkan-gpu-fixed/`.
+
+Per-draw submits/waits and surface transfers remain. GPU vertex programs,
+immersive host attachment, full gameplay, sustained Quest combat rate and
+smooth frame-time acceptance are still required before this goal is complete.

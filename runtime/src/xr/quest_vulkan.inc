@@ -70,7 +70,7 @@ static int vk_host_init(void)
     VkResult result=ch_vk_frame_mailbox_create(&s_vk_frames);
     if(result!=VK_SUCCESS) return 0;
     ChVkBackendConfig config={.physical=s_vk.physical,.device=s_vk.device,
-        .queue=s_vk.queue,.family=s_vk.family,.precise_queries=s_vk.precise_queries,
+        .queue=s_vk.queue,.family=s_vk.family,.precise_queries=s_vk.precise_queries,.raw_fixed=s_vk.raw_fixed,
         .lock_queue=vk_queue_lock,.unlock_queue=vk_queue_unlock,.queue_context=&s_vk_queue,
         .render_context=s_vk_frames,.present_rgba=vk_publish};
     return ch_vk_runtime_configure(&config);

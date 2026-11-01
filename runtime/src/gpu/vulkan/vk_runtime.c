@@ -107,6 +107,9 @@ static VkResult attach(ChVkBackendConfig config)
             return VK_ERROR_INITIALIZATION_FAILED;
         config.texture_cache_entries=(uint32_t)value;
     }
+    const char *fixed=ch_env("VULKAN_GPU_FIXED");
+    if(fixed && !strcmp(fixed,"0")) config.raw_fixed=0;
+    fprintf(stderr,"[Vulkan] raw fixed-function GPU transforms: %s\n",config.raw_fixed?"enabled":"disabled");
     const char *depth=ch_env("VULKAN_RESIDENT_DEPTH");
     config.resident_depth=depth && !strcmp(depth,"1");
     fprintf(stderr,"[Vulkan] resident color targets: %s\n",config.resident_color?"enabled":"disabled");
@@ -164,6 +167,7 @@ int ch_vk_runtime_start(void)
     vkGetPhysicalDeviceFeatures(physical,&supported);
     enabled.occlusionQueryPrecise=supported.occlusionQueryPrecise;
     enabled.fillModeNonSolid=supported.fillModeNonSolid;
+    enabled.shaderClipDistance=supported.shaderClipDistance;enabled.depthClamp=supported.depthClamp;
     float priority=1;
     VkDeviceQueueCreateInfo queue_info={.sType=VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
         .queueFamilyIndex=family,.queueCount=1,.pQueuePriorities=&priority};
@@ -176,6 +180,7 @@ int ch_vk_runtime_start(void)
     ChVkBackendConfig config={.physical=physical,.device=runtime.device,.queue=queue,.family=family,
         .guest_base=(void *)xbox_GetMemoryOffset(),.guest_bytes=(size_t)0x80000000u+g_xbox_total_ram,
         .decode=nv2a_backend_decode_texture,.precise_queries=enabled.occlusionQueryPrecise,
+        .raw_fixed=enabled.shaderClipDistance && enabled.depthClamp,
         .present_rgba=present,.fatal=fatal};
     result=attach(config);
     if(result!=VK_SUCCESS) goto fail;

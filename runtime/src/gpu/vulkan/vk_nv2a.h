@@ -82,4 +82,8 @@ VkResult ch_vk_nv2a_draw_host_read(ChVkTarget *,const Nv2aSurface *,const Nv2aBa
 /* Guest-surface variant retains visibility queries and guest pixel coordinates. */
 VkResult ch_vk_nv2a_draw_resolved_read(ChVkTarget *,const Nv2aSurface *,const Nv2aBatch *,
     ChVkDecodeTexture,ChVkSampleResolver,void *,void *,VkDeviceSize);
+/* Prepared raw fixed geometry uses the same texture resolver/coherence path as
+ * decoded draws; only the vertex transformation is performed on the GPU. */
+VkResult ch_vk_nv2a_draw_fixed_resolved_read(ChVkTarget *,const Nv2aSurface *,const Nv2aBatch *,
+    const ChVkFixedGeometry *,ChVkDecodeTexture,ChVkSampleResolver,void *,void *,VkDeviceSize);
 #endif

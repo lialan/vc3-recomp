@@ -330,11 +330,15 @@ int main(int argc, char **argv)
      * transform on the GPU; the screen-space program batches (HUD and
      * composite quads) stay on the CPU, where the back end can see their
      * vertices. RECOMP_GPU_XF=ff keeps programs on the CPU, =0 everything. */
-    setenv("RECOMP_GPU_XF", "all", 0);
 #if defined(CHIHIRO_RENDERER_VULKAN)
-    /* The executor's shared CPU transforms feed decoded batches to Vulkan.
-     * GPU transforms can be ported after this reference path reaches parity. */
-    setenv("RECOMP_GPU_XF", "0", 1);
+    /* Shared fixed-function vertex arithmetic now runs on native Vulkan.
+     * Program batches retain the shared CPU path until their GPU port lands.
+     * Unsupported devices/backends decline raw offers without using GL. */
+    setenv("RECOMP_GPU_XF", "ff", 0);
+#else
+    setenv("RECOMP_GPU_XF", "all", 0);
+#endif
+#if defined(CHIHIRO_RENDERER_VULKAN)
 #if defined(__APPLE__)
     /* SDL's scanout window uses Metal, never an implicit OpenGL renderer. */
     setenv("SDL_RENDER_DRIVER", "metal", 1);

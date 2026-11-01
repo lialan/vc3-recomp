@@ -9,7 +9,7 @@
 #include <time.h>
 #define MAX_SURFACES 32
 struct Surface { Nv2aSurface guest; uint32_t zeta; Nv2aRenderState state; float *depth; uint8_t *stencil; ChVkTarget *target; unsigned char *rgba,*observed,*cpu,*raw; size_t raw_span; int observed_valid,resident,color_dirty,native_z24; size_t bytes; };
-struct ChVkBackend { struct {int enabled;uint64_t start,n,surface,coherence,imports,draw,store;} profile; ChVkBackendConfig host; ChVkTextureCache *textures; ChVkDepthResident *zeta; uint64_t frames; struct Surface surfaces[MAX_SURFACES]; unsigned count; };
+struct ChVkBackend { struct {int enabled;uint64_t start,n,surface,coherence,imports,draw,store;} profile; ChVkBackendConfig host; ChVkTextureCache *textures; ChVkDepthResident *zeta; uint64_t frames,raw_draws,raw_declined; struct Surface surfaces[MAX_SURFACES]; unsigned count; };
 static ChVkBackend *active;
 static void flush_color(struct Surface *);
 static void observe_guest_colors(void);
@@ -296,7 +296,7 @@ static void clear(const Nv2aSurface *s,const Nv2aRenderState *rs,uint32_t flags,
         if(r!=VK_SUCCESS) fatal(r,"host clear routing");
     }
 }
-static void draw(const Nv2aSurface *s,const Nv2aBatch *b) {
+static void draw_batch(const Nv2aSurface *s,const Nv2aBatch *b,const ChVkFixedGeometry *fixed) {
     if(!b) fatal(VK_ERROR_INITIALIZATION_FAILED,"batch arguments");
     uint64_t t[6]={0};
     if(active->profile.enabled) t[0]=now_us();
@@ -308,7 +308,9 @@ static void draw(const Nv2aSurface *s,const Nv2aBatch *b) {
     flush_sampled_colors(b);
     if(b->state->depth_test_enable || b->state->stencil_enable) import_depth(f);
     if(active->profile.enabled) t[3]=now_us();
-    VkResult result=ch_vk_nv2a_draw_resolved_read(f->target,s,b,active->host.decode,
+    VkResult result=fixed?ch_vk_nv2a_draw_fixed_resolved_read(f->target,s,b,fixed,active->host.decode,
+        active->textures?ch_vk_texture_cache_resolve:NULL,active->textures,f->rgba,f->bytes):
+        ch_vk_nv2a_draw_resolved_read(f->target,s,b,active->host.decode,
         active->textures?ch_vk_texture_cache_resolve:NULL,active->textures,f->rgba,f->bytes);
     if(active->profile.enabled) t[4]=now_us();
     if(result!=VK_SUCCESS) {
@@ -340,6 +342,9 @@ static void flip(void) {
     if(!active) fatal(VK_ERROR_INITIALIZATION_FAILED,"flip without backend");
     flush();
     active->frames++;
+    if(active->profile.enabled && (active->frames==1 || active->frames%60==0))
+        fprintf(stderr,"[Vulkan raw vertices] GPU fixed batches=%llu CPU declined batches=%llu\n",
+            (unsigned long long)active->raw_draws,(unsigned long long)active->raw_declined);
     const char *profile=getenv("CHIHIRO_VULKAN_PROFILE");
     if(active->zeta && active->profile.enabled && (active->frames==1 || active->frames%60==0)) {
         ChVkDepthResidentStats stats;ch_vk_depth_resident_stats(active->zeta,&stats);
@@ -383,7 +388,7 @@ static void locked_clear(const Nv2aSurface *s,const Nv2aRenderState *rs,uint32_t
     queue_lock(active); clear(s,rs,flags,argb,zs); queue_unlock(active);
 }
 static void locked_draw(const Nv2aSurface *s,const Nv2aBatch *b) {
-    queue_lock(active); draw(s,b); queue_unlock(active);
+    queue_lock(active); draw_batch(s,b,NULL); queue_unlock(active);
 }
 static void locked_flip(void) {
     queue_lock(active); flip(); queue_unlock(active);
@@ -393,6 +398,18 @@ static void locked_flush(void) {
 }
 static int locked_observe_raw(const Nv2aSurface *s,const Nv2aBatch *b) {
     queue_lock(active); int result=observe_raw(s,b); queue_unlock(active); return result;
+}
+static int locked_draw_raw(const Nv2aSurface *s,const Nv2aBatch *b) {
+    if(active->host.observe_raw) return locked_observe_raw(s,b);
+    if(!active->host.raw_fixed || active->host.render_draw || !b || !b->state) return 0;
+    /* Attribute unpacking is CPU-only and must not hold the shared XR queue
+     * mutex. The original guest streams are borrowed until this call returns. */
+    ChVkFixedGeometry fixed;
+    VkResult r=ch_vk_fixed_prepare(b->raw,&fixed);
+    if(r==VK_ERROR_FEATURE_NOT_PRESENT) {active->raw_declined++;return 0;}
+    if(r!=VK_SUCCESS) fatal(r,"raw fixed attribute upload");
+    queue_lock(active);draw_batch(s,b,&fixed);active->raw_draws++;queue_unlock(active);
+    ch_vk_fixed_release(&fixed);return 1;
 }
 static Nv2aBackend callbacks={.clear=locked_clear,.draw=locked_draw,.flip=locked_flip};
 const Nv2aBackend *ch_vk_backend_callbacks(void) { return &callbacks; }
@@ -425,7 +442,7 @@ VkResult ch_vk_backend_create(const ChVkBackendConfig *config,ChVkBackend **out)
 }
 VkResult ch_vk_backend_attach(ChVkBackend *b) {
     if(!b || active) return VK_ERROR_INITIALIZATION_FAILED;
-    callbacks.draw_raw=b->host.observe_raw?locked_observe_raw:NULL;
+    callbacks.draw_raw=(b->host.observe_raw || b->host.raw_fixed)?locked_draw_raw:NULL;
     callbacks.flush=(b->host.resident_color || b->host.resident_depth)?locked_flush:NULL;
     active=b; nv2a_backend_register(&callbacks); return VK_SUCCESS;
 }

@@ -1,0 +1,50 @@
+[Vulkan] raw fixed-function GPU transforms: enabled
+[GPU] raw draws (RECOMP_GPU_XF=ff): the back end transforms fixed-function batches
+[Vulkan raw vertices] GPU fixed batches=0 CPU declined batches=0
+[Vulkan] completed frame 1: 640x480, guest=80408000
+[Vulkan raw vertices] GPU fixed batches=0 CPU declined batches=0
+[Vulkan] completed frame 60: 640x480, guest=80534000
+[Vulkan raw vertices] GPU fixed batches=0 CPU declined batches=0
+[Vulkan] completed frame 120: 640x480, guest=80660000
+[Vulkan raw vertices] GPU fixed batches=0 CPU declined batches=0
+[Vulkan] completed frame 180: 640x480, guest=80534000
+[Vulkan raw vertices] GPU fixed batches=0 CPU declined batches=0
+[Vulkan] completed frame 240: 640x480, guest=80408000
+[Vulkan raw vertices] GPU fixed batches=0 CPU declined batches=0
+[Vulkan] completed frame 300: 640x480, guest=80660000
+[Vulkan raw vertices] GPU fixed batches=0 CPU declined batches=0
+[Vulkan] completed frame 360: 640x480, guest=80534000
+[Vulkan raw vertices] GPU fixed batches=0 CPU declined batches=0
+[Vulkan] completed frame 420: 640x480, guest=80534000
+[Vulkan raw vertices] GPU fixed batches=0 CPU declined batches=0
+[Vulkan] completed frame 480: 640x480, guest=80408000
+[Vulkan raw vertices] GPU fixed batches=0 CPU declined batches=0
+[Vulkan] completed frame 540: 640x480, guest=80660000
+[Vulkan raw vertices] GPU fixed batches=0 CPU declined batches=0
+[Vulkan] completed frame 600: 640x480, guest=80534000
+[Vulkan raw vertices] GPU fixed batches=0 CPU declined batches=0
+[Vulkan] completed frame 660: 640x480, guest=80534000
+[Vulkan raw vertices] GPU fixed batches=0 CPU declined batches=0
+[Vulkan] completed frame 720: 640x480, guest=80408000
+[Vulkan raw vertices] GPU fixed batches=0 CPU declined batches=0
+[Vulkan] completed frame 780: 640x480, guest=80408000
+[Vulkan raw vertices] GPU fixed batches=0 CPU declined batches=0
+[Vulkan] completed frame 840: 640x480, guest=80408000
+[Vulkan raw vertices] GPU fixed batches=0 CPU declined batches=0
+[Vulkan] completed frame 900: 640x480, guest=80408000
+[Vulkan raw vertices] GPU fixed batches=0 CPU declined batches=0
+[Vulkan] completed frame 960: 640x480, guest=80408000
+[Vulkan raw vertices] GPU fixed batches=0 CPU declined batches=0
+[Vulkan] completed frame 1020: 640x480, guest=80408000
+[Vulkan raw vertices] GPU fixed batches=3778 CPU declined batches=0
+[Vulkan] completed frame 1080: 640x480, guest=80408000
+[Vulkan raw vertices] GPU fixed batches=25975 CPU declined batches=0
+[Vulkan] completed frame 1140: 640x480, guest=80408000
+[Vulkan raw vertices] GPU fixed batches=36067 CPU declined batches=0
+[Vulkan] completed frame 1200: 640x480, guest=80408000
+[Vulkan raw vertices] GPU fixed batches=43706 CPU declined batches=0
+[Vulkan] completed frame 1260: 640x480, guest=80408000
+[Vulkan raw vertices] GPU fixed batches=53466 CPU declined batches=0
+[Vulkan] completed frame 1320: 640x480, guest=80408000
+[Vulkan raw vertices] GPU fixed batches=75426 CPU declined batches=0
+[Vulkan] completed frame 1380: 640x480, guest=80408000

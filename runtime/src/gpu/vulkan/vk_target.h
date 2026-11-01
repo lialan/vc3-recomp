@@ -6,6 +6,7 @@
 #include <vulkan/vulkan.h>
 #include "vk_state.h"
 #include "vk_texture.h"
+#include "vk_fixed.h"
 typedef struct ChVkTarget ChVkTarget;
 typedef struct {
     uint64_t pipeline_builds,pipeline_hits,pipeline_evictions,geometry_allocations;
@@ -113,4 +114,11 @@ VkResult ch_vk_target_draw_effect_read(ChVkTarget *,const ChVkColorVertex *,uint
 VkResult ch_vk_target_draw_panel_read(ChVkTarget *,const ChVkColorVertex *,uint32_t,
     const uint16_t *,uint32_t,const Nv2aRenderState *,const ChVkTexture *,
     const Nv2aCombiner *,uint32_t,const ChVkTexture *const[4],int coverage_alpha,void *,VkDeviceSize);
+/* Raw fixed-function GPU transforms. Host must enable shaderClipDistance and
+ * depthClamp on the device. Params/vertices are copied before submission;
+ * all resources and optional query results remain synchronous. */
+VkResult ch_vk_target_draw_fixed_read(ChVkTarget *,const ChVkFixedParams *,
+    const ChVkFixedVertex *,uint32_t,const uint16_t *,uint32_t,
+    const Nv2aRenderState *,const ChVkTexture *,uint32_t *,const Nv2aCombiner *,
+    uint32_t,const ChVkTexture *const[4],void *,VkDeviceSize);
 #endif

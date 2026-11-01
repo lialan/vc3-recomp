@@ -100,8 +100,8 @@ static VkResult sample_image(ChVkTarget *target,const Nv2aTexture *tx,ChVkDecode
     free(argb); return result;
 }
 static VkResult draw_decoded(ChVkTarget *t, const Nv2aSurface *s,
-    const Nv2aBatch *b, ChVkDecodeTexture decode, const ChVkEye *eye, int panel, ChVkSampleResolver resolve, void *context, void *pixels, VkDeviceSize bytes) {
-    if(!s || !s->width || !s->height || (!eye && !panel && !matches(t,s)) || !b || !b->state || !b->vertices || !b->count || b->count%3)
+    const Nv2aBatch *b, ChVkDecodeTexture decode, const ChVkEye *eye, int panel, ChVkSampleResolver resolve, void *context, void *pixels, VkDeviceSize bytes,const ChVkFixedGeometry *fixed) {
+    if(!s || !s->width || !s->height || (!eye && !panel && !matches(t,s)) || !b || !b->state || (!fixed && (!b->vertices || !b->count || b->count%3)))
         return VK_ERROR_INITIALIZATION_FAILED;
     if(eye) {
         const VrGameProj *g=&eye->game_projection;
@@ -112,11 +112,11 @@ static VkResult draw_decoded(ChVkTarget *t, const Nv2aSurface *s,
         for(unsigned i=0;i<16;i++) if(!isfinite(eye->gl_eye_vp[i])) return VK_ERROR_INITIALIZATION_FAILED;
         if(b->vertices[0].rhw==1 || b->vertices[0].rhw<=0) return VK_ERROR_FEATURE_NOT_PRESENT;
     }
-    if(b->raw || (b->ext && !b->rc) || (b->rc && !b->ext))
+    if(!fixed && (b->raw || (b->ext && !b->rc) || (b->rc && !b->ext)))
         return VK_ERROR_FEATURE_NOT_PRESENT;
     for(unsigned i=0;i<4;i++) if(!b->rc && b->stage[i] && (i!=0 || b->stage[i]!=b->texture)) return VK_ERROR_FEATURE_NOT_PRESENT;
     const char *force=getenv("CHIHIRO_VULKAN_FORCE_COMBINER");
-    int modulate=b->ext && b->stage[0] && !b->stage[0]->cube && (!force || !atoi(force))?
+    int modulate=!fixed && b->ext && b->stage[0] && !b->stage[0]->cube && (!force || !atoi(force))?
         ch_nv2a_combiner_modulate(b->rc):0;
     /* Division before interpolation is equivalent only for a constant q.
      * Varying projective q must retain the general fragment-stage divide. */
@@ -133,14 +133,14 @@ static VkResult draw_decoded(ChVkTarget *t, const Nv2aSurface *s,
             return VK_ERROR_INITIALIZATION_FAILED;
     }
     /* The initial indexed path is uint16. Do not truncate or draw a prefix. */
-    if(b->count>65535) return VK_ERROR_FEATURE_NOT_PRESENT;
+    if(!fixed && b->count>65535) return VK_ERROR_FEATURE_NOT_PRESENT;
     const char *profile_env=getenv("CHIHIRO_VULKAN_PROFILE");
     int profile=profile_env && atoi(profile_env)!=0;
     uint64_t start=profile?profile_us():0;
     if(profile) profile_rc(b->rc);
-    ChVkColorVertex *v=calloc(b->count,sizeof(*v));
-    uint16_t *indices=malloc((size_t)b->count*sizeof(*indices));
-    if(!v || !indices) { free(v); free(indices); return VK_ERROR_OUT_OF_HOST_MEMORY; }
+    ChVkColorVertex *v=fixed?NULL:calloc(b->count,sizeof(*v));
+    uint16_t *indices=fixed?NULL:malloc((size_t)b->count*sizeof(*indices));
+    if(!fixed && (!v || !indices)) { free(v); free(indices); return VK_ERROR_OUT_OF_HOST_MEMORY; }
     float low=b->state->depth_min, high=b->state->depth_max;
     if(!(high>low)) { low=0; high=16777215.f; }
     ChVkTexture *stage_images[4]={0};
@@ -151,7 +151,7 @@ static VkResult draw_decoded(ChVkTarget *t, const Nv2aSurface *s,
     uint32_t coordinate_masks[4]={0};
     if(rc) for(unsigned j=0;j<4;j++) coordinate_masks[j]=ch_nv_stage_coordinate_mask(
         (rc->stage_program>>(j*5))&31,b->stage[j]!=NULL,b->stage[j] && b->stage[j]->cube);
-    for(uint32_t i=0;i<b->count;i++) {
+    for(uint32_t i=0;!fixed && i<b->count;i++) {
         const Nv2aVertex *g=&b->vertices[i];
         if(!isfinite(g->x) || !isfinite(g->y) || !isfinite(g->z) || !isfinite(g->rhw)) {
             fprintf(stderr,"[Vulkan] invalid guest vertex %u: position=%a/%a/%a rhw=%a\n",i,g->x,g->y,g->z,g->rhw);
@@ -224,6 +224,12 @@ static VkResult draw_decoded(ChVkTarget *t, const Nv2aSurface *s,
     }
     /* Combiner descriptors are independently copied: stage[] is authoritative
      * rather than the convenience texture pointer's identity. */
+    ChVkFixedParams params={0};
+    if(fixed) {
+        params=fixed->params;params.surface[0]=s->width;params.surface[1]=s->height;
+        params.depth[0]=low;params.depth[1]=high;
+        params.texture[0]=plain?plain->width:1;params.texture[1]=plain?plain->height:1;
+    }
     if(rc) for(unsigned st=0;st<4;st++) {
         uint32_t mode=(rc->stage_program>>(st*5))&31;
         const Nv2aTexture *tx=b->stage[st];
@@ -234,12 +240,17 @@ static VkResult draw_decoded(ChVkTarget *t, const Nv2aSurface *s,
         result=sample_image(t,tx,decode,resolve,context,&stage_images[st],&leases[st]);
         if(result!=VK_SUCCESS) goto done;
         result=leases[st].gpu?VK_SUCCESS:ch_vk_texture_set_sampler(stage_images[st],&sm); if(result!=VK_SUCCESS) goto done;
-        if(!tx->cube && !d3d8_format_is_swizzled(tx->color) && !d3d8_format_dxt_block_bytes(tx->color))
-            for(uint32_t i=0;i<b->count;i++) { v[i].xy[11+st*4]/=tx->width; v[i].xy[12+st*4]/=tx->height; }
+        if(!tx->cube && !d3d8_format_is_swizzled(tx->color) && !d3d8_format_dxt_block_bytes(tx->color)) {
+            if(fixed) {params.stage_scale[st][0]=1.f/tx->width;params.stage_scale[st][1]=1.f/tx->height;}
+            else for(uint32_t i=0;i<b->count;i++) { v[i].xy[11+st*4]/=tx->width; v[i].xy[12+st*4]/=tx->height; }
+        }
     }
     uint64_t textures_done=profile?profile_us():0;
     uint32_t samples=0;
-    if(panel) result=ch_vk_target_draw_panel_read(t,v,b->count,indices,b->count,b->state,texture,
+    if(fixed) result=ch_vk_target_draw_fixed_read(t,&params,fixed->vertices,fixed->vertex_count,
+        fixed->indices,fixed->index_count,b->state,texture,b->zpass_out?&samples:NULL,rc,b->fog_color,
+        (const ChVkTexture *const *)stage_images,pixels,bytes);
+    else if(panel) result=ch_vk_target_draw_panel_read(t,v,b->count,indices,b->count,b->state,texture,
         rc,b->fog_color,(const ChVkTexture *const *)stage_images,panel==2,pixels,bytes);
     else result=ch_vk_target_draw_combiner_read(t,NULL,v,b->count,indices,b->count,b->state,texture,
         b->zpass_out?&samples:NULL,rc,b->fog_color,(const ChVkTexture *const *)stage_images,pixels,bytes);
@@ -257,7 +268,7 @@ done:
 
 VkResult ch_vk_nv2a_draw_resolved_read(ChVkTarget *t,const Nv2aSurface *s,const Nv2aBatch *b,
     ChVkDecodeTexture decode,ChVkSampleResolver resolve,void *context,void *pixels,VkDeviceSize bytes) {
-    return draw_decoded(t,s,b,decode,NULL,0,resolve,context,pixels,bytes);
+    return draw_decoded(t,s,b,decode,NULL,0,resolve,context,pixels,bytes,NULL);
 }
 
 VkResult ch_vk_nv2a_draw_read(ChVkTarget *t, const Nv2aSurface *s,
@@ -354,12 +365,12 @@ static VkResult clear_state(ChVkTarget *t,const Nv2aSurface *s,
 
 VkResult ch_vk_nv2a_draw_decoded_read(ChVkTarget *t,const Nv2aSurface *s,const Nv2aBatch *b,
     ChVkDecodeTexture decode,void *pixels,VkDeviceSize bytes) {
-    return draw_decoded(t,s,b,decode,NULL,0,NULL,NULL,pixels,bytes);
+    return draw_decoded(t,s,b,decode,NULL,0,NULL,NULL,pixels,bytes,NULL);
 }
 VkResult ch_vk_nv2a_draw_eye_read(ChVkTarget *t,const Nv2aSurface *s,const Nv2aBatch *b,
     ChVkDecodeTexture decode,const ChVkEye *eye,void *pixels,VkDeviceSize bytes) {
     if(!eye) return VK_ERROR_INITIALIZATION_FAILED;
-    return draw_decoded(t,s,b,decode,eye,0,NULL,NULL,pixels,bytes);
+    return draw_decoded(t,s,b,decode,eye,0,NULL,NULL,pixels,bytes,NULL);
 }
 
 VkResult ch_vk_nv2a_projection_from_raw(const Nv2aBatch *batch,VrGameProj *out) {
@@ -379,7 +390,7 @@ VkResult ch_vk_nv2a_projection_from_raw(const Nv2aBatch *batch,VrGameProj *out) 
 VkResult ch_vk_nv2a_draw_panel_read(ChVkTarget *t,const Nv2aSurface *s,const Nv2aBatch *b,
     ChVkDecodeTexture decode,int coverage_alpha,void *pixels,VkDeviceSize bytes) {
     if(!t || !b || b->zpass_out || (coverage_alpha!=0 && coverage_alpha!=1)) return VK_ERROR_INITIALIZATION_FAILED;
-    return draw_decoded(t,s,b,decode,NULL,coverage_alpha?2:1,NULL,NULL,pixels,bytes);
+    return draw_decoded(t,s,b,decode,NULL,coverage_alpha?2:1,NULL,NULL,pixels,bytes,NULL);
 }
 
 VkResult ch_vk_nv2a_clear_state_read(ChVkTarget *t,const Nv2aSurface *s,const Nv2aRenderState *rs,
@@ -396,5 +407,11 @@ VkResult ch_vk_nv2a_draw_host_read(ChVkTarget *t,const Nv2aSurface *s,const Nv2a
     void *pixels,VkDeviceSize bytes) {
     if(!t || !b || b->zpass_out || (coverage_alpha!=0 && coverage_alpha!=1) || (eye && coverage_alpha))
         return VK_ERROR_INITIALIZATION_FAILED;
-    return draw_decoded(t,s,b,decode,eye,eye?0:coverage_alpha?2:1,resolve,context,pixels,bytes);
+    return draw_decoded(t,s,b,decode,eye,eye?0:coverage_alpha?2:1,resolve,context,pixels,bytes,NULL);
+}
+
+VkResult ch_vk_nv2a_draw_fixed_resolved_read(ChVkTarget *t,const Nv2aSurface *s,const Nv2aBatch *b,
+    const ChVkFixedGeometry *fixed,ChVkDecodeTexture decode,ChVkSampleResolver resolve,void *context,void *pixels,VkDeviceSize bytes) {
+    if(!fixed || !fixed->vertices || !fixed->indices || !b || !b->raw) return VK_ERROR_INITIALIZATION_FAILED;
+    return draw_decoded(t,s,b,decode,NULL,0,resolve,context,pixels,bytes,fixed);
 }

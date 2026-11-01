@@ -80,6 +80,8 @@ extern void vc3_quest_frame(GLuint fbo, int pw, int ph, int eyes, int lw, int lh
 #include "nv2a_texture_mips.h"
 #include "nv2a_texture_cube.h"
 #include "nv2a_stage_fetch.h"
+#include "nv2a_fixed_shader.h"
+#include "nv2a_fixed_roles.h"
 #include "gl_texdec.h"
 #include "nv2a_vsh_glsl.h"
 #include "nv2a_vsh_interp.h"
@@ -731,122 +733,10 @@ static const char *VS_FF =
     "out float v_fog;\n"
     "out vec4 v_tc0, v_tc1, v_tc2, v_tc3;\n"
     "out vec4 o_screen;\n"                    /* RECOMP_GPU_XF_CHECK: x y z w */
-    "vec4 fetch(int r, vec4 a) {\n"
-    "  if (((u_packed >> r) & 1) != 0) {\n"
-    "    int v = int(uint(a.x) | (uint(a.y) << 16));\n"
-    "    return vec4(float(bitfieldExtract(v, 0, 11)) / 1023.0,\n"
-    "                float(bitfieldExtract(v, 11, 11)) / 1023.0,\n"
-    "                float(bitfieldExtract(v, 22, 10)) / 511.0, 1.0);\n"
-    "  }\n"
-    "  if (((u_bgra >> r) & 1) != 0) a = a.zyxw;\n"
-    "  return a * u_ascale[r];\n"
-    "}\n"
-    /* executor fog_factor() */
-    "float fog_factor(float d) {\n"
-    "  if (u_fogen == 0) return 1.0;\n"
-    "  float f, px = u_fogp.x, py = u_fogp.y;\n"
-    "  if (u_fogmode == 0x800u || u_fogmode == 0x802u) f = px + exp2(d * py * 16.0) - 1.5;\n"
-    "  else if (u_fogmode == 0x801u || u_fogmode == 0x803u) f = px + exp2(-d * d * py * py * 32.0) - 1.5;\n"
-    "  else f = px + d * py - 1.0;\n"
-    "  if (u_fogmode == 0x802u || u_fogmode == 0x803u || u_fogmode == 0x804u) f = abs(f);\n"
-    "  if (isnan(f)) f = 1.0;\n"
-    "  return clamp(f, 0.0, 1.0);\n"
-    "}\n"
-    /* lit_color: model-view 0 only, unskinned, position w taken as 1. */
-    "vec4 lit_color(vec4 pos, vec4 nrm, vec4 vc) {\n"
-    "  vec3 e = (u_mv[0] * vec4(pos.xyz, 1.0)).xyz;\n"
-    "  vec3 n = mat3(u_mv[0]) * nrm.xyz;\n"
-    "  float len = length(n);\n"
-    "  if (len > 1e-8) n /= len;\n"
-    "  if (u_flipn != 0 && dot(n, e) > 0.0) n = -n;\n"
-    "  bool hv = u_hascol != 0;\n"
-    "  vec3 o = u_samb.rgb;\n"
-    "  for (int i = 0; i < 8; i++) {\n"
-    "    int kind = u_lkind[i];\n"
-    "    if (kind == 0) continue;\n"
-    "    vec3 l; float att = 1.0;\n"
-    "    if (kind == 1) l = u_light[i * 5 + 2].xyz;\n"
-    "    else {\n"
-    "      l = u_light[i * 5 + 3].xyz - e;\n"
-    "      float d = length(l), range = u_light[i * 5].w;\n"
-    "      if (d > range && range > 0.0) continue;\n"
-    "      if (d > 1e-8) l /= d;\n"
-    "      vec3 a = u_light[i * 5 + 4].xyz;\n"
-    "      att = a.x + a.y * d + a.z * d * d;\n"
-    "      att = att > 1e-8 ? 1.0 / att : 1.0;\n"
-    "    }\n"
-    "    float ndl = dot(n, l);\n"
-    "    if (ndl < 0.0) ndl = 0.0;\n"
-    "    vec3 amb = u_light[i * 5].rgb, dif = u_light[i * 5 + 1].rgb;\n"
-    "    if (hv && u_colmat.x != 0) amb *= vc.rgb;\n"
-    "    if (hv && u_colmat.y != 0) dif *= vc.rgb;\n"
-    "    o += att * (amb + dif * ndl);\n"
-    "  }\n"
-    "  return clamp(vec4(o, (hv && u_colmat.y != 0) ? vc.a : u_matalpha), 0.0, 1.0);\n"
-    "}\n"
-    /* ffp_texgen, from the skinned eye position and normal (ffp_eye). */
-    "vec4 texgen(uvec4 mode, vec3 e, vec3 n, vec4 tc) {\n"
-    "  float len = length(e);\n"
-    "  vec3 u = len > 1e-8 ? e / len : vec3(0.0);\n"
-    "  float d = dot(n, u);\n"
-    "  vec3 r = u - 2.0 * d * n;\n"
-    "  float m = 2.0 * sqrt(r.x * r.x + r.y * r.y + (r.z + 1.0) * (r.z + 1.0));\n"
-    "  for (int c = 0; c < 3; c++) {\n"
-    "    if (mode[c] == 0x8511u) tc[c] = n[c];\n"
-    "    else if (mode[c] == 0x8512u) tc[c] = r[c];\n"
-    "    else if (mode[c] == 0x2402u && c < 2 && m > 1e-8) tc[c] = r[c] / m + 0.5;\n"
-    "  }\n"
-    "  if (mode.w == 0u) tc.w = 1.0;\n"
-    "  return tc;\n"
-    "}\n"
+    CH_NV_FIXED_SHADER_SOURCE "\n"
     "void main() {\n"
-    "  vec4 pos = fetch(0, a_pos), wt = fetch(1, a_wt), nrm = fetch(2, a_nrm);\n"
-    "  vec4 col = fetch(3, a_col);\n"
-    "  vec4 t[4];\n"
-    "  t[0] = fetch(4, a_t0); t[1] = fetch(5, a_t1); t[2] = fetch(6, a_t2); t[3] = fetch(7, a_t3);\n"
-    /* Blend weights: ffp_skinned_clip's table, the last weight implied in
-     * modes 1, 3 and 5. */
-    "  vec4 ww = vec4(1.0, 0.0, 0.0, 0.0);\n"
-    "  int nm = 1;\n"
-    "  if (u_skin != 0u) {\n"
-    "    nm = u_skin <= 2u ? 2 : u_skin <= 4u ? 3 : 4;\n"
-    "    for (int k = 0; k < 4; k++) ww[k] = k < nm ? wt[k] : 0.0;\n"
-    "    if ((u_skin & 1u) != 0u) {\n"
-    "      float last = 1.0;\n"
-    "      for (int k = 0; k < nm - 1; k++) last -= wt[k];\n"
-    "      ww[nm - 1] = last;\n"
-    "    }\n"
-    "  }\n"
-    "  vec4 eye = vec4(0.0);\n"
-    "  vec3 en = vec3(0.0);\n"
-    "  for (int k = 0; k < nm; k++) {\n"
-    "    eye += ww[k] * (u_mv[k] * pos);\n"
-    "    en += ww[k] * (mat3(u_mv[k]) * nrm.xyz);\n"
-    "  }\n"
-    "  vec4 clip = u_usecomp != 0 ? u_comp * pos : u_proj * eye;\n"
-    "  float w = clip.w;\n"
-    "  vec3 s = vec3((clip.xy / w + u_c59.xy) * u_aa, clip.z / w + u_c59.z);\n"
-    "  vec4 d0 = u_lighting != 0 ? lit_color(pos, nrm, col)\n"
-    "          : (u_hascol != 0 ? col : vec4(1.0));\n"
-    "  d0 = clamp(d0, 0.0, 1.0);\n"
-
-    "  float elen = length(en);\n"
-    "  if (elen > 1e-8) en /= elen;\n"
-    "  for (int st = 0; st < 4; st++) {\n"
-    "    if (u_tgon[st] != 0) t[st] = texgen(u_texgen[st], eye.xyz, en, t[st]);\n"
-    "    if (u_tmon[st] != 0) t[st] = u_tm[st] * t[st];\n"
-    "  }\n"
-    "  o_screen = vec4(s, w);\n"
-    "  v_col = d0;\n"
-    "  v_spec = vec4(0.0);\n"
-    "  v_fog = fog_factor(0.0);\n"            /* no fog coordinate in fixed function */
-    "  v_tc0 = t[0]; v_tc1 = t[1]; v_tc2 = t[2]; v_tc3 = t[3];\n"
-    "  v_uv = t[0].xy * u_uvs0 / u_texsize;\n"
-    /* Screen space back to GL clip space, as the CPU path's shader does but
-     * with z unclamped (GL_DEPTH_CLAMP clamps per fragment). The CPU clips at
-     * w = 1e-3 and at the near plane z = c59.z; so do the clip distances. A
-     * vertex the CPU could not place (w = 0, or not finite) takes every
-     * triangle touching it with it. */
+    "  ch_nv_fixed_vertex();\n"
+    "  vec3 s = o_screen.xyz; float w = o_screen.w;\n"
     "  int seye = u_st2 != 0 ? gl_InstanceID : 0;\n"
     "  vec2 ueye = u_st2 != 0 ? u_eye2[seye] : u_eye;\n"
     "  mat4 ivp = u_st2 != 0 ? u_immvp2[seye] : u_immvp;\n"
@@ -4072,16 +3962,7 @@ static void bind_ext(const Nv2aBatch *b)
  * colour, texcoords 0-3 -> NV2A attribute slot. -1: not read, constant. */
 static void raw_roles(const Nv2aRawGeometry *g, int slot[8])
 {
-    const Nv2aFixedState *ff = g->ff;
-
-    slot[0] = 0;
-    slot[1] = ff->skin_mode ? 1 : -1;
-    slot[2] = ff->has_normal ? 2 : -1;
-    slot[3] = ff->has_color ? (int)ff->color_slot : -1;
-    slot[4] = (int)ff->tex0_slot;
-    slot[5] = 10;
-    slot[6] = 11;
-    slot[7] = 12;
+    ch_nv2a_fixed_roles(g->ff,slot);
 }
 
 /* The vertex layout the attribute pointers were last set for, when the

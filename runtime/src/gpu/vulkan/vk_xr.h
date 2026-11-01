@@ -13,6 +13,7 @@ typedef struct {
     VkQueue queue;
     uint32_t family, api_version;
     int precise_queries;
+    int raw_fixed;
     XrGraphicsBindingVulkan2KHR binding;
 } ChVkXrDevice;
 typedef struct {

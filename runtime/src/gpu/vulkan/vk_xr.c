@@ -82,8 +82,10 @@ XrResult ch_vk_xr_device_create_with_options(XrInstance xr,XrSystemId system,
     if(d.family==UINT32_MAX) { result=XR_ERROR_GRAPHICS_DEVICE_INVALID; goto fail; }
     VkPhysicalDeviceFeatures features; vkGetPhysicalDeviceFeatures(d.physical,&features);
     d.precise_queries=!!features.occlusionQueryPrecise;
+    d.raw_fixed=features.shaderClipDistance && features.depthClamp;
     features=(VkPhysicalDeviceFeatures){.occlusionQueryPrecise=features.occlusionQueryPrecise,
-        .fillModeNonSolid=features.fillModeNonSolid};
+        .fillModeNonSolid=features.fillModeNonSolid,
+        .shaderClipDistance=features.shaderClipDistance,.depthClamp=features.depthClamp};
     float priority=1;
     VkDeviceQueueCreateInfo qci={.sType=VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
         .queueFamilyIndex=d.family,.queueCount=1,.pQueuePriorities=&priority};

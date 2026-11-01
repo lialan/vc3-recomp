@@ -28,5 +28,6 @@ Native/GLES finite pixel parity, queries, guest coherence/completion, resident
 depth, layout and injected-XR ownership tests remain passing. Original GL APK
 hash is unchanged; the whole Quest session was cleaned up under the shared
 lock. Both Mac renderer builds pass. APK reports describe build/import audits,
-not gameplay installation. A separate longer game replay checks the final
-forwarding change. Full game/immersive and Quest combat acceptance remain open.
+not gameplay installation. The final forwarding replay reaches at least frame 1,380 with no rejected
+draw before its 280-second timeout; it misses the requested 1,400-frame gate.
+Its frame-1,250 capture remains the title cinematic. Full game/immersive and Quest combat acceptance remain open.

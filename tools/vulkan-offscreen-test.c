@@ -57,7 +57,8 @@ int main(void) {
     VkPhysicalDeviceFeatures enabled;
     vkGetPhysicalDeviceFeatures(gpu,&enabled);
     if(!enabled.occlusionQueryPrecise) goto done;
-    enabled=(VkPhysicalDeviceFeatures){.occlusionQueryPrecise=VK_TRUE};
+    enabled=(VkPhysicalDeviceFeatures){.occlusionQueryPrecise=VK_TRUE,
+        .shaderClipDistance=enabled.shaderClipDistance,.depthClamp=enabled.depthClamp};
     VkDeviceCreateInfo dci={.sType=VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,.queueCreateInfoCount=1,.pQueueCreateInfos=&qci,.pEnabledFeatures=&enabled};
     CHECK(vkCreateDevice(gpu,&dci,NULL,&device));
     VkQueue queue;

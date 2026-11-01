@@ -64,6 +64,8 @@ int ch_vk_overlay_parity(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,uint
         failed=ch_test_mipmap_parity(gpu,device,queue,family);
         extern int ch_test_cube_parity(VkPhysicalDevice,VkDevice,VkQueue,uint32_t);
         if(!failed) failed=ch_test_cube_parity(gpu,device,queue,family);
+        extern int ch_test_fixed_parity(VkPhysicalDevice,VkDevice,VkQueue,uint32_t);
+        if(!failed) failed=ch_test_fixed_parity(gpu,device,queue,family);
     }
 done:
     if(failed) fprintf(stderr,"FAIL: GLES/Vulkan overlay parity (EGL error 0x%x)\n",eglGetError());
