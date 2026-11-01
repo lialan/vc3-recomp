@@ -2,6 +2,37 @@
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
+#include <stdlib.h>
+
+static int packed_depth(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,uint32_t family) {
+    enum {N=256*256};int failed=1;ChVkTarget *target=NULL;
+    uint32_t *words=malloc(N*4),*got=malloc(N*4);float *depth=malloc(N*4);
+    unsigned char *stencil=malloc(N),*rgba=malloc(N*4);
+#define PACKED_REQUIRE(x) do {if(!(x)) {fprintf(stderr,"packed D24 failure line%d: %s\n",__LINE__,#x);goto done;}}while(0)
+    PACKED_REQUIRE(words && got && depth && stencil && rgba);
+    PACKED_REQUIRE(ch_vk_target_create_depth(gpu,device,queue,family,256,256,VK_FORMAT_D24_UNORM_S8_UINT,&target)==VK_SUCCESS);
+    const float black[]={0,0,0,1};
+    PACKED_REQUIRE(ch_vk_target_clear_read(target,black,rgba,N*4)==VK_SUCCESS);
+    for(unsigned i=0;i<N;i++) {
+        uint32_t z=i<48?((i&1)?~(1u<<(i/2)):(1u<<(i/2))):(i*0x9e3779b9u+0x123456u);
+        words[i]=((z&0xffffffu)<<8)|(i&255);
+    }
+    words[48]=0;words[49]=0xffffffff;words[50]=0x7fffff42;words[51]=0x80000081;
+    PACKED_REQUIRE(ch_vk_target_write_z24s8(target,words,N)==VK_SUCCESS);
+    PACKED_REQUIRE(ch_vk_target_read_z24s8(target,got,N)==VK_SUCCESS && !memcmp(words,got,N*4));
+    PACKED_REQUIRE(ch_vk_target_read_depth_stencil(target,depth,stencil,N)==VK_SUCCESS);
+    for(unsigned i=0;i<N;i++) {
+        PACKED_REQUIRE(depth[i]==(float)((double)(words[i]>>8)/16777215.0) && stencil[i]==(words[i]&255));
+    }
+    PACKED_REQUIRE(ch_vk_target_write_depth_stencil(target,depth,stencil,N)==VK_SUCCESS);
+    PACKED_REQUIRE(ch_vk_target_read_z24s8(target,got,N)==VK_SUCCESS && !memcmp(words,got,N*4));
+    memset(got,0xa5,N*4);
+    PACKED_REQUIRE(ch_vk_target_read_z24s8(target,got,N-1)==VK_ERROR_INITIALIZATION_FAILED && got[0]==0xa5a5a5a5);
+    puts("PASS: 65536 exact packed D24S8 GPU words, all depth bit positions/stencil byte values and float-control roundtrip");failed=0;
+done:
+    ch_vk_target_destroy(target);free(words);free(got);free(depth);free(stencil);free(rgba);return failed;
+#undef PACKED_REQUIRE
+}
 
 /* Resident and strict round-trip paths must make the same depth decisions.
  * The main suite retains D32S8 to verify existing float-depth API clients. */
@@ -15,6 +46,7 @@ int ch_test_depth24(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,uint32_t 
     VkResult r=ch_vk_target_create_depth(gpu,device,queue,family,W,H,VK_FORMAT_D24_UNORM_S8_UINT,&target[0]);
     if(r==VK_ERROR_FORMAT_NOT_SUPPORTED) {puts("SKIP: native D24S8 attachment unsupported");return 0;}
     REQUIRE(r==VK_SUCCESS);
+    REQUIRE(!packed_depth(gpu,device,queue,family));
     REQUIRE(ch_vk_target_create_depth(gpu,device,queue,family,W,H,VK_FORMAT_D24_UNORM_S8_UINT,&target[1])==VK_SUCCESS);
     const float black[]={0,0,0,1};
     const uint32_t values[]={0,1,2,0x123456,0x7fffff,0x800000,0xfffffe,0xffffff};

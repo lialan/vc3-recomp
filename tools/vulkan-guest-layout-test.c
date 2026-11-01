@@ -28,6 +28,19 @@ int main(void)
     CHECK(ch_vk_guest_depth_load(&surface,&state,guest,sizeof guest,back,stencil_back)==VK_SUCCESS);
     for(unsigned i=0;i<32;i++) CHECK(fabsf(depth[i]-back[i])<=1.0f/16777215);
     CHECK(!memcmp(stencil,stencil_back,32));
+    uint32_t words[32],got[32];
+    for(unsigned i=0;i<32;i++) words[i]=i*0x97e35a17u;
+    CHECK(ch_vk_guest_z24s8_store(&surface,&state,guest,sizeof guest,words)==VK_SUCCESS);
+    CHECK(ch_vk_guest_z24s8_load(&surface,&state,guest,sizeof guest,got)==VK_SUCCESS && !memcmp(words,got,sizeof words));
+    CHECK(guest[256+6*4]==(unsigned char)words[10] && guest[256+6*4+3]==(unsigned char)(words[10]>>24));
+    Nv2aRenderState pitched=state;pitched.surface_format=0x128;pitched.zeta_pitch=40;
+    memset(guest+256,0xa5,160);
+    CHECK(ch_vk_guest_z24s8_store(&surface,&pitched,guest,sizeof guest,words)==VK_SUCCESS);
+    CHECK(ch_vk_guest_z24s8_load(&surface,&pitched,guest,sizeof guest,got)==VK_SUCCESS && !memcmp(words,got,sizeof words));
+    for(unsigned y=0;y<4;y++) for(unsigned pad=32;pad<40;pad++) CHECK(guest[256+y*40+pad]==0xa5);
+    memcpy(before,guest,sizeof guest);
+    CHECK(ch_vk_guest_z24s8_store(&surface,&pitched,guest,256+151,words)!=VK_SUCCESS && !memcmp(before,guest,sizeof guest));
+    CHECK(ch_vk_guest_depth_store(&surface,&state,guest,sizeof guest,depth,stencil)==VK_SUCCESS);
     memcpy(before,guest,sizeof guest);
     CHECK(ch_vk_guest_depth_store(&surface,&state,guest,256+127,depth,stencil)!=VK_SUCCESS);
     CHECK(!memcmp(before,guest,sizeof guest));
@@ -35,6 +48,7 @@ int main(void)
     CHECK(ch_vk_guest_depth_store(&surface,&state,guest,sizeof guest,depth,stencil)!=VK_SUCCESS);
     CHECK(!memcmp(before,guest,sizeof guest));depth[31]=1;
     state.surface_format=0x110;state.zeta_va=8;state.zeta_pitch=20;
+    CHECK(ch_vk_guest_z24s8_load(&surface,&state,guest,sizeof guest,got)==VK_ERROR_FORMAT_NOT_SUPPORTED);
     memset(guest,0xa5,sizeof guest);
     CHECK(ch_vk_guest_depth_store(&surface,&state,guest,sizeof guest,depth,stencil)==VK_SUCCESS);
     CHECK(guest[8]==0 && guest[9]==0 && guest[8+3*20+14]==255 && guest[8+3*20+15]==255);

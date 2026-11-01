@@ -962,10 +962,11 @@ fail:
     t->failed=1; return result;
 }
 
-static VkResult transfer_depth_stencil(ChVkTarget *t,void *depth,void *stencil,size_t pixels,int upload) {
-    if(!t || t->failed || !t->initialized || !depth || !stencil || pixels<t->bytes/4)
+static VkResult transfer_depth_stencil(ChVkTarget *t,void *depth,void *stencil,size_t pixels,int upload,int packed) {
+    if(!t || t->failed || !t->initialized || !depth || (!packed && !stencil) || pixels<t->bytes/4)
         return VK_ERROR_INITIALIZATION_FAILED;
-    if(upload) for(size_t i=0;i<t->bytes/4;i++) {
+    if(packed && t->depth_format!=VK_FORMAT_D24_UNORM_S8_UINT) return VK_ERROR_FORMAT_NOT_SUPPORTED;
+    if(upload && !packed) for(size_t i=0;i<t->bytes/4;i++) {
         float d=((const float *)depth)[i];
         if(!isfinite(d) || d<0 || d>1) return VK_ERROR_INITIALIZATION_FAILED;
     }
@@ -973,12 +974,16 @@ static VkResult transfer_depth_stencil(ChVkTarget *t,void *depth,void *stencil,s
     VkMappedMemoryRange range={.sType=VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE,.memory=t->read_mem,.size=VK_WHOLE_SIZE};
     if(upload) {
         TRY(vkMapMemory(t->device,t->read_mem,0,VK_WHOLE_SIZE,0,&mapped));
-        if(t->depth_format==VK_FORMAT_D24_UNORM_S8_UINT) {
-            uint32_t *packed=mapped;
+        if(packed) {
+            uint32_t *z=mapped;uint8_t *s=(uint8_t *)mapped+t->bytes;
+            const uint32_t *words=depth;
+            for(size_t i=0;i<t->bytes/4;i++) {z[i]=words[i]>>8;s[i]=(uint8_t)words[i];}
+        } else if(t->depth_format==VK_FORMAT_D24_UNORM_S8_UINT) {
+            uint32_t *z=mapped;
             for(size_t i=0;i<t->bytes/4;i++)
-                packed[i]=(uint32_t)((double)((const float *)depth)[i]*16777215.0+0.5);
+                z[i]=(uint32_t)((double)((const float *)depth)[i]*16777215.0+0.5);
         } else memcpy(mapped,depth,(size_t)t->bytes);
-        memcpy((char *)mapped+t->bytes,stencil,(size_t)t->bytes/4);
+        if(!packed) memcpy((char *)mapped+t->bytes,stencil,(size_t)t->bytes/4);
         result=vkFlushMappedMemoryRanges(t->device,1,&range);
         vkUnmapMemory(t->device,t->read_mem);
         if(result!=VK_SUCCESS) goto fail;
@@ -1021,12 +1026,16 @@ static VkResult transfer_depth_stencil(ChVkTarget *t,void *depth,void *stencil,s
         TRY(vkMapMemory(t->device,t->read_mem,0,VK_WHOLE_SIZE,0,&mapped));
         result=vkInvalidateMappedMemoryRanges(t->device,1,&range);
         if(result==VK_SUCCESS) {
-            if(t->depth_format==VK_FORMAT_D24_UNORM_S8_UINT) {
-                const uint32_t *packed=mapped;
+            if(packed) {
+                const uint32_t *z=mapped;const uint8_t *s=(const uint8_t *)mapped+t->bytes;
+                uint32_t *words=depth;
+                for(size_t i=0;i<t->bytes/4;i++) words[i]=((z[i]&0xffffffu)<<8)|s[i];
+            } else if(t->depth_format==VK_FORMAT_D24_UNORM_S8_UINT) {
+                const uint32_t *z=mapped;
                 for(size_t i=0;i<t->bytes/4;i++)
-                    ((float *)depth)[i]=(float)((double)(packed[i]&0xffffffu)/16777215.0);
+                    ((float *)depth)[i]=(float)((double)(z[i]&0xffffffu)/16777215.0);
             } else memcpy(depth,mapped,(size_t)t->bytes);
-            memcpy(stencil,(char *)mapped+t->bytes,(size_t)t->bytes/4);
+            if(!packed) memcpy(stencil,(char *)mapped+t->bytes,(size_t)t->bytes/4);
         }
         vkUnmapMemory(t->device,t->read_mem);
         if(result!=VK_SUCCESS) goto fail;
@@ -1036,10 +1045,16 @@ fail:
     t->failed=1; return result;
 }
 VkResult ch_vk_target_read_depth_stencil(ChVkTarget *t,float *depth,uint8_t *stencil,size_t pixels) {
-    return transfer_depth_stencil(t,depth,stencil,pixels,0);
+    return transfer_depth_stencil(t,depth,stencil,pixels,0,0);
 }
 VkResult ch_vk_target_write_depth_stencil(ChVkTarget *t,const float *depth,const uint8_t *stencil,size_t pixels) {
-    return transfer_depth_stencil(t,(void *)depth,(void *)stencil,pixels,1);
+    return transfer_depth_stencil(t,(void *)depth,(void *)stencil,pixels,1,0);
+}
+VkResult ch_vk_target_read_z24s8(ChVkTarget *t,uint32_t *words,size_t pixels) {
+    return transfer_depth_stencil(t,words,NULL,pixels,0,1);
+}
+VkResult ch_vk_target_write_z24s8(ChVkTarget *t,const uint32_t *words,size_t pixels) {
+    return transfer_depth_stencil(t,(void *)words,NULL,pixels,1,1);
 }
 
 VkResult ch_vk_target_copy_depth_stencil(ChVkTarget *source,ChVkTarget *destination) {

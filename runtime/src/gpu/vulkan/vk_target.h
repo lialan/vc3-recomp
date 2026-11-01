@@ -121,6 +121,10 @@ VkResult ch_vk_target_read_depth_stencil(ChVkTarget *target, float *depth,
     uint8_t *stencil, size_t pixels);
 VkResult ch_vk_target_write_depth_stencil(ChVkTarget *target, const float *depth,
     const uint8_t *stencil, size_t pixels);
+/* Native D24 only: row-major host words, depth in bits31..8, stencil in7..0.
+ * Exact integer transfers; other attachment formats fail before GPU work. */
+VkResult ch_vk_target_read_z24s8(ChVkTarget *,uint32_t *words,size_t pixels);
+VkResult ch_vk_target_write_z24s8(ChVkTarget *,const uint32_t *words,size_t pixels);
 /* Exact same-device/queue/extent/format copy. Completes both pending targets,
  * preserves their colors and restores depth/stencil attachment layouts. */
 VkResult ch_vk_target_copy_depth_stencil(ChVkTarget *source,ChVkTarget *destination);

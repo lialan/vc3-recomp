@@ -15,6 +15,8 @@ VkResult ch_vk_depth_resident_bind(ChVkDepthResident *,ChVkTarget *,const Nv2aSu
 VkResult ch_vk_depth_resident_bind_clear(ChVkDepthResident *,ChVkTarget *,const Nv2aSurface *,const Nv2aRenderState *);
 /* Diagnostic synchronous roundtrip control. Default is enabled. */
 void ch_vk_depth_resident_gpu_copies(ChVkDepthResident *,int enabled);
+/* Diagnostic float-conversion control. Default packed; switch only unbound. */
+VkResult ch_vk_depth_resident_packed(ChVkDepthResident *,int enabled);
 VkResult ch_vk_depth_resident_dirty(ChVkDepthResident *,ChVkTarget *);
 /* Merge CPU changes per depth/stencil component, then publish at completion.
  * Padding is excluded from edits and preserved on writeback. */

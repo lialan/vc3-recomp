@@ -33,6 +33,8 @@ int ch_test_depth_copy(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,uint32
         .stencil_fail=0x1e00,.stencil_zfail=0x1e00,.stencil_zpass=0x1e01};
     COPY_REQUIRE(ch_vk_target_draw_state_read(a,NULL,v,4,indices,6,&ds,rgba,sizeof rgba)==VK_SUCCESS);
     COPY_REQUIRE(ch_vk_target_pending(a) && ch_vk_target_pending(b));
+    uint32_t unsupported[16]={0};
+    COPY_REQUIRE(ch_vk_target_write_z24s8(a,unsupported,16)==VK_ERROR_FORMAT_NOT_SUPPORTED && ch_vk_target_pending(a));
     COPY_REQUIRE(ch_vk_target_copy_depth_stencil(a,wrong)==VK_ERROR_INITIALIZATION_FAILED && ch_vk_target_pending(a));
     COPY_REQUIRE(ch_vk_target_copy_depth_stencil(a,b)==VK_SUCCESS);
     COPY_REQUIRE(!ch_vk_target_pending(a) && !ch_vk_target_pending(b));
@@ -57,8 +59,8 @@ done:
     ch_vk_target_destroy(wrong);ch_vk_target_destroy(a);ch_vk_target_destroy(b);return failed;
 #undef COPY_REQUIRE
 }
-int ch_test_depth_resident(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,uint32_t family,
-    void *guest,size_t bytes,ChVkDecodeTexture decode) {
+static int depth_resident_mode(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,uint32_t family,
+    void *guest,size_t bytes,ChVkDecodeTexture decode,int packed) {
     enum {W=4,H=4,N=W*H};
     ChVkTarget *a=NULL,*b=NULL;ChVkDepthResident *z=NULL;ChVkBackend *backend=NULL;
     unsigned char *ram=guest,rgba[N*4],stencil[N];float depth[N];int failed=0;
@@ -76,7 +78,9 @@ int ch_test_depth_resident(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,ui
     memset(ram+1024,0xab,96);
     for(unsigned y=0;y<H;y++) for(unsigned x=0;x<W;x++) put_word(ram+1024+y*24+x*4,0xffffff01);
     REQUIRE(ch_vk_depth_resident_create(guest,bytes,&z)==VK_SUCCESS);
+    REQUIRE(ch_vk_depth_resident_packed(z,packed)==VK_SUCCESS);
     REQUIRE(ch_vk_depth_resident_bind(z,a,&surface,&state)==VK_SUCCESS);
+    REQUIRE(ch_vk_depth_resident_packed(z,!packed)==VK_ERROR_INITIALIZATION_FAILED);
     REQUIRE(ch_vk_target_clear_aspects_read(a,6,NULL,.25f,7,rgba,sizeof rgba)==VK_SUCCESS);
     REQUIRE(ch_vk_depth_resident_dirty(z,a)==VK_SUCCESS);
     for(unsigned i=0;i<100;i++) REQUIRE(ch_vk_depth_resident_bind(z,a,&surface,&state)==VK_SUCCESS);
@@ -188,7 +192,7 @@ int ch_test_depth_resident(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,ui
      * semaphore write; precise query results remain synchronous. */
     ChVkBackendConfig config={.physical=gpu,.device=device,.queue=queue,.family=family,
         .guest_base=guest,.guest_bytes=bytes,.decode=decode,.precise_queries=1,
-        .resident_color=1,.resident_depth=1,.cache_textures=1};
+        .resident_color=1,.resident_depth=1,.depth_float_transfers=!packed,.cache_textures=1};
     REQUIRE(ch_vk_backend_create(&config,&backend)==VK_SUCCESS && ch_vk_backend_attach(backend)==VK_SUCCESS);
     const Nv2aBackend *cb=ch_vk_backend_callbacks();REQUIRE(cb->flush);
     cb->clear(&surface,&state,0xf3,0xffff0000,0x40000017);
@@ -220,7 +224,12 @@ done:
     ch_vk_backend_destroy(backend);
     if(z) ch_vk_depth_resident_release(z);
     ch_vk_depth_resident_destroy(z);ch_vk_target_destroy(a);ch_vk_target_destroy(b);
-    if(!failed) puts("PASS: resident D24 component CPU merges, padding, target/shared/overlapping zeta ownership, texture/palette alias publication and real semaphore visibility");
+    if(!failed) printf("PASS: resident D24 %s transfers: component CPU merges, padding, target/shared/overlapping zeta ownership, texture/palette alias publication and real semaphore visibility\n",packed?"packed":"float");
     return failed;
 #undef REQUIRE
+}
+int ch_test_depth_resident(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,uint32_t family,
+    void *guest,size_t bytes,ChVkDecodeTexture decode) {
+    for(int packed=0;packed<2;packed++) if(depth_resident_mode(gpu,device,queue,family,guest,bytes,decode,packed)) return 1;
+    return 0;
 }
