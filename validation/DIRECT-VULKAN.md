@@ -382,3 +382,16 @@ which places the horizontal aim at the right edge. Future gameplay probes
 must use explicit coordinates and schedule input for the slower game rate.
 Reports, diagnostic excerpts, Quest checks and these game captures are in
 `validation/direct-vulkan-target-reuse/`.
+
+The extended attract replay reached frame 1,108 and began actual skinned 3D
+draws. It then rejected a DXT1 256x256 texture at `81A96780`, with nine stored
+levels and `filter=02062000` (linear texels with linear mip interpolation).
+This is now a concrete game-path mipmap requirement, not a synthetic feature
+request. The reference GL renderer decodes level zero and generates its mip
+chain with `glGenerateMipmap`; its default policy enables that for guest mip
+filters 3-6, more than one stored level, and dimensions at least 4x4. Native
+Vulkan should implement that generated-chain policy rather than silently
+dropping filtering or assuming GL uploads the guest's stored lower levels.
+The failed extended report/excerpt is preserved here. Combat rendering and
+performance remain unverified. The newest Quest candidate builds without GL
+imports, but this latest APK has not been installed for a full game test.

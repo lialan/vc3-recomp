@@ -1,0 +1,25 @@
+[Vulkan] completed frame 1: 640x480, guest=80408000
+[Vulkan] completed frame 60: 640x480, guest=80534000
+[Vulkan] completed frame 120: 640x480, guest=80660000
+[Vulkan] completed frame 180: 640x480, guest=80534000
+[Vulkan] completed frame 240: 640x480, guest=80408000
+[Vulkan] completed frame 300: 640x480, guest=80660000
+[Vulkan] completed frame 360: 640x480, guest=80534000
+[Vulkan] completed frame 420: 640x480, guest=80534000
+[Vulkan] completed frame 480: 640x480, guest=80408000
+[Vulkan] completed frame 540: 640x480, guest=80660000
+[Vulkan] completed frame 600: 640x480, guest=80534000
+[Vulkan] completed frame 660: 640x480, guest=80534000
+[Vulkan] completed frame 720: 640x480, guest=80408000
+[Vulkan] completed frame 780: 640x480, guest=80660000
+[Vulkan] completed frame 840: 640x480, guest=80660000
+[Vulkan] completed frame 900: 640x480, guest=80660000
+[Vulkan] completed frame 960: 640x480, guest=80660000
+[Vulkan] completed frame 1020: 640x480, guest=80660000
+[Vulkan] completed frame 1080: 640x480, guest=80660000
+  [GPU] fixed-function skinning, mode 1
+  [GPU] fixed-function skinning, mode 3
+  [GPU] fixed-function skinning, mode 5
+[Vulkan] rejected draw surface=82FA6000 size=256x256 vertices=210 ext=1 rc=1 stages=00000001
+[Vulkan] texture0 address=81A96780 size=256x256 format=0C levels=9 filter=02062000 address=1/1 cube=0
+[Vulkan] fatal draw: VkResult=-8, frame=1108
