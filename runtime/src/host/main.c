@@ -335,10 +335,10 @@ int main(int argc, char **argv)
      * composite quads) stay on the CPU, where the back end can see their
      * vertices. RECOMP_GPU_XF=ff keeps programs on the CPU, =0 everything. */
 #if defined(CHIHIRO_RENDERER_VULKAN)
-    /* Shared fixed-function vertex arithmetic now runs on native Vulkan.
-     * Program batches retain the shared CPU path until their GPU port lands.
-     * Unsupported devices/backends decline raw offers without using GL. */
-    setenv("RECOMP_GPU_XF", "ff", 0);
+    /* Shared fixed and specialized vertex programs run on native Vulkan.
+     * Context-write programs and unsupported offers retain the reference path.
+     * RECOMP_GPU_XF=ff is the diagnostic CPU-program control. */
+    setenv("RECOMP_GPU_XF", "all", 0);
 #else
     setenv("RECOMP_GPU_XF", "all", 0);
 #endif

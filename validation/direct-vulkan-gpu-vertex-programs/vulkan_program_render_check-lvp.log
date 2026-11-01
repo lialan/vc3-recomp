@@ -1,0 +1,2 @@
+device=llvmpipe (LLVM 23.1.4, 128 bits) vendor=10005 deviceID=0000 api=1.4.354
+PASS: GPU program rendering, indexed strip/fan, precise visibility, constants snapshot, instruction identity, +0 w, w/near clipping, bounds rejection

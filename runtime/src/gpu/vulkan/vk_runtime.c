@@ -182,7 +182,7 @@ static VkResult attach(ChVkBackendConfig config)
         config.texture_cache_bytes?config.texture_cache_bytes>>20:(size_t)64);
     const char *fixed=ch_env("VULKAN_GPU_FIXED");
     if(fixed && !strcmp(fixed,"0")) config.raw_fixed=0;
-    fprintf(stderr,"[Vulkan] raw fixed-function GPU transforms: %s\n",config.raw_fixed?"enabled":"disabled");
+    fprintf(stderr,"[Vulkan] raw fixed/program GPU transforms: %s\n",config.raw_fixed?"enabled":"disabled");
     const char *batch=ch_env("VULKAN_BATCH_DRAWS");
     config.batch_draws=!batch || strcmp(batch,"0");
     fprintf(stderr,"[Vulkan] resident command batches: %s\n",config.batch_draws?"enabled":"disabled");

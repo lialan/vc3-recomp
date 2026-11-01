@@ -225,7 +225,7 @@ static VkResult draw_decoded(ChVkTarget *t, const Nv2aSurface *s,
     }
     /* Combiner descriptors are independently copied: stage[] is authoritative
      * rather than the convenience texture pointer's identity. */
-    ChVkFixedParams params={0};
+    ChVkFixedParams params;
     if(fixed) {
         params=fixed->params;params.surface[0]=s->width;params.surface[1]=s->height;
         params.depth[0]=low;params.depth[1]=high;

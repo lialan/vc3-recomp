@@ -32,11 +32,18 @@ add_custom_command(OUTPUT "${combiner_program}" "${combiner_asserts}"
         "${CMAKE_CURRENT_SOURCE_DIR}/vk_combiner_program.h" "${combiner_program}" "${combiner_asserts}"
     DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/generate_combiner_program.py"
         "${CMAKE_CURRENT_SOURCE_DIR}/vk_combiner_program.h" VERBATIM)
+set(vertex_program "${CMAKE_CURRENT_BINARY_DIR}/vertex_program.glsl")
+add_custom_command(OUTPUT "${vertex_program}" "${CMAKE_CURRENT_BINARY_DIR}/vertex_steps.glsl"
+    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/generate_program.py" "${vertex_program}"
+    DEPENDS generate_program.py VERBATIM)
 set(spirv_outputs)
 set(quant_spirv_outputs)
-foreach(stage vert frag textured combiner effect fixed frag_noat textured_noat combiner_noat effect_noat combiner_specialized combiner_specialized_noat)
+foreach(stage program vert frag textured combiner effect fixed frag_noat textured_noat combiner_noat effect_noat combiner_specialized combiner_specialized_noat)
     string(REGEX REPLACE "_noat$" "" base_stage "${stage}")
-    if(base_stage STREQUAL "fixed")
+    if(base_stage STREQUAL "program")
+        set(input program.vert)
+        set(defines -O)
+    elseif(base_stage STREQUAL "fixed")
         set(input fixed.vert)
         set(defines)
     elseif(base_stage STREQUAL "textured")
@@ -62,7 +69,7 @@ foreach(stage vert frag textured combiner effect fixed frag_noat textured_noat c
     add_custom_command(OUTPUT "${output}"
         COMMAND "${CHIHIRO_GLSLC}" --target-env=vulkan1.0 -I "${CMAKE_CURRENT_BINARY_DIR}" ${defines}
                 "${CMAKE_CURRENT_SOURCE_DIR}/${input}" -o "${output}"
-        DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/${input}" "${CMAKE_CURRENT_SOURCE_DIR}/combiner.glsl" "${CMAKE_CURRENT_SOURCE_DIR}/../nv2a_stage_fetch.h" "${CMAKE_CURRENT_SOURCE_DIR}/../nv2a_fixed_shader.h" "${fixed_layout}" "${combiner_program}" VERBATIM)
+        DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/${input}" "${CMAKE_CURRENT_SOURCE_DIR}/combiner.glsl" "${CMAKE_CURRENT_SOURCE_DIR}/../nv2a_stage_fetch.h" "${CMAKE_CURRENT_SOURCE_DIR}/../nv2a_fixed_shader.h" "${fixed_layout}" "${combiner_program}" "${vertex_program}" program.glsl VERBATIM)
     list(APPEND spirv_outputs "${output}")
     if(input STREQUAL "color.frag")
         set(quant_output "${CMAKE_CURRENT_BINARY_DIR}/color.${stage}_depth.spv")
@@ -74,7 +81,8 @@ foreach(stage vert frag textured combiner effect fixed frag_noat textured_noat c
         list(APPEND quant_spirv_outputs "${quant_output}")
     endif()
 endforeach()
-list(APPEND spirv_outputs ${quant_spirv_outputs})
+list(REMOVE_ITEM spirv_outputs "${CMAKE_CURRENT_BINARY_DIR}/color.program.spv")
+list(APPEND spirv_outputs ${quant_spirv_outputs} "${CMAKE_CURRENT_BINARY_DIR}/color.program.spv")
 set(header "${CMAKE_CURRENT_BINARY_DIR}/color_spv.h")
 add_custom_command(OUTPUT "${header}"
     COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/embed_spirv.py"
@@ -86,7 +94,7 @@ add_custom_command(OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/depth_roundtrip.spv"
 add_custom_command(OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/depth_roundtrip_spv.h"
  COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/embed_binary_spirv.py" "${CMAKE_CURRENT_BINARY_DIR}/depth_roundtrip.spv" "${CMAKE_CURRENT_BINARY_DIR}/depth_roundtrip_spv.h"
  DEPENDS "${CMAKE_CURRENT_BINARY_DIR}/depth_roundtrip.spv" embed_binary_spirv.py VERBATIM)
-foreach(stage vert frag)
+foreach(stage program vert frag)
  add_custom_command(OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/depth_roundtrip_${stage}.spv"
   COMMAND "${CHIHIRO_GLSLC}" --target-env=vulkan1.0 "${CMAKE_CURRENT_SOURCE_DIR}/depth_roundtrip.${stage}" -o "${CMAKE_CURRENT_BINARY_DIR}/depth_roundtrip_${stage}.spv"
   DEPENDS "depth_roundtrip.${stage}" depth_quant.glsl VERBATIM)
@@ -231,4 +239,25 @@ if(CHIHIRO_VULKAN_TESTS OR CHIHIRO_VULKAN_SHADER_TESTS)
     target_compile_definitions(vulkan_render_texture_check PRIVATE CH_VK_RENDER_TEXTURE_TEST=1)
     target_compile_options(vulkan_render_texture_check PRIVATE -Wall -Wextra -Werror)
     target_link_libraries(vulkan_render_texture_check PRIVATE chihiro_vulkan)
+endif()
+
+if(CHIHIRO_VULKAN_TESTS OR CHIHIRO_VULKAN_SHADER_TESTS)
+    add_custom_command(OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/program_test.spv"
+        COMMAND "${CHIHIRO_GLSLC}" --target-env=vulkan1.0 -O -I "${CMAKE_CURRENT_BINARY_DIR}"
+            "${CMAKE_CURRENT_SOURCE_DIR}/program_test.comp" -o "${CMAKE_CURRENT_BINARY_DIR}/program_test.spv"
+        DEPENDS program_test.comp program.glsl "${fixed_layout}" "${vertex_program}" VERBATIM)
+    add_custom_target(vulkan_program_shader DEPENDS "${CMAKE_CURRENT_BINARY_DIR}/program_test.spv")
+    add_executable(vulkan_program_check "${CH_VK_ROOT}/tools/vulkan-combiner-driver.c"
+        "${CH_VK_ROOT}/tools/vulkan-program-check.c" "${XBOXRECOMP_DIR}/src/kernel/nv2a_vsh_interp.c")
+    target_compile_options(vulkan_program_check PRIVATE -Wall -Wextra -Werror)
+    target_link_libraries(vulkan_program_check PRIVATE chihiro_vulkan)
+    add_dependencies(vulkan_program_check vulkan_program_shader)
+endif()
+
+if(CHIHIRO_VULKAN_TESTS OR CHIHIRO_VULKAN_SHADER_TESTS)
+    add_executable(vulkan_program_render_check "${CH_VK_ROOT}/tools/vulkan-combiner-driver.c"
+        "${CH_VK_ROOT}/tools/vulkan-program-render-test.c")
+    target_compile_definitions(vulkan_program_render_check PRIVATE CH_VK_PROGRAM_RENDER_TEST=1)
+    target_compile_options(vulkan_program_render_check PRIVATE -Wall -Wextra -Werror)
+    target_link_libraries(vulkan_program_render_check PRIVATE chihiro_vulkan)
 endif()

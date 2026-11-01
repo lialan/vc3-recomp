@@ -1,0 +1,14 @@
+#version 450
+#extension GL_GOOGLE_include_directive : require
+#extension GL_EXT_control_flow_attributes : require
+#include "fixed_layout.glsl"
+layout(std430,set=0,binding=3) readonly buffer RawParams {ChVkFixedParams p;} params;
+struct Case { vec4 input_value[16];vec4 output_value[8]; };
+layout(std430,set=0,binding=0) buffer Cases { Case cases[]; };
+layout(local_size_x=64) in;
+#include "program.glsl"
+void main() {
+ uint n=gl_GlobalInvocationID.x;vec4 pos,O[13];vp_run(cases[n].input_value,pos,O);
+ cases[n].output_value[0]=pos;cases[n].output_value[1]=vp_color(O[3]);cases[n].output_value[2]=vp_color(O[4]);
+ cases[n].output_value[3]=O[5];for(int i=0;i<4;i++) cases[n].output_value[4+i]=O[9+i];
+}

@@ -9,7 +9,7 @@
 #include <time.h>
 #define MAX_SURFACES 32
 struct Surface { Nv2aSurface guest; uint32_t zeta; Nv2aRenderState state; float *depth; uint8_t *stencil; ChVkTarget *target; unsigned char *rgba,*observed,*cpu,*raw; ChGuestWriteRange *write_range; size_t raw_span; int observed_valid,resident,color_dirty,native_z24,quantized_z24; size_t bytes; uint64_t color_serial; };
-struct ChVkBackend { VkPipelineCache pipeline_cache; struct {int enabled;uint64_t start,n,surface,coherence,imports,draw,store,no_color,flushes,depth_flushes,paired_flushes;} profile; struct {uint64_t previous,us[120];unsigned count;} frame_profile; ChVkBackendConfig host; ChVkTextureCache *textures; ChVkDepthResident *zeta; uint64_t frames,raw_draws,raw_declined,color_clock; struct Surface surfaces[MAX_SURFACES]; unsigned count; };
+struct ChVkBackend { VkPipelineCache pipeline_cache; struct {int enabled;uint64_t start,n,surface,coherence,imports,draw,store,no_color,flushes,depth_flushes,paired_flushes;} profile; struct {uint64_t previous,us[120];unsigned count;} frame_profile; ChVkBackendConfig host; ChVkTextureCache *textures; ChVkDepthResident *zeta; uint64_t frames,raw_draws,raw_programs,raw_program_vertices,raw_declined,color_clock; struct Surface surfaces[MAX_SURFACES]; unsigned count; };
 static ChVkBackend *active;
 static void flush_color(struct Surface *);
 static void observe_guest_colors(void);
@@ -495,8 +495,9 @@ static void flip(void) {
     }
     profile_frame();
     if(active->profile.enabled && (active->frames==1 || active->frames%60==0))
-        fprintf(stderr,"[Vulkan raw vertices] GPU fixed batches=%llu CPU declined batches=%llu\n",
-            (unsigned long long)active->raw_draws,(unsigned long long)active->raw_declined);
+        fprintf(stderr,"[Vulkan raw vertices] GPU fixed batches=%llu program batches=%llu program vertices=%llu CPU declined batches=%llu\n",
+            (unsigned long long)active->raw_draws,(unsigned long long)active->raw_programs,
+            (unsigned long long)active->raw_program_vertices,(unsigned long long)active->raw_declined);
     const char *profile=getenv("CHIHIRO_VULKAN_PROFILE");
     if(active->profile.enabled && (active->frames==1 || active->frames%60==0)) {
         uint64_t draws=0,submits=0,depth_reads=0,color_reads=0;
@@ -575,10 +576,14 @@ static int locked_draw_raw(const Nv2aSurface *s,const Nv2aBatch *b) {
     /* Attribute unpacking is CPU-only and must not hold the shared XR queue
      * mutex. The original guest streams are borrowed until this call returns. */
     ChVkFixedGeometry fixed;
-    VkResult r=ch_vk_fixed_prepare(b->raw,&fixed);
+    VkResult r=b->raw && b->raw->kind==NV2A_RAW_PROGRAM?
+        ch_vk_program_prepare(b->raw,&fixed):ch_vk_fixed_prepare(b->raw,&fixed);
     if(r==VK_ERROR_FEATURE_NOT_PRESENT) {active->raw_declined++;return 0;}
     if(r!=VK_SUCCESS) fatal(r,"raw fixed attribute upload");
-    queue_lock(active);draw_batch(s,b,&fixed);active->raw_draws++;queue_unlock(active);
+    queue_lock(active);draw_batch(s,b,&fixed);
+    if(fixed.params.program_count) {active->raw_programs++;active->raw_program_vertices+=fixed.vertex_count;}
+    else active->raw_draws++;
+    queue_unlock(active);
     ch_vk_fixed_release(&fixed);return 1;
 }
 static Nv2aBackend callbacks={.clear=locked_clear,.draw=locked_draw,.flip=locked_flip};

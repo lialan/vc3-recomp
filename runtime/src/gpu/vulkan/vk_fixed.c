@@ -22,30 +22,25 @@ void ch_vk_fixed_release(ChVkFixedGeometry *g) {
     if(!g) return;
     free(g->vertices);free(g->indices);memset(g,0,sizeof *g);
 }
-VkResult ch_vk_fixed_prepare(const Nv2aRawGeometry *raw,ChVkFixedGeometry *out) {
+static VkResult prepare_topology(const Nv2aRawGeometry *raw,ChVkFixedGeometry *out) {
     if(!out) return VK_ERROR_INITIALIZATION_FAILED;
     memset(out,0,sizeof *out);
-    if(!raw || raw->kind!=NV2A_RAW_FIXED || !raw->ff || raw->check_out || !raw->indices ||
+    if(!raw || raw->check_out || !raw->indices ||
        raw->max_index<raw->min_index || raw->max_index-raw->min_index>65535 ||
        raw->index_count<3 || (raw->prim!=5 && raw->prim!=6 && raw->prim!=7)) return VK_ERROR_FEATURE_NOT_PRESENT;
     uint64_t count=raw->prim==5?raw->index_count:(uint64_t)(raw->index_count-2)*3;
     if(count%3 || count>UINT32_MAX || count>SIZE_MAX/sizeof(uint16_t))
         return VK_ERROR_FEATURE_NOT_PRESENT;
     out->vertex_count=raw->max_index-raw->min_index+1;out->index_count=(uint32_t)count;
-    out->vertices=calloc(out->vertex_count,sizeof *out->vertices);out->indices=malloc((size_t)count*sizeof *out->indices);
-    if(!out->vertices || !out->indices) {ch_vk_fixed_release(out);return VK_ERROR_OUT_OF_HOST_MEMORY;}
+    out->indices=malloc((size_t)count*sizeof *out->indices);
+    if(!out->indices) {ch_vk_fixed_release(out);return VK_ERROR_OUT_OF_HOST_MEMORY;}
     for(unsigned i=0;i<raw->index_count;i++) if(raw->indices[i]>=out->vertex_count) goto unsupported;
-    int slot[8];ch_nv2a_fixed_roles(raw->ff,slot);
-    for(unsigned r=0;r<8;r++) if(slot[r]>=16) goto unsupported;
-    for(unsigned i=0;i<out->vertex_count;i++) for(unsigned r=0;r<8;r++)
-        if(!fetch(slot[r]>=0?&raw->attr[slot[r]]:NULL,i,out->vertices[i].attributes[r])) goto unsupported;
     if(raw->prim==5) memcpy(out->indices,raw->indices,(size_t)count*sizeof *out->indices);
     else for(unsigned i=0;i<raw->index_count-2;i++) {
         out->indices[i*3]=raw->indices[raw->prim==7?0:i+(i&1)];
         out->indices[i*3+1]=raw->indices[raw->prim==7?i+1:i+((i&1)^1)];
         out->indices[i*3+2]=raw->indices[i+2];
     }
-    out->params.state=*raw->ff;
     out->params.aa[0]=raw->aa_sx;out->params.aa[1]=raw->aa_sy;
     out->params.uv_scale0[0]=raw->uv_scale0[0];out->params.uv_scale0[1]=raw->uv_scale0[1];
     out->params.near_z=raw->near_z;out->params.vp_off_z=raw->vp_off_z;
@@ -55,4 +50,55 @@ VkResult ch_vk_fixed_prepare(const Nv2aRawGeometry *raw,ChVkFixedGeometry *out) 
     return VK_SUCCESS;
 unsupported:
     ch_vk_fixed_release(out);return VK_ERROR_FEATURE_NOT_PRESENT;
+}
+
+VkResult ch_vk_fixed_prepare(const Nv2aRawGeometry *raw,ChVkFixedGeometry *out) {
+    if(!out) return VK_ERROR_INITIALIZATION_FAILED;
+    memset(out,0,sizeof *out);
+    if(!raw || raw->kind!=NV2A_RAW_FIXED || !raw->ff) return VK_ERROR_FEATURE_NOT_PRESENT;
+    VkResult r=prepare_topology(raw,out);if(r!=VK_SUCCESS) return r;
+    out->vertices=calloc(out->vertex_count,sizeof *out->vertices);
+    if(!out->vertices) {ch_vk_fixed_release(out);return VK_ERROR_OUT_OF_HOST_MEMORY;}
+    int slot[8];ch_nv2a_fixed_roles(raw->ff,slot);
+    for(unsigned a=0;a<8;a++) if(slot[a]>=16) goto unsupported;
+    for(unsigned i=0;i<out->vertex_count;i++) for(unsigned a=0;a<8;a++)
+        if(!fetch(slot[a]>=0?&raw->attr[slot[a]]:NULL,i,out->vertices[i].attributes[a])) goto unsupported;
+    out->params.state=*raw->ff;return VK_SUCCESS;
+unsupported:
+    ch_vk_fixed_release(out);return VK_ERROR_FEATURE_NOT_PRESENT;
+}
+/* Same borrowed attribute/topology contract as fixed geometry, but all sixteen
+ * registers are passed through to the vertex program on the GPU. */
+size_t ch_vk_raw_params_size(const ChVkFixedParams *p) {
+    return p->program_count?offsetof(ChVkFixedParams,program_count):offsetof(ChVkFixedParams,constants);
+}
+size_t ch_vk_raw_vertex_stride(const ChVkFixedParams *p) {
+    return p->program_count?16*4*sizeof(float):sizeof(ChVkFixedVertex);
+}
+VkResult ch_vk_program_prepare(const Nv2aRawGeometry *raw,ChVkFixedGeometry *out) {
+    if(!out) return VK_ERROR_INITIALIZATION_FAILED;
+    memset(out,0,sizeof *out);
+    if(!raw || raw->kind!=NV2A_RAW_PROGRAM || !raw->program || !raw->constants ||
+       !raw->program_len || raw->program_start>=136 || raw->program_len>136-raw->program_start)
+        return VK_ERROR_FEATURE_NOT_PRESENT;
+    for(unsigned i=0;i<raw->program_len;i++)
+        if(!!(raw->program[raw->program_start+i][3]&1)!=(i+1==raw->program_len))
+            return VK_ERROR_FEATURE_NOT_PRESENT;
+    VkResult r=prepare_topology(raw,out);
+    if(r!=VK_SUCCESS) return r;
+    uint32_t inputs=0;
+    for(unsigned i=0;i<raw->program_len;i++) {
+        const uint32_t *p=raw->program[raw->program_start+i];
+        if(((p[2]>>26)&3)==2 || ((p[2]>>11)&3)==2 || ((p[3]>>28)&3)==2)
+            inputs|=1u<<((p[1]>>9)&15);
+    }
+    out->vertices=calloc(out->vertex_count,16*4*sizeof(float));
+    if(!out->vertices) {ch_vk_fixed_release(out);return VK_ERROR_OUT_OF_HOST_MEMORY;}
+    float (*v)[16][4]=(void *)out->vertices;
+    for(unsigned i=0;i<out->vertex_count;i++) for(unsigned a=0;a<16;a++)
+        if((inputs&(1u<<a)) && !fetch(&raw->attr[a],i,v[i][a])) {ch_vk_fixed_release(out);return VK_ERROR_FEATURE_NOT_PRESENT;}
+    out->params.program_count=raw->program_len;
+    memcpy(out->params.program,raw->program+raw->program_start,raw->program_len*16);
+    memcpy(out->params.constants,raw->constants,sizeof out->params.constants);
+    return VK_SUCCESS;
 }

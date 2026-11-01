@@ -22,7 +22,7 @@ typedef struct {
     ChVkDecodeTexture decode;
     /* Set only when host enabled VkPhysicalDeviceFeatures.occlusionQueryPrecise. */
     int precise_queries;
-    int raw_fixed; /* device enabled shaderClipDistance + depthClamp */
+    int raw_fixed; /* raw fixed/program GPU transforms; device enabled shaderClipDistance + depthClamp */
     /* Keep ARGB8888 targets resident between draws. Flush publishes guest
      * pixels at fences/flip or before texture decoding samples a dirty target.
      * RGB565 retains strict per-draw quantized writeback. Render routing hooks
