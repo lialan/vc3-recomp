@@ -221,3 +221,34 @@ combined color reads; control depth reads were 8309, with no combined color path
 A differing draw count and known later capture variation prevent whole-run exact
 parity claims. The backend remains below the performance goal; continue profiling
 shared guest publication/conversion and GPU round-trip costs. All runs are terminal.
+
+## Shared exact CPU Z24 normalization
+
+`vk_depth_quant_math.h` supplies exact binary32 equivalents of the Z24 pack and
+unpack arithmetic. Guest depth loads and CPU depth-component merges now use its
+unpack helper. The existing double-precision store arithmetic is retained: a
+float-only packing experiment was slower and was rejected. The exhaustive oracle
+is now a CMake CPU-test target (`vulkan_depth_quant_exact_test`) and directly tests
+the shared helpers against independent double-precision expressions.
+
+All 16777216 codes and all nonnegative binary32 values through 1 match exactly.
+Guest layout tests and exact backend guest-memory scenarios pass with Vulkan
+validation/sync validation requested. Mac main and Android offscreen builds pass.
+No VUID/SYNC diagnostics in /tmp/vc3-depth-cpu-final-validation.log.
+
+Microbenchmark sources/results are in /tmp/vc3-depth-cpu-bench: 512 calls on a
+640x480 pitched Z24S8 surface, clang -O3. Reference load 0.126 ms vs retained
+load-only candidate 0.107 ms; store remains 0.221 ms (reference 0.210-0.222 ms).
+This is CPU conversion evidence, not a measured whole-game FPS gain.
+
+## Consecutive capture comparison
+
+Both /tmp/vc3-sequence-control and /tmp/vc3-sequence-combined completed 1210
+frames and captured frames 1194..1209. They use the older immutable batch256 and
+combined-flush binaries, respectively, without the new CPU normalization helper.
+No exact cross-sequence frame match was found. Optimized frame 1200 is closest
+to control frame 1201: mean absolute channel difference 0.0111, versus 0.8057
+against control frame 1200. This supports the visible animation timing shift,
+but residual differences remain and whole-game parity is not established.
+Comparison details are in /tmp/vc3-sequence-combined/comparison.json. All runs
+are terminal. Continue shared backend profiling; smooth 60 FPS remains open.

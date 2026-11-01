@@ -1,4 +1,5 @@
 #include "vk_depth_guest.h"
+#include "vk_depth_quant_math.h"
 #include "vk_guest_layout.h"
 #include <math.h>
 #include <string.h>
@@ -26,7 +27,7 @@ VkResult ch_vk_guest_depth_load(const Nv2aSurface *s,const Nv2aRenderState *rs,
             if(layout.bytes_per_pixel==4) {
                 for(uint32_t x=0;x<s->width;x++) {
                     uint32_t word;memcpy(&word,row+(size_t)x*4,4);
-                    depth[start+x]=(float)((double)(word>>8)/16777215.0);
+                    depth[start+x]=ch_vk_depth_unpack(word>>8);
                     stencil[start+x]=(uint8_t)word;
                 }
             } else {
@@ -44,7 +45,7 @@ VkResult ch_vk_guest_depth_load(const Nv2aSurface *s,const Nv2aRenderState *rs,
     for(uint32_t y=0;y<s->height;y++) for(uint32_t x=0;x<s->width;x++) {
         size_t at=(size_t)ch_vk_guest_offset(&layout,x,y),i=(size_t)y*s->width+x;
         uint32_t word=0; for(unsigned b=0;b<layout.bytes_per_pixel;b++) word|=(uint32_t)base[at+b]<<(8*b);
-        depth[i]=layout.bytes_per_pixel==2?(float)((double)word/65535.0):(float)((double)(word>>8)/16777215.0);
+        depth[i]=layout.bytes_per_pixel==2?(float)((double)word/65535.0):ch_vk_depth_unpack(word>>8);
         stencil[i]=layout.bytes_per_pixel==2?0:word&255;
     }
     return VK_SUCCESS;

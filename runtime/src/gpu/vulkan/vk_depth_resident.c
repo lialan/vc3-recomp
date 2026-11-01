@@ -1,5 +1,6 @@
 #include "vk_depth_resident.h"
 #include "vk_depth_guest.h"
+#include "vk_depth_quant_math.h"
 #include "vk_guest_layout.h"
 #include "vk_texture_cache.h"
 #include <stdlib.h>
@@ -48,7 +49,7 @@ static VkResult observe(ChVkDepthResident *d) {
                 uint32_t mask=(((before^after)&0xffffff00u)?0xffffff00u:0)|(((before^after)&255)?255u:0);
                 d->words[i]=(d->words[i]&~mask)|(after&mask);
             } else {
-                if((before^after)&0xffffff00u) d->depth[i]=(float)((double)(after>>8)/16777215.0);
+                if((before^after)&0xffffff00u) d->depth[i]=ch_vk_depth_unpack(after>>8);
                 if((before^after)&255) d->stencil[i]=(uint8_t)after;
             }
         }
