@@ -28,7 +28,7 @@ VkResult ch_vk_target_depth_quantization(ChVkTarget *,int mode);
 VkResult ch_vk_target_pipeline_cache(ChVkTarget *,VkPipelineCache);
 typedef struct {
     uint64_t pipeline_builds,pipeline_hits,pipeline_evictions,geometry_allocations;
-    uint64_t batch_draws,batch_clears,batch_submissions,combined_depth_copies,combined_texture_copies,combined_depth_readbacks,combined_color_readbacks;
+    uint64_t batch_draws,batch_clears,batch_submissions,combined_depth_copies,combined_texture_copies,combined_depth_readbacks,combined_color_readbacks,queued_depth_uploads;
     uint64_t batch_pipeline_binds,batch_blend_updates,batch_push_updates;
     uint64_t depth_roundtrips_by_compare[8]; /* Batched full-surface conversions, VkCompareOp order. */
     uint64_t no_alpha_pipeline_builds,no_alpha_pipeline_hits;
@@ -195,6 +195,9 @@ VkResult ch_vk_target_read_depth_color(ChVkTarget *,void *depth,uint8_t *stencil
  * Morton requires full power-of-two rectangular dimensions and compute queue. */
 VkResult ch_vk_target_depth_morton(ChVkTarget *,int enabled);
 VkResult ch_vk_target_read_z24s8(ChVkTarget *,uint32_t *words,size_t pixels);
+/* Batched packed uploads may return after queue submission. Input bytes are
+ * copied before return; same-queue draws, readback, finish and destruction
+ * preserve ordering and completion. */
 VkResult ch_vk_target_write_z24s8(ChVkTarget *,const uint32_t *words,size_t pixels);
 /* Exact same-device/queue/extent/format copy. Completes both pending targets,
  * preserves their colors and restores depth/stencil attachment layouts. */

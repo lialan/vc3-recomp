@@ -1,0 +1,31 @@
+[Vulkan frame costs] frame=2094 interval_ms=18.120 draw_ms=4.186 clear_ms=0.689 flip_flush_ms=0.000 cache_trim_ms=0.078 completion_ms=4.865 prepare_ms=0.173 other_ms=8.129 pipeline_ms=0.000 batch_wait_ms=4.648 batch_gpu_ms=2.628 depth_upload_wait_ms=0.000 gpu_timing=1 surface_ms=0.588 coherence_ms=0.429 imports_ms=1.906 raster_ms=1.229 store_ms=0.034 texture_uploads=2 draw_cpu_ms=1.985 clear_cpu_ms=0.412 flip_cpu_ms=0.000 cache_trim_cpu_ms=0.079 completion_cpu_ms=1.749 prepare_cpu_ms=0.176 completion_calls=6 thread_cpu_timing=1
+[Vulkan frame costs] frame=2095 interval_ms=13.789 draw_ms=2.649 clear_ms=0.297 flip_flush_ms=0.000 cache_trim_ms=0.000 completion_ms=4.192 prepare_ms=0.189 other_ms=6.462 pipeline_ms=0.000 batch_wait_ms=3.682 batch_gpu_ms=2.346 depth_upload_wait_ms=0.000 gpu_timing=1 surface_ms=0.005 coherence_ms=0.124 imports_ms=1.688 raster_ms=0.797 store_ms=0.035 texture_uploads=2 draw_cpu_ms=1.376 clear_cpu_ms=0.298 flip_cpu_ms=0.000 cache_trim_cpu_ms=0.000 completion_cpu_ms=1.649 prepare_cpu_ms=0.191 completion_calls=6 thread_cpu_timing=1
+[Vulkan frame costs] frame=2096 interval_ms=22.518 draw_ms=5.777 clear_ms=0.746 flip_flush_ms=0.000 cache_trim_ms=0.085 completion_ms=6.362 prepare_ms=0.200 other_ms=9.348 pipeline_ms=0.000 batch_wait_ms=7.047 batch_gpu_ms=4.870 depth_upload_wait_ms=0.000 gpu_timing=1 surface_ms=0.661 coherence_ms=0.479 imports_ms=3.363 raster_ms=1.238 store_ms=0.036 texture_uploads=2 draw_cpu_ms=2.098 clear_cpu_ms=0.412 flip_cpu_ms=0.000 cache_trim_cpu_ms=0.085 completion_cpu_ms=2.204 prepare_cpu_ms=0.191 completion_calls=7 thread_cpu_timing=1
+[Vulkan frame costs] frame=2097 interval_ms=12.800 draw_ms=3.284 clear_ms=0.589 flip_flush_ms=0.001 cache_trim_ms=0.000 completion_ms=4.968 prepare_ms=0.166 other_ms=3.792 pipeline_ms=0.000 batch_wait_ms=5.214 batch_gpu_ms=3.813 depth_upload_wait_ms=0.000 gpu_timing=1 surface_ms=0.013 coherence_ms=0.157 imports_ms=2.314 raster_ms=0.758 store_ms=0.042 texture_uploads=2 draw_cpu_ms=1.538 clear_cpu_ms=0.405 flip_cpu_ms=0.000 cache_trim_cpu_ms=0.000 completion_cpu_ms=1.355 prepare_cpu_ms=0.167 completion_calls=5 thread_cpu_timing=1
+  [READ] from=0x00101A7D ev=4800000D apc=00000000 @800768 want=2048 got=2048 st=0x00000000  0E 3F 01 1E
+[Vulkan frame costs] frame=2098 interval_ms=17.421 draw_ms=3.984 clear_ms=0.662 flip_flush_ms=0.000 cache_trim_ms=0.083 completion_ms=4.954 prepare_ms=0.180 other_ms=7.558 pipeline_ms=0.000 batch_wait_ms=4.207 batch_gpu_ms=2.072 depth_upload_wait_ms=0.000 gpu_timing=1 surface_ms=0.586 coherence_ms=0.438 imports_ms=1.755 raster_ms=1.164 store_ms=0.041 texture_uploads=2 draw_cpu_ms=2.002 clear_cpu_ms=0.417 flip_cpu_ms=0.000 cache_trim_cpu_ms=0.083 completion_cpu_ms=2.029 prepare_cpu_ms=0.176 completion_calls=6 thread_cpu_timing=1
+[Vulkan frame costs] frame=2099 interval_ms=14.929 draw_ms=2.509 clear_ms=0.305 flip_flush_ms=0.000 cache_trim_ms=0.001 completion_ms=5.211 prepare_ms=0.181 other_ms=6.722 pipeline_ms=0.000 batch_wait_ms=4.113 batch_gpu_ms=2.604 depth_upload_wait_ms=0.000 gpu_timing=1 surface_ms=0.005 coherence_ms=0.161 imports_ms=1.516 raster_ms=0.787 store_ms=0.040 texture_uploads=2 draw_cpu_ms=1.434 clear_cpu_ms=0.305 flip_cpu_ms=0.000 cache_trim_cpu_ms=0.000 completion_cpu_ms=2.085 prepare_cpu_ms=0.181 completion_calls=7 thread_cpu_timing=1
+[Vulkan GPU] 256x256 8 synchronous submissions (excludes command batches): GPU 0.00ms host record/submit/wait 1.88ms
+[Vulkan resources] 256x256: pipelines builds=2 hits=260 evictions=0 geometry allocations=1 capacity=4096KiB alpha-free builds/hits=0/0 specialized builds/hits=2/260 pipeline create total/max=2.06/1.03ms
+[Vulkan write tracking] ranges=9395 checks=1540235 unchanged=1499359 faults=4777 protection calls=139850
+[Vulkan frame costs] frame=2100 interval_ms=19.653 draw_ms=5.008 clear_ms=0.708 flip_flush_ms=0.000 cache_trim_ms=0.084 completion_ms=5.303 prepare_ms=0.179 other_ms=8.371 pipeline_ms=0.000 batch_wait_ms=5.312 batch_gpu_ms=3.134 depth_upload_wait_ms=0.000 gpu_timing=1 surface_ms=0.590 coherence_ms=0.440 imports_ms=2.516 raster_ms=1.426 store_ms=0.036 texture_uploads=3 draw_cpu_ms=2.258 clear_cpu_ms=0.427 flip_cpu_ms=0.000 cache_trim_cpu_ms=0.085 completion_cpu_ms=2.076 prepare_cpu_ms=0.175 completion_calls=7 thread_cpu_timing=1
+[Vulkan raw vertices] GPU fixed batches=294775 program batches=136371 program vertices=9765881 CPU declined batches=0
+[Vulkan raw snapshots] compact_batches=431146 snapshot_bytes=1082583928 expanded_bytes=6336300544
+[Vulkan command batches] live targets: draws=419759 submissions=21912 combined_depth_reads=8523 combined_color_reads=16796 queued_depth_uploads=2032
+[Vulkan depth roundtrips] batched live targets NEVER/LESS/EQUAL/LEQUAL/GREATER/NOTEQUAL/GEQUAL/ALWAYS: 0 0 0 0 0 0 0 0
+[Vulkan depth residency] binds=435691 imports=2160 writebacks=11393 CPU merges=0 GPU copies=2096 clear skips=10480 clean reuses=0 queued readbacks=9549
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan depth switches] same-image disjoint/overlap=2093/137 different-image disjoint/overlap=0/0 dirty=557/68/0/0
+[Vulkan texture cache] hits=627801 uploads=2950 evictions=839 live=48.6MiB entries=243/2048 GPU copies/hits/reuses=1662/24079/1439
+[Vulkan texture lookup] hint_hits=577297 scanned_entries=7418251
+[Vulkan texture comparisons] checks=9211 logical_bytes=10206861504 changed=3716 tracked=601177 reused=2091 GPU decoded=2924 CPU decoded pixels=1030144
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=1030144 texture_ms=6.335 color_pixels=0 color_ms=0.000 (cumulative)
+[Vulkan] completed frame 2100: 640x480, guest=80534000
+[Vulkan] diagnostic frame limit reached: 2100
+  [READ] from=0x00101A7D ev=4800000D apc=00000000 @802816 want=16384 got=16384 st=0x00000000  E3 FF 16 CE
+[Vulkan pipeline cache] saved_bytes=72427308
+[Vulkan pipeline cache] save=ok
+  [FILE] summary: 1 game file missing, 0 not found under absent directories, 1 failed open
+Execution passed=True; evidence=/private/tmp/vc3-async-depth-candidate

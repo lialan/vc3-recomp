@@ -86,6 +86,9 @@ struct ChVkTarget {
     VkCommandPool pool;
     VkCommandBuffer command;
     VkFence fence;
+    VkCommandBuffer upload_command;
+    VkFence upload_fence;
+    int upload_pending,async_depth_uploads;
     uint32_t width, height;
     VkDeviceSize bytes;
     VkImageLayout layout;
@@ -177,9 +180,23 @@ static int readback_memory_type(VkPhysicalDevice gpu,uint32_t bits,uint32_t *ind
     return memory_type(gpu,bits,VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT|VK_MEMORY_PROPERTY_HOST_CACHED_BIT,index) ||
         memory_type(gpu,bits,VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT,index);
 }
+/* Upload command storage is independent of the draw command. Same-queue
+ * barriers order GPU use; the host fence guards staging/command reuse. */
+static VkResult wait_upload(ChVkTarget *t) {
+    if(!t->upload_pending) return VK_SUCCESS;
+    uint64_t start=t->timing?time_ns():0;
+    VkResult r=vkWaitForFences(t->device,1,&t->upload_fence,VK_TRUE,5000000000ULL);
+    if(start) {
+        uint64_t elapsed=time_ns()-start;
+        t->depth_upload_wait_ns+=elapsed;t->timing_stats.depth_upload_wait_ns+=elapsed;
+    }
+    if(r==VK_SUCCESS) t->upload_pending=0;else t->failed=1;
+    return r;
+}
 /* Keep staging mapped until target destruction. Mapping does not synchronize
  * GPU access: existing fence waits and flush/invalidate operations still do. */
 static VkResult map_readback(ChVkTarget *t,int paired,void **mapped) {
+    VkResult ready=wait_upload(t);if(ready!=VK_SUCCESS) return ready;
     void **slot=paired?&t->paired_color_map:&t->read_map;
     if(!*slot) {
         void *address=NULL;
@@ -296,6 +313,7 @@ void ch_vk_target_destroy(ChVkTarget *t) {
     ch_vk_texture_destroy(t->dummy_cube);
     if(t->queries) vkDestroyQueryPool(t->device,t->queries,NULL);
     if(t->timing) vkDestroyQueryPool(t->device,t->timing,NULL);
+    if(t->upload_fence) vkDestroyFence(t->device,t->upload_fence,NULL);
     if(t->fence) vkDestroyFence(t->device,t->fence,NULL);
     if(t->pool) vkDestroyCommandPool(t->device,t->pool,NULL);
     ch_vk_depth_quant_destroy(t->depth_quant_draw);
@@ -345,6 +363,8 @@ static VkResult create_depth(VkPhysicalDevice physical,VkDevice device,VkQueue q
     ChVkTarget *t=calloc(1,sizeof(*t));
     if(!t) return VK_ERROR_OUT_OF_HOST_MEMORY;
     t->batch_limit=BATCH_DRAWS;
+    const char *async_upload=getenv("CHIHIRO_VULKAN_ASYNC_DEPTH_UPLOADS");
+    t->async_depth_uploads=!async_upload || atoi(async_upload);
     VkPhysicalDeviceProperties device_properties;
     vkGetPhysicalDeviceProperties(physical,&device_properties);
     t->noncoherent_atom=device_properties.limits.nonCoherentAtomSize;
@@ -438,15 +458,15 @@ static VkResult create_depth(VkPhysicalDevice physical,VkDevice device,VkQueue q
 fail:
     ch_vk_target_destroy(t); return result;
 }
-static void record_depth_transfer(ChVkTarget *t,int upload) {
+static void record_depth_transfer(ChVkTarget *t,VkCommandBuffer command,int upload) {
     // Staging may previously have been read/written by the pack compute pass.
     VkBufferMemoryBarrier reuse={.sType=VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
         .srcAccessMask=VK_ACCESS_SHADER_READ_BIT|VK_ACCESS_SHADER_WRITE_BIT,
         .dstAccessMask=VK_ACCESS_TRANSFER_WRITE_BIT|VK_ACCESS_TRANSFER_READ_BIT,
         .srcQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED,.dstQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED,
         .buffer=t->read,.size=VK_WHOLE_SIZE};
-    if(t->depth_pack) vkCmdPipelineBarrier(t->command,VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,VK_PIPELINE_STAGE_TRANSFER_BIT,0,0,NULL,1,&reuse,0,NULL);
-    if(t->packed_transfer && upload) ch_vk_depth_pack_record(t->depth_pack,t->command,t->width,t->height,1,t->depth_morton,t->depth_format==VK_FORMAT_D24_UNORM_S8_UINT);
+    if(t->depth_pack) vkCmdPipelineBarrier(command,VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,VK_PIPELINE_STAGE_TRANSFER_BIT,0,0,NULL,1,&reuse,0,NULL);
+    if(t->packed_transfer && upload) ch_vk_depth_pack_record(t->depth_pack,command,t->width,t->height,1,t->depth_morton,t->depth_format==VK_FORMAT_D24_UNORM_S8_UINT);
     VkImageMemoryBarrier barrier={.sType=VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
         .srcAccessMask=VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT|VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
         .dstAccessMask=upload?VK_ACCESS_TRANSFER_WRITE_BIT:VK_ACCESS_TRANSFER_READ_BIT,
@@ -454,25 +474,25 @@ static void record_depth_transfer(ChVkTarget *t,int upload) {
         .newLayout=upload?VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL:VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
         .srcQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED,.dstQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED,
         .image=t->depth,.subresourceRange={VK_IMAGE_ASPECT_DEPTH_BIT|VK_IMAGE_ASPECT_STENCIL_BIT,0,1,0,1}};
-    vkCmdPipelineBarrier(t->command,VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT|VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
+    vkCmdPipelineBarrier(command,VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT|VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
         VK_PIPELINE_STAGE_TRANSFER_BIT,0,0,NULL,0,NULL,1,&barrier);
     VkBufferImageCopy regions[2]={
         {.imageSubresource={VK_IMAGE_ASPECT_DEPTH_BIT,0,0,1},.imageExtent={t->width,t->height,1}},
         {.bufferOffset=t->bytes,.imageSubresource={VK_IMAGE_ASPECT_STENCIL_BIT,0,0,1},.imageExtent={t->width,t->height,1}}};
-    if(upload) vkCmdCopyBufferToImage(t->command,t->read,t->depth,barrier.newLayout,2,regions);
-    else vkCmdCopyImageToBuffer(t->command,t->depth,barrier.newLayout,t->read,2,regions);
+    if(upload) vkCmdCopyBufferToImage(command,t->read,t->depth,barrier.newLayout,2,regions);
+    else vkCmdCopyImageToBuffer(command,t->depth,barrier.newLayout,t->read,2,regions);
     barrier.srcAccessMask=upload?VK_ACCESS_TRANSFER_WRITE_BIT:VK_ACCESS_TRANSFER_READ_BIT;
     barrier.dstAccessMask=VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT|VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
     barrier.oldLayout=barrier.newLayout; barrier.newLayout=VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-    vkCmdPipelineBarrier(t->command,VK_PIPELINE_STAGE_TRANSFER_BIT,
+    vkCmdPipelineBarrier(command,VK_PIPELINE_STAGE_TRANSFER_BIT,
         VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT|VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,0,0,NULL,0,NULL,1,&barrier);
-    if(t->packed_transfer && !upload) ch_vk_depth_pack_record(t->depth_pack,t->command,t->width,t->height,0,t->depth_morton,t->depth_format==VK_FORMAT_D24_UNORM_S8_UINT);
+    if(t->packed_transfer && !upload) ch_vk_depth_pack_record(t->depth_pack,command,t->width,t->height,0,t->depth_morton,t->depth_format==VK_FORMAT_D24_UNORM_S8_UINT);
     if(!upload) {
         VkBufferMemoryBarrier host={.sType=VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
             .srcAccessMask=VK_ACCESS_TRANSFER_WRITE_BIT,.dstAccessMask=VK_ACCESS_HOST_READ_BIT,
             .srcQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED,.dstQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED,
             .buffer=t->read,.size=VK_WHOLE_SIZE};
-        vkCmdPipelineBarrier(t->command,VK_PIPELINE_STAGE_TRANSFER_BIT,VK_PIPELINE_STAGE_HOST_BIT,0,0,NULL,1,&host,0,NULL);
+        vkCmdPipelineBarrier(command,VK_PIPELINE_STAGE_TRANSFER_BIT,VK_PIPELINE_STAGE_HOST_BIT,0,0,NULL,1,&host,0,NULL);
     }
 }
 /* readback: 0 none, 1 depth/stencil, 2 color. Staging storage is shared. */
@@ -506,13 +526,14 @@ static void record_paired_color(ChVkTarget *t) {
         .buffer=t->paired_color,.size=VK_WHOLE_SIZE};
     vkCmdPipelineBarrier(t->command,VK_PIPELINE_STAGE_TRANSFER_BIT,VK_PIPELINE_STAGE_HOST_BIT,0,0,NULL,1,&host,0,NULL);
 }
-static void color_staging_reuse(ChVkTarget *t) {
+static void color_staging_reuse_on(ChVkTarget *t,VkCommandBuffer command) {
     if(!t->color_pack) return;
     VkMemoryBarrier b={.sType=VK_STRUCTURE_TYPE_MEMORY_BARRIER,
         .srcAccessMask=VK_ACCESS_SHADER_READ_BIT|VK_ACCESS_SHADER_WRITE_BIT,
         .dstAccessMask=VK_ACCESS_TRANSFER_READ_BIT|VK_ACCESS_TRANSFER_WRITE_BIT};
-    vkCmdPipelineBarrier(t->command,VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,VK_PIPELINE_STAGE_TRANSFER_BIT,0,1,&b,0,NULL,0,NULL);
+    vkCmdPipelineBarrier(command,VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,VK_PIPELINE_STAGE_TRANSFER_BIT,0,1,&b,0,NULL,0,NULL);
 }
+static void color_staging_reuse(ChVkTarget *t) {color_staging_reuse_on(t,t->command);}
 static VkResult retire_batch(ChVkTarget *t) {
     if(!t->submitted) return VK_SUCCESS;
     VkResult result;uint64_t wait_start=t->timing?time_ns():0;
@@ -521,6 +542,9 @@ static VkResult retire_batch(ChVkTarget *t) {
         t->timing_stats.batch_wait_ns+=time_ns()-wait_start;
         uint64_t elapsed;TRY(timestamp_elapsed(t,&elapsed));t->timing_stats.batch_gpu_ns+=elapsed;
     }
+    /* This queue submission follows any depth upload, so its fence also
+     * proves that upload command and staging reads have completed. */
+    t->upload_pending=0;
     t->pending=t->pending_clears=0;t->geometry_used=0;
     for(unsigned i=0;i<PIPELINE_SLOTS;i++) {t->pipelines[i].set_used=0;t->pipelines[i].pending=0;}
     uint64_t retire_start=t->timing?time_ns():0;
@@ -537,7 +561,7 @@ fail:
 static VkResult finish_batch_with_copy(ChVkTarget *t,int readback,const char *caller,ChVkTarget *depth_destination,ChVkTexture *texture_destination,int defer_wait) {
     if(!t || t->failed) return VK_ERROR_INITIALIZATION_FAILED;
     if(t->submitted) return retire_batch(t);
-    if(!t->pending) return VK_SUCCESS;
+    if(!t->pending) return wait_upload(t);
     VkResult result;
     uint64_t finish_start=t->timing?time_ns():0;
     vkCmdEndRenderPass(t->command);
@@ -547,7 +571,7 @@ static VkResult finish_batch_with_copy(ChVkTarget *t,int readback,const char *ca
         .srcQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED,.dstQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED,
         .image=t->image,.subresourceRange={VK_IMAGE_ASPECT_COLOR_BIT,0,1,0,1}};
     vkCmdPipelineBarrier(t->command,VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,VK_PIPELINE_STAGE_TRANSFER_BIT,0,0,NULL,0,NULL,1,&barrier);
-    if(readback==1 || readback==3) record_depth_transfer(t,0);
+    if(readback==1 || readback==3) record_depth_transfer(t,t->command,0);
     if(readback==3) record_paired_color(t);
     if(readback==2) {
         VkBufferImageCopy copy={.imageSubresource={VK_IMAGE_ASPECT_COLOR_BIT,0,0,1},
@@ -1583,15 +1607,26 @@ static VkResult transfer_depth_stencil(ChVkTarget *t,void *depth,void *stencil,s
         if(result!=VK_SUCCESS) goto fail;
     }
     TRY(finish_batch_named(t,0,__func__));
-    TRY(vkResetCommandBuffer(t->command,0)); TRY(vkResetFences(t->device,1,&t->fence));
+    int queued=upload && packed && t->batch_enabled && t->async_depth_uploads;
+    if(queued && !t->upload_command) {
+        VkCommandBufferAllocateInfo alloc={.sType=VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+            .commandPool=t->pool,.level=VK_COMMAND_BUFFER_LEVEL_PRIMARY,.commandBufferCount=1};
+        TRY(vkAllocateCommandBuffers(t->device,&alloc,&t->upload_command));
+        VkFenceCreateInfo fence={.sType=VK_STRUCTURE_TYPE_FENCE_CREATE_INFO};
+        TRY(vkCreateFence(t->device,&fence,NULL,&t->upload_fence));
+    }
+    VkCommandBuffer command=queued?t->upload_command:t->command;
+    VkFence fence=queued?t->upload_fence:t->fence;
+    TRY(vkResetCommandBuffer(command,0)); TRY(vkResetFences(t->device,1,&fence));
     VkCommandBufferBeginInfo begin={.sType=VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,.flags=VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT};
-    TRY(vkBeginCommandBuffer(t->command,&begin));
-    color_staging_reuse(t);
-    record_depth_transfer(t,upload);
+    TRY(vkBeginCommandBuffer(command,&begin));
+    color_staging_reuse_on(t,command);
+    record_depth_transfer(t,command,upload);
     if(rgba) record_paired_color(t);
-    TRY(vkEndCommandBuffer(t->command));
-    VkSubmitInfo submit={.sType=VK_STRUCTURE_TYPE_SUBMIT_INFO,.commandBufferCount=1,.pCommandBuffers=&t->command};
-    TRY(vkQueueSubmit(t->queue,1,&submit,t->fence));
+    TRY(vkEndCommandBuffer(command));
+    VkSubmitInfo submit={.sType=VK_STRUCTURE_TYPE_SUBMIT_INFO,.commandBufferCount=1,.pCommandBuffers=&command};
+    TRY(vkQueueSubmit(t->queue,1,&submit,fence));
+    if(queued) {t->upload_pending=1;t->resource_stats.queued_depth_uploads++;return VK_SUCCESS;}
     if(phase==1) {t->readback_active=1;return VK_SUCCESS;}
     uint64_t upload_wait=upload_start?time_ns():0;
     TRY(vkWaitForFences(t->device,1,&t->fence,VK_TRUE,5000000000ULL));

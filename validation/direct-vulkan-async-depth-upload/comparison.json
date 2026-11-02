@@ -1,0 +1,184 @@
+{
+  "control": {
+    "combat": {
+      "n": 233,
+      "imports_ms": 2.369,
+      "draw_cpu_ms": 1.868,
+      "completion_cpu_ms": 1.807,
+      "completion_ms": 5.145,
+      "depth_upload_wait_ms": 0.153,
+      "batch_wait_ms": 4.939
+    },
+    "activation": {
+      "n": 114,
+      "imports_ms": 3.649,
+      "draw_cpu_ms": 3.151,
+      "completion_cpu_ms": 1.951,
+      "completion_ms": 5.068,
+      "depth_upload_wait_ms": 0.134,
+      "batch_wait_ms": 5.954
+    },
+    "held": {
+      "n": 239,
+      "imports_ms": 3.579,
+      "draw_cpu_ms": 2.967,
+      "completion_cpu_ms": 1.914,
+      "completion_ms": 5.526,
+      "depth_upload_wait_ms": 0.146,
+      "batch_wait_ms": 6.335
+    },
+    "counters": [
+      "[Vulkan command batches] live targets: draws=419878 submissions=22783 combined_depth_reads=8539 combined_color_reads=17292 queued_depth_uploads=0",
+      "[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)",
+      "[Vulkan CPU graphics] texture_pixels=1030144 texture_ms=6.501 color_pixels=0 color_ms=0.000 (cumulative)"
+    ],
+    "windows": [
+      {
+        "first_flip": 1321,
+        "last_flip": 1441,
+        "fps": 59.98,
+        "mean_ms": 16.67,
+        "p95_ms": 22.08,
+        "p99_ms": 23.07,
+        "max_ms": 23.12,
+        "over_20ms": 28,
+        "over_33ms": 0
+      },
+      {
+        "first_flip": 1441,
+        "last_flip": 1561,
+        "fps": 58.53,
+        "mean_ms": 17.09,
+        "p95_ms": 22.18,
+        "p99_ms": 23.64,
+        "max_ms": 101.36,
+        "over_20ms": 32,
+        "over_33ms": 1
+      },
+      {
+        "first_flip": 1561,
+        "last_flip": 1681,
+        "fps": 58.41,
+        "mean_ms": 17.12,
+        "p95_ms": 22.03,
+        "p99_ms": 27.11,
+        "max_ms": 99.39,
+        "over_20ms": 23,
+        "over_33ms": 1
+      },
+      {
+        "first_flip": 1681,
+        "last_flip": 1801,
+        "fps": 60.06,
+        "mean_ms": 16.65,
+        "p95_ms": 21.95,
+        "p99_ms": 22.76,
+        "max_ms": 23.88,
+        "over_20ms": 24,
+        "over_33ms": 0
+      },
+      {
+        "first_flip": 1801,
+        "last_flip": 1921,
+        "fps": 59.98,
+        "mean_ms": 16.67,
+        "p95_ms": 22.61,
+        "p99_ms": 23.4,
+        "max_ms": 23.51,
+        "over_20ms": 27,
+        "over_33ms": 0
+      }
+    ]
+  },
+  "candidate": {
+    "combat": {
+      "n": 233,
+      "imports_ms": 2.146,
+      "draw_cpu_ms": 1.776,
+      "completion_cpu_ms": 1.732,
+      "completion_ms": 5.227,
+      "depth_upload_wait_ms": 0.0,
+      "batch_wait_ms": 5.062
+    },
+    "activation": {
+      "n": 114,
+      "imports_ms": 3.388,
+      "draw_cpu_ms": 3.013,
+      "completion_cpu_ms": 1.921,
+      "completion_ms": 5.341,
+      "depth_upload_wait_ms": 0.0,
+      "batch_wait_ms": 6.183
+    },
+    "held": {
+      "n": 239,
+      "imports_ms": 3.508,
+      "draw_cpu_ms": 3.058,
+      "completion_cpu_ms": 2.021,
+      "completion_ms": 5.833,
+      "depth_upload_wait_ms": 0.0,
+      "batch_wait_ms": 6.573
+    },
+    "counters": [
+      "[Vulkan command batches] live targets: draws=419759 submissions=21912 combined_depth_reads=8523 combined_color_reads=16796 queued_depth_uploads=2032",
+      "[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)",
+      "[Vulkan CPU graphics] texture_pixels=1030144 texture_ms=6.335 color_pixels=0 color_ms=0.000 (cumulative)"
+    ],
+    "windows": [
+      {
+        "first_flip": 1321,
+        "last_flip": 1441,
+        "fps": 59.94,
+        "mean_ms": 16.68,
+        "p95_ms": 21.5,
+        "p99_ms": 22.09,
+        "max_ms": 22.92,
+        "over_20ms": 18,
+        "over_33ms": 0
+      },
+      {
+        "first_flip": 1441,
+        "last_flip": 1561,
+        "fps": 60.04,
+        "mean_ms": 16.66,
+        "p95_ms": 21.67,
+        "p99_ms": 23.26,
+        "max_ms": 23.57,
+        "over_20ms": 24,
+        "over_33ms": 0
+      },
+      {
+        "first_flip": 1561,
+        "last_flip": 1681,
+        "fps": 59.93,
+        "mean_ms": 16.69,
+        "p95_ms": 22.05,
+        "p99_ms": 24.16,
+        "max_ms": 24.38,
+        "over_20ms": 23,
+        "over_33ms": 0
+      },
+      {
+        "first_flip": 1681,
+        "last_flip": 1801,
+        "fps": 59.98,
+        "mean_ms": 16.67,
+        "p95_ms": 22.75,
+        "p99_ms": 23.82,
+        "max_ms": 25.06,
+        "over_20ms": 21,
+        "over_33ms": 0
+      },
+      {
+        "first_flip": 1801,
+        "last_flip": 1921,
+        "fps": 59.98,
+        "mean_ms": 16.67,
+        "p95_ms": 22.47,
+        "p99_ms": 23.6,
+        "max_ms": 25.07,
+        "over_20ms": 23,
+        "over_33ms": 0
+      }
+    ]
+  }
+}

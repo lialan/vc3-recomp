@@ -52,11 +52,18 @@ int ch_test_depth_fragment(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,ui
         }
         REQUIRE(ch_vk_target_depth_quantization(target,5)==VK_SUCCESS);
         ch_vk_target_defer_color_readback(target,1);
-        Nv2aRenderState state={.color_mask=0x01010101,.depth_test_enable=1,.depth_write=1,.depth_func=0x207,
+        Nv2aRenderState state={.color_mask=0x01010101,.depth_test_enable=1,.depth_write=1,.depth_func=0x201,
             .stencil_enable=1,.stencil_func=0x207,.stencil_ref=0x71,.stencil_func_mask=255,.stencil_write_mask=255,
             .stencil_fail=0x1e01,.stencil_zfail=0x1e01,.stencil_zpass=0x1e01};
         ChVkColorVertex v[]={{{-1,-1,.25f,1},{1,0,0,1}},{{3,-1,.25f,1},{1,0,0,1}},{{-1,3,.25f,1},{1,0,0,1}}};
         const uint16_t idx[]={0,1,2};
+        /* Queue two uploads to exercise staging reuse, then mutate the caller
+         * buffer. LESS must still pass against the queued far-depth snapshot. */
+        memset(input,0,n*4);
+        REQUIRE(ch_vk_target_write_z24s8(target,input,n)==VK_SUCCESS);
+        for(unsigned i=0;i<n;i++) input[i]=0xffffff80;
+        REQUIRE(ch_vk_target_write_z24s8(target,input,n)==VK_SUCCESS);
+        memset(input,0,n*4);
         ChVkTargetResourceStats before,after;ch_vk_target_resource_stats(target,&before);
         REQUIRE(ch_vk_target_draw_state_read(target,NULL,v,3,idx,3,&state,rgba,n*4)==VK_SUCCESS);
         memset(output,0x55,n*4);
@@ -67,6 +74,8 @@ int ch_test_depth_fragment(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,ui
         REQUIRE(ch_vk_target_read_depth_end(target)==VK_ERROR_INITIALIZATION_FAILED);
         ch_vk_target_resource_stats(target,&after);REQUIRE(after.batch_submissions==before.batch_submissions+1);
         for(unsigned i=0;i<n;i++) {REQUIRE(output[i]==0x40000071);REQUIRE(rgba[i*4+(test>=4?2:0)]==255 && rgba[i*4+1]==0 && rgba[i*4+(test>=4?0:2)]==0);}
+        /* Destruction also drains a standalone queued upload. */
+        REQUIRE(ch_vk_target_write_z24s8(target,input,n)==VK_SUCCESS);
         ch_vk_target_destroy(target);target=NULL;free(input);input=NULL;free(output);output=NULL;free(depth);depth=NULL;free(stencil);stencil=NULL;free(rgba);rgba=NULL;
     }
     const unsigned morton_sizes[][2]={{1,1},{1,8},{8,1},{4,16},{16,4},{128,128},{256,256}};
