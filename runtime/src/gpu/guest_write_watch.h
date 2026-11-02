@@ -9,7 +9,7 @@ typedef struct ChGuestWriteRange ChGuestWriteRange;
  * are eligible. Install fault and syscall/protection hooks before guest writes.
  * Direct protection changes outside those hooks are unsupported. */
 typedef struct {void *base;size_t bytes;} ChGuestWriteView;
-typedef struct {uint64_t ranges,checks,unchanged,faults,protect_calls;} ChGuestWriteStats;
+typedef struct {uint64_t ranges,checks,unchanged,faults,protect_calls,single_pass_checks,single_pass_pages;} ChGuestWriteStats;
 /* Observer-thread snapshot; fault/protection counters also include writers. */
 void ch_guest_write_watch_stats(const ChGuestWriteWatch *,ChGuestWriteStats *);
 ChGuestWriteWatch *ch_guest_write_watch_create(const ChGuestWriteView *,size_t count);

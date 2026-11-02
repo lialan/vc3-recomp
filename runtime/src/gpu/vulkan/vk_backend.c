@@ -686,6 +686,8 @@ static void flip(void) {
         fprintf(stderr,"[Vulkan write tracking] ranges=%llu checks=%llu unchanged=%llu faults=%llu protection calls=%llu\n",
             (unsigned long long)stats.ranges,(unsigned long long)stats.checks,(unsigned long long)stats.unchanged,
             (unsigned long long)stats.faults,(unsigned long long)stats.protect_calls);
+        fprintf(stderr,"[Vulkan write-watch single pass] checks=%llu pages=%llu\n",
+            (unsigned long long)stats.single_pass_checks,(unsigned long long)stats.single_pass_pages);
     }
     profile_frame();
     if(active->profile.enabled && (active->frames==1 || active->frames%60==0))

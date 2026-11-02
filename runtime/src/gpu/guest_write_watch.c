@@ -24,7 +24,7 @@ struct Page {
 struct ChGuestWriteWatch {
     ChGuestWriteView *views;size_t count,page_size,pages;
     struct Page *page;
-    uint64_t ranges,checks,unchanged;
+    uint64_t ranges,checks,unchanged,single_pass_checks,single_pass_pages;
     atomic_ullong faults,protect_calls;
 };
 struct ChGuestWriteRange {
@@ -153,10 +153,22 @@ int ch_guest_write_range_changed(ChGuestWriteRange *r) {
     if(!r) return 1;
     ChGuestWriteWatch *w=r->watch;int changed=0,needs_arm=0;
     w->checks++;
+    /* Stable protected ranges need one scan, not a separate arming probe and
+     * generation scan. If any page needs arming, retain the locked full rescan
+     * below so writable intervals and active leases stay conservative. */
     for(size_t j=0;j<r->count;j++) {
         struct Page *p=&w->page[r->first+j];
-        needs_arm|=atomic_load_explicit(&p->state,memory_order_acquire)==1 &&
-            atomic_load_explicit(&p->writable,memory_order_acquire);
+        if(atomic_load_explicit(&p->state,memory_order_acquire)!=1) {
+            changed=1;r->stamp[j]=0;continue;
+        }
+        if(atomic_load_explicit(&p->writable,memory_order_acquire)) {needs_arm=1;break;}
+        uint64_t generation=atomic_load_explicit(&p->generation,memory_order_acquire);
+        changed|=r->stamp[j]!=generation;r->stamp[j]=generation;
+    }
+    if(!needs_arm) {
+        w->single_pass_checks++;w->single_pass_pages+=r->count;
+        if(!changed) w->unchanged++;
+        return changed;
     }
     if(needs_arm) {
         /* Lock in backing-page order. Fault handlers own only one page and
@@ -283,7 +295,7 @@ void ch_guest_write_watch_stats(const ChGuestWriteWatch *w,ChGuestWriteStats *ou
     if(!out) return;
     if(!w) {memset(out,0,sizeof *out);return;}
     *out=(ChGuestWriteStats){w->ranges,w->checks,w->unchanged,
-        atomic_load_explicit(&w->faults,memory_order_relaxed),atomic_load_explicit(&w->protect_calls,memory_order_relaxed)};
+        atomic_load_explicit(&w->faults,memory_order_relaxed),atomic_load_explicit(&w->protect_calls,memory_order_relaxed),w->single_pass_checks,w->single_pass_pages};
 }
 #else
 ChGuestWriteWatch *ch_guest_write_watch_create(const ChGuestWriteView *v,size_t n) {(void)v;(void)n;return NULL;}
