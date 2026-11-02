@@ -1,4 +1,5 @@
 #include "vk_backend.h"
+#include "vk_state.h"
 #include "vk_depth_guest.h"
 #include "vk_guest_layout.h"
 #include "vk_texture_cache.h"
@@ -14,7 +15,7 @@
 #define MAX_SURFACES 32
 struct Surface { Nv2aSurface guest; ChVkGuestLayout layout; uint32_t zeta; Nv2aRenderState state; float *depth; uint8_t *stencil; ChVkTarget *target; unsigned char *rgba,*observed,*cpu,*raw; ChGuestWriteRange *write_range; size_t raw_span; int observed_valid,resident,color_bgra,color_fallback_reported,color_dirty,native_z24,quantized_z24; size_t bytes; uint64_t color_serial; };
 typedef struct {uint64_t pipeline_ns,batch_wait_ns,batch_gpu_ns,upload_wait_ns;} FrameCosts;
-struct ChVkBackend { ChVkFixedScratch raw_scratch; struct {int enabled;uint64_t completion_us,completion_cpu_ns,completion_calls,prepare_us,prepare_cpu_ns;uint64_t draw_cpu_ns,clear_cpu_ns,flip_cpu_ns,trim_cpu_ns;uint64_t draw_us,clear_us,flip_us,trim_us,surface_us,coherence_us,imports_us,raster_us,store_us,texture_uploads;FrameCosts retired,previous;} costs; VkPipelineCache pipeline_cache; struct {int enabled;uint64_t start,n,surface,coherence,imports,draw,store,no_color,flushes,depth_flushes,paired_flushes;} profile; struct {int enabled;uint64_t previous,us[120];unsigned count;} frame_profile; ChVkBackendConfig host; ChVkTextureCache *textures; ChVkDepthResident *zeta; uint64_t raw_compact_batches,raw_snapshot_bytes,raw_expanded_bytes; uint64_t color_snapshot_copy_bytes_saved; uint64_t frames,raw_draws,raw_programs,raw_program_vertices,raw_declined,color_clock,cpu_batches,cpu_vertices,cpu_texels,cpu_texture_us,cpu_color_pixels,cpu_color_us,cpu_depth_pixels; struct Surface surfaces[MAX_SURFACES]; unsigned count; };
+struct ChVkBackend { ChVkFixedScratch raw_scratch; struct {int enabled;uint64_t completion_us,completion_cpu_ns,completion_calls,prepare_us,prepare_cpu_ns;uint64_t draw_cpu_ns,clear_cpu_ns,flip_cpu_ns,trim_cpu_ns;uint64_t draw_us,clear_us,flip_us,trim_us,surface_us,coherence_us,imports_us,raster_us,store_us,texture_uploads;FrameCosts retired,previous;} costs; VkPipelineCache pipeline_cache; struct {int enabled;uint64_t start,n,surface,coherence,imports,draw,store,no_color,flushes,depth_flushes,paired_flushes;} profile; struct {int enabled;uint64_t previous,us[120];unsigned count;} frame_profile; ChVkBackendConfig host; ChVkTextureCache *textures; ChVkDepthResident *zeta; uint64_t raw_compact_batches,raw_snapshot_bytes,raw_expanded_bytes; uint64_t color_snapshot_copy_bytes_saved,unchanged_color_draws,unchanged_depth_draws; uint64_t frames,raw_draws,raw_programs,raw_program_vertices,raw_declined,color_clock,cpu_batches,cpu_vertices,cpu_texels,cpu_texture_us,cpu_color_pixels,cpu_color_us,cpu_depth_pixels; struct Surface surfaces[MAX_SURFACES]; unsigned count; };
 static ChVkBackend *active;
 static void flush_color(struct Surface *);
 static void observe_guest_colors(void);
@@ -609,8 +610,11 @@ static void draw_batch(const Nv2aSurface *s,const Nv2aBatch *b,const ChVkFixedGe
                 texture->addr_u,texture->addr_v,texture->cube);
         }
     }
-    store(f,result,"draw",color_write,(b->state->depth_test_enable && b->state->depth_write)
-        || (b->state->stencil_enable && b->state->stencil_write_mask));
+    unsigned writes=ch_vk_attachment_write_mask(b->state);
+    active->unchanged_color_draws+=color_write && !(writes&1);
+    active->unchanged_depth_draws+=((b->state->depth_test_enable && b->state->depth_write) ||
+        (b->state->stencil_enable && b->state->stencil_write_mask)) && !(writes&2);
+    store(f,result,"draw",writes&1,writes&2);
     if(active->costs.enabled) active->costs.draw_cpu_ns+=thread_cpu_ns()-cpu;
     if(active->profile.enabled) {t[5]=now_us();profile_draw(t);}
     if(active->host.render_draw) {
@@ -656,6 +660,8 @@ static void flip(void) {
     }
     if(active->zeta && active->profile.enabled && (active->frames==1 || active->frames%60==0)) {
         ChVkDepthResidentStats stats;ch_vk_depth_resident_stats(active->zeta,&stats);
+        fprintf(stderr,"[Vulkan unchanged attachments] color_draws=%llu depth_draws=%llu\n",
+            (unsigned long long)active->unchanged_color_draws,(unsigned long long)active->unchanged_depth_draws);
         fprintf(stderr,"[Vulkan snapshot copies avoided] color_bytes=%llu depth_bytes=%llu\n",
             (unsigned long long)active->color_snapshot_copy_bytes_saved,
             (unsigned long long)stats.snapshot_copy_bytes_saved);

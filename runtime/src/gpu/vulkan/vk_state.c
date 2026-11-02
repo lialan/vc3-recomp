@@ -132,3 +132,19 @@ VkResult ch_vk_sampler_state(const Nv2aTexture *s,VkSamplerCreateInfo *out) {
         return VK_ERROR_FEATURE_NOT_PRESENT;
     *out=sampler; return VK_SUCCESS;
 }
+
+unsigned ch_vk_attachment_write_mask(const Nv2aRenderState *s) {
+    const uint32_t never=0x200,always=0x207,keep=0x1e00;
+    if(s->alpha_test_enable && s->alpha_func==never) return 0;
+    int stencil_pass=!s->stencil_enable || s->stencil_func!=never;
+    int depth_pass=!s->depth_test_enable || s->depth_func!=never;
+    unsigned mask=(s->color_mask&0x01010101) && stencil_pass && depth_pass?1u:0u;
+    if(stencil_pass && depth_pass && s->depth_test_enable && s->depth_write) mask|=2;
+    if(s->stencil_enable && (s->stencil_write_mask&255)) {
+        int stencil_fail=s->stencil_func!=always && s->stencil_fail!=keep;
+        int zfail=stencil_pass && s->depth_test_enable && s->depth_func!=always && s->stencil_zfail!=keep;
+        int zpass=stencil_pass && depth_pass && s->stencil_zpass!=keep;
+        if(stencil_fail || zfail || zpass) mask|=2;
+    }
+    return mask;
+}

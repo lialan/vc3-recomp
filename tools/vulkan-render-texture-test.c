@@ -1,6 +1,7 @@
 /* Real Vulkan copies/cache/coherence, with an isolated scalar ARGB fixture
  * decoder. Headless entry point injects executor registration only. */
 #include "vk_backend.h"
+#include "vk_state.h"
 #include "vk_pipeline_cache_file.h"
 #include <unistd.h>
 #include "vk_texture_cache.h"
@@ -302,6 +303,30 @@ static int paired_readbacks(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,u
         if(packed && r==VK_ERROR_FORMAT_NOT_SUPPORTED) continue;
         CHECK(r==VK_SUCCESS);
         CHECK(ch_vk_target_batching(t,1)==VK_SUCCESS);
+        /* Compare predicted non-writes with actual rasterization. Keep draws
+         * executing: this predicate only controls guest publication. */
+        for(unsigned test=0;test<7;test++) {
+            Nv2aRenderState probe=state;
+            probe.stencil_enable=1;probe.stencil_func=0x207;
+            probe.stencil_func_mask=255;probe.stencil_write_mask=255;probe.stencil_ref=0x71;
+            probe.stencil_fail=probe.stencil_zfail=probe.stencil_zpass=0x1e00;
+            probe.depth_write=0;
+            unsigned expected=1;
+            if(test==0) {probe.stencil_enable=0;probe.depth_func=0x200;expected=0;}
+            if(test==2) {probe.stencil_func=0x200;probe.stencil_fail=0x1e01;probe.depth_write=1;expected=2;}
+            if(test==3) {probe.depth_func=0x200;probe.stencil_zfail=0x1e01;expected=2;}
+            if(test==4) {probe.depth_test_enable=0;probe.stencil_zfail=0x1e01;}
+            if(test==5) {probe.alpha_test_enable=1;probe.alpha_func=0x200;probe.stencil_func=0x200;probe.stencil_fail=0x1e01;expected=0;}
+            if(test==6) {probe.stencil_fail=probe.stencil_zfail=0x1e01;}
+            CHECK(ch_vk_attachment_write_mask(&probe)==expected);
+            CHECK(ch_vk_target_clear_aspects_read(t,7,black,1,7,reference,sizeof reference)==VK_SUCCESS);
+            CHECK(ch_vk_target_read_z24s8(t,words_ref,16)==VK_SUCCESS);
+            CHECK(ch_vk_target_draw_state_read(t,NULL,v,3,idx,3,&probe,rgba,sizeof rgba)==VK_SUCCESS);
+            CHECK(ch_vk_target_read_color(t,rgba,sizeof rgba)==VK_SUCCESS);
+            CHECK(ch_vk_target_read_z24s8(t,words,16)==VK_SUCCESS);
+            CHECK(!!memcmp(reference,rgba,sizeof rgba)==!!(expected&1));
+            CHECK(!!memcmp(words_ref,words,sizeof words)==!!(expected&2));
+        }
         CHECK(ch_vk_target_clear_aspects_read(t,7,black,1,7,rgba,sizeof rgba)==VK_SUCCESS);
         ch_vk_target_defer_color_readback(t,1);
         CHECK(ch_vk_target_draw_state_read(t,NULL,v,3,idx,3,&state,rgba,sizeof rgba)==VK_SUCCESS);

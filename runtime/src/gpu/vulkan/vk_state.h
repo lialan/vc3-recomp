@@ -3,6 +3,9 @@
 #include <vulkan/vulkan.h>
 #include "nv2a_backend.h"
 #include "../nv2a_texture_mips.h"
+/* Possible attachment writes after a validated draw: bit0 color, bit1 Z/S.
+ * Conservative for data-dependent comparisons; no rasterization is skipped. */
+unsigned ch_vk_attachment_write_mask(const Nv2aRenderState *guest);
 /* Unsupported enums fail before command recording; never substitute defaults. */
 VkResult ch_vk_blend_state(const Nv2aRenderState *guest,
     VkPipelineColorBlendAttachmentState *attachment, float constants[4]);
