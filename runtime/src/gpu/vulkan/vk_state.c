@@ -81,7 +81,7 @@ static int stencil_op(uint32_t value, VkStencilOp *out) {
 VkResult ch_vk_depth_state(const Nv2aRenderState *s, VkPipelineDepthStencilStateCreateInfo *out) {
     if(!s || !out) return VK_ERROR_INITIALIZATION_FAILED;
     VkPipelineDepthStencilStateCreateInfo d={.sType=VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,
-        .depthTestEnable=!!s->depth_test_enable,.depthWriteEnable=!!s->depth_write,
+        .depthTestEnable=!!s->depth_test_enable,.depthWriteEnable=!!s->depth_test_enable && !!s->depth_write,
         .depthCompareOp=VK_COMPARE_OP_ALWAYS,.stencilTestEnable=!!s->stencil_enable};
     if(d.depthTestEnable && !compare(s->depth_func,&d.depthCompareOp)) return VK_ERROR_FEATURE_NOT_PRESENT;
     if(d.stencilTestEnable) {
@@ -92,6 +92,29 @@ VkResult ch_vk_depth_state(const Nv2aRenderState *s, VkPipelineDepthStencilState
            !stencil_op(s->stencil_fail,&d.front.failOp) ||
            !stencil_op(s->stencil_zfail,&d.front.depthFailOp) ||
            !stencil_op(s->stencil_zpass,&d.front.passOp)) return VK_ERROR_FEATURE_NOT_PRESENT;
+        /* Validate first, then canonicalize unreachable state so equivalent
+         * draws share a pipeline without accepting unsupported guest enums. */
+        if(d.front.compareOp==VK_COMPARE_OP_ALWAYS) d.front.failOp=VK_STENCIL_OP_KEEP;
+        if(d.front.compareOp==VK_COMPARE_OP_NEVER) {
+            d.front.depthFailOp=d.front.passOp=VK_STENCIL_OP_KEEP;
+        } else {
+            if(!d.depthTestEnable || d.depthCompareOp==VK_COMPARE_OP_ALWAYS)
+                d.front.depthFailOp=VK_STENCIL_OP_KEEP;
+            if(d.depthTestEnable && d.depthCompareOp==VK_COMPARE_OP_NEVER)
+                d.front.passOp=VK_STENCIL_OP_KEEP;
+        }
+        if(!d.front.writeMask)
+            d.front.failOp=d.front.depthFailOp=d.front.passOp=VK_STENCIL_OP_KEEP;
+        if(d.front.failOp==VK_STENCIL_OP_KEEP && d.front.depthFailOp==VK_STENCIL_OP_KEEP &&
+           d.front.passOp==VK_STENCIL_OP_KEEP) d.front.writeMask=0;
+        if(d.front.compareOp==VK_COMPARE_OP_ALWAYS || d.front.compareOp==VK_COMPARE_OP_NEVER) {
+            d.front.compareMask=0;
+            if(d.front.failOp!=VK_STENCIL_OP_REPLACE && d.front.depthFailOp!=VK_STENCIL_OP_REPLACE &&
+               d.front.passOp!=VK_STENCIL_OP_REPLACE) d.front.reference=0;
+        }
+        if(d.front.compareOp==VK_COMPARE_OP_ALWAYS && !d.front.writeMask) {
+            d.stencilTestEnable=0;memset(&d.front,0,sizeof d.front);
+        }
         d.back=d.front;
     }
     *out=d; return VK_SUCCESS;

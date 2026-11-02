@@ -343,7 +343,26 @@ static int paired_readbacks(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,u
             CHECK(ch_vk_target_read_z24s8(t,words,16)==VK_SUCCESS);
             CHECK(!!memcmp(reference,rgba,sizeof rgba)==!!(expected&1));
             CHECK(!!memcmp(words_ref,words,sizeof words)==!!(expected&2));
+            if(test==2 || test==3) for(unsigned j=0;j<16;j++) CHECK((words[j]&255)==0x71);
         }
+        /* Irrelevant state changes must reuse a pipeline, while the raster
+         * output remains a red color-only draw and untouched depth/stencil. */
+        Nv2aRenderState equivalent={.color_mask=0x01010101,.stencil_enable=1,
+            .stencil_func=0x207,.stencil_fail=0x1e01,.stencil_zfail=0x1e01,.stencil_zpass=0x1e00};
+        CHECK(ch_vk_target_clear_aspects_read(t,7,black,1,7,reference,sizeof reference)==VK_SUCCESS);
+        CHECK(ch_vk_target_read_z24s8(t,words_ref,16)==VK_SUCCESS);
+        CHECK(ch_vk_target_draw_state_read(t,NULL,v,3,idx,3,&equivalent,rgba,sizeof rgba)==VK_SUCCESS);
+        ChVkTargetResourceStats canonical,changed;ch_vk_target_resource_stats(t,&canonical);
+        for(unsigned j=0;j<32;j++) {
+            equivalent.depth_write=j&1;equivalent.stencil_ref=j;
+            equivalent.stencil_write_mask=j;equivalent.stencil_func_mask=j*7;
+            CHECK(ch_vk_target_draw_state_read(t,NULL,v,3,idx,3,&equivalent,rgba,sizeof rgba)==VK_SUCCESS);
+        }
+        ch_vk_target_resource_stats(t,&changed);
+        CHECK(changed.pipeline_builds==canonical.pipeline_builds && changed.pipeline_hits==canonical.pipeline_hits+32);
+        CHECK(ch_vk_target_read_color(t,rgba,sizeof rgba)==VK_SUCCESS);
+        for(unsigned j=0;j<16;j++) CHECK(rgba[4*j]==255 && rgba[4*j+1]==0 && rgba[4*j+2]==0 && rgba[4*j+3]==255);
+        CHECK(ch_vk_target_read_z24s8(t,words,16)==VK_SUCCESS && !memcmp(words,words_ref,sizeof words));
         CHECK(ch_vk_target_clear_aspects_read(t,7,black,1,7,rgba,sizeof rgba)==VK_SUCCESS);
         ch_vk_target_defer_color_readback(t,1);
         CHECK(ch_vk_target_draw_state_read(t,NULL,v,3,idx,3,&state,rgba,sizeof rgba)==VK_SUCCESS);

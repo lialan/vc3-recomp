@@ -1,0 +1,9 @@
+# Canonical equivalent depth/stencil pipeline state
+
+Depth writes canonicalize off when depth testing is disabled. After validating guest compare/op enums, unreachable stencil fail/depth-fail/pass operations canonicalize to KEEP. Zero write masks drop stencil write operations; all KEEP operations canonicalize write mask0. Constant ALWAYS/NEVER compares ignore compare masks and ignore references unless a reachable REPLACE needs them. ALWAYS with no stencil writes canonicalizes to disabled stencil. Back matches front as before. Actual reachable stencil comparisons and writes are preserved; unknown enums still rejected before normalization.
+
+Native VC3 and Android shared Vulkan builds pass. Texture/depth fixtures pass synchronization validation. New actual GPU test changes32 irrelevant depth/stencil states, asserts no new pipeline builds and32hits, and checks exact red color with unchanged depth/stencil. Existing reachable stencil fail/depth-fail REPLACE cases additionally assert exact0x71 stencil at everypixel. Both supported D32/D24 target modes tested. No validation errors/SYNC-HAZARD.
+
+Local /tmp/vc3-canonical-state, executable /tmp/vc3-canonical-state-vc3,2100framesexit0. Seed copied from preceding clear-import-full cache. Local binary includes unrelated existing host_input.c edits, excluded from commit. Not a matched A/B. New canonical native states change driver pipeline identity:40frames recorded pipeline creation totaling1035.382ms, vs preceding nonmatched run34/84.246ms. Do not claim reduced VC3 compilation time from this run. Cache grew87809308->89605668 bytes.
+
+Combat58.51/60.00FPS,activation54.01,held57.65/60.01; p9520.51–21.73ms. Compilation-affected windows are not warm-cache acceptance. Synthetic equivalent-state reuse is proven; a VC3 FPS gain is not. No headset/APK/push. Existing Quest driver cache needs refresh for canonical states and prior shader changes when device access resumes. Goal active.
