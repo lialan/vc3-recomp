@@ -29,6 +29,7 @@ VkResult ch_vk_target_pipeline_cache(ChVkTarget *,VkPipelineCache);
 typedef struct {
     uint64_t pipeline_builds,pipeline_hits,pipeline_evictions,geometry_allocations;
     uint64_t batch_draws,batch_clears,batch_submissions,combined_depth_copies,combined_texture_copies,combined_depth_readbacks,combined_color_readbacks,queued_depth_uploads,queued_color_readbacks;
+    uint64_t coherent_staging_skips,staging_maintenance_bytes;
     uint64_t batch_pipeline_binds,batch_blend_updates,batch_push_updates;
     uint64_t depth_roundtrips_by_compare[8]; /* Batched full-surface conversions, VkCompareOp order. */
     uint64_t no_alpha_pipeline_builds,no_alpha_pipeline_hits;

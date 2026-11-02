@@ -651,9 +651,11 @@ static void flip(void) {
         fprintf(stderr,"[Vulkan raw snapshots] compact_batches=%llu snapshot_bytes=%llu expanded_bytes=%llu\n",
             (unsigned long long)active->raw_compact_batches,(unsigned long long)active->raw_snapshot_bytes,(unsigned long long)active->raw_expanded_bytes);
         uint64_t draws=0,submits=0,depth_reads=0,color_reads=0,queued_uploads=0,queued_colors=0;
-        uint64_t depth_ops[8]={0};
-        for(unsigned i=0;i<active->count;i++) {ChVkTargetResourceStats stats;ch_vk_target_resource_stats(active->surfaces[i].target,&stats);for(unsigned op=0;op<8;op++) depth_ops[op]+=stats.depth_roundtrips_by_compare[op];draws+=stats.batch_draws;submits+=stats.batch_submissions;depth_reads+=stats.combined_depth_readbacks;color_reads+=stats.combined_color_readbacks;queued_uploads+=stats.queued_depth_uploads;queued_colors+=stats.queued_color_readbacks;}
+        uint64_t depth_ops[8]={0},staging_skips=0,staging_bytes=0;
+        for(unsigned i=0;i<active->count;i++) {ChVkTargetResourceStats stats;ch_vk_target_resource_stats(active->surfaces[i].target,&stats);for(unsigned op=0;op<8;op++) depth_ops[op]+=stats.depth_roundtrips_by_compare[op];draws+=stats.batch_draws;submits+=stats.batch_submissions;depth_reads+=stats.combined_depth_readbacks;color_reads+=stats.combined_color_readbacks;queued_uploads+=stats.queued_depth_uploads;queued_colors+=stats.queued_color_readbacks;staging_skips+=stats.coherent_staging_skips;staging_bytes+=stats.staging_maintenance_bytes;}
         fprintf(stderr,"[Vulkan command batches] live targets: draws=%llu submissions=%llu combined_depth_reads=%llu combined_color_reads=%llu queued_depth_uploads=%llu queued_color_reads=%llu\n",(unsigned long long)draws,(unsigned long long)submits,(unsigned long long)depth_reads,(unsigned long long)color_reads,(unsigned long long)queued_uploads,(unsigned long long)queued_colors);
+        fprintf(stderr,"[Vulkan staging maintenance] live targets: coherent_skips=%llu explicit_bytes=%llu\n",
+            (unsigned long long)staging_skips,(unsigned long long)staging_bytes);
         fprintf(stderr,"[Vulkan depth roundtrips] batched live targets NEVER/LESS/EQUAL/LEQUAL/GREATER/NOTEQUAL/GEQUAL/ALWAYS:");
         for(unsigned op=0;op<8;op++) fprintf(stderr," %llu",(unsigned long long)depth_ops[op]);
         fputc('\n',stderr);
