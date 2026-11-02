@@ -1,4 +1,5 @@
 #include "vk_xr.h"
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 void ch_vk_xr_device_destroy(ChVkXrDevice *d) {
@@ -89,14 +90,59 @@ XrResult ch_vk_xr_device_create_with_options(XrInstance xr,XrSystemId system,
     float priority=1;
     VkDeviceQueueCreateInfo qci={.sType=VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
         .queueFamilyIndex=d.family,.queueCount=1,.pQueuePriorities=&priority};
+    /* CHIHIRO_VULKAN_QUEUE_PRIORITY=high|realtime: the queue's system-wide
+     * priority (VK_EXT_global_priority). The emulated GPU waits on many small
+     * submissions each frame; behind a headset compositor's work on the same
+     * GPU (SteamVR on a Steam Frame) each came back milliseconds late. A level
+     * the system refuses falls back to the default. */
+    const char *extensions[32];
+    uint32_t extension_count=options->device_extension_count;
+    VkDeviceQueueGlobalPriorityCreateInfoEXT global={.sType=VK_STRUCTURE_TYPE_DEVICE_QUEUE_GLOBAL_PRIORITY_CREATE_INFO_EXT};
+    {
+        const char *level=getenv("CHIHIRO_VULKAN_QUEUE_PRIORITY");
+        if(level && !strcmp(level,"high")) global.globalPriority=VK_QUEUE_GLOBAL_PRIORITY_HIGH_EXT;
+        else if(level && !strcmp(level,"realtime")) global.globalPriority=VK_QUEUE_GLOBAL_PRIORITY_REALTIME_EXT;
+        int available=0,external=0;
+        if((global.globalPriority || options->external_memory_fd) && extension_count<31) {
+            uint32_t n=0; vkEnumerateDeviceExtensionProperties(d.physical,NULL,&n,NULL);
+            VkExtensionProperties *p=n?calloc(n,sizeof(*p)):NULL;
+            if(p && vkEnumerateDeviceExtensionProperties(d.physical,NULL,&n,p)==VK_SUCCESS)
+                for(uint32_t i=0;i<n;i++) {
+                    if(!strcmp(p[i].extensionName,VK_EXT_GLOBAL_PRIORITY_EXTENSION_NAME)) available=1;
+                    if(!strcmp(p[i].extensionName,VK_KHR_EXTERNAL_MEMORY_FD_EXTENSION_NAME)) external=1;
+                }
+            free(p);
+        }
+        for(uint32_t i=0;i<extension_count && i<32;i++) extensions[i]=options->device_extensions[i];
+        if(options->external_memory_fd && external) {
+            extensions[extension_count++]=VK_KHR_EXTERNAL_MEMORY_FD_EXTENSION_NAME;
+            d.external_memory=1;
+        }
+        if(available && global.globalPriority) {
+            extensions[extension_count++]=VK_EXT_GLOBAL_PRIORITY_EXTENSION_NAME;
+            qci.pNext=&global;
+        } else if(global.globalPriority) {
+            fprintf(stderr,"[Vulkan] queue priority %s: VK_EXT_global_priority not offered\n",level);
+            global.globalPriority=0;
+        }
+    }
     VkDeviceCreateInfo dci={.sType=VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
         .queueCreateInfoCount=1,.pQueueCreateInfos=&qci,.pEnabledFeatures=&features,
-        .enabledExtensionCount=options->device_extension_count,.ppEnabledExtensionNames=options->device_extensions};
+        .enabledExtensionCount=extension_count,.ppEnabledExtensionNames=extensions};
     XrVulkanDeviceCreateInfoKHR xd={.type=XR_TYPE_VULKAN_DEVICE_CREATE_INFO_KHR,
         .systemId=system,.pfnGetInstanceProcAddr=vkGetInstanceProcAddr,
         .vulkanPhysicalDevice=d.physical,.vulkanCreateInfo=&dci};
     XR_TRY(create_device(xr,&xd,&d.device,vk_result));
+    if(*vk_result!=VK_SUCCESS && global.globalPriority) {
+        fprintf(stderr,"[Vulkan] queue priority refused (VkResult %d): the default\n",(int)*vk_result);
+        qci.pNext=NULL; dci.enabledExtensionCount=options->device_extension_count+(d.external_memory?1:0);
+        global.globalPriority=0;
+        XR_TRY(create_device(xr,&xd,&d.device,vk_result));
+    }
     if(*vk_result!=VK_SUCCESS) { result=XR_ERROR_GRAPHICS_DEVICE_INVALID; goto fail; }
+    if(global.globalPriority)
+        fprintf(stderr,"[Vulkan] queue priority %s\n",
+            global.globalPriority==VK_QUEUE_GLOBAL_PRIORITY_REALTIME_EXT?"realtime":"high");
     vkGetDeviceQueue(d.device,d.family,0,&d.queue);
     d.binding=(XrGraphicsBindingVulkan2KHR){.type=XR_TYPE_GRAPHICS_BINDING_VULKAN2_KHR,
         .instance=d.instance,.physicalDevice=d.physical,.device=d.device,.queueFamilyIndex=d.family,.queueIndex=0};

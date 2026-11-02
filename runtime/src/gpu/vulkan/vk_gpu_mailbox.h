@@ -15,6 +15,11 @@ typedef struct {
  * release only use the mailbox mutex. Never hold that mutex while calling GPU
  * operations or acquiring the queue lock. */
 VkResult ch_vk_gpu_mailbox_create(ChVkGpuMailbox **);
+/* Bridge mode (the game on a VkDevice of its own): publish copies each frame,
+ * packed RGBA8, into its slot's buffer -- buffers[slot], of the target's
+ * device, capacity bytes each -- and complete; a taken frame then has no
+ * image, only its slot, whose shared buffer the consumer reads. */
+void ch_vk_gpu_mailbox_set_buffers(ChVkGpuMailbox *,const VkBuffer buffers[3],VkDeviceSize capacity);
 /* Source must contain current pixels, including any guest CPU edits.
  * VK_NOT_READY means all slots are held: keep the previously displayed frame. */
 VkResult ch_vk_gpu_mailbox_publish(void *,const Nv2aSurface *,ChVkTarget *);

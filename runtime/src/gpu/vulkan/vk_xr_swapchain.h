@@ -26,4 +26,8 @@ XrSwapchain ch_vk_xr_swapchain_handle(const ChVkXrSwapchain *swapchain);
 XrResult ch_vk_xr_swapchain_copy_release(ChVkXrSwapchain *swapchain,
     ChVkTarget *target, void *verification, VkDeviceSize bytes, VkResult *vk_result);
 XrResult ch_vk_xr_swapchain_texture_release(ChVkXrSwapchain *,ChVkTexture *,VkResult *);
+/* Fill the waited image from packed RGBA8 rows in a buffer of this device, on
+ * queue (of family), and release it; complete on return. */
+XrResult ch_vk_xr_swapchain_buffer_release(ChVkXrSwapchain *,VkQueue queue,uint32_t family,
+    VkBuffer buffer,uint32_t width,uint32_t height,VkResult *);
 #endif

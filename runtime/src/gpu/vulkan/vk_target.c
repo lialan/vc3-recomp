@@ -1,3 +1,6 @@
+#if defined(__linux__) && !defined(_GNU_SOURCE)
+#define _GNU_SOURCE   /* dladdr (CHIHIRO_VULKAN_WAIT_STACKS) */
+#endif
 #include "vk_target.h"
 #include "vk_depth_quant.h"
 #include "vk_depth_pack.h"
@@ -682,10 +685,55 @@ static void color_staging_reuse_on(ChVkTarget *t,VkCommandBuffer command) {
     vkCmdPipelineBarrier(command,VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,VK_PIPELINE_STAGE_TRANSFER_BIT,0,1,&b,0,NULL,0,NULL);
 }
 static void color_staging_reuse(ChVkTarget *t) {color_staging_reuse_on(t,t->command);}
+#if defined(__linux__) && !defined(__ANDROID__)
+#include <execinfo.h>
+#include <dlfcn.h>
+#include <stdio.h>
+/* CHIHIRO_VULKAN_WAIT_STACKS=1 (desktop Linux): where the host blocks on a
+ * batch's fence -- each wait's time summed by its call stack, the top ones
+ * printed now and then as module offsets (addr2line -f -e <binary> ...). For
+ * finding which guest-visible readbacks cost the most round trips. */
+#define WAIT_STACK_DEPTH 12
+static struct { void *pc[WAIT_STACK_DEPTH]; int n; uint64_t ns,count; } wait_stacks[512];
+static int wait_stacks_on=-1; static uint64_t wait_stacks_total;
+static void wait_stack_note(uint64_t ns) {
+    if(wait_stacks_on<0) {const char *e=getenv("CHIHIRO_VULKAN_WAIT_STACKS"); wait_stacks_on=e && *e=='1';}
+    if(!wait_stacks_on) return;
+    void *pc[WAIT_STACK_DEPTH];int n=backtrace(pc,WAIT_STACK_DEPTH);
+    unsigned h=0;for(int i=0;i<n;i++) h=h*31u+(unsigned)((uintptr_t)pc[i]>>2);
+    for(unsigned k=0;k<512;k++) {
+        unsigned s=(h+k)%512u;
+        if(!wait_stacks[s].n) {memcpy(wait_stacks[s].pc,pc,sizeof(void *)*(size_t)n);wait_stacks[s].n=n;}
+        if(wait_stacks[s].n==n && !memcmp(wait_stacks[s].pc,pc,sizeof(void *)*(size_t)n)) {
+            wait_stacks[s].ns+=ns;wait_stacks[s].count++;break;
+        }
+    }
+    if(++wait_stacks_total%20000) return;
+    fprintf(stderr,"[Vulkan wait stacks] after %llu waits, top by time:\n",(unsigned long long)wait_stacks_total);
+    for(int r=0;r<8;r++) {
+        int best=-1;
+        for(int s=0;s<512;s++) if(wait_stacks[s].n && wait_stacks[s].count && (best<0 || wait_stacks[s].ns>wait_stacks[best].ns)) best=s;
+        if(best<0) break;
+        fprintf(stderr,"  %.1fms %llu waits:",wait_stacks[best].ns/1e6,(unsigned long long)wait_stacks[best].count);
+        for(int i=1;i<wait_stacks[best].n;i++) {
+            Dl_info info;
+            if(dladdr(wait_stacks[best].pc[i],&info) && info.dli_fbase)
+                fprintf(stderr," %s+%#lx",strrchr(info.dli_fname,'/')?strrchr(info.dli_fname,'/')+1:info.dli_fname,
+                    (unsigned long)((uintptr_t)wait_stacks[best].pc[i]-(uintptr_t)info.dli_fbase));
+            else fprintf(stderr," %p",wait_stacks[best].pc[i]);
+        }
+        fputc('\n',stderr);
+        wait_stacks[best].count=0;wait_stacks[best].ns=0;  /* printed: start again */
+    }
+}
+#else
+static void wait_stack_note(uint64_t ns) {(void)ns;}
+#endif
 static VkResult retire_batch(ChVkTarget *t) {
     if(!t->submitted) return VK_SUCCESS;
-    VkResult result;uint64_t wait_start=t->timing?time_ns():0;
+    VkResult result;uint64_t wait_start=time_ns();
     TRY(vkWaitForFences(t->device,1,&t->fence,VK_TRUE,5000000000ULL));
+    wait_stack_note(time_ns()-wait_start);
     /* A destination submission follows its copy on the same queue. Its
      * completed fence proves the source copy is also safe to retire. */
     TRY(wait_copy_source(t));
@@ -1745,6 +1793,34 @@ VkResult ch_vk_target_export_image(ChVkTarget *t,VkImage destination,void *verif
         if(result==VK_SUCCESS) memcpy(verify,mapped,(size_t)t->bytes);
         if(result!=VK_SUCCESS) goto fail;
     }
+    return VK_SUCCESS;
+fail:
+    t->failed=1; return result;
+}
+
+/* The color image, tightly packed RGBA8, into a buffer of this target's
+ * device (a shared bridge buffer another device reads), complete on return. */
+VkResult ch_vk_target_copy_to_buffer(ChVkTarget *t,VkBuffer destination,VkDeviceSize capacity) {
+    if(!t || t->failed || !t->initialized || !destination || capacity<t->bytes) return VK_ERROR_INITIALIZATION_FAILED;
+    VkResult result;
+    TRY(finish_batch_named(t,0,__func__));
+    TRY(vkResetCommandBuffer(t->command,0));
+    TRY(vkResetFences(t->device,1,&t->fence));
+    VkCommandBufferBeginInfo begin={.sType=VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+        .flags=VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT};
+    TRY(vkBeginCommandBuffer(t->command,&begin));
+    color_staging_reuse(t);
+    VkBufferImageCopy copy={.imageSubresource={VK_IMAGE_ASPECT_COLOR_BIT,0,0,1},.imageExtent={t->width,t->height,1}};
+    vkCmdCopyImageToBuffer(t->command,t->image,VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,destination,1,&copy);
+    VkBufferMemoryBarrier done={.sType=VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
+        .srcAccessMask=VK_ACCESS_TRANSFER_WRITE_BIT,.dstAccessMask=VK_ACCESS_MEMORY_READ_BIT,
+        .srcQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED,.dstQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED,
+        .buffer=destination,.size=VK_WHOLE_SIZE};
+    vkCmdPipelineBarrier(t->command,VK_PIPELINE_STAGE_TRANSFER_BIT,VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,0,0,NULL,1,&done,0,NULL);
+    TRY(vkEndCommandBuffer(t->command));
+    VkSubmitInfo submit={.sType=VK_STRUCTURE_TYPE_SUBMIT_INFO,.commandBufferCount=1,.pCommandBuffers=&t->command};
+    TRY(vkQueueSubmit(t->queue,1,&submit,t->fence));
+    TRY(vkWaitForFences(t->device,1,&t->fence,VK_TRUE,5000000000ULL));
     return VK_SUCCESS;
 fail:
     t->failed=1; return result;

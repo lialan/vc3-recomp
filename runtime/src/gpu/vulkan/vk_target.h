@@ -152,6 +152,9 @@ VkResult ch_vk_target_draw_count_read(ChVkTarget *target, const float rgba[4],
     const ChVkColorVertex *vertices, uint32_t vertex_count,
     const uint16_t *indices, uint32_t index_count, const Nv2aRenderState *state,
     const ChVkTexture *texture, uint32_t *samples, void *pixels, VkDeviceSize bytes);
+/* The color image, packed RGBA8, into a buffer of the same device (one a
+ * second device shares); complete on return. */
+VkResult ch_vk_target_copy_to_buffer(ChVkTarget *target, VkBuffer destination, VkDeviceSize capacity);
 /* Copy initialized target to an externally acquired, same-device RGBA8 image
  * of identical extent. Discards destination contents; ends in color-attachment
  * layout. Optional diagnostic readback requires destination TRANSFER_SRC usage.

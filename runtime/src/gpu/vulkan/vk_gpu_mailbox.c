@@ -7,7 +7,13 @@ struct ChVkGpuMailbox {
     struct { ChVkTexture *image; uint32_t w,h; int held; } slots[3];
     ChVkGpuFrame pending;
     uint64_t sequence;
+    VkBuffer buffers[3]; VkDeviceSize capacity;   /* bridge mode: a buffer per slot */
 };
+void ch_vk_gpu_mailbox_set_buffers(ChVkGpuMailbox *b,const VkBuffer buffers[3],VkDeviceSize capacity) {
+    if(!b) return;
+    for(unsigned i=0;i<3;i++) b->buffers[i]=buffers?buffers[i]:VK_NULL_HANDLE;
+    b->capacity=buffers?capacity:0;
+}
 VkResult ch_vk_gpu_mailbox_create(ChVkGpuMailbox **out) {
     if(!out) return VK_ERROR_INITIALIZATION_FAILED;
     *out=NULL;
@@ -26,11 +32,15 @@ VkResult ch_vk_gpu_mailbox_publish(void *context,const Nv2aSurface *surface,ChVk
     if(i==3 || b->sequence==UINT64_MAX) {pthread_mutex_unlock(&b->lock);return i==3?VK_NOT_READY:VK_ERROR_TOO_MANY_OBJECTS;}
     b->slots[i].held=1;
     pthread_mutex_unlock(&b->lock);
-    if(b->slots[i].w!=w || b->slots[i].h!=h) {
-        ch_vk_texture_destroy(b->slots[i].image);b->slots[i].image=NULL;
+    VkResult r;
+    if(b->buffers[i]) r=ch_vk_target_copy_to_buffer(target,b->buffers[i],b->capacity);
+    else {
+        if(b->slots[i].w!=w || b->slots[i].h!=h) {
+            ch_vk_texture_destroy(b->slots[i].image);b->slots[i].image=NULL;
+        }
+        r=b->slots[i].image?ch_vk_target_refresh_texture(target,b->slots[i].image):
+            ch_vk_target_snapshot_texture(target,1,&b->slots[i].image);
     }
-    VkResult r=b->slots[i].image?ch_vk_target_refresh_texture(target,b->slots[i].image):
-        ch_vk_target_snapshot_texture(target,1,&b->slots[i].image);
     pthread_mutex_lock(&b->lock);
     if(r==VK_SUCCESS) {
         b->slots[i].w=w;b->slots[i].h=h;

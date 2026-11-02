@@ -82,6 +82,7 @@
 #include "gpu/vulkan/vk_runtime.h"
 #include "gpu/vulkan/vk_gpu_mailbox.h"
 #include "gpu/vulkan/vk_xr_quad.h"
+#include "gpu/vulkan/vk_xr_bridge.h"
 #include "gpu/vulkan/vk_overlay.h"
 #define XR_USE_GRAPHICS_API_VULKAN
 #else
@@ -575,6 +576,8 @@ static XrSessionState s_state = XR_SESSION_STATE_UNKNOWN;
 static int s_running;
 static PFN_xrRequestDisplayRefreshRateFB s_request_rate;
 static PFN_xrEnumerateDisplayRefreshRatesFB s_enum_rates;
+static PFN_xrGetDisplayRefreshRateFB s_get_rate;
+static float s_rate_want;               /* the rate rate_apply asked for, 0 none */
 static PFN_xrPerfSettingsSetPerformanceLevelEXT s_perf_level;
 #if defined(__ANDROID__)
 static PFN_xrSetAndroidApplicationThreadKHR s_set_thread;
@@ -845,6 +848,8 @@ static int xr_init(void)
                               (PFN_xrVoidFunction *)&s_request_rate);
         xrGetInstanceProcAddr(s_inst, "xrEnumerateDisplayRefreshRatesFB",
                               (PFN_xrVoidFunction *)&s_enum_rates);
+        xrGetInstanceProcAddr(s_inst, "xrGetDisplayRefreshRateFB",
+                              (PFN_xrVoidFunction *)&s_get_rate);
     }
     if (have_perf)
         xrGetInstanceProcAddr(s_inst, "xrPerfSettingsSetPerformanceLevelEXT",
@@ -861,7 +866,14 @@ static int xr_init(void)
     XRCHECK(xrGetSystem(s_inst, &sgi, &s_sys));
 #ifdef CHIHIRO_RENDERER_VULKAN
     VkResult vk_result=VK_SUCCESS;
+#if defined(CHIHIRO_XR_DESKTOP)
+    /* external memory: the game's own device shares buffers with this one */
+    ChVkXrDeviceOptions device_options={.external_memory_fd=1};
+    XrResult device_result=ch_vk_xr_device_create_with_options(s_inst,s_sys,xrGetInstanceProcAddr,
+        &device_options,&s_vk,&vk_result);
+#else
     XrResult device_result=ch_vk_xr_device_create(s_inst,s_sys,xrGetInstanceProcAddr,&s_vk,&vk_result);
+#endif
     if(XR_FAILED(device_result) || vk_result!=VK_SUCCESS) {
         fprintf(stderr,"[xr] Vulkan device failed: XrResult=%d VkResult=%d\n",device_result,vk_result);
         return 0;
@@ -1129,10 +1141,43 @@ static void rate_apply(void)
     for (i = 0; i < s_nrates; i++)
         if (best < 0 || fabsf(s_rates[i] - (float)s_vr.refresh) < fabsf(s_rates[best] - (float)s_vr.refresh))
             best = i;
-    if (best >= 0 && XR_SUCCEEDED(s_request_rate(s_sess, s_rates[best])))
+    if (best >= 0 && XR_SUCCEEDED(s_request_rate(s_sess, s_rates[best]))) {
+        s_rate_want = s_rates[best];
         fprintf(stderr, "[xr] display %.0f Hz\n", s_rates[best]);
-    else if (s_nrates == 0 && XR_SUCCEEDED(s_request_rate(s_sess, (float)s_vr.refresh)))
+    } else if (s_nrates == 0 && XR_SUCCEEDED(s_request_rate(s_sess, (float)s_vr.refresh))) {
+        s_rate_want = (float)s_vr.refresh;
         fprintf(stderr, "[xr] display %d Hz\n", s_vr.refresh);
+    }
+}
+
+/* Once a second while running: the display at the rate asked for. SteamVR
+ * (Steam Frame) puts every app at its per-app default, 72 Hz, as it becomes
+ * the scene app -- after the request at the session's start -- so the
+ * request is made again when the display is found elsewhere; a few times,
+ * then left to the runtime. */
+static void rate_watch(void)
+{
+    static uint64_t last;
+    static int tries;
+    float now_rate = 0;
+    uint64_t t = SDL_GetTicks64();
+    if (!s_get_rate || !s_request_rate || s_rate_want <= 0
+        || !s_running || t - last < 1000)
+        return;
+    last = t;
+    if (XR_FAILED(s_get_rate(s_sess, &now_rate)) || fabsf(now_rate - s_rate_want) < 1.0f) {
+        tries = 0;
+        return;
+    }
+    if (tries >= 5) {
+        if (tries++ == 5)
+            fprintf(stderr, "[xr] display stays at %.0f Hz, not %.0f: left to the runtime\n",
+                    now_rate, s_rate_want);
+        return;
+    }
+    tries++;
+    fprintf(stderr, "[xr] display at %.0f Hz, not %.0f: asking again (%s)\n", now_rate,
+            s_rate_want, XR_SUCCEEDED(s_request_rate(s_sess, s_rate_want)) ? "accepted" : "refused");
 }
 
 /* At the session's start: the rates on offer, the display rate, and the CPU
@@ -1147,6 +1192,10 @@ static void perf_begin(void)
                 n = 8;
             if (XR_SUCCEEDED(s_enum_rates(s_sess, n, &n, s_rates)))
                 s_nrates = (int)n;
+            fprintf(stderr, "[xr] display rates offered:");
+            for (int k = 0; k < s_nrates; k++)
+                fprintf(stderr, " %.0f", s_rates[k]);
+            fputc('\n', stderr);
         }
     }
     rate_apply();
@@ -2530,6 +2579,7 @@ static void xr_frame(void)
         view_publish();
     }
     perf_frame();
+    rate_watch();
     if (s_overlay_ok < 0) {
 #ifdef CHIHIRO_RENDERER_VULKAN
         s_overlay_ok = vk_overlay_init();

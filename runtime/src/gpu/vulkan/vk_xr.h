@@ -14,6 +14,7 @@ typedef struct {
     uint32_t family, api_version;
     int precise_queries;
     int raw_fixed;
+    int external_memory;   /* VK_KHR_external_memory_fd enabled (options) */
     XrGraphicsBindingVulkan2KHR binding;
 } ChVkXrDevice;
 typedef struct {
@@ -22,6 +23,9 @@ typedef struct {
     uint32_t minimum_api_version,preferred_api_version;
     uint32_t device_extension_count;
     const char *const *device_extensions;
+    /* Nonzero: also VK_KHR_external_memory_fd when the device has it (the
+     * game's own device shares buffers with this one); external_memory says. */
+    int external_memory_fd;
 } ChVkXrDeviceOptions;
 /* Caller creates XrInstance with XR_KHR_vulkan_enable2 enabled. This function
  * queries graphics requirements before creating any Vulkan objects and delegates

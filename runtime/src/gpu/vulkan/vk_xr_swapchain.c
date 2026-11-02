@@ -11,6 +11,8 @@ struct ChVkXrSwapchain {
     PFN_xrAcquireSwapchainImage acquire;
     PFN_xrWaitSwapchainImage wait;
     PFN_xrReleaseSwapchainImage release;
+    /* buffer copies (ch_vk_xr_swapchain_buffer_release), made on first use */
+    VkCommandPool pool; VkCommandBuffer command; VkFence fence;
 };
 XrSwapchain ch_vk_xr_swapchain_handle(const ChVkXrSwapchain *s) {
     return s?s->handle:XR_NULL_HANDLE;
@@ -22,6 +24,8 @@ XrResult ch_vk_xr_swapchain_destroy(ChVkXrSwapchain *s) {
         XrResult r=s->destroy(s->handle);
         if(XR_FAILED(r)) return r;
     }
+    if(s->fence) vkDestroyFence(s->device,s->fence,NULL);
+    if(s->pool) vkDestroyCommandPool(s->device,s->pool,NULL);
     free(s->images); free(s); return XR_SUCCESS;
 }
 XrResult ch_vk_xr_swapchain_create(XrInstance instance,XrSession session,
@@ -133,6 +137,49 @@ XrResult ch_vk_xr_swapchain_copy_release(ChVkXrSwapchain *s,ChVkTarget *t,
     return ch_vk_xr_swapchain_release(s,ch_vk_target_completion_fence(t),vk_result);
 }
 
+/* The waited image filled from a buffer of packed RGBA8 rows (the bridge from
+ * the game's own device), then released. Complete on return. */
+XrResult ch_vk_xr_swapchain_buffer_release(ChVkXrSwapchain *s,VkQueue queue,uint32_t family,
+    VkBuffer buffer,uint32_t width,uint32_t height,VkResult *vk_result) {
+    if(s && !width && !height) {width=s->width;height=s->height;}   /* 0x0: the swapchain's own */
+    if(!s || !queue || !buffer || !vk_result || width!=s->width || height!=s->height) return XR_ERROR_VALIDATION_FAILURE;
+    if(!s->waited || s->failed) return XR_ERROR_CALL_ORDER_INVALID;
+    VkResult r=VK_SUCCESS;
+    if(!s->pool) {
+        VkCommandPoolCreateInfo pi={.sType=VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
+            .flags=VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT,.queueFamilyIndex=family};
+        r=vkCreateCommandPool(s->device,&pi,NULL,&s->pool);
+        VkCommandBufferAllocateInfo ai={.sType=VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+            .commandPool=s->pool,.level=VK_COMMAND_BUFFER_LEVEL_PRIMARY,.commandBufferCount=1};
+        if(r==VK_SUCCESS) r=vkAllocateCommandBuffers(s->device,&ai,&s->command);
+        VkFenceCreateInfo fi={.sType=VK_STRUCTURE_TYPE_FENCE_CREATE_INFO};
+        if(r==VK_SUCCESS) r=vkCreateFence(s->device,&fi,NULL,&s->fence);
+        if(r!=VK_SUCCESS) goto fail;
+    }
+    VkImage image=s->images[s->index].image;
+    if((r=vkResetCommandBuffer(s->command,0))!=VK_SUCCESS || (r=vkResetFences(s->device,1,&s->fence))!=VK_SUCCESS) goto fail;
+    VkCommandBufferBeginInfo begin={.sType=VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+        .flags=VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT};
+    if((r=vkBeginCommandBuffer(s->command,&begin))!=VK_SUCCESS) goto fail;
+    VkImageMemoryBarrier barrier={.sType=VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+        .dstAccessMask=VK_ACCESS_TRANSFER_WRITE_BIT,.oldLayout=VK_IMAGE_LAYOUT_UNDEFINED,
+        .newLayout=VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,.srcQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED,
+        .dstQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED,.image=image,.subresourceRange={VK_IMAGE_ASPECT_COLOR_BIT,0,1,0,1}};
+    vkCmdPipelineBarrier(s->command,VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,VK_PIPELINE_STAGE_TRANSFER_BIT,0,0,NULL,0,NULL,1,&barrier);
+    VkBufferImageCopy copy={.imageSubresource={VK_IMAGE_ASPECT_COLOR_BIT,0,0,1},.imageExtent={width,height,1}};
+    vkCmdCopyBufferToImage(s->command,buffer,image,VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,1,&copy);
+    barrier.srcAccessMask=VK_ACCESS_TRANSFER_WRITE_BIT;
+    barrier.dstAccessMask=VK_ACCESS_COLOR_ATTACHMENT_READ_BIT|VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+    barrier.oldLayout=VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;barrier.newLayout=VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    vkCmdPipelineBarrier(s->command,VK_PIPELINE_STAGE_TRANSFER_BIT,VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT,0,0,NULL,0,NULL,1,&barrier);
+    if((r=vkEndCommandBuffer(s->command))!=VK_SUCCESS) goto fail;
+    VkSubmitInfo submit={.sType=VK_STRUCTURE_TYPE_SUBMIT_INFO,.commandBufferCount=1,.pCommandBuffers=&s->command};
+    if((r=vkQueueSubmit(queue,1,&submit,s->fence))!=VK_SUCCESS) goto fail;
+    if((r=vkWaitForFences(s->device,1,&s->fence,VK_TRUE,5000000000ULL))!=VK_SUCCESS) goto fail;
+    return ch_vk_xr_swapchain_release(s,s->fence,vk_result);
+fail:
+    *vk_result=r;s->failed=1;return XR_ERROR_GRAPHICS_DEVICE_INVALID;
+}
 XrResult ch_vk_xr_swapchain_texture_release(ChVkXrSwapchain *s,ChVkTexture *texture,VkResult *vk_result) {
     if(!s || !texture || !vk_result) return XR_ERROR_VALIDATION_FAILURE;
     if(!s->waited || s->failed) return XR_ERROR_CALL_ORDER_INVALID;

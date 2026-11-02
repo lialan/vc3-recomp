@@ -13,4 +13,6 @@ XrResult ch_vk_xr_quad_update(ChVkXrQuad *,ChVkTarget *,XrDuration,VkResult *);
 const XrCompositionLayerBaseHeader *ch_vk_xr_quad_layer(const ChVkXrQuad *);
 XrResult ch_vk_xr_quad_destroy(ChVkXrQuad *);
 XrResult ch_vk_xr_quad_update_texture(ChVkXrQuad *,ChVkTexture *,XrDuration,VkResult *);
+/* The same from packed RGBA8 rows in a buffer (ch_vk_xr_swapchain_buffer_release). */
+XrResult ch_vk_xr_quad_update_buffer(ChVkXrQuad *,VkQueue queue,uint32_t family,VkBuffer buffer,XrDuration,VkResult *);
 #endif

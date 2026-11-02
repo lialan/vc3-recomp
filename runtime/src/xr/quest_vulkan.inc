@@ -5,6 +5,9 @@ static ChVkTarget *s_vk_menu_target;
 static uint32_t s_vk_screen_w,s_vk_screen_h;
 static uint64_t s_vk_screen_sequence;
 static int s_vk_menu_dirty;
+static int s_vk_split;            /* the game on its own VkDevice (vk_split_init) */
+static ChVkXrBridge s_vk_bridge;
+static pthread_mutex_t s_vk_game_queue=PTHREAD_MUTEX_INITIALIZER;
 static struct {
     ChVkXrSwapchain *chain;
     ChVkTarget *target;
@@ -68,15 +71,56 @@ static VkResult vk_publish(void *context,const Nv2aSurface *surface,ChVkTarget *
     pace_game_frame();
     return ch_vk_gpu_mailbox_publish(context,surface,target);
 }
+#if defined(CHIHIRO_XR_DESKTOP)
+/* The game on a VkDevice of its own (desktop OpenXR; VC3_XR_SPLIT_DEVICE=0:
+ * off). SteamVR (Steam Frame) puts its per-display-frame waits on the queue
+ * the session is given; sharing it, each of the emulated GPU's many waits a
+ * frame lasted until the next display frame -- ~30 fps at 120 Hz, worse at
+ * 90. Its own device has a queue of its own; frames cross to the headset's
+ * device through shared buffers (vk_xr_bridge.h). Falls back to the one
+ * device, logged, if any of it is missing. */
+#define VK_BRIDGE_CAPACITY ((VkDeviceSize)4096*2160*4)
+static void vk_split_init(VkDevice *device,VkQueue *queue)
+{
+    const char *e=ch_env("XR_SPLIT_DEVICE");
+    if(e && *e=='0') {fprintf(stderr,"[quest Vulkan] one device (XR_SPLIT_DEVICE=0)\n");return;}
+    if(!s_vk.external_memory) {fprintf(stderr,"[quest Vulkan] one device: no VK_KHR_external_memory_fd\n");return;}
+    VkPhysicalDeviceFeatures f;vkGetPhysicalDeviceFeatures(s_vk.physical,&f);
+    VkPhysicalDeviceFeatures want={.occlusionQueryPrecise=f.occlusionQueryPrecise,.fillModeNonSolid=f.fillModeNonSolid,
+        .shaderClipDistance=f.shaderClipDistance,.depthClamp=f.depthClamp};
+    float priority=1;
+    VkDeviceQueueCreateInfo q={.sType=VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,.queueFamilyIndex=s_vk.family,
+        .queueCount=1,.pQueuePriorities=&priority};
+    const char *ext[]={VK_KHR_EXTERNAL_MEMORY_FD_EXTENSION_NAME};
+    VkDeviceCreateInfo dc={.sType=VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,.queueCreateInfoCount=1,.pQueueCreateInfos=&q,
+        .pEnabledFeatures=&want,.enabledExtensionCount=1,.ppEnabledExtensionNames=ext};
+    VkDevice game;VkResult r=vkCreateDevice(s_vk.physical,&dc,NULL,&game);
+    if(r!=VK_SUCCESS) {fprintf(stderr,"[quest Vulkan] one device: game device %d\n",(int)r);return;}
+    r=ch_vk_xr_bridge_create(s_vk.physical,s_vk.device,game,VK_BRIDGE_CAPACITY,&s_vk_bridge);
+    if(r!=VK_SUCCESS) {
+        fprintf(stderr,"[quest Vulkan] one device: shared buffers %d\n",(int)r);
+        vkDestroyDevice(game,NULL);return;
+    }
+    ch_vk_gpu_mailbox_set_buffers(s_vk_frames,s_vk_bridge.game_buffer,VK_BRIDGE_CAPACITY);
+    *device=game;vkGetDeviceQueue(game,s_vk.family,0,queue);s_vk_split=1;
+    fprintf(stderr,"[quest Vulkan] the game on its own VkDevice; frames to the headset's through shared buffers\n");
+}
+#endif
 static int vk_host_init(void)
 {
     const char *profile=ch_env("VULKAN_PROFILE");
     s_vk_profile.enabled=profile && atoi(profile)!=0;
     VkResult result=ch_vk_gpu_mailbox_create(&s_vk_frames);
     if(result!=VK_SUCCESS) return 0;
-    ChVkBackendConfig config={.physical=s_vk.physical,.device=s_vk.device,
-        .queue=s_vk.queue,.family=s_vk.family,.precise_queries=s_vk.precise_queries,.raw_fixed=s_vk.raw_fixed,
-        .lock_queue=vk_queue_lock,.unlock_queue=vk_queue_unlock,.queue_context=&s_vk_queue,
+    VkDevice game_device=s_vk.device; VkQueue game_queue=s_vk.queue;
+    void *game_lock=&s_vk_queue;
+#if defined(CHIHIRO_XR_DESKTOP)
+    vk_split_init(&game_device,&game_queue);
+    if(s_vk_split) game_lock=&s_vk_game_queue;
+#endif
+    ChVkBackendConfig config={.physical=s_vk.physical,.device=game_device,
+        .queue=game_queue,.family=s_vk.family,.precise_queries=s_vk.precise_queries,.raw_fixed=s_vk.raw_fixed,
+        .lock_queue=vk_queue_lock,.unlock_queue=vk_queue_unlock,.queue_context=game_lock,
         .render_context=s_vk_frames,.present_target=vk_publish};
     return ch_vk_runtime_configure(&config);
 }
@@ -144,7 +188,11 @@ static unsigned vk_present(const Frame *f,const XrCompositionLayerBaseHeader **l
         }
         vk_xr_check(ch_vk_xr_quad_pose(s_vk_screen,&pose,size),"screen pose");
         if(s_vk_screen_sequence!=f->gpu.sequence) {
-            vk_xr_check(ch_vk_xr_quad_update_texture(s_vk_screen,f->gpu.image,XR_INFINITE_DURATION,&result),"GPU screen copy");
+            if(s_vk_split)   /* the game's frame, finished, in its slot's shared buffer */
+                vk_xr_check(ch_vk_xr_quad_update_buffer(s_vk_screen,s_vk.queue,s_vk.family,
+                    s_vk_bridge.xr_buffer[f->gpu.slot],XR_INFINITE_DURATION,&result),"shared screen copy");
+            else
+                vk_xr_check(ch_vk_xr_quad_update_texture(s_vk_screen,f->gpu.image,XR_INFINITE_DURATION,&result),"GPU screen copy");
             vk_check(result,"screen copy completion");
             s_vk_screen_sequence=f->gpu.sequence;
         }

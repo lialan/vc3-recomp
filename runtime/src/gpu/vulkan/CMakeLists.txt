@@ -223,7 +223,7 @@ endif()
 # OpenXR headers are optional for standalone offscreen-only builds. Production
 # host enables XR_KHR_vulkan_enable2 before calling this device factory.
 if(OPENXR_DIR)
-    target_sources(chihiro_vulkan PRIVATE vk_xr.c vk_xr_swapchain.c vk_xr_frame.c vk_xr_quad.c vk_xr_screen.c)
+    target_sources(chihiro_vulkan PRIVATE vk_xr.c vk_xr_swapchain.c vk_xr_frame.c vk_xr_quad.c vk_xr_screen.c vk_xr_bridge.c)
     target_include_directories(chihiro_vulkan PUBLIC "${OPENXR_DIR}")
     if(CHIHIRO_VULKAN_TESTS)
         add_executable(vulkan_xr_device_test "${CH_VK_ROOT}/tools/vulkan-xr-device-test.c")
