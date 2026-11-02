@@ -92,6 +92,10 @@ VkResult ch_vk_target_batching(ChVkTarget *,int enabled);
  * 1..256 bounds descriptor reservations and pending draw/texture lifetimes. */
 VkResult ch_vk_target_batch_limit(ChVkTarget *,uint32_t draws);
 VkResult ch_vk_target_finish(ChVkTarget *);
+/* Submit pending work without a host wait. The target retires that batch
+ * before it next records, reads or copies; later queue work is ordered after
+ * it. Nothing is published to guest memory. */
+VkResult ch_vk_target_submit(ChVkTarget *);
 uint32_t ch_vk_target_pending(const ChVkTarget *);
 /* Transfer one immutable sampled-image lease to the completion boundary.
  * owned selects destruction; borrowed cache leases invoke release if non-NULL.

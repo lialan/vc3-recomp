@@ -322,6 +322,8 @@ VkResult ch_vk_texture_cache_resolve_target(ChVkTextureCache *c,const Nv2aTextur
     uint64_t room=c->trace?cache_us():0;
     r=ch_vk_target_snapshot_texture(source,ch_nv2a_texture_mip_levels(t,1),&image);
     if(r==VK_SUCCESS) r=ch_vk_texture_set_sampler(image,&sampler);
+    /* X8R8G8B8 (linear 0x1e, swizzled 0x07) samples the target with alpha 1. */
+    if(r==VK_SUCCESS && (t->color==0x1e || t->color==0x07)) r=ch_vk_texture_set_alpha_one(image);
     if(r!=VK_SUCCESS) {ch_vk_texture_destroy(image);return r;}
     *slot=(struct Entry){.key=*t,.image=image,.cost=cost,.source=source,.serial=serial};
     if(slot==c->entries+c->extent) c->extent++;

@@ -232,6 +232,9 @@ static VkResult attach(ChVkBackendConfig config)
     const char *gpu_render_textures=ch_env("VULKAN_GPU_RENDER_TEXTURES");
     config.sample_render_targets=gpu_render_textures?atoi(gpu_render_textures)!=0:
         config.resident_color && config.cache_textures;
+    const char *lazy=ch_env("VULKAN_LAZY_COMPLETION");
+    config.lazy_completion=lazy && atoi(lazy)!=0;
+    if(config.lazy_completion) fprintf(stderr,"[Vulkan] lazy guest completion: enabled\n");
     const char *entries=ch_env("VULKAN_TEXTURE_CACHE_ENTRIES");
     if(entries) {
         char *end;errno=0;unsigned long value=strtoul(entries,&end,10);

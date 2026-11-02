@@ -108,6 +108,10 @@ struct ChVkTarget {
     /* One queued copy edge; GPU ownership lasts through its source fence.
      * A new copy drains existing edges, so this graph cannot form a cycle. */
     ChVkTarget *copy_source,*copy_destination;
+    /* A texture snapshot/refresh was submitted with this batch without a host
+     * wait: the copy is ordered before later work on the shared queue, and
+     * this target retires the batch before it next records or reads. */
+    int deferred_retire;
     int color_readback_active,color_readback_batched;
     void *color_readback_pixels;
     uint32_t width, height;
@@ -760,9 +764,9 @@ static VkResult retire_batch(ChVkTarget *t) {
         uint64_t now=time_ns();t->timing_stats.batch_retire_ns+=now-retire_start;
         t->timing_stats.batch_finish_ns+=now-t->submitted_finish_start;report_batch_timing(t,now);
     }
-    t->submitted=0;return VK_SUCCESS;
+    t->submitted=0;t->deferred_retire=0;return VK_SUCCESS;
 fail:
-    t->failed=1;vkQueueWaitIdle(t->queue);t->submitted=0;t->pending=t->pending_clears=0;
+    t->failed=1;vkQueueWaitIdle(t->queue);t->submitted=0;t->deferred_retire=0;t->pending=t->pending_clears=0;
     if(t->copy_destination) {t->copy_destination->failed=1;t->copy_destination->copy_source=NULL;t->copy_destination=NULL;}
     retire_samples(t);return result;
 }
@@ -770,7 +774,7 @@ static VkResult wait_copy_source(ChVkTarget *t) {
     return t && t->copy_source?retire_batch(t->copy_source):VK_SUCCESS;
 }
 static VkResult retire_copy_out(ChVkTarget *t) {
-    return t && t->copy_destination?retire_batch(t):VK_SUCCESS;
+    return t && (t->copy_destination || t->deferred_retire)?retire_batch(t):VK_SUCCESS;
 }
 static VkResult finish_batch_with_copy(ChVkTarget *t,int readback,const char *caller,ChVkTarget *depth_destination,ChVkTexture *texture_destination,int defer_wait) {
     if(!t || t->failed) return VK_ERROR_INITIALIZATION_FAILED;
@@ -823,6 +827,13 @@ static VkResult finish_batch_named(ChVkTarget *t,int readback,const char *caller
     return finish_batch_with_copy(t,readback,caller,NULL,NULL,0);
 }
 VkResult ch_vk_target_finish(ChVkTarget *t) {return finish_batch_named(t,0,"external_completion");}
+VkResult ch_vk_target_submit(ChVkTarget *t) {
+    if(!t || t->failed) return VK_ERROR_INITIALIZATION_FAILED;
+    if(!t->pending || t->submitted) return VK_SUCCESS;
+    VkResult r=finish_batch_with_copy(t,0,"lazy_completion",NULL,NULL,1);
+    if(r==VK_SUCCESS) t->deferred_retire=t->submitted;
+    return r;
+}
 static VkResult quantize_depth(ChVkTarget *,int);
 VkResult ch_vk_target_depth_quantization(ChVkTarget *t,int mode) {
     if(!t || mode<0 || mode>5)return VK_ERROR_INITIALIZATION_FAILED;
@@ -1195,8 +1206,9 @@ VkResult ch_vk_target_snapshot_texture(ChVkTarget *t,uint32_t levels,ChVkTexture
         ChVkTexture *copy=NULL;
         VkResult result=ch_vk_texture_create_copy_target(t->physical,t->device,t->queue,t->family,
             t->width,t->height,levels,&copy);
-        if(result==VK_SUCCESS) result=finish_batch_with_copy(t,0,__func__,NULL,copy,0);
+        if(result==VK_SUCCESS) result=finish_batch_with_copy(t,0,__func__,NULL,copy,1);
         if(result!=VK_SUCCESS) {ch_vk_texture_destroy(copy);return result;}
+        t->deferred_retire=t->submitted;
         t->resource_stats.combined_new_texture_copies++;
         *out=copy;return VK_SUCCESS;
     }
@@ -1209,7 +1221,11 @@ VkResult ch_vk_target_refresh_texture(ChVkTarget *t,ChVkTexture *texture) {
     if(!t || t->failed || !t->initialized) return VK_ERROR_INITIALIZATION_FAILED;
     if(!ch_vk_texture_image_copy_valid(texture,t->device,t->queue,t->image,t->width,t->height)) return VK_ERROR_INITIALIZATION_FAILED;
     VkResult copied=retire_copy_out(t);if(copied!=VK_SUCCESS) return copied;
-    if(t->pending) return finish_batch_with_copy(t,0,__func__,NULL,texture,0);
+    if(t->pending && !t->submitted) {
+        VkResult r=finish_batch_with_copy(t,0,__func__,NULL,texture,1);
+        if(r==VK_SUCCESS) t->deferred_retire=t->submitted;
+        return r;
+    }
     VkResult r=finish_batch_named(t,0,__func__);
     if(r!=VK_SUCCESS) return r;
     if(t->layout!=VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL) return VK_ERROR_INITIALIZATION_FAILED;

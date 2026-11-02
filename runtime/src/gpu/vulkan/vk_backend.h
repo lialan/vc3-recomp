@@ -49,6 +49,13 @@ typedef struct {
     int strict_texture_checks; /* disable tracked texture comparisons for diagnostics */
     int cache_textures; /* exact level-zero storage/palette/sampler cache */
     int sample_render_targets; /* opt-in immutable GPU snapshots; requires both resident_color/cache_textures */
+    /* Guest kickoff/semaphore/report completions submit pending GPU work
+     * without waiting or publishing resident color/depth to guest RAM, as the
+     * OpenGL renderer does: only for titles that never read rendered pixels or
+     * depth from the CPU. Visibility counts come from unbatched query draws,
+     * already complete. Flips, CPU-decoded sampling and surface switches still
+     * publish. Ignored with render routing hooks. */
+    int lazy_completion;
     uint32_t texture_cache_entries; /* zero: default capacity */
     size_t texture_cache_bytes; /* zero: default byte budget */
     /* Synchronous host rendering hooks, after guest-visible completion.

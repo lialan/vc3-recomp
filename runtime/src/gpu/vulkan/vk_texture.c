@@ -363,6 +363,22 @@ VkResult ch_vk_texture_set_sampler(ChVkTexture *t,const VkSamplerCreateInfo *inf
     return VK_SUCCESS;
 }
 
+/* Formats without alpha (X8R8G8B8) read alpha as 1 whatever the source
+ * image holds -- a render target sampled through one keeps the alpha its
+ * passes wrote. Rebuild the view with the alpha component forced to one. */
+VkResult ch_vk_texture_set_alpha_one(ChVkTexture *t) {
+    if(!t || t->failed || !t->view) return VK_ERROR_INITIALIZATION_FAILED;
+    VkImageViewCreateInfo info={.sType=VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,.image=t->image,
+        .viewType=t->layers==6?VK_IMAGE_VIEW_TYPE_CUBE:VK_IMAGE_VIEW_TYPE_2D,.format=VK_FORMAT_R8G8B8A8_UNORM,
+        .components={VK_COMPONENT_SWIZZLE_IDENTITY,VK_COMPONENT_SWIZZLE_IDENTITY,VK_COMPONENT_SWIZZLE_IDENTITY,VK_COMPONENT_SWIZZLE_ONE},
+        .subresourceRange={VK_IMAGE_ASPECT_COLOR_BIT,0,t->levels,0,t->layers}};
+    VkImageView view;
+    VkResult r=vkCreateImageView(t->device,&info,NULL,&view);
+    if(r!=VK_SUCCESS) return r;
+    vkDestroyImageView(t->device,t->view,NULL);
+    t->view=view;return VK_SUCCESS;
+}
+
 int ch_vk_texture_can_decode(const Nv2aTexture *s) {
     if(!s || s->cube || !s->width || !s->height || (uint64_t)s->width*s->height>UINT32_MAX/3) return 0;
     if(s->color==0x0c || s->color==0x0e || s->color==0x0f) return 1;

@@ -66,6 +66,8 @@ VkResult ch_vk_texture_read_rgba(ChVkTexture *texture, void *rgba, VkDeviceSize 
 void ch_vk_texture_destroy(ChVkTexture *texture);
 /* Caller must have completed all previous sampling before replacing sampler. */
 VkResult ch_vk_texture_set_sampler(ChVkTexture *texture, const VkSamplerCreateInfo *info);
+/* Sample alpha as 1 (X8R8G8B8 views of a render-target snapshot). */
+VkResult ch_vk_texture_set_alpha_one(ChVkTexture *texture);
 
 /* Compatibility entry points for existing 32-bit callers. */
 int ch_vk_texture_can_decode32(const Nv2aTexture *);

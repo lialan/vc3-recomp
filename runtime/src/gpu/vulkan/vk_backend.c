@@ -506,8 +506,8 @@ static int gpu_sample_matches(const struct Surface *f,const Nv2aTexture *tx) {
     const ChVkGuestLayout layout=f->layout;
     if(layout.swizzled) {
         uint32_t wx=(f->state.surface_format>>16)&255,hy=f->state.surface_format>>24;
-        if(tx->color!=0x06 || tx->width!=(1u<<wx) || tx->height!=(1u<<hy)) return 0;
-    } else if(tx->color!=0x12 || tx->pitch!=f->guest.pitch) return 0;
+        if((tx->color!=0x06 && tx->color!=0x07) || tx->width!=(1u<<wx) || tx->height!=(1u<<hy)) return 0;
+    } else if((tx->color!=0x12 && tx->color!=0x1e) || tx->pitch!=f->guest.pitch) return 0;
     size_t span,palette;
     return ch_vk_texture_storage_span(tx,&span,&palette)==VK_SUCCESS && !palette && span==layout.span;
 }
@@ -809,9 +809,22 @@ static void locked_draw(const Nv2aSurface *s,const Nv2aBatch *b) {
 static void locked_flip(void) {
     queue_lock(active); flip(); queue_unlock(active);
 }
+/* Lazy completion: everything recorded so far reaches the queue (later work,
+ * the flip's full flush included, is ordered after it), but neither the host
+ * nor the guest waits for it and dirty storage stays GPU-resident until a
+ * flip, a CPU-decoded sample, a report or a surface switch publishes it. */
+static void submit_pending(void) {
+    for(unsigned i=0;i<active->count;i++) {
+        VkResult r=ch_vk_target_submit(active->surfaces[i].target);
+        if(r!=VK_SUCCESS) fatal(r,"lazy completion submission");
+    }
+}
 static void locked_flush(void) {
     uint64_t start=active->costs.enabled?now_us():0,cpu=active->costs.enabled?thread_cpu_ns():0;
-    queue_lock(active); flush(); queue_unlock(active);
+    queue_lock(active);
+    if(active->host.lazy_completion && !active->host.guest_color_changed) submit_pending();
+    else flush();
+    queue_unlock(active);
     if(active->costs.enabled) {
         active->costs.completion_us+=now_us()-start;active->costs.completion_cpu_ns+=thread_cpu_ns()-cpu;
         active->costs.completion_calls++;
