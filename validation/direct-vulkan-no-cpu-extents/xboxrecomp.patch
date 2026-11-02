@@ -1,0 +1,37 @@
+diff --git a/src/kernel/nv2a_backend.h b/src/kernel/nv2a_backend.h
+index 6da82614..33c55be3 100644
+--- a/src/kernel/nv2a_backend.h
++++ b/src/kernel/nv2a_backend.h
+@@ -268,6 +268,10 @@ typedef struct {
+      * before a semaphore/report/kickoff completion becomes visible. Deferred
+      * submission replays this on the owning submission thread. */
+     void (*flush)(void);
++    /* Optional capability: draw_raw never consults raw.extent. The deferred
++     * queue may omit the CPU vertex-program walk used to snapshot it.
++     * Zero preserves legacy metadata for routing/diagnostic backends. */
++    int raw_no_extent;
+ } Nv2aBackend;
+ 
+ /* Register (or, with NULL, remove) the back end. Call before the title starts
+diff --git a/src/kernel/nv2a_pb_defer.c b/src/kernel/nv2a_pb_defer.c
+index 5bd279d8..51d33324 100644
+--- a/src/kernel/nv2a_pb_defer.c
++++ b/src/kernel/nv2a_pb_defer.c
+@@ -560,7 +560,9 @@ static DrawRec *record_draw(const Nv2aSurface *s, const Nv2aBatch *b, int raw)
+         /* The extent reads the executor's state as it is now: computed here
+          * for the batches a back end may ask it of (screen-space programs,
+          * and those whose first vertex is behind the eye). */
+-        if (g->extent) {
++        if (s_real->raw_no_extent) {
++            d->g.extent = NULL;
++        } else if (g->extent) {
+             if (g->kind == NV2A_RAW_PROGRAM && !(g->w0 > 0.0f && g->w0 != 1.0f))
+                 d->ext_ok = g->extent(g, &d->ext);
+             d->g.extent = defer_extent;
+@@ -725,5 +727,6 @@ const Nv2aBackend *nv2a_defer_wrap(const Nv2aBackend *real)
+     s_proxy.flip = real->flip ? p_flip : NULL;
+     s_proxy.draw_raw = real->draw_raw ? p_draw_raw : NULL;
+     s_proxy.flush = real->flush ? p_flush : NULL;
++    s_proxy.raw_no_extent = real->raw_no_extent;
+     return &s_proxy;
+ }

@@ -1,0 +1,143 @@
+[PROF] walk 447 ms, 955219 words, thread CPU 7 ms
+[PROF] 1.00 s: batches 2 ms | FF xf 0 ms (0) | VP xf 0 ms (0) | clip+expand 0 ms | draw 0 ms (0) | raw 2 ms (3027) | flip 436 ms | VP extent 0.0 ms (0) | metadata vertex 0.302 ms
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU graphics] texture_pixels=32768 texture_ms=0.062 color_pixels=0 color_ms=0.000 (cumulative)
+[PROF] walk 416 ms, 1060185 words, thread CPU 7 ms
+[PROF] 1.02 s: batches 2 ms | FF xf 0 ms (0) | VP xf 0 ms (0) | clip+expand 0 ms | draw 0 ms (0) | raw 2 ms (3287) | flip 411 ms | VP extent 0.0 ms (0) | metadata vertex 0.304 ms
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU graphics] texture_pixels=32768 texture_ms=0.062 color_pixels=0 color_ms=0.000 (cumulative)
+[PROF] walk 395 ms, 1050137 words, thread CPU 8 ms
+[PROF] 1.02 s: batches 2 ms | FF xf 0 ms (0) | VP xf 0 ms (0) | clip+expand 0 ms | draw 0 ms (0) | raw 2 ms (3292) | flip 393 ms | VP extent 0.0 ms (0) | metadata vertex 0.321 ms
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU graphics] texture_pixels=32768 texture_ms=0.062 color_pixels=0 color_ms=0.000 (cumulative)
+[PROF] walk 409 ms, 1066350 words, thread CPU 7 ms
+[PROF] 1.00 s: batches 2 ms | FF xf 0 ms (0) | VP xf 0 ms (0) | clip+expand 0 ms | draw 0 ms (0) | raw 2 ms (3239) | flip 393 ms | VP extent 0.0 ms (0) | metadata vertex 0.324 ms
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU graphics] texture_pixels=32768 texture_ms=0.062 color_pixels=0 color_ms=0.000 (cumulative)
+[PROF] walk 410 ms, 1049725 words, thread CPU 7 ms
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU graphics] texture_pixels=32768 texture_ms=0.062 color_pixels=0 color_ms=0.000 (cumulative)
+[PROF] 1.02 s: batches 2 ms | FF xf 0 ms (0) | VP xf 0 ms (0) | clip+expand 0 ms | draw 0 ms (0) | raw 2 ms (3275) | flip 413 ms | VP extent 0.0 ms (0) | metadata vertex 0.361 ms
+[PROF] walk 408 ms, 1051571 words, thread CPU 7 ms
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU graphics] texture_pixels=32768 texture_ms=0.062 color_pixels=0 color_ms=0.000 (cumulative)
+[PROF] 1.02 s: batches 2 ms | FF xf 0 ms (0) | VP xf 0 ms (0) | clip+expand 0 ms | draw 0 ms (0) | raw 2 ms (3262) | flip 408 ms | VP extent 0.0 ms (0) | metadata vertex 0.312 ms
+[PROF] walk 403 ms, 775197 words, thread CPU 5 ms
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU graphics] texture_pixels=294912 texture_ms=0.441 color_pixels=0 color_ms=0.000 (cumulative)
+[PROF] 1.00 s: batches 1 ms | FF xf 0 ms (0) | VP xf 0 ms (0) | clip+expand 0 ms | draw 0 ms (0) | raw 1 ms (1800) | flip 389 ms | VP extent 0.0 ms (0) | metadata vertex 0.197 ms
+[GPU]   of them screen space (w = 1): 21362; extent asked for 0 (0 vertices on the CPU); checked: 0 screen space, 0 starting behind the eye
+[PROF] walk 384 ms, 750247 words, thread CPU 5 ms
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU graphics] texture_pixels=294912 texture_ms=0.441 color_pixels=0 color_ms=0.000 (cumulative)
+[PROF] 1.00 s: batches 1 ms | FF xf 0 ms (0) | VP xf 0 ms (0) | clip+expand 0 ms | draw 0 ms (0) | raw 1 ms (1791) | flip 381 ms | VP extent 0.0 ms (0) | metadata vertex 0.172 ms
+[PROF] walk 385 ms, 751986 words, thread CPU 5 ms
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU graphics] texture_pixels=294912 texture_ms=0.441 color_pixels=0 color_ms=0.000 (cumulative)
+[PROF] 1.02 s: batches 1 ms | FF xf 0 ms (0) | VP xf 0 ms (0) | clip+expand 0 ms | draw 0 ms (0) | raw 1 ms (1826) | flip 388 ms | VP extent 0.0 ms (0) | metadata vertex 0.182 ms
+[PROF] walk 395 ms, 838036 words, thread CPU 6 ms
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU graphics] texture_pixels=294912 texture_ms=0.441 color_pixels=0 color_ms=0.000 (cumulative)
+[PROF] 1.01 s: batches 1 ms | FF xf 0 ms (0) | VP xf 0 ms (0) | clip+expand 0 ms | draw 0 ms (0) | raw 1 ms (2236) | flip 396 ms | VP extent 0.0 ms (0) | metadata vertex 0.223 ms
+[PROF] walk 387 ms, 850029 words, thread CPU 6 ms
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU graphics] texture_pixels=294912 texture_ms=0.441 color_pixels=0 color_ms=0.000 (cumulative)
+[PROF] 1.00 s: batches 1 ms | FF xf 0 ms (0) | VP xf 0 ms (0) | clip+expand 0 ms | draw 0 ms (0) | raw 1 ms (2335) | flip 381 ms | VP extent 0.0 ms (0) | metadata vertex 0.228 ms
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU graphics] texture_pixels=294912 texture_ms=0.441 color_pixels=0 color_ms=0.000 (cumulative)
+[PROF] walk 404 ms, 1085359 words, thread CPU 7 ms
+[PROF] 1.00 s: batches 2 ms | FF xf 0 ms (0) | VP xf 0 ms (0) | clip+expand 0 ms | draw 0 ms (0) | raw 2 ms (3417) | flip 388 ms | VP extent 0.0 ms (0) | metadata vertex 0.348 ms
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU graphics] texture_pixels=294912 texture_ms=0.441 color_pixels=0 color_ms=0.000 (cumulative)
+[PROF] walk 389 ms, 1182510 words, thread CPU 8 ms
+[PROF] 1.00 s: batches 2 ms | FF xf 0 ms (0) | VP xf 0 ms (0) | clip+expand 0 ms | draw 0 ms (0) | raw 2 ms (3745) | flip 382 ms | VP extent 0.0 ms (0) | metadata vertex 0.364 ms
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU graphics] texture_pixels=294912 texture_ms=0.441 color_pixels=0 color_ms=0.000 (cumulative)
+[PROF] walk 422 ms, 776721 words, thread CPU 5 ms
+[PROF] 1.02 s: batches 1 ms | FF xf 0 ms (0) | VP xf 0 ms (0) | clip+expand 0 ms | draw 0 ms (0) | raw 1 ms (1735) | flip 421 ms | VP extent 0.0 ms (0) | metadata vertex 0.209 ms
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU graphics] texture_pixels=294912 texture_ms=0.441 color_pixels=0 color_ms=0.000 (cumulative)
+[PROF] walk 437 ms, 768477 words, thread CPU 5 ms
+[PROF] 1.01 s: batches 1 ms | FF xf 0 ms (0) | VP xf 0 ms (0) | clip+expand 0 ms | draw 0 ms (0) | raw 1 ms (1870) | flip 437 ms | VP extent 0.0 ms (0) | metadata vertex 0.191 ms
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU graphics] texture_pixels=294912 texture_ms=0.441 color_pixels=0 color_ms=0.000 (cumulative)
+[PROF] walk 410 ms, 1027178 words, thread CPU 7 ms
+[PROF] 1.02 s: batches 2 ms | FF xf 0 ms (0) | VP xf 0 ms (0) | clip+expand 0 ms | draw 0 ms (0) | raw 2 ms (2901) | flip 413 ms | VP extent 0.0 ms (0) | metadata vertex 0.298 ms
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU graphics] texture_pixels=294912 texture_ms=0.441 color_pixels=0 color_ms=0.000 (cumulative)
+[PROF] walk 427 ms, 1080518 words, thread CPU 7 ms
+[PROF] 1.00 s: batches 2 ms | FF xf 0 ms (0) | VP xf 0 ms (0) | clip+expand 0 ms | draw 0 ms (0) | raw 2 ms (3327) | flip 410 ms | VP extent 0.0 ms (0) | metadata vertex 0.354 ms
+[GPU]   of them screen space (w = 1): 46487; extent asked for 0 (0 vertices on the CPU); checked: 0 screen space, 0 starting behind the eye
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU graphics] texture_pixels=557056 texture_ms=0.869 color_pixels=0 color_ms=0.000 (cumulative)
+[PROF] walk 414 ms, 1158425 words, thread CPU 8 ms
+[PROF] 1.00 s: batches 2 ms | FF xf 0 ms (0) | VP xf 0 ms (0) | clip+expand 0 ms | draw 0 ms (0) | raw 2 ms (3631) | flip 407 ms | VP extent 0.0 ms (0) | metadata vertex 0.358 ms
+[PROF] walk 496 ms, 1123296 words, thread CPU 7 ms
+[PROF] 1.05 s: batches 2 ms | FF xf 0 ms (0) | VP xf 0 ms (0) | clip+expand 0 ms | draw 0 ms (0) | raw 2 ms (3964) | flip 460 ms | VP extent 0.0 ms (0) | metadata vertex 0.218 ms
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU graphics] texture_pixels=845824 texture_ms=4.369 color_pixels=0 color_ms=0.000 (cumulative)
+[PROF] walk 1016 ms, 21256042 words, thread CPU 99 ms
+[PROF] 1.01 s: batches 19 ms | FF xf 0 ms (0) | VP xf 0 ms (0) | clip+expand 0 ms | draw 0 ms (0) | raw 17 ms (62100) | flip 916 ms | VP extent 0.0 ms (0) | metadata vertex 0.729 ms
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU graphics] texture_pixels=901120 texture_ms=5.014 color_pixels=0 color_ms=0.000 (cumulative)
+[PROF] walk 848 ms, 8039346 words, thread CPU 39 ms
+[PROF] 1.01 s: batches 8 ms | FF xf 0 ms (0) | VP xf 0 ms (0) | clip+expand 0 ms | draw 0 ms (0) | raw 7 ms (24619) | flip 809 ms | VP extent 0.0 ms (0) | metadata vertex 0.447 ms
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU graphics] texture_pixels=1030144 texture_ms=6.403 color_pixels=0 color_ms=0.000 (cumulative)
+[PROF] walk 551 ms, 4828314 words, thread CPU 27 ms
+[PROF] 1.02 s: batches 6 ms | FF xf 0 ms (0) | VP xf 0 ms (0) | clip+expand 0 ms | draw 0 ms (0) | raw 5 ms (16151) | flip 530 ms | VP extent 0.0 ms (0) | metadata vertex 0.449 ms
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU graphics] texture_pixels=1030144 texture_ms=6.403 color_pixels=0 color_ms=0.000 (cumulative)
+[PROF] walk 570 ms, 6389594 words, thread CPU 35 ms
+[PROF] 1.00 s: batches 7 ms | FF xf 0 ms (0) | VP xf 0 ms (0) | clip+expand 0 ms | draw 0 ms (0) | raw 6 ms (21227) | flip 537 ms | VP extent 0.0 ms (0) | metadata vertex 0.450 ms
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU graphics] texture_pixels=1030144 texture_ms=6.403 color_pixels=0 color_ms=0.000 (cumulative)
+[PROF] walk 623 ms, 6392710 words, thread CPU 35 ms
+[PROF] 1.02 s: batches 7 ms | FF xf 0 ms (0) | VP xf 0 ms (0) | clip+expand 0 ms | draw 0 ms (0) | raw 6 ms (21357) | flip 599 ms | VP extent 0.0 ms (0) | metadata vertex 0.355 ms
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU graphics] texture_pixels=1030144 texture_ms=6.403 color_pixels=0 color_ms=0.000 (cumulative)
+[PROF] walk 619 ms, 5552894 words, thread CPU 31 ms
+[PROF] 1.02 s: batches 6 ms | FF xf 0 ms (0) | VP xf 0 ms (0) | clip+expand 0 ms | draw 0 ms (0) | raw 5 ms (18426) | flip 586 ms | VP extent 0.0 ms (0) | metadata vertex 0.383 ms
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU graphics] texture_pixels=1030144 texture_ms=6.403 color_pixels=0 color_ms=0.000 (cumulative)
+[PROF] walk 588 ms, 5245672 words, thread CPU 30 ms
+[PROF] 1.02 s: batches 6 ms | FF xf 0 ms (0) | VP xf 0 ms (0) | clip+expand 0 ms | draw 0 ms (0) | raw 5 ms (17474) | flip 571 ms | VP extent 0.0 ms (0) | metadata vertex 0.356 ms
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU graphics] texture_pixels=1030144 texture_ms=6.403 color_pixels=0 color_ms=0.000 (cumulative)
+[GPU]   of them screen space (w = 1): 82679; extent asked for 0 (0 vertices on the CPU); checked: 0 screen space, 0 starting behind the eye
+[PROF] walk 740 ms, 6825267 words, thread CPU 33 ms
+[PROF] 1.00 s: batches 7 ms | FF xf 0 ms (0) | VP xf 0 ms (0) | clip+expand 0 ms | draw 0 ms (0) | raw 6 ms (19971) | flip 712 ms | VP extent 0.0 ms (0) | metadata vertex 0.576 ms
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU graphics] texture_pixels=1030144 texture_ms=6.403 color_pixels=0 color_ms=0.000 (cumulative)
+[PROF] walk 771 ms, 8526568 words, thread CPU 37 ms
+[PROF] 1.00 s: batches 8 ms | FF xf 0 ms (0) | VP xf 0 ms (0) | clip+expand 0 ms | draw 0 ms (0) | raw 7 ms (22676) | flip 739 ms | VP extent 0.0 ms (0) | metadata vertex 0.791 ms
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU graphics] texture_pixels=1030144 texture_ms=6.403 color_pixels=0 color_ms=0.000 (cumulative)
+[PROF] walk 774 ms, 8469091 words, thread CPU 37 ms
+[PROF] 1.02 s: batches 8 ms | FF xf 0 ms (0) | VP xf 0 ms (0) | clip+expand 0 ms | draw 0 ms (0) | raw 7 ms (22733) | flip 745 ms | VP extent 0.0 ms (0) | metadata vertex 0.780 ms
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU graphics] texture_pixels=1030144 texture_ms=6.403 color_pixels=0 color_ms=0.000 (cumulative)
+[PROF] walk 750 ms, 8451500 words, thread CPU 36 ms
+[PROF] 1.02 s: batches 8 ms | FF xf 0 ms (0) | VP xf 0 ms (0) | clip+expand 0 ms | draw 0 ms (0) | raw 7 ms (22690) | flip 726 ms | VP extent 0.0 ms (0) | metadata vertex 0.716 ms
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU graphics] texture_pixels=1030144 texture_ms=6.403 color_pixels=0 color_ms=0.000 (cumulative)
+[PROF] walk 759 ms, 8576353 words, thread CPU 37 ms
+[PROF] 1.00 s: batches 8 ms | FF xf 0 ms (0) | VP xf 0 ms (0) | clip+expand 0 ms | draw 0 ms (0) | raw 7 ms (22668) | flip 710 ms | VP extent 0.0 ms (0) | metadata vertex 0.730 ms
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU graphics] texture_pixels=1030144 texture_ms=6.403 color_pixels=0 color_ms=0.000 (cumulative)
+[PROF] walk 816 ms, 7124671 words, thread CPU 31 ms
+[PROF] 1.00 s: batches 7 ms | FF xf 0 ms (0) | VP xf 0 ms (0) | clip+expand 0 ms | draw 0 ms (0) | raw 6 ms (19086) | flip 785 ms | VP extent 0.0 ms (0) | metadata vertex 0.605 ms
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU graphics] texture_pixels=1030144 texture_ms=6.403 color_pixels=0 color_ms=0.000 (cumulative)
+[PROF] walk 742 ms, 8446438 words, thread CPU 36 ms
+[PROF] 1.00 s: batches 8 ms | FF xf 0 ms (0) | VP xf 0 ms (0) | clip+expand 0 ms | draw 0 ms (0) | raw 7 ms (22459) | flip 700 ms | VP extent 0.0 ms (0) | metadata vertex 0.743 ms
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU graphics] texture_pixels=1030144 texture_ms=6.403 color_pixels=0 color_ms=0.000 (cumulative)
+[PROF] walk 632 ms, 6038248 words, thread CPU 34 ms
+[PROF] 1.02 s: batches 7 ms | FF xf 0 ms (0) | VP xf 0 ms (0) | clip+expand 0 ms | draw 0 ms (0) | raw 6 ms (19502) | flip 602 ms | VP extent 0.0 ms (0) | metadata vertex 0.325 ms
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU graphics] texture_pixels=1030144 texture_ms=6.403 color_pixels=0 color_ms=0.000 (cumulative)
+[PROF] walk 592 ms, 5480899 words, thread CPU 31 ms
+[PROF] 1.02 s: batches 6 ms | FF xf 0 ms (0) | VP xf 0 ms (0) | clip+expand 0 ms | draw 0 ms (0) | raw 5 ms (18133) | flip 571 ms | VP extent 0.0 ms (0) | metadata vertex 0.366 ms
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU graphics] texture_pixels=1030144 texture_ms=6.403 color_pixels=0 color_ms=0.000 (cumulative)

@@ -14,7 +14,11 @@ void nv2a_backend_presented_override(int on,uint32_t va) {(void)on;(void)va;}
 static pthread_mutex_t mutex=PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t cv=PTHREAD_COND_INITIALIZER;
 static int release_consumer,entered,failed;
-static unsigned draws,flushes;
+static unsigned draws,flushes,extent_calls;
+static int no_extent;
+static int extent(const Nv2aRawGeometry *g,Nv2aRawExtent *out) {
+ (void)g;memset(out,0,sizeof *out);out->x0=17;extent_calls++;return 1;
+}
 static uint8_t stream[256],separate[32],guest[32];
 static uint8_t pattern(unsigned round,unsigned at) {return (uint8_t)(round*19+at*37);}
 static void clear(const Nv2aSurface *s,const Nv2aRenderState *rs,uint32_t f,uint32_t c,uint32_t z) {
@@ -33,6 +37,8 @@ static int draw(const Nv2aSurface *s,const Nv2aBatch *b) {
     g->attr[0].data==stream || g->attr[4].data==separate ||
     g->attr[5].data!=guest || g->attr[6].data || g->attr[6].value[3]!=.75f)failed=1;
  for(unsigned i=0;i<32;i++)if(((const uint8_t *)g->attr[4].data)[i]!=(uint8_t)(s->color_va+i))failed=1;
+ if(no_extent) {if(g->extent)failed=1;}
+ else {Nv2aRawExtent e;if(!g->extent || !g->extent(g,&e) || e.x0!=17)failed=1;}
  draws++;return 1;
 }
 static void flush(void) {flushes++;}
@@ -40,9 +46,10 @@ int main(int argc,char **argv) {
  unsigned batch_size=argc>1?(unsigned)strtoul(argv[1],NULL,10):8;
  if(!batch_size || batch_size>128)return 2;
  setenv("RECOMP_PB_DECODE_THREAD","1",1);
- const Nv2aBackend real={.clear=clear,.draw_raw=draw,.flush=flush};
+ no_extent=argc>2?atoi(argv[2]):0;
+ const Nv2aBackend real={.clear=clear,.draw_raw=draw,.flush=flush,.raw_no_extent=no_extent};
  const Nv2aBackend *proxy=nv2a_defer_wrap(&real);
- Nv2aSurface surface={0};Nv2aRawGeometry raw={.kind=NV2A_RAW_FIXED};
+ Nv2aSurface surface={0};Nv2aRawGeometry raw={.kind=NV2A_RAW_PROGRAM,.w0=1,.extent=extent};
  uint16_t indices[]={0,1,2};raw.indices=indices;raw.index_count=3;
  const unsigned offsets[]={0,12,0,128},sizes[]={256,244,32,128};
  for(unsigned a=0;a<4;a++) {raw.attr[a].data=stream+offsets[a];raw.attr[a].bytes=sizes[a];raw.attr[a].stride=16;raw.attr[a].type=2;raw.attr[a].size=4;}
@@ -63,6 +70,7 @@ int main(int argc,char **argv) {
   nv2a_defer_drain();
   if(sem!=round+1 || draws!=(round+1)*batch_size || flushes!=round+1 || failed)return 1;
  }
+ if(extent_calls!=(no_extent?0:1000*batch_size))return 1;
  printf("PASS: %u deferred draws preserve overlapping inline streams, source mutation isolation, guest pointers, ring reuse and ordered semaphore publication\n",1000*batch_size);
  return 0;
 }

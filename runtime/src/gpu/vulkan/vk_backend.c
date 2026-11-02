@@ -802,6 +802,9 @@ VkResult ch_vk_backend_create(const ChVkBackendConfig *config,ChVkBackend **out)
 VkResult ch_vk_backend_attach(ChVkBackend *b) {
     if(!b || active) return VK_ERROR_INITIALIZATION_FAILED;
     callbacks.draw_raw=(b->host.observe_raw || b->host.raw_fixed)?locked_draw_raw:NULL;
+    /* Native Vulkan transforms/clips on the GPU and never reads CPU extents.
+     * Keep legacy metadata for observer/routing configurations. */
+    callbacks.raw_no_extent=b->host.raw_fixed && !b->host.observe_raw && !b->host.render_draw;
     callbacks.flush=(b->host.resident_color || b->host.resident_depth)?locked_flush:NULL;
     active=b; nv2a_backend_register(&callbacks); return VK_SUCCESS;
 }
