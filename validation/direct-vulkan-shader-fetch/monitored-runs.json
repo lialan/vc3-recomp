@@ -1,0 +1,1032 @@
+{
+  "train-off": {
+    "report": {
+      "binary": "/tmp/vc3-final-warm/vc3",
+      "sha256": "9633f798e814803e46373a1f7c35599c8d59546f410614b7dfb6a9cdcbcb4c05",
+      "seed_sha256": "61baf86c1eecaef9e57304977deed57f385717d44f689f43596f2739f0c0a0bd",
+      "environment": {
+        "CHIHIRO_AUTOKEYS": "12:coin,13:start,15:fire,20:start,22:start,25:start,26:pedal,26.5:pedal,27:pedal,27.5:pedal,28:pedal,28.5:pedal,29:pedal,29.5:pedal,30:pedal,30.5:pedal,31:pedal,31.5:pedal,32:pedal,26.5:fire,27.5:fire,28.5:fire,29.5:fire,30.5:fire,30:reload,31:reload",
+        "CHIHIRO_AUTOKEYS_CLOCK": "flips",
+        "RECOMP_HEADLESS": "1",
+        "RECOMP_FB_WINDOW": "0",
+        "VC3_SOUND": "0",
+        "VC3_SCALE": "1",
+        "VC3_ASPECT": "4:3",
+        "VC3_STEREO": "0",
+        "VC3_FPS": "60",
+        "VC3_SAVE_DIR": "/tmp/vc3-final-warm/train-off/save",
+        "VC3_CONFIG_DIR": "/tmp/vc3-final-warm/train-off/config",
+        "VK_ICD_FILENAMES": "/opt/homebrew/Cellar/mesa/26.2.6/share/vulkan/icd.d/kosmickrisp_mesa_icd.aarch64.json",
+        "CHIHIRO_VULKAN_PIPELINE_CACHE": "/tmp/vc3-final-warm/train-off/pipelines.cache",
+        "VC3_VULKAN_INTERVAL_LOG": "1",
+        "VC3_VULKAN_FRAME_LIMIT": "2100",
+        "CHIHIRO_VULKAN_PIPELINE_LOG": "1",
+        "CHIHIRO_VULKAN_SPECIALIZE_FETCH": "0"
+      },
+      "exit_code": 0,
+      "elapsed": 48.41602000000421,
+      "external_activity_samples": 15
+    },
+    "activity": [
+      {
+        "elapsed": 0.02721754100639373,
+        "processes": []
+      },
+      {
+        "elapsed": 2.0571272500092164,
+        "processes": []
+      },
+      {
+        "elapsed": 4.087618582998402,
+        "processes": []
+      },
+      {
+        "elapsed": 6.125671040965244,
+        "processes": []
+      },
+      {
+        "elapsed": 8.15680708293803,
+        "processes": []
+      },
+      {
+        "elapsed": 10.186339625041,
+        "processes": []
+      },
+      {
+        "elapsed": 12.216788457939401,
+        "processes": []
+      },
+      {
+        "elapsed": 14.249393166042864,
+        "processes": []
+      },
+      {
+        "elapsed": 16.2803278749343,
+        "processes": []
+      },
+      {
+        "elapsed": 18.32199466601014,
+        "processes": [
+          {
+            "pid": 18840,
+            "cpu": 58.2,
+            "command": "/Users/lialan/workspace/reuc-recomp/.claude/worktrees/macos-vulkan/build-lto/game/uc"
+          }
+        ]
+      },
+      {
+        "elapsed": 20.361221957951784,
+        "processes": [
+          {
+            "pid": 18840,
+            "cpu": 56.4,
+            "command": "/Users/lialan/workspace/reuc-recomp/.claude/worktrees/macos-vulkan/build-lto/game/uc"
+          }
+        ]
+      },
+      {
+        "elapsed": 22.403151790960692,
+        "processes": [
+          {
+            "pid": 18840,
+            "cpu": 168.3,
+            "command": "/Users/lialan/workspace/reuc-recomp/.claude/worktrees/macos-vulkan/build-lto/game/uc"
+          }
+        ]
+      },
+      {
+        "elapsed": 24.442641083034687,
+        "processes": [
+          {
+            "pid": 18840,
+            "cpu": 196.0,
+            "command": "/Users/lialan/workspace/reuc-recomp/.claude/worktrees/macos-vulkan/build-lto/game/uc"
+          }
+        ]
+      },
+      {
+        "elapsed": 26.47391991596669,
+        "processes": [
+          {
+            "pid": 18840,
+            "cpu": 189.5,
+            "command": "/Users/lialan/workspace/reuc-recomp/.claude/worktrees/macos-vulkan/build-lto/game/uc"
+          }
+        ]
+      },
+      {
+        "elapsed": 28.507037124945782,
+        "processes": [
+          {
+            "pid": 18840,
+            "cpu": 196.5,
+            "command": "/Users/lialan/workspace/reuc-recomp/.claude/worktrees/macos-vulkan/build-lto/game/uc"
+          }
+        ]
+      },
+      {
+        "elapsed": 30.54130649997387,
+        "processes": [
+          {
+            "pid": 18840,
+            "cpu": 187.7,
+            "command": "/Users/lialan/workspace/reuc-recomp/.claude/worktrees/macos-vulkan/build-lto/game/uc"
+          }
+        ]
+      },
+      {
+        "elapsed": 32.57586291595362,
+        "processes": [
+          {
+            "pid": 18840,
+            "cpu": 196.5,
+            "command": "/Users/lialan/workspace/reuc-recomp/.claude/worktrees/macos-vulkan/build-lto/game/uc"
+          }
+        ]
+      },
+      {
+        "elapsed": 34.619929958018474,
+        "processes": [
+          {
+            "pid": 18840,
+            "cpu": 198.2,
+            "command": "/Users/lialan/workspace/reuc-recomp/.claude/worktrees/macos-vulkan/build-lto/game/uc"
+          }
+        ]
+      },
+      {
+        "elapsed": 36.653722457936965,
+        "processes": [
+          {
+            "pid": 18840,
+            "cpu": 184.6,
+            "command": "/Users/lialan/workspace/reuc-recomp/.claude/worktrees/macos-vulkan/build-lto/game/uc"
+          }
+        ]
+      },
+      {
+        "elapsed": 38.68612900003791,
+        "processes": [
+          {
+            "pid": 18840,
+            "cpu": 201.2,
+            "command": "/Users/lialan/workspace/reuc-recomp/.claude/worktrees/macos-vulkan/build-lto/game/uc"
+          }
+        ]
+      },
+      {
+        "elapsed": 40.71880666597281,
+        "processes": [
+          {
+            "pid": 18840,
+            "cpu": 185.0,
+            "command": "/Users/lialan/workspace/reuc-recomp/.claude/worktrees/macos-vulkan/build-lto/game/uc"
+          }
+        ]
+      },
+      {
+        "elapsed": 42.7517732080305,
+        "processes": [
+          {
+            "pid": 18840,
+            "cpu": 195.0,
+            "command": "/Users/lialan/workspace/reuc-recomp/.claude/worktrees/macos-vulkan/build-lto/game/uc"
+          }
+        ]
+      },
+      {
+        "elapsed": 44.792120415950194,
+        "processes": [
+          {
+            "pid": 18840,
+            "cpu": 180.1,
+            "command": "/Users/lialan/workspace/reuc-recomp/.claude/worktrees/macos-vulkan/build-lto/game/uc"
+          }
+        ]
+      },
+      {
+        "elapsed": 46.82859433302656,
+        "processes": [
+          {
+            "pid": 18840,
+            "cpu": 191.9,
+            "command": "/Users/lialan/workspace/reuc-recomp/.claude/worktrees/macos-vulkan/build-lto/game/uc"
+          }
+        ]
+      }
+    ]
+  },
+  "warm-on": {
+    "report": {
+      "binary": "/tmp/vc3-final-warm/vc3",
+      "sha256": "9633f798e814803e46373a1f7c35599c8d59546f410614b7dfb6a9cdcbcb4c05",
+      "seed_sha256": "61355bff6f642952227283a520e7c168d24013a84aba6220c75c910494e1eea4",
+      "environment": {
+        "CHIHIRO_AUTOKEYS": "12:coin,13:start,15:fire,20:start,22:start,25:start,26:pedal,26.5:pedal,27:pedal,27.5:pedal,28:pedal,28.5:pedal,29:pedal,29.5:pedal,30:pedal,30.5:pedal,31:pedal,31.5:pedal,32:pedal,26.5:fire,27.5:fire,28.5:fire,29.5:fire,30.5:fire,30:reload,31:reload",
+        "CHIHIRO_AUTOKEYS_CLOCK": "flips",
+        "RECOMP_HEADLESS": "1",
+        "RECOMP_FB_WINDOW": "0",
+        "VC3_SOUND": "0",
+        "VC3_SCALE": "1",
+        "VC3_ASPECT": "4:3",
+        "VC3_STEREO": "0",
+        "VC3_FPS": "60",
+        "VC3_SAVE_DIR": "/tmp/vc3-final-warm/warm-on/save",
+        "VC3_CONFIG_DIR": "/tmp/vc3-final-warm/warm-on/config",
+        "VK_ICD_FILENAMES": "/opt/homebrew/Cellar/mesa/26.2.6/share/vulkan/icd.d/kosmickrisp_mesa_icd.aarch64.json",
+        "CHIHIRO_VULKAN_PIPELINE_CACHE": "/tmp/vc3-final-warm/warm-on/pipelines.cache",
+        "VC3_VULKAN_INTERVAL_LOG": "1",
+        "VC3_VULKAN_FRAME_LIMIT": "2100",
+        "CHIHIRO_VULKAN_PIPELINE_LOG": "1",
+        "CHIHIRO_VULKAN_SPECIALIZE_FETCH": "1"
+      },
+      "exit_code": 0,
+      "elapsed": 46.02102374995593,
+      "external_activity_samples": 23
+    },
+    "activity": [
+      {
+        "elapsed": 0.03322587499860674,
+        "processes": [
+          {
+            "pid": 18840,
+            "cpu": 178.3,
+            "command": "/Users/lialan/workspace/reuc-recomp/.claude/worktrees/macos-vulkan/build-lto/game/uc"
+          }
+        ]
+      },
+      {
+        "elapsed": 2.07276087498758,
+        "processes": [
+          {
+            "pid": 18840,
+            "cpu": 51.1,
+            "command": "/Users/lialan/workspace/reuc-recomp/.claude/worktrees/macos-vulkan/build-lto/game/uc"
+          }
+        ]
+      },
+      {
+        "elapsed": 4.111105542047881,
+        "processes": [
+          {
+            "pid": 18840,
+            "cpu": 51.7,
+            "command": "/Users/lialan/workspace/reuc-recomp/.claude/worktrees/macos-vulkan/build-lto/game/uc"
+          }
+        ]
+      },
+      {
+        "elapsed": 6.145387499942444,
+        "processes": [
+          {
+            "pid": 18840,
+            "cpu": 51.6,
+            "command": "/Users/lialan/workspace/reuc-recomp/.claude/worktrees/macos-vulkan/build-lto/game/uc"
+          }
+        ]
+      },
+      {
+        "elapsed": 8.176229374948889,
+        "processes": [
+          {
+            "pid": 18840,
+            "cpu": 51.2,
+            "command": "/Users/lialan/workspace/reuc-recomp/.claude/worktrees/macos-vulkan/build-lto/game/uc"
+          }
+        ]
+      },
+      {
+        "elapsed": 10.216252957936376,
+        "processes": [
+          {
+            "pid": 18840,
+            "cpu": 50.9,
+            "command": "/Users/lialan/workspace/reuc-recomp/.claude/worktrees/macos-vulkan/build-lto/game/uc"
+          }
+        ]
+      },
+      {
+        "elapsed": 12.248223957954906,
+        "processes": [
+          {
+            "pid": 18840,
+            "cpu": 49.2,
+            "command": "/Users/lialan/workspace/reuc-recomp/.claude/worktrees/macos-vulkan/build-lto/game/uc"
+          }
+        ]
+      },
+      {
+        "elapsed": 14.279060374945402,
+        "processes": [
+          {
+            "pid": 18840,
+            "cpu": 51.4,
+            "command": "/Users/lialan/workspace/reuc-recomp/.claude/worktrees/macos-vulkan/build-lto/game/uc"
+          }
+        ]
+      },
+      {
+        "elapsed": 16.31222387496382,
+        "processes": [
+          {
+            "pid": 18840,
+            "cpu": 51.5,
+            "command": "/Users/lialan/workspace/reuc-recomp/.claude/worktrees/macos-vulkan/build-lto/game/uc"
+          }
+        ]
+      },
+      {
+        "elapsed": 18.34375037497375,
+        "processes": [
+          {
+            "pid": 18840,
+            "cpu": 51.5,
+            "command": "/Users/lialan/workspace/reuc-recomp/.claude/worktrees/macos-vulkan/build-lto/game/uc"
+          }
+        ]
+      },
+      {
+        "elapsed": 20.375607957947068,
+        "processes": [
+          {
+            "pid": 18840,
+            "cpu": 52.4,
+            "command": "/Users/lialan/workspace/reuc-recomp/.claude/worktrees/macos-vulkan/build-lto/game/uc"
+          }
+        ]
+      },
+      {
+        "elapsed": 22.407119667041115,
+        "processes": [
+          {
+            "pid": 18840,
+            "cpu": 53.1,
+            "command": "/Users/lialan/workspace/reuc-recomp/.claude/worktrees/macos-vulkan/build-lto/game/uc"
+          }
+        ]
+      },
+      {
+        "elapsed": 24.443193541956134,
+        "processes": [
+          {
+            "pid": 18840,
+            "cpu": 48.0,
+            "command": "/Users/lialan/workspace/reuc-recomp/.claude/worktrees/macos-vulkan/build-lto/game/uc"
+          }
+        ]
+      },
+      {
+        "elapsed": 26.476664874935523,
+        "processes": [
+          {
+            "pid": 18840,
+            "cpu": 48.9,
+            "command": "/Users/lialan/workspace/reuc-recomp/.claude/worktrees/macos-vulkan/build-lto/game/uc"
+          }
+        ]
+      },
+      {
+        "elapsed": 28.518687417032197,
+        "processes": [
+          {
+            "pid": 18840,
+            "cpu": 51.8,
+            "command": "/Users/lialan/workspace/reuc-recomp/.claude/worktrees/macos-vulkan/build-lto/game/uc"
+          }
+        ]
+      },
+      {
+        "elapsed": 30.55916487495415,
+        "processes": [
+          {
+            "pid": 18840,
+            "cpu": 52.8,
+            "command": "/Users/lialan/workspace/reuc-recomp/.claude/worktrees/macos-vulkan/build-lto/game/uc"
+          }
+        ]
+      },
+      {
+        "elapsed": 32.59896408300847,
+        "processes": [
+          {
+            "pid": 18840,
+            "cpu": 51.1,
+            "command": "/Users/lialan/workspace/reuc-recomp/.claude/worktrees/macos-vulkan/build-lto/game/uc"
+          }
+        ]
+      },
+      {
+        "elapsed": 34.6305759169627,
+        "processes": [
+          {
+            "pid": 18840,
+            "cpu": 52.7,
+            "command": "/Users/lialan/workspace/reuc-recomp/.claude/worktrees/macos-vulkan/build-lto/game/uc"
+          }
+        ]
+      },
+      {
+        "elapsed": 36.66942733293399,
+        "processes": [
+          {
+            "pid": 18840,
+            "cpu": 54.0,
+            "command": "/Users/lialan/workspace/reuc-recomp/.claude/worktrees/macos-vulkan/build-lto/game/uc"
+          }
+        ]
+      },
+      {
+        "elapsed": 38.70271058299113,
+        "processes": [
+          {
+            "pid": 18840,
+            "cpu": 55.3,
+            "command": "/Users/lialan/workspace/reuc-recomp/.claude/worktrees/macos-vulkan/build-lto/game/uc"
+          }
+        ]
+      },
+      {
+        "elapsed": 40.74278070800938,
+        "processes": [
+          {
+            "pid": 18840,
+            "cpu": 54.3,
+            "command": "/Users/lialan/workspace/reuc-recomp/.claude/worktrees/macos-vulkan/build-lto/game/uc"
+          }
+        ]
+      },
+      {
+        "elapsed": 42.78453108295798,
+        "processes": [
+          {
+            "pid": 18840,
+            "cpu": 54.0,
+            "command": "/Users/lialan/workspace/reuc-recomp/.claude/worktrees/macos-vulkan/build-lto/game/uc"
+          }
+        ]
+      },
+      {
+        "elapsed": 44.818891625036485,
+        "processes": [
+          {
+            "pid": 18840,
+            "cpu": 52.6,
+            "command": "/Users/lialan/workspace/reuc-recomp/.claude/worktrees/macos-vulkan/build-lto/game/uc"
+          }
+        ]
+      }
+    ]
+  },
+  "warm-off": {
+    "report": {
+      "binary": "/tmp/vc3-final-warm/vc3",
+      "sha256": "9633f798e814803e46373a1f7c35599c8d59546f410614b7dfb6a9cdcbcb4c05",
+      "seed_sha256": "61355bff6f642952227283a520e7c168d24013a84aba6220c75c910494e1eea4",
+      "environment": {
+        "CHIHIRO_AUTOKEYS": "12:coin,13:start,15:fire,20:start,22:start,25:start,26:pedal,26.5:pedal,27:pedal,27.5:pedal,28:pedal,28.5:pedal,29:pedal,29.5:pedal,30:pedal,30.5:pedal,31:pedal,31.5:pedal,32:pedal,26.5:fire,27.5:fire,28.5:fire,29.5:fire,30.5:fire,30:reload,31:reload",
+        "CHIHIRO_AUTOKEYS_CLOCK": "flips",
+        "RECOMP_HEADLESS": "1",
+        "RECOMP_FB_WINDOW": "0",
+        "VC3_SOUND": "0",
+        "VC3_SCALE": "1",
+        "VC3_ASPECT": "4:3",
+        "VC3_STEREO": "0",
+        "VC3_FPS": "60",
+        "VC3_SAVE_DIR": "/tmp/vc3-final-warm/warm-off/save",
+        "VC3_CONFIG_DIR": "/tmp/vc3-final-warm/warm-off/config",
+        "VK_ICD_FILENAMES": "/opt/homebrew/Cellar/mesa/26.2.6/share/vulkan/icd.d/kosmickrisp_mesa_icd.aarch64.json",
+        "CHIHIRO_VULKAN_PIPELINE_CACHE": "/tmp/vc3-final-warm/warm-off/pipelines.cache",
+        "VC3_VULKAN_INTERVAL_LOG": "1",
+        "VC3_VULKAN_FRAME_LIMIT": "2100",
+        "CHIHIRO_VULKAN_PIPELINE_LOG": "1",
+        "CHIHIRO_VULKAN_SPECIALIZE_FETCH": "0"
+      },
+      "exit_code": 0,
+      "elapsed": 42.41124979208689,
+      "external_activity_samples": 21
+    },
+    "activity": [
+      {
+        "elapsed": 0.03129512502346188,
+        "processes": [
+          {
+            "pid": 18840,
+            "cpu": 49.3,
+            "command": "/Users/lialan/workspace/reuc-recomp/.claude/worktrees/macos-vulkan/build-lto/game/uc"
+          }
+        ]
+      },
+      {
+        "elapsed": 2.0630678340094164,
+        "processes": [
+          {
+            "pid": 18840,
+            "cpu": 46.8,
+            "command": "/Users/lialan/workspace/reuc-recomp/.claude/worktrees/macos-vulkan/build-lto/game/uc"
+          }
+        ]
+      },
+      {
+        "elapsed": 4.095416084048338,
+        "processes": [
+          {
+            "pid": 18840,
+            "cpu": 52.7,
+            "command": "/Users/lialan/workspace/reuc-recomp/.claude/worktrees/macos-vulkan/build-lto/game/uc"
+          }
+        ]
+      },
+      {
+        "elapsed": 6.1291196250822395,
+        "processes": [
+          {
+            "pid": 18840,
+            "cpu": 52.6,
+            "command": "/Users/lialan/workspace/reuc-recomp/.claude/worktrees/macos-vulkan/build-lto/game/uc"
+          }
+        ]
+      },
+      {
+        "elapsed": 8.16073200001847,
+        "processes": [
+          {
+            "pid": 18840,
+            "cpu": 52.2,
+            "command": "/Users/lialan/workspace/reuc-recomp/.claude/worktrees/macos-vulkan/build-lto/game/uc"
+          }
+        ]
+      },
+      {
+        "elapsed": 10.19217145908624,
+        "processes": [
+          {
+            "pid": 18840,
+            "cpu": 51.7,
+            "command": "/Users/lialan/workspace/reuc-recomp/.claude/worktrees/macos-vulkan/build-lto/game/uc"
+          }
+        ]
+      },
+      {
+        "elapsed": 12.22853441699408,
+        "processes": [
+          {
+            "pid": 18840,
+            "cpu": 52.5,
+            "command": "/Users/lialan/workspace/reuc-recomp/.claude/worktrees/macos-vulkan/build-lto/game/uc"
+          }
+        ]
+      },
+      {
+        "elapsed": 14.259443124989048,
+        "processes": [
+          {
+            "pid": 18840,
+            "cpu": 51.7,
+            "command": "/Users/lialan/workspace/reuc-recomp/.claude/worktrees/macos-vulkan/build-lto/game/uc"
+          }
+        ]
+      },
+      {
+        "elapsed": 16.297826374997385,
+        "processes": [
+          {
+            "pid": 18840,
+            "cpu": 52.8,
+            "command": "/Users/lialan/workspace/reuc-recomp/.claude/worktrees/macos-vulkan/build-lto/game/uc"
+          }
+        ]
+      },
+      {
+        "elapsed": 18.332408291986212,
+        "processes": [
+          {
+            "pid": 18840,
+            "cpu": 49.7,
+            "command": "/Users/lialan/workspace/reuc-recomp/.claude/worktrees/macos-vulkan/build-lto/game/uc"
+          }
+        ]
+      },
+      {
+        "elapsed": 20.364403250045143,
+        "processes": [
+          {
+            "pid": 18840,
+            "cpu": 51.7,
+            "command": "/Users/lialan/workspace/reuc-recomp/.claude/worktrees/macos-vulkan/build-lto/game/uc"
+          }
+        ]
+      },
+      {
+        "elapsed": 22.405921834055334,
+        "processes": [
+          {
+            "pid": 18840,
+            "cpu": 53.1,
+            "command": "/Users/lialan/workspace/reuc-recomp/.claude/worktrees/macos-vulkan/build-lto/game/uc"
+          }
+        ]
+      },
+      {
+        "elapsed": 24.44052616704721,
+        "processes": [
+          {
+            "pid": 18840,
+            "cpu": 52.9,
+            "command": "/Users/lialan/workspace/reuc-recomp/.claude/worktrees/macos-vulkan/build-lto/game/uc"
+          }
+        ]
+      },
+      {
+        "elapsed": 26.47371795901563,
+        "processes": [
+          {
+            "pid": 18840,
+            "cpu": 53.9,
+            "command": "/Users/lialan/workspace/reuc-recomp/.claude/worktrees/macos-vulkan/build-lto/game/uc"
+          }
+        ]
+      },
+      {
+        "elapsed": 28.51263341703452,
+        "processes": [
+          {
+            "pid": 18840,
+            "cpu": 49.8,
+            "command": "/Users/lialan/workspace/reuc-recomp/.claude/worktrees/macos-vulkan/build-lto/game/uc"
+          }
+        ]
+      },
+      {
+        "elapsed": 30.543460624990985,
+        "processes": [
+          {
+            "pid": 18840,
+            "cpu": 47.6,
+            "command": "/Users/lialan/workspace/reuc-recomp/.claude/worktrees/macos-vulkan/build-lto/game/uc"
+          }
+        ]
+      },
+      {
+        "elapsed": 32.58235837507527,
+        "processes": [
+          {
+            "pid": 18840,
+            "cpu": 53.3,
+            "command": "/Users/lialan/workspace/reuc-recomp/.claude/worktrees/macos-vulkan/build-lto/game/uc"
+          }
+        ]
+      },
+      {
+        "elapsed": 34.62200900004245,
+        "processes": [
+          {
+            "pid": 18840,
+            "cpu": 55.7,
+            "command": "/Users/lialan/workspace/reuc-recomp/.claude/worktrees/macos-vulkan/build-lto/game/uc"
+          }
+        ]
+      },
+      {
+        "elapsed": 36.65580166701693,
+        "processes": [
+          {
+            "pid": 18840,
+            "cpu": 55.4,
+            "command": "/Users/lialan/workspace/reuc-recomp/.claude/worktrees/macos-vulkan/build-lto/game/uc"
+          }
+        ]
+      },
+      {
+        "elapsed": 38.69025462504942,
+        "processes": [
+          {
+            "pid": 18840,
+            "cpu": 56.1,
+            "command": "/Users/lialan/workspace/reuc-recomp/.claude/worktrees/macos-vulkan/build-lto/game/uc"
+          }
+        ]
+      },
+      {
+        "elapsed": 40.73129112506285,
+        "processes": [
+          {
+            "pid": 18840,
+            "cpu": 53.3,
+            "command": "/Users/lialan/workspace/reuc-recomp/.claude/worktrees/macos-vulkan/build-lto/game/uc"
+          }
+        ]
+      }
+    ]
+  },
+  "audit-off": {
+    "report": {
+      "binary": "/tmp/vc3-final-warm/audit-vc3",
+      "sha256": "4bb176ab3d9f48dc839f12946d002e145a4e8ee43081b9e5b10c13c5eac0cd5a",
+      "seed_sha256": "2aa17c1784644b222658cd1b0885673f28cd57335285051aeb560b283a2044cb",
+      "environment": {
+        "CHIHIRO_AUTOKEYS": "12:coin,13:start,15:fire,20:start,22:start,25:start,26:pedal,26.5:pedal,27:pedal,27.5:pedal,28:pedal,28.5:pedal,29:pedal,29.5:pedal,30:pedal,30.5:pedal,31:pedal,31.5:pedal,32:pedal,26.5:fire,27.5:fire,28.5:fire,29.5:fire,30.5:fire,30:reload,31:reload",
+        "CHIHIRO_AUTOKEYS_CLOCK": "flips",
+        "RECOMP_HEADLESS": "1",
+        "RECOMP_FB_WINDOW": "0",
+        "VC3_SOUND": "0",
+        "VC3_SCALE": "1",
+        "VC3_ASPECT": "4:3",
+        "VC3_STEREO": "0",
+        "VC3_FPS": "60",
+        "VC3_SAVE_DIR": "/tmp/vc3-final-warm/audit-off/save",
+        "VC3_CONFIG_DIR": "/tmp/vc3-final-warm/audit-off/config",
+        "VK_ICD_FILENAMES": "/opt/homebrew/Cellar/mesa/26.2.6/share/vulkan/icd.d/kosmickrisp_mesa_icd.aarch64.json",
+        "CHIHIRO_VULKAN_PIPELINE_CACHE": "/tmp/vc3-final-warm/audit-off/pipelines.cache",
+        "VC3_VULKAN_INTERVAL_LOG": "1",
+        "VC3_VULKAN_FRAME_LIMIT": "2100",
+        "CHIHIRO_VULKAN_PIPELINE_LOG": "1",
+        "CHIHIRO_VULKAN_SPECIALIZE_FETCH": "0"
+      },
+      "exit_code": 0,
+      "elapsed": 45.519981708028354,
+      "external_activity_samples": 5
+    },
+    "activity": [
+      {
+        "elapsed": 0.03093962511047721,
+        "processes": [
+          {
+            "pid": 20234,
+            "cpu": 142.0,
+            "command": "/Users/lialan/workspace/reuc-recomp/.claude/worktrees/macos-vulkan/build-lto/game/uc"
+          }
+        ]
+      },
+      {
+        "elapsed": 2.063978207996115,
+        "processes": [
+          {
+            "pid": 20234,
+            "cpu": 148.0,
+            "command": "/Users/lialan/workspace/reuc-recomp/.claude/worktrees/macos-vulkan/build-lto/game/uc"
+          }
+        ]
+      },
+      {
+        "elapsed": 4.098600541008636,
+        "processes": []
+      },
+      {
+        "elapsed": 6.129873541067354,
+        "processes": []
+      },
+      {
+        "elapsed": 8.16020916600246,
+        "processes": []
+      },
+      {
+        "elapsed": 10.19735420809593,
+        "processes": []
+      },
+      {
+        "elapsed": 12.227153666084632,
+        "processes": []
+      },
+      {
+        "elapsed": 14.260902000009082,
+        "processes": []
+      },
+      {
+        "elapsed": 16.293424750096165,
+        "processes": []
+      },
+      {
+        "elapsed": 18.3288391251117,
+        "processes": []
+      },
+      {
+        "elapsed": 20.368219208088703,
+        "processes": []
+      },
+      {
+        "elapsed": 22.39840741606895,
+        "processes": []
+      },
+      {
+        "elapsed": 24.428132875007577,
+        "processes": []
+      },
+      {
+        "elapsed": 26.466612083022483,
+        "processes": []
+      },
+      {
+        "elapsed": 28.50556558300741,
+        "processes": []
+      },
+      {
+        "elapsed": 30.54070154100191,
+        "processes": []
+      },
+      {
+        "elapsed": 32.578338458086364,
+        "processes": []
+      },
+      {
+        "elapsed": 34.60854541603476,
+        "processes": [
+          {
+            "pid": 22064,
+            "cpu": 0.0,
+            "command": "/Library/Developer/CommandLineTools/usr/bin/clang++"
+          },
+          {
+            "pid": 22065,
+            "cpu": 99.3,
+            "command": "/Library/Developer/CommandLineTools/usr/bin/clang"
+          }
+        ]
+      },
+      {
+        "elapsed": 36.644498708075844,
+        "processes": [
+          {
+            "pid": 22088,
+            "cpu": 0.1,
+            "command": "/Library/Developer/CommandLineTools/usr/bin/clang++"
+          },
+          {
+            "pid": 22093,
+            "cpu": 88.6,
+            "command": "/Library/Developer/CommandLineTools/usr/bin/ld"
+          }
+        ]
+      },
+      {
+        "elapsed": 38.67893254105002,
+        "processes": [
+          {
+            "pid": 22088,
+            "cpu": 0.0,
+            "command": "/Library/Developer/CommandLineTools/usr/bin/clang++"
+          },
+          {
+            "pid": 22093,
+            "cpu": 98.2,
+            "command": "/Library/Developer/CommandLineTools/usr/bin/ld"
+          }
+        ]
+      },
+      {
+        "elapsed": 40.71006433304865,
+        "processes": []
+      },
+      {
+        "elapsed": 42.74117691605352,
+        "processes": []
+      },
+      {
+        "elapsed": 44.777167208027095,
+        "processes": []
+      }
+    ]
+  },
+  "audit2-off": {
+    "report": {
+      "binary": "/tmp/vc3-final-warm/audit-vc3",
+      "sha256": "4bb176ab3d9f48dc839f12946d002e145a4e8ee43081b9e5b10c13c5eac0cd5a",
+      "seed_sha256": "fbc35275b534598d4f4c5f39dc471f9628067eba05d5a29506c17e0d49521fa0",
+      "environment": {
+        "CHIHIRO_AUTOKEYS": "12:coin,13:start,15:fire,20:start,22:start,25:start,26:pedal,26.5:pedal,27:pedal,27.5:pedal,28:pedal,28.5:pedal,29:pedal,29.5:pedal,30:pedal,30.5:pedal,31:pedal,31.5:pedal,32:pedal,26.5:fire,27.5:fire,28.5:fire,29.5:fire,30.5:fire,30:reload,31:reload",
+        "CHIHIRO_AUTOKEYS_CLOCK": "flips",
+        "RECOMP_HEADLESS": "1",
+        "RECOMP_FB_WINDOW": "0",
+        "VC3_SOUND": "0",
+        "VC3_SCALE": "1",
+        "VC3_ASPECT": "4:3",
+        "VC3_STEREO": "0",
+        "VC3_FPS": "60",
+        "VC3_SAVE_DIR": "/tmp/vc3-final-warm/audit2-off/save",
+        "VC3_CONFIG_DIR": "/tmp/vc3-final-warm/audit2-off/config",
+        "VK_ICD_FILENAMES": "/opt/homebrew/Cellar/mesa/26.2.6/share/vulkan/icd.d/kosmickrisp_mesa_icd.aarch64.json",
+        "CHIHIRO_VULKAN_PIPELINE_CACHE": "/tmp/vc3-final-warm/audit2-off/pipelines.cache",
+        "VC3_VULKAN_INTERVAL_LOG": "1",
+        "VC3_VULKAN_FRAME_LIMIT": "2100",
+        "CHIHIRO_VULKAN_PIPELINE_LOG": "1",
+        "CHIHIRO_VULKAN_SPECIALIZE_FETCH": "0"
+      },
+      "exit_code": 0,
+      "elapsed": 39.127749792067334,
+      "external_activity_samples": 2
+    },
+    "activity": [
+      {
+        "elapsed": 0.029975500074215233,
+        "processes": []
+      },
+      {
+        "elapsed": 2.0643783330451697,
+        "processes": []
+      },
+      {
+        "elapsed": 4.094439833075739,
+        "processes": []
+      },
+      {
+        "elapsed": 6.127920667058788,
+        "processes": []
+      },
+      {
+        "elapsed": 8.157660708064213,
+        "processes": []
+      },
+      {
+        "elapsed": 10.186434917035513,
+        "processes": []
+      },
+      {
+        "elapsed": 12.22264733305201,
+        "processes": []
+      },
+      {
+        "elapsed": 14.254053125041537,
+        "processes": []
+      },
+      {
+        "elapsed": 16.285542708006687,
+        "processes": []
+      },
+      {
+        "elapsed": 18.317802583100274,
+        "processes": []
+      },
+      {
+        "elapsed": 20.35205595800653,
+        "processes": []
+      },
+      {
+        "elapsed": 22.386985667049885,
+        "processes": []
+      },
+      {
+        "elapsed": 24.418756292085163,
+        "processes": []
+      },
+      {
+        "elapsed": 26.457461917074397,
+        "processes": []
+      },
+      {
+        "elapsed": 28.49175104207825,
+        "processes": []
+      },
+      {
+        "elapsed": 30.530426542041823,
+        "processes": [
+          {
+            "pid": 22983,
+            "cpu": 0.0,
+            "command": "/Library/Developer/CommandLineTools/usr/bin/clang++"
+          },
+          {
+            "pid": 22986,
+            "cpu": 92.2,
+            "command": "/Library/Developer/CommandLineTools/usr/bin/clang"
+          },
+          {
+            "pid": 23029,
+            "cpu": 0.5,
+            "command": "/Library/Developer/CommandLineTools/usr/bin/clang"
+          },
+          {
+            "pid": 23031,
+            "cpu": 63.9,
+            "command": "/Library/Developer/CommandLineTools/usr/bin/clang"
+          }
+        ]
+      },
+      {
+        "elapsed": 32.57131025008857,
+        "processes": [
+          {
+            "pid": 22983,
+            "cpu": 0.0,
+            "command": "/Library/Developer/CommandLineTools/usr/bin/clang++"
+          },
+          {
+            "pid": 22986,
+            "cpu": 99.4,
+            "command": "/Library/Developer/CommandLineTools/usr/bin/clang"
+          }
+        ]
+      },
+      {
+        "elapsed": 34.60273229202721,
+        "processes": []
+      },
+      {
+        "elapsed": 36.639217250049114,
+        "processes": []
+      },
+      {
+        "elapsed": 38.66971954202745,
+        "processes": []
+      }
+    ]
+  }
+}

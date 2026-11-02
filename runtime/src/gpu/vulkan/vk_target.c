@@ -1159,6 +1159,33 @@ VkResult ch_vk_target_clear_read(ChVkTarget *t, const float rgba[4],
     void *pixels, VkDeviceSize bytes) {
     return render_read(t,rgba,7,1.0f,0,VK_NULL_HANDLE,0,0,pixels,bytes);
 }
+/* Diagnostic identity excludes Vulkan structure headers/padding and pointers.
+ * It lets cache training compare semantic pipeline variants across processes. */
+static uint64_t diagnostic_hash(uint64_t hash,const void *data,size_t size) {
+    const unsigned char *p=data;
+    for(size_t i=0;i<size;i++) hash=(hash^p[i])*UINT64_C(1099511628211);
+    return hash;
+}
+static uint64_t pipeline_identity(const ChVkTarget *t,const PipelineKey *key) {
+    uint64_t h=UINT64_C(14695981039346656037);
+    const uint32_t target[]={t->width,t->height,(uint32_t)t->depth_format,(uint32_t)t->input_pass};
+    h=diagnostic_hash(h,target,sizeof target);
+    h=diagnostic_hash(h,&key->blend,sizeof key->blend);
+    const size_t depth_start=offsetof(VkPipelineDepthStencilStateCreateInfo,depthTestEnable);
+    h=diagnostic_hash(h,(const unsigned char *)&key->depth+depth_start,sizeof key->depth-depth_start);
+    h=diagnostic_hash(h,&key->cull,sizeof key->cull);
+    h=diagnostic_hash(h,&key->front,sizeof key->front);
+    const uint32_t shaders[]={key->shader,key->fixed,key->alpha_shader,key->specialized,key->fragment_depth};
+    h=diagnostic_hash(h,shaders,sizeof shaders);
+    h=diagnostic_hash(h,&key->program,sizeof key->program);
+    const uint32_t samplers[]={key->sample_static,key->sample_types};
+    h=diagnostic_hash(h,samplers,sizeof samplers);
+    h=diagnostic_hash(h,&key->vertex_count,sizeof key->vertex_count);
+    h=diagnostic_hash(h,key->vertex_program,sizeof key->vertex_program);
+    h=diagnostic_hash(h,&key->vertex_fetch_specialized,sizeof key->vertex_fetch_specialized);
+    h=diagnostic_hash(h,key->vertex_formats,sizeof key->vertex_formats);
+    return diagnostic_hash(h,key->fixed_fetch,sizeof key->fixed_fetch);
+}
 static VkResult create_pipeline(ChVkTarget *t, const VkPipelineColorBlendAttachmentState *blend, const float constants[4], const VkPipelineDepthStencilStateCreateInfo *depth_state, VkCullModeFlags cull, VkFrontFace front, const ChVkTexture *texture,const PipelineKey *key) {
     VkResult result;
     VkShaderModule vert=VK_NULL_HANDLE, frag=VK_NULL_HANDLE;
@@ -1500,8 +1527,9 @@ static VkResult draw_full(ChVkTarget *t, const float rgba[4],
         const char *pipeline_log=getenv("CHIHIRO_VULKAN_PIPELINE_LOG");
         int log_pipeline=pipeline_log && atoi(pipeline_log);
         if(log_pipeline) {
-            fprintf(stderr,"[Vulkan pipeline begin] target=%ux%u shader=%u fixed=%u specialized=%u alpha=%u control=%08x\n",
-                t->width,t->height,key.shader,key.fixed,key.specialized,key.alpha_shader,key.program.control);
+            fprintf(stderr,"[Vulkan pipeline begin] target=%ux%u shader=%u fixed=%u specialized=%u alpha=%u control=%08x stage_program=%08x cull=%u front=%u key=%016llx\n",
+                t->width,t->height,key.shader,key.fixed,key.specialized,key.alpha_shader,key.program.control,
+                rc?rc->stage_program:0,(unsigned)cull,(unsigned)front,(unsigned long long)pipeline_identity(t,&key));
             fflush(stderr);
         }
         uint64_t create_start=time_ns();
