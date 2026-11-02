@@ -373,6 +373,8 @@ static void publish_color(struct Surface *f,int ready) {
     }
     ch_guest_write_watch_end(active->host.guest_write_watch,storage,f->raw_span);
     if(r!=VK_SUCCESS) fatal(r,"resident color writeback");
+    /* The baseline now equals what we wrote: our own write is not a CPU edit. */
+    ch_guest_write_range_rebase(f->write_range);
     f->observed_valid=1; f->color_dirty=0;
 }
 static void flush_color(struct Surface *f) {publish_color(f,0);}

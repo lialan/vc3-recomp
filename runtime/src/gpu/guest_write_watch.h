@@ -20,6 +20,12 @@ void ch_guest_write_range_destroy(ChGuestWriteRange *);
  * call; true requires exact comparison. Each range has independent stamps.
  * While a kernel write lease is active this always returns true. */
 int ch_guest_write_range_changed(ChGuestWriteRange *);
+/* For the observer that just wrote this whole range itself (inside a
+ * begin/end lease) and whose snapshot equals the bytes written: re-arm and
+ * take the current generations as its baseline, so its next check does not
+ * see its own write as a change and fall back to an exact comparison. Other
+ * ranges over the same pages still see the write. */
+void ch_guest_write_range_rebase(ChGuestWriteRange *);
 /* SA_SIGINFO handler calls this for a memory protection fault. No allocation,
  * stdio, guest-memory access or non-lock-free atomic operations are performed.
  * Unhandled faults must continue to the existing handler. */

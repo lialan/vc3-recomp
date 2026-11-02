@@ -213,6 +213,7 @@ int ch_guest_write_range_changed(ChGuestWriteRange *r) {
     if(!changed) w->unchanged++;
     return changed;
 }
+void ch_guest_write_range_rebase(ChGuestWriteRange *r) {if(r) (void)ch_guest_write_range_changed(r);}
 int ch_guest_write_fault_is_write(void *context) {
     if(!context) return 0;
     ucontext_t *uc=context;
@@ -302,6 +303,7 @@ ChGuestWriteWatch *ch_guest_write_watch_create(const ChGuestWriteView *v,size_t 
 ChGuestWriteRange *ch_guest_write_range_create(ChGuestWriteWatch *w,const void *p,size_t n) {(void)w;(void)p;(void)n;return NULL;}
 void ch_guest_write_range_destroy(ChGuestWriteRange *r) {(void)r;}
 int ch_guest_write_range_changed(ChGuestWriteRange *r) {(void)r;return 1;}
+void ch_guest_write_range_rebase(ChGuestWriteRange *r) {(void)r;}
 int ch_guest_write_watch_fault(ChGuestWriteWatch *w,uintptr_t p,int write_access) {(void)w;(void)p;(void)write_access;return 0;}
 int ch_guest_write_fault_is_write(void *context) {(void)context;return 0;}
 void ch_guest_write_watch_begin(ChGuestWriteWatch *w,void *p,size_t n) {(void)w;(void)p;(void)n;}

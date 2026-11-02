@@ -138,6 +138,8 @@ static VkResult publish_depth(DepthImage *d,VkResult r) {
     }
     ch_guest_write_watch_end(d->watch,storage(d),(size_t)d->layout.span);
     if(r!=VK_SUCCESS) return r;
+    /* The baseline now equals what we wrote: our own write is not a CPU edit. */
+    ch_guest_write_range_rebase(d->write_range);
     d->dirty=0;d->stats.writebacks++;return VK_SUCCESS;
 }
 static VkResult flush_depth(DepthImage *d,void *rgba,size_t bytes) {
