@@ -234,6 +234,128 @@ static int bound(const volatile Uint8 *k, int a)
     return k && s_bind[a] && k[s_bind[a]];
 }
 
+#if !defined(__ANDROID__)
+/* A gamepad (Steam Input's virtual pad on a Steam Frame or Deck, or any
+ * SDL game controller) as the gun: either stick moves the aim over the 4:3
+ * picture like a mouse, a crosshair shows where (the presenter draws it).
+ *
+ *   right / left stick   aim          right trigger, A     fire
+ *   left trigger, B      reload       X                    change
+ *   bumpers, Y           pedal        Start                coin, then start
+ *   Back                 coin         (the mouse takes the gun back)
+ *
+ * The main thread's event pump updates the pad's state; the guest
+ * thread's poll reads it and moves the aim. */
+static SDL_GameController *volatile s_pad;
+static volatile SDL_JoystickID s_pad_id = -1;
+static volatile int s_pad_mouse;
+static int s_pad_on;
+
+extern void fb_present_set_aim(float ux, float uy) __attribute__((weak));
+
+static void pad_added(int index)
+{
+    SDL_GameController *c;
+    if (s_pad)
+        return;
+    c = SDL_GameControllerOpen(index);
+    if (!c)
+        return;
+    s_pad_id = SDL_JoystickInstanceID(SDL_GameControllerGetJoystick(c));
+    s_pad = c;
+    fprintf(stderr, "[INPUT] gamepad: %s\n", SDL_GameControllerName(c));
+}
+
+static void pad_removed(SDL_JoystickID id)
+{
+    if (!s_pad || id != s_pad_id)
+        return;
+    /* Not closed: the guest thread may be reading it this moment (a small
+     * handle kept per unplug). */
+    s_pad = NULL;
+    s_pad_id = -1;
+    fprintf(stderr, "[INPUT] gamepad gone\n");
+}
+
+/* A stick axis past its dead zone, -1..1, on a curve for fine aim. */
+static double pad_stick(SDL_GameController *c, int axis)
+{
+    double v = SDL_GameControllerGetAxis(c, (SDL_GameControllerAxis)axis) / 32767.0, a = fabs(v);
+    const double dz = 0.15;
+    if (a <= dz)
+        return 0.0;
+    a = (a - dz) / (1.0 - dz);
+    if (a > 1.0)
+        a = 1.0;
+    a = pow(a, 1.6);
+    return v < 0 ? -a : a;
+}
+
+/* The gamepad's gun for this poll: 1 and the aim (0..1 over the 4:3
+ * picture) and VC3_VR_* buttons while it is the gun, else 0. */
+static int pad_poll(double *ux, double *uy, int *buttons)
+{
+    static double x = 0.5, y = 0.5;
+    static uint64_t last, start_at;
+    static int start_was;
+    uint64_t now = now_ms();
+    double dt = last ? (now - last) / 1000.0 : 0.0, sx, sy;
+    int b = 0, k;
+    last = now;
+    if (dt > 0.05)
+        dt = 0.05;
+    SDL_GameController *c = s_pad;
+    if (!c) {
+        s_pad_on = 0;
+        return 0;
+    }
+    sx = pad_stick(c, SDL_CONTROLLER_AXIS_RIGHTX) + pad_stick(c, SDL_CONTROLLER_AXIS_LEFTX);
+    sy = pad_stick(c, SDL_CONTROLLER_AXIS_RIGHTY) + pad_stick(c, SDL_CONTROLLER_AXIS_LEFTY);
+    if (SDL_GameControllerGetAxis(c, SDL_CONTROLLER_AXIS_TRIGGERRIGHT) > 12000 || SDL_GameControllerGetButton(c, SDL_CONTROLLER_BUTTON_A))
+        b |= VC3_VR_FIRE;
+    if (SDL_GameControllerGetAxis(c, SDL_CONTROLLER_AXIS_TRIGGERLEFT) > 12000 || SDL_GameControllerGetButton(c, SDL_CONTROLLER_BUTTON_B))
+        b |= VC3_VR_RELOAD;
+    if (SDL_GameControllerGetButton(c, SDL_CONTROLLER_BUTTON_X))
+        b |= VC3_VR_CHANGE;
+    if (SDL_GameControllerGetButton(c, SDL_CONTROLLER_BUTTON_LEFTSHOULDER) || SDL_GameControllerGetButton(c, SDL_CONTROLLER_BUTTON_RIGHTSHOULDER)
+        || SDL_GameControllerGetButton(c, SDL_CONTROLLER_BUTTON_Y))
+        b |= VC3_VR_PEDAL;
+    if (SDL_GameControllerGetButton(c, SDL_CONTROLLER_BUTTON_BACK))
+        b |= VC3_VR_COIN;
+    /* Start: a coin, then start a moment later, so one press plays. */
+    k = SDL_GameControllerGetButton(c, SDL_CONTROLLER_BUTTON_START);
+    if (k && !start_was)
+        start_at = now;
+    start_was = k;
+    if (start_at && now - start_at < 150)
+        b |= VC3_VR_COIN;
+    else if (start_at && now - start_at < 450 && now - start_at >= 300)
+        b |= VC3_VR_START;
+    else if (start_at && now - start_at >= 450)
+        start_at = 0;
+    /* The pad becomes the gun when it is used, and gives it back to the
+     * mouse when that moves. */
+    if (s_pad_mouse) {
+        s_pad_mouse = 0;
+        s_pad_on = 0;
+    }
+    if (!s_pad_on && (b || sx != 0.0 || sy != 0.0))
+        s_pad_on = 1;
+    if (!s_pad_on)
+        return 0;
+    /* Across the picture in about 0.8 s at full tilt; the same speed in
+     * both directions on the screen (the picture is 4:3). */
+    x += sx * 1.25 * dt;
+    y += sy * 1.25 * dt * 4.0 / 3.0;
+    x = x < 0.0 ? 0.0 : x > 1.0 ? 1.0 : x;
+    y = y < 0.0 ? 0.0 : y > 1.0 ? 1.0 : y;
+    *ux = x;
+    *uy = y;
+    *buttons = b;
+    return 1;
+}
+#endif
+
 static int SDLCALL input_watch(void *ud, SDL_Event *e)
 {
     (void)ud;
@@ -282,9 +404,21 @@ static int SDLCALL input_watch(void *ud, SDL_Event *e)
         if (e->window.event == SDL_WINDOWEVENT_LEAVE)
             s_mwin = 0;
         break;
+#if !defined(__ANDROID__)
+    case SDL_CONTROLLERDEVICEADDED:
+        pad_added(e->cdevice.which);
+        break;
+    case SDL_CONTROLLERDEVICEREMOVED:
+        pad_removed(e->cdevice.which);
+        break;
+#endif
     default:
         break;
     }
+#if !defined(__ANDROID__)
+    if (e->type == SDL_MOUSEMOTION || e->type == SDL_MOUSEBUTTONDOWN)
+        s_pad_mouse = 1;                 /* the mouse takes the gun back */
+#endif
     return 0;
 }
 
@@ -529,6 +663,24 @@ void host_input_poll(chihiro_input_t *in)
         if(s_auto_flip_clock)
             fprintf(stderr,"[INPUT] script clock: executor flips at 60 Hz (origin %llu)\n",(unsigned long long)s_flip0);
         SDL_AddEventWatch(input_watch, NULL);
+#if !defined(__ANDROID__)
+        /* Pads already connected arrive as SDL_CONTROLLERDEVICEADDED.
+         * Under gamescope the window need not hold the focus SDL looks
+         * for, so pad events count without it. */
+        SDL_SetHint(SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS, "1");
+        if (SDL_InitSubSystem(SDL_INIT_GAMECONTROLLER) != 0)
+            fprintf(stderr, "[INPUT] no gamepads: %s\n", SDL_GetError());
+        else {
+            /* The toolkit may have started the subsystem before this
+             * watch was there, its device-added events gone by: open what
+             * is connected already. */
+            int n = SDL_NumJoysticks(), j;
+            fprintf(stderr, "[INPUT] gamepads: %d joystick(s) at start\n", n);
+            for (j = 0; j < n; j++)
+                if (SDL_IsGameController(j))
+                    pad_added(j);
+        }
+#endif
         if (ch_env("INPUT_SELFTEST")) {
             static uint64_t start;
             start = s_t0;
@@ -549,6 +701,18 @@ void host_input_poll(chihiro_input_t *in)
         || bound(k, VC3_KEY_FIRE);
     reload = (buttons & SDL_BUTTON(SDL_BUTTON_RIGHT)) || auto_held("reload", t)
         || bound(k, VC3_KEY_RELOAD);
+#if !defined(__ANDROID__)
+    {
+        double px, py;
+        int pb, on = pad_poll(&px, &py, &pb);
+        if (on)
+            vc3_input_vr(px, py, pb);   /* the pad's gun, as a headset's */
+        else
+            s_vr_on = 0;
+        if (fb_present_set_aim)
+            fb_present_set_aim(on ? (float)px : -1.0f, on ? (float)py : -1.0f);
+    }
+#endif
     if (s_vr_on) {                      /* a headset's gun replaces the mouse */
         int vb = s_vr_buttons;
         ux = s_vr_ux;
