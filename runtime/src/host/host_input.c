@@ -242,6 +242,7 @@ static int bound(const volatile Uint8 *k, int a)
  *   right / left stick   aim          right trigger, A     fire
  *   left trigger, B      reload       X                    change
  *   bumpers, Y           pedal        Start                coin, then start
+ *   left stick click     coin         right stick click    start
  *   Back                 coin         (the mouse takes the gun back)
  *
  * The main thread's event pump updates the pad's state; the guest
@@ -320,8 +321,13 @@ static int pad_poll(double *ux, double *uy, int *buttons)
     if (SDL_GameControllerGetButton(c, SDL_CONTROLLER_BUTTON_LEFTSHOULDER) || SDL_GameControllerGetButton(c, SDL_CONTROLLER_BUTTON_RIGHTSHOULDER)
         || SDL_GameControllerGetButton(c, SDL_CONTROLLER_BUTTON_Y))
         b |= VC3_VR_PEDAL;
-    if (SDL_GameControllerGetButton(c, SDL_CONTROLLER_BUTTON_BACK))
+    /* Coin and start also on the stick clicks: a Steam Frame's controllers
+     * have no Back or Start that reaches the game. */
+    if (SDL_GameControllerGetButton(c, SDL_CONTROLLER_BUTTON_BACK)
+        || SDL_GameControllerGetButton(c, SDL_CONTROLLER_BUTTON_LEFTSTICK))
         b |= VC3_VR_COIN;
+    if (SDL_GameControllerGetButton(c, SDL_CONTROLLER_BUTTON_RIGHTSTICK))
+        b |= VC3_VR_START;
     /* Start: a coin, then start a moment later, so one press plays. */
     k = SDL_GameControllerGetButton(c, SDL_CONTROLLER_BUTTON_START);
     if (k && !start_was)
