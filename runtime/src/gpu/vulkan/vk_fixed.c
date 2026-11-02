@@ -94,15 +94,19 @@ static VkResult prepare_topology(const Nv2aRawGeometry *raw,ChVkFixedGeometry *o
     if(!raw || raw->check_out || !raw->indices ||
        raw->max_index<raw->min_index || raw->max_index-raw->min_index>65535 ||
        raw->index_count<3 || (raw->prim!=5 && raw->prim!=6 && raw->prim!=7)) return VK_ERROR_FEATURE_NOT_PRESENT;
-    uint64_t count=raw->prim==5?raw->index_count:(uint64_t)(raw->index_count-2)*3;
-    if(count%3 || count>UINT32_MAX || count>SIZE_MAX/sizeof(uint16_t))
+    /* Reusable Vulkan geometry preserves strips instead of expanding every
+     * triangle on the CPU. Standalone preparation retains its list contract;
+     * fans stay expanded for devices without portability triangle-fan support. */
+    out->triangle_strip=scratch && raw->prim==6;
+    uint64_t count=raw->prim==5 || out->triangle_strip?raw->index_count:(uint64_t)(raw->index_count-2)*3;
+    if((!out->triangle_strip && count%3) || count>UINT32_MAX || count>SIZE_MAX/sizeof(uint16_t))
         return VK_ERROR_FEATURE_NOT_PRESENT;
     out->vertex_count=raw->max_index-raw->min_index+1;out->index_count=(uint32_t)count;
     out->indices=storage(scratch?&scratch->indices:NULL,scratch?&scratch->index_bytes:NULL,
         (size_t)count*sizeof *out->indices,1u<<20,&out->borrowed,2);
     if(!out->indices) {ch_vk_fixed_release(out);return VK_ERROR_OUT_OF_HOST_MEMORY;}
     for(unsigned i=0;i<raw->index_count;i++) if(raw->indices[i]>=out->vertex_count) goto unsupported;
-    if(raw->prim==5) memcpy(out->indices,raw->indices,(size_t)count*sizeof *out->indices);
+    if(raw->prim==5 || out->triangle_strip) memcpy(out->indices,raw->indices,(size_t)count*sizeof *out->indices);
     else for(unsigned i=0;i<raw->index_count-2;i++) {
         out->indices[i*3]=raw->indices[raw->prim==7?0:i+(i&1)];
         out->indices[i*3+1]=raw->indices[raw->prim==7?i+1:i+((i&1)^1)];

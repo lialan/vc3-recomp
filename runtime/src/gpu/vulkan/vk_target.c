@@ -20,6 +20,7 @@ typedef struct {
     VkCullModeFlags cull;
     VkFrontFace front;
     unsigned shader,fixed,alpha_shader,specialized,fragment_depth;
+    VkPrimitiveTopology topology;
     ChVkCombinerProgram program;
     uint32_t vertex_count,vertex_program[136][4];
 } PipelineKey;
@@ -1126,7 +1127,7 @@ static VkResult create_pipeline(ChVkTarget *t, const VkPipelineColorBlendAttachm
         .vertexBindingDescriptionCount=t->fixed?0:1,.pVertexBindingDescriptions=t->fixed?NULL:&binding,
         .vertexAttributeDescriptionCount=t->fixed?0:9,.pVertexAttributeDescriptions=t->fixed?NULL:attrs};
     VkPipelineInputAssemblyStateCreateInfo assembly={.sType=VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
-        .topology=VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST};
+        .topology=key->topology};
     VkViewport viewport={0,0,(float)t->width,(float)t->height,0,1};
     VkRect2D scissor={{0,0},{t->width,t->height}};
     VkPipelineViewportStateCreateInfo vp={.sType=VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO,
@@ -1229,9 +1230,9 @@ static void update_descriptors(ChVkTarget *t,const ChVkTexture *texture,
 static VkResult draw_full(ChVkTarget *t, const float rgba[4],
     const void *vertices, uint32_t vertex_count,
     const uint16_t *indices, uint32_t index_count, const Nv2aRenderState *state,
-    const ChVkTexture *texture, uint32_t *samples, const Nv2aCombiner *rc, uint32_t fog_color, const ChVkTexture *const stage_images[4], const ChVkEffect *effect, int coverage_alpha, void *pixels, VkDeviceSize bytes, const ChVkFixedParams *fixed) {
+    const ChVkTexture *texture, uint32_t *samples, const Nv2aCombiner *rc, uint32_t fog_color, const ChVkTexture *const stage_images[4], const ChVkEffect *effect, int coverage_alpha, void *pixels, VkDeviceSize bytes, const ChVkFixedParams *fixed,int triangle_strip) {
     if(!t || t->failed || !vertices || !indices || !vertex_count || !index_count ||
-       index_count%3 || !pixels || bytes<t->bytes)
+       (triangle_strip?index_count<3:index_count%3) || !pixels || bytes<t->bytes)
         return VK_ERROR_INITIALIZATION_FAILED;
     for(uint32_t i=0;i<index_count;i++) if(indices[i]>=vertex_count)
         return VK_ERROR_INITIALIZATION_FAILED;
@@ -1297,6 +1298,7 @@ static VkResult draw_full(ChVkTarget *t, const float rgba[4],
      * rewritten for every draw, after the previous synchronous fence. */
     PipelineKey key={0};
     key.blend=blend;
+    key.topology=triangle_strip?VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP:VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
     /* Reference changes need a command, not another graphics pipeline. */
     t->stencil_reference=depth_state.front.reference;
     depth_state.front.reference=depth_state.back.reference=0;
@@ -1397,6 +1399,10 @@ static VkResult draw_full(ChVkTarget *t, const float rgba[4],
     if(batched) {
         result=record_batch(t,buffer,offset,index_count);t->geometry_used=size;
     } else result=render_read(t,rgba,rgba?7:0,1.0f,0,buffer,offset,index_count,pixels,bytes);
+    if(result==VK_SUCCESS && triangle_strip) {
+        t->resource_stats.strip_draws++;
+        t->resource_stats.strip_index_bytes_saved+=((uint64_t)(index_count-2)*3-index_count)*sizeof(*indices);
+    }
     if(result==VK_SUCCESS && samples) *samples=(uint32_t)t->samples;
 fail:
     if(t->failed) vkQueueWaitIdle(t->queue);
@@ -1821,22 +1827,22 @@ fail:
 VkResult ch_vk_target_draw_combiner_read(ChVkTarget *t,const float rgba[4],const ChVkColorVertex *v,uint32_t n,
     const uint16_t *indices,uint32_t count,const Nv2aRenderState *state,const ChVkTexture *texture,
     uint32_t *samples,const Nv2aCombiner *rc,uint32_t fog,const ChVkTexture *const stages[4],void *pixels,VkDeviceSize bytes) {
-    return draw_full(t,rgba,v,n,indices,count,state,texture,samples,rc,fog,stages,NULL,0,pixels,bytes,NULL);
+    return draw_full(t,rgba,v,n,indices,count,state,texture,samples,rc,fog,stages,NULL,0,pixels,bytes,NULL,0);
 }
 VkResult ch_vk_target_draw_effect_read(ChVkTarget *t,const ChVkColorVertex *v,uint32_t n,
     const uint16_t *indices,uint32_t count,const Nv2aRenderState *state,const ChVkEffect *effect,void *pixels,VkDeviceSize bytes) {
     if(!effect) return VK_ERROR_INITIALIZATION_FAILED;
-    return draw_full(t,NULL,v,n,indices,count,state,NULL,NULL,NULL,0,NULL,effect,0,pixels,bytes,NULL);
+    return draw_full(t,NULL,v,n,indices,count,state,NULL,NULL,NULL,0,NULL,effect,0,pixels,bytes,NULL,0);
 }
 
 VkResult ch_vk_target_draw_panel_read(ChVkTarget *t,const ChVkColorVertex *v,uint32_t n,
     const uint16_t *indices,uint32_t count,const Nv2aRenderState *state,const ChVkTexture *texture,
     const Nv2aCombiner *rc,uint32_t fog,const ChVkTexture *const stages[4],int coverage_alpha,void *pixels,VkDeviceSize bytes) {
     if(coverage_alpha!=0 && coverage_alpha!=1) return VK_ERROR_INITIALIZATION_FAILED;
-    return draw_full(t,NULL,v,n,indices,count,state,texture,NULL,rc,fog,stages,NULL,coverage_alpha,pixels,bytes,NULL);
+    return draw_full(t,NULL,v,n,indices,count,state,texture,NULL,rc,fog,stages,NULL,coverage_alpha,pixels,bytes,NULL,0);
 }
 
-VkResult ch_vk_target_draw_fixed_read(ChVkTarget *t,const ChVkFixedParams *fixed,
+VkResult ch_vk_target_draw_fixed_read(ChVkTarget *t,const ChVkFixedParams *fixed,int triangle_strip,
     const ChVkFixedVertex *v,uint32_t n,const uint16_t *indices,uint32_t count,
     const Nv2aRenderState *state,const ChVkTexture *texture,uint32_t *samples,
     const Nv2aCombiner *rc,uint32_t fog,const ChVkTexture *const stages[4],void *pixels,VkDeviceSize bytes) {
@@ -1852,5 +1858,5 @@ VkResult ch_vk_target_draw_fixed_read(ChVkTarget *t,const ChVkFixedParams *fixed
                 return VK_ERROR_INITIALIZATION_FAILED;
         }
     }
-    return draw_full(t,NULL,v,n,indices,count,state,texture,samples,rc,fog,stages,NULL,0,pixels,bytes,fixed);
+    return draw_full(t,NULL,v,n,indices,count,state,texture,samples,rc,fog,stages,NULL,0,pixels,bytes,fixed,triangle_strip);
 }
