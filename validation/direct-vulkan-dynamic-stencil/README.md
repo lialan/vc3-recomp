@@ -1,0 +1,11 @@
+# Dynamic stencil references
+
+Shared Vulkan targets now exclude stencil reference from pipeline identity and emit vkCmdSetStencilReference when needed. Both batched and synchronous draws support it; command resets, helper draws and pipeline switches invalidate recorded reference state. Only stencil-enabled pipelines add the dynamic state; no-stencil descriptors remain unchanged. Compare/write masks and stencil operations remain pipeline state.
+
+Native VC3 and Android shared Vulkan builds passed. Texture/depth GPU fixtures passed with synchronization validation and no Validation Error or SYNC-HAZARD. The fixture changes references 32 times without additional pipeline builds, verifies final REPLACE output and EQUAL reference acceptance/rejection, and retains reachable fail/depth-fail REPLACE checks. The first fixture attempt exposed a test setup error: deferred clear remained pending before an existing one-pending-draw assertion. Restoring synchronous clear setup fixed it; no production change was needed for that failure.
+
+Local run /tmp/vc3-dynamic-stencil, preserved executable /tmp/vc3-dynamic-stencil-vc3, reached 2100 frames, exit0. Seed copied from canonical-state cache. Combat 60.04/59.90 FPS; activation59.96; held60.04/59.95. Target-window p95 20.92–21.43ms, zero frames over33ms. All-run pipeline creation occurred in40frames totaling95.577ms; this is not an entirely compile-free run. Cache saved89605668bytes, unchanged from seed. No matched A/B and no claim of VC3 FPS gain from dynamic stencil: reuse is demonstrated by the GPU fixture.
+
+Non-compilation frame means (combat/activation/held): draw CPU1.781/3.114/2.904ms, completion wall4.627/4.676/4.748ms, GPU batch3.458/4.102/3.900ms. These overlapping scopes must not be summed. CPU geometry batches0, resident-depth layout/float pixels0, strict-depth pixels0; residual CPU texture decoding1030144pixels/6.864ms cumulative, color conversion0. Existing unrelated host_input.c edits are in the local executable and excluded from the commit.
+
+No headset access, APK installation or push. Quest performance remains unverified; driver cache refresh for recent shaders/states remains deferred until device access resumes. P95 pacing remains above16.67ms, so overall performance goal remains active.

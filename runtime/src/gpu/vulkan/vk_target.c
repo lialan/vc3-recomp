@@ -109,7 +109,8 @@ struct ChVkTarget {
     VkPipeline recorded_pipeline;
     VkPipelineLayout recorded_push_layout;
     float recorded_blend[4];
-    int recorded_blend_valid;
+    int recorded_blend_valid,recorded_stencil_valid;
+    uint32_t stencil_reference,recorded_stencil_reference;
     int effect;
     int defer_color_readback;
     int submitted,readback_active,readback_batched;
@@ -714,7 +715,7 @@ VkResult ch_vk_target_quantize_depth_input(ChVkTarget *t) {return quantize_depth
 static VkResult begin_batch(ChVkTarget *t) {
     VkResult result;
     if(!t->pending) {
-        t->recorded_pipeline=VK_NULL_HANDLE;t->recorded_push_layout=VK_NULL_HANDLE;t->recorded_blend_valid=0;
+        t->recorded_pipeline=VK_NULL_HANDLE;t->recorded_push_layout=VK_NULL_HANDLE;t->recorded_blend_valid=0;t->recorded_stencil_valid=0;
         TRY(vkResetCommandBuffer(t->command,0));TRY(vkResetFences(t->device,1,&t->fence));
         VkCommandBufferBeginInfo begin={.sType=VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,.flags=VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT};
         TRY(vkBeginCommandBuffer(t->command,&begin));
@@ -751,7 +752,12 @@ static VkResult record_batch(ChVkTarget *t,VkBuffer geometry,VkDeviceSize index_
     TRY(begin_batch(t));
     if(t->recorded_pipeline!=t->active_pipeline->pipeline) {
         vkCmdBindPipeline(t->command,VK_PIPELINE_BIND_POINT_GRAPHICS,t->active_pipeline->pipeline);
-        t->recorded_pipeline=t->active_pipeline->pipeline;t->resource_stats.batch_pipeline_binds++;
+        t->recorded_pipeline=t->active_pipeline->pipeline;t->recorded_stencil_valid=0;t->resource_stats.batch_pipeline_binds++;
+    }
+    if(t->active_pipeline->key.depth.stencilTestEnable &&
+       (!t->recorded_stencil_valid || t->recorded_stencil_reference!=t->stencil_reference)) {
+        vkCmdSetStencilReference(t->command,VK_STENCIL_FACE_FRONT_AND_BACK,t->stencil_reference);
+        t->recorded_stencil_reference=t->stencil_reference;t->recorded_stencil_valid=1;
     }
     if(!t->recorded_blend_valid || memcmp(t->recorded_blend,t->blend_constants,sizeof t->recorded_blend)) {
         vkCmdSetBlendConstants(t->command,t->blend_constants);
@@ -772,7 +778,7 @@ static VkResult record_batch(ChVkTarget *t,VkBuffer geometry,VkDeviceSize index_
     if(t->quantized_depth && t->quantized_depth!=5 && t->active_pipeline->key.depth.depthTestEnable &&
        t->active_pipeline->key.depth.depthWriteEnable) {
         /* Quantization helpers bind their own graphics state/push layout. */
-        t->recorded_pipeline=VK_NULL_HANDLE;t->recorded_push_layout=VK_NULL_HANDLE;t->recorded_blend_valid=0;
+        t->recorded_pipeline=VK_NULL_HANDLE;t->recorded_push_layout=VK_NULL_HANDLE;t->recorded_blend_valid=0;t->recorded_stencil_valid=0;
         t->resource_stats.depth_roundtrips_by_compare[t->active_pipeline->key.depth.depthCompareOp]++;
         if(t->quantized_depth==4) {
             ch_vk_depth_quant_record_inline(t->depth_quant_inline,t->command);
@@ -868,7 +874,9 @@ static VkResult render_read(ChVkTarget *t, const float rgba[4], uint32_t clear_f
         if(t->count_requested) vkCmdResetQueryPool(t->command,t->queries,0,1);
         vkCmdBeginRenderPass(t->command,&rp,VK_SUBPASS_CONTENTS_INLINE);
         vkCmdBindPipeline(t->command,VK_PIPELINE_BIND_POINT_GRAPHICS,t->active_pipeline->pipeline);
-    vkCmdSetBlendConstants(t->command,t->blend_constants);
+        vkCmdSetBlendConstants(t->command,t->blend_constants);
+        if(t->active_pipeline->key.depth.stencilTestEnable)
+            vkCmdSetStencilReference(t->command,VK_STENCIL_FACE_FRONT_AND_BACK,t->stencil_reference);
         if(t->active_pipeline->has_descriptors) vkCmdBindDescriptorSets(t->command,VK_PIPELINE_BIND_POINT_GRAPHICS,
             t->active_pipeline->pipeline_layout,0,1,&t->active_pipeline->descriptor_set,0,NULL);
         vkCmdPushConstants(t->command,t->active_pipeline->pipeline_layout,VK_SHADER_STAGE_FRAGMENT_BIT,0,sizeof(t->push),t->push.alpha);
@@ -1162,9 +1170,9 @@ static VkResult create_pipeline(ChVkTarget *t, const VkPipelineColorBlendAttachm
         layout.setLayoutCount=1;layout.pSetLayouts=&t->active_pipeline->descriptor_layout;
     }
     TRY(vkCreatePipelineLayout(t->device,&layout,NULL,&t->active_pipeline->pipeline_layout));
-    VkDynamicState dynamic_state=VK_DYNAMIC_STATE_BLEND_CONSTANTS;
+    VkDynamicState dynamic_states[]={VK_DYNAMIC_STATE_BLEND_CONSTANTS,VK_DYNAMIC_STATE_STENCIL_REFERENCE};
     VkPipelineDynamicStateCreateInfo dynamic={.sType=VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO,
-        .dynamicStateCount=1,.pDynamicStates=&dynamic_state};
+        .dynamicStateCount=depth_state->stencilTestEnable?2:1,.pDynamicStates=dynamic_states};
     VkGraphicsPipelineCreateInfo pipeline={.sType=VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
         .stageCount=2,.pStages=stages,.pVertexInputState=&input,.pInputAssemblyState=&assembly,
         .pViewportState=&vp,.pRasterizationState=&raster,.pMultisampleState=&ms,
@@ -1289,6 +1297,9 @@ static VkResult draw_full(ChVkTarget *t, const float rgba[4],
      * rewritten for every draw, after the previous synchronous fence. */
     PipelineKey key={0};
     key.blend=blend;
+    /* Reference changes need a command, not another graphics pipeline. */
+    t->stencil_reference=depth_state.front.reference;
+    depth_state.front.reference=depth_state.back.reference=0;
     key.depth=depth_state; key.cull=cull; key.front=front;
     key.shader=effect?3:rc?2:texture?1:0;key.fixed=fixed!=NULL;
     if(fixed && fixed->program_count) {key.vertex_count=fixed->program_count;memcpy(key.vertex_program,fixed->program,sizeof key.vertex_program);}
