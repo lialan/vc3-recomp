@@ -828,9 +828,14 @@ static VkResult render_read(ChVkTarget *t, const float rgba[4], uint32_t clear_f
         .newLayout=VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
         .srcQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED,.dstQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED,
         .image=t->image,.subresourceRange=range};
-    vkCmdPipelineBarrier(t->command,t->layout==VK_IMAGE_LAYOUT_UNDEFINED?
-        VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT:VK_PIPELINE_STAGE_TRANSFER_BIT,
-        VK_PIPELINE_STAGE_TRANSFER_BIT,0,0,NULL,0,NULL,1,&barrier);
+    /* A read-only/depth-only operation leaves color in TRANSFER_SRC.
+     * Avoid a gratuitous SRC->DST->SRC round trip when color is untouched. */
+    int color_write=geometry || (clear_flags&1);
+    if(color_write) {
+        vkCmdPipelineBarrier(t->command,t->layout==VK_IMAGE_LAYOUT_UNDEFINED?
+            VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT:VK_PIPELINE_STAGE_TRANSFER_BIT,
+            VK_PIPELINE_STAGE_TRANSFER_BIT,0,0,NULL,0,NULL,1,&barrier);
+    }
     if(clear_flags & 1) {
         VkClearColorValue color;
         memcpy(color.float32,rgba,sizeof(color.float32));
@@ -898,8 +903,10 @@ static VkResult render_read(ChVkTarget *t, const float rgba[4], uint32_t clear_f
     barrier.dstAccessMask=VK_ACCESS_TRANSFER_READ_BIT;
     barrier.oldLayout=geometry?VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL:VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
     barrier.newLayout=VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
-    vkCmdPipelineBarrier(t->command,geometry?VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT:VK_PIPELINE_STAGE_TRANSFER_BIT,
-        VK_PIPELINE_STAGE_TRANSFER_BIT,0,0,NULL,0,NULL,1,&barrier);
+    if(color_write) {
+        vkCmdPipelineBarrier(t->command,geometry?VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT:VK_PIPELINE_STAGE_TRANSFER_BIT,
+            VK_PIPELINE_STAGE_TRANSFER_BIT,0,0,NULL,0,NULL,1,&barrier);
+    } else t->resource_stats.read_only_color_barriers_avoided+=2;
     if(!t->defer_color_readback) {
         VkBufferImageCopy copy={.imageSubresource={VK_IMAGE_ASPECT_COLOR_BIT,0,0,1},
             .imageExtent={t->width,t->height,1}};

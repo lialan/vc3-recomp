@@ -14,7 +14,9 @@
 #endif
 #define MAX_SURFACES 32
 struct Surface { Nv2aSurface guest; ChVkGuestLayout layout; uint32_t zeta; Nv2aRenderState state; float *depth; uint8_t *stencil; ChVkTarget *target; unsigned char *rgba,*observed,*cpu,*raw; ChGuestWriteRange *write_range; size_t raw_span; int observed_valid,resident,color_bgra,color_fallback_reported,color_dirty,native_z24,quantized_z24; size_t bytes; uint64_t color_serial; };
-typedef struct {uint64_t pipeline_ns,batch_wait_ns,batch_gpu_ns,upload_wait_ns;} FrameCosts;
+typedef struct {uint64_t pipeline_ns,batch_wait_ns,batch_gpu_ns,upload_wait_ns;
+    uint64_t batch_submit_ns,batch_record_ns,batch_retire_ns,batch_submissions,batch_draws;
+    uint64_t sync_render_submissions,sync_render_gpu_ns,sync_render_host_ns;} FrameCosts;
 struct ChVkBackend { ChVkFixedScratch raw_scratch; struct {int enabled;uint64_t completion_us,completion_cpu_ns,completion_calls,prepare_us,prepare_cpu_ns;uint64_t draw_cpu_ns,clear_cpu_ns,flip_cpu_ns,trim_cpu_ns;uint64_t draw_us,clear_us,flip_us,trim_us,surface_us,coherence_us,imports_us,raster_us,store_us,texture_uploads;FrameCosts retired,previous;} costs; VkPipelineCache pipeline_cache; struct {int enabled;uint64_t start,n,surface,coherence,imports,draw,store,no_color,flushes,depth_flushes,paired_flushes;} profile; struct {int enabled;uint64_t previous,us[120];unsigned count;} frame_profile; ChVkBackendConfig host; ChVkTextureCache *textures; ChVkDepthResident *zeta; uint64_t raw_compact_batches,raw_snapshot_bytes,raw_expanded_bytes; uint64_t color_snapshot_copy_bytes_saved,unchanged_color_draws,unchanged_depth_draws,early_color_reads,clear_color_imports_avoided,clear_color_bytes_avoided; uint64_t frames,raw_draws,raw_programs,raw_program_vertices,raw_declined,color_clock,cpu_batches,cpu_vertices,cpu_texels,cpu_texture_us,cpu_color_pixels,cpu_color_us,cpu_depth_pixels; struct Surface surfaces[MAX_SURFACES]; unsigned count; };
 static ChVkBackend *active;
 static void flush_color(struct Surface *);
@@ -95,6 +97,10 @@ static int add_target_costs(FrameCosts *costs,ChVkTarget *target) {
     costs->pipeline_ns+=resource.pipeline_create_ns;
     costs->batch_wait_ns+=timing.batch_wait_ns;costs->batch_gpu_ns+=timing.batch_gpu_ns;
     costs->upload_wait_ns+=timing.depth_upload_wait_ns;
+    costs->batch_submit_ns+=timing.batch_submit_ns;costs->batch_record_ns+=timing.batch_record_ns;
+    costs->batch_retire_ns+=timing.batch_retire_ns;costs->batch_submissions+=timing.batch_submissions;
+    costs->batch_draws+=timing.batch_draws;costs->sync_render_submissions+=timing.sync_render_submissions;
+    costs->sync_render_gpu_ns+=timing.sync_render_gpu_ns;costs->sync_render_host_ns+=timing.sync_render_host_ns;
     return timing.available;
 }
 static void profile_frame(void) {
@@ -113,6 +119,15 @@ static void profile_frame(void) {
             active->costs.imports_us/1000.,active->costs.raster_us/1000.,active->costs.store_us/1000.,
             (unsigned long long)(textures.uploads-active->costs.texture_uploads),active->costs.draw_cpu_ns/1e6,
             active->costs.clear_cpu_ns/1e6,active->costs.flip_cpu_ns/1e6,active->costs.trim_cpu_ns/1e6,active->costs.completion_cpu_ns/1e6,active->costs.prepare_cpu_ns/1e6,(unsigned long long)active->costs.completion_calls,thread_cpu_ns()!=0);
+        /* These are nested phase totals, not additive frame durations. All
+         * timestamps already exist; reporting introduces no queries or waits. */
+        if(previous) fprintf(stderr,"[Vulkan frame submissions] frame=%llu batch_submit_ms=%.3f batch_record_ms=%.3f batch_retire_ms=%.3f batch_submissions=%llu batch_draws=%llu sync_render_submissions=%llu sync_render_gpu_ms=%.3f sync_render_host_ms=%.3f\n",
+            (unsigned long long)active->frames,(total.batch_submit_ns-old->batch_submit_ns)/1e6,
+            (total.batch_record_ns-old->batch_record_ns)/1e6,(total.batch_retire_ns-old->batch_retire_ns)/1e6,
+            (unsigned long long)(total.batch_submissions-old->batch_submissions),
+            (unsigned long long)(total.batch_draws-old->batch_draws),
+            (unsigned long long)(total.sync_render_submissions-old->sync_render_submissions),
+            (total.sync_render_gpu_ns-old->sync_render_gpu_ns)/1e6,(total.sync_render_host_ns-old->sync_render_host_ns)/1e6);
         active->costs.completion_us=active->costs.completion_cpu_ns=active->costs.completion_calls=active->costs.prepare_us=active->costs.prepare_cpu_ns=0;
         active->costs.texture_uploads=textures.uploads;
         active->costs.surface_us=active->costs.coherence_us=active->costs.imports_us=active->costs.raster_us=active->costs.store_us=0;
@@ -679,10 +694,11 @@ static void flip(void) {
         fprintf(stderr,"[Vulkan raw snapshots] compact_batches=%llu snapshot_bytes=%llu expanded_bytes=%llu\n",
             (unsigned long long)active->raw_compact_batches,(unsigned long long)active->raw_snapshot_bytes,(unsigned long long)active->raw_expanded_bytes);
         uint64_t draws=0,submits=0,depth_reads=0,color_reads=0,queued_uploads=0,queued_colors=0;
-        uint64_t new_texture_copies=0;
+        uint64_t new_texture_copies=0,read_only_barriers=0;
         uint64_t depth_ops[8]={0},staging_skips=0,staging_bytes=0,pipeline_consecutive=0,pipeline_scans=0;
-        for(unsigned i=0;i<active->count;i++) {ChVkTargetResourceStats stats;ch_vk_target_resource_stats(active->surfaces[i].target,&stats);for(unsigned op=0;op<8;op++) depth_ops[op]+=stats.depth_roundtrips_by_compare[op];new_texture_copies+=stats.combined_new_texture_copies;draws+=stats.batch_draws;submits+=stats.batch_submissions;depth_reads+=stats.combined_depth_readbacks;color_reads+=stats.combined_color_readbacks;queued_uploads+=stats.queued_depth_uploads;queued_colors+=stats.queued_color_readbacks;staging_skips+=stats.coherent_staging_skips;staging_bytes+=stats.staging_maintenance_bytes;pipeline_consecutive+=stats.pipeline_consecutive_hits;pipeline_scans+=stats.pipeline_scan_entries;}
+        for(unsigned i=0;i<active->count;i++) {ChVkTargetResourceStats stats;ch_vk_target_resource_stats(active->surfaces[i].target,&stats);for(unsigned op=0;op<8;op++) depth_ops[op]+=stats.depth_roundtrips_by_compare[op];read_only_barriers+=stats.read_only_color_barriers_avoided;new_texture_copies+=stats.combined_new_texture_copies;draws+=stats.batch_draws;submits+=stats.batch_submissions;depth_reads+=stats.combined_depth_readbacks;color_reads+=stats.combined_color_readbacks;queued_uploads+=stats.queued_depth_uploads;queued_colors+=stats.queued_color_readbacks;staging_skips+=stats.coherent_staging_skips;staging_bytes+=stats.staging_maintenance_bytes;pipeline_consecutive+=stats.pipeline_consecutive_hits;pipeline_scans+=stats.pipeline_scan_entries;}
         fprintf(stderr,"[Vulkan command batches] live targets: draws=%llu submissions=%llu combined_depth_reads=%llu combined_color_reads=%llu queued_depth_uploads=%llu queued_color_reads=%llu\n",(unsigned long long)draws,(unsigned long long)submits,(unsigned long long)depth_reads,(unsigned long long)color_reads,(unsigned long long)queued_uploads,(unsigned long long)queued_colors);
+        fprintf(stderr,"[Vulkan read-only color] live targets: barriers_avoided=%llu\n",(unsigned long long)read_only_barriers);
         fprintf(stderr,"[Vulkan combined new snapshots] live targets: copies=%llu\n",(unsigned long long)new_texture_copies);
         fprintf(stderr,"[Vulkan pipeline lookup] live targets: consecutive_hits=%llu scanned_entries=%llu\n",
             (unsigned long long)pipeline_consecutive,(unsigned long long)pipeline_scans);
