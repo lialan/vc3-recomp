@@ -14,6 +14,9 @@
 #error "vc3-recomp's host entry is POSIX-only; use the xboxrecomp template on Windows"
 #endif
 
+#if !defined(__APPLE__) && !defined(_GNU_SOURCE)
+#define _GNU_SOURCE     /* glibc: dladdr, Dl_info, REG_* in ucontext */
+#endif
 #include "thread_acct.h"
 #include <dlfcn.h>
 #if defined(__APPLE__)
