@@ -36,6 +36,14 @@
 
 #include <SDL.h>
 
+/* A gamepad as the gun: the flat desktop game only. With a headset
+ * (Android, CHIHIRO_XR_DESKTOP) the controllers come through OpenXR. */
+#if !defined(__ANDROID__) && !defined(CHIHIRO_XR_DESKTOP)
+#define VC3_HOST_GAMEPAD 1
+#else
+#define VC3_HOST_GAMEPAD 0
+#endif
+
 #include "chihiro/chihiro.h"
 #include "display_settings.h"
 #include "host_input.h"
@@ -234,7 +242,7 @@ static int bound(const volatile Uint8 *k, int a)
     return k && s_bind[a] && k[s_bind[a]];
 }
 
-#if !defined(__ANDROID__)
+#if VC3_HOST_GAMEPAD
 /* A gamepad (Steam Input's virtual pad on a Steam Frame or Deck, or any
  * SDL game controller) as the gun: either stick moves the aim over the 4:3
  * picture like a mouse, a crosshair shows where (the presenter draws it).
@@ -410,7 +418,7 @@ static int SDLCALL input_watch(void *ud, SDL_Event *e)
         if (e->window.event == SDL_WINDOWEVENT_LEAVE)
             s_mwin = 0;
         break;
-#if !defined(__ANDROID__)
+#if VC3_HOST_GAMEPAD
     case SDL_CONTROLLERDEVICEADDED:
         pad_added(e->cdevice.which);
         break;
@@ -421,7 +429,7 @@ static int SDLCALL input_watch(void *ud, SDL_Event *e)
     default:
         break;
     }
-#if !defined(__ANDROID__)
+#if VC3_HOST_GAMEPAD
     if (e->type == SDL_MOUSEMOTION || e->type == SDL_MOUSEBUTTONDOWN)
         s_pad_mouse = 1;                 /* the mouse takes the gun back */
 #endif
@@ -669,7 +677,7 @@ void host_input_poll(chihiro_input_t *in)
         if(s_auto_flip_clock)
             fprintf(stderr,"[INPUT] script clock: executor flips at 60 Hz (origin %llu)\n",(unsigned long long)s_flip0);
         SDL_AddEventWatch(input_watch, NULL);
-#if !defined(__ANDROID__)
+#if VC3_HOST_GAMEPAD
         /* Pads already connected arrive as SDL_CONTROLLERDEVICEADDED.
          * Under gamescope the window need not hold the focus SDL looks
          * for, so pad events count without it. */
@@ -707,14 +715,18 @@ void host_input_poll(chihiro_input_t *in)
         || bound(k, VC3_KEY_FIRE);
     reload = (buttons & SDL_BUTTON(SDL_BUTTON_RIGHT)) || auto_held("reload", t)
         || bound(k, VC3_KEY_RELOAD);
-#if !defined(__ANDROID__)
+#if VC3_HOST_GAMEPAD
     {
+        static int drove;               /* the gun state below is the pad's */
         double px, py;
         int pb, on = pad_poll(&px, &py, &pb);
-        if (on)
+        if (on) {
             vc3_input_vr(px, py, pb);   /* the pad's gun, as a headset's */
-        else
-            s_vr_on = 0;
+            drove = 1;
+        } else if (drove) {
+            s_vr_on = 0;                /* only what the pad itself set */
+            drove = 0;
+        }
         if (fb_present_set_aim)
             fb_present_set_aim(on ? (float)px : -1.0f, on ? (float)py : -1.0f);
     }

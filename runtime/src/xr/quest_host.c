@@ -1303,6 +1303,19 @@ static void xr_events(void)
             }
         } else if (ev.type == XR_TYPE_EVENT_DATA_INSTANCE_LOSS_PENDING) {
             s_quit = 1;
+        } else if (ev.type == XR_TYPE_EVENT_DATA_INTERACTION_PROFILE_CHANGED) {
+            /* which controllers the runtime bound the actions to, per hand
+             * (on a Steam Frame, SteamVR's remap of the Touch bindings) */
+            int h;
+            for (h = 0; h < 2; h++) {
+                XrInteractionProfileState ip = { XR_TYPE_INTERACTION_PROFILE_STATE };
+                char name[XR_MAX_PATH_LENGTH] = "none";
+                uint32_t len = 0;
+                if (XR_SUCCEEDED(xrGetCurrentInteractionProfile(s_sess, s_hand[h], &ip))
+                    && ip.interactionProfile != XR_NULL_PATH)
+                    xrPathToString(s_inst, ip.interactionProfile, sizeof name, &len, name);
+                fprintf(stderr, "[xr] %s hand: %s\n", h == HAND_L ? "left" : "right", name);
+            }
         }
         ev = (XrEventDataBuffer){ XR_TYPE_EVENT_DATA_BUFFER };
     }
