@@ -82,6 +82,21 @@ int ch_test_specialized_combiners(VkPhysicalDevice gpu,VkDevice device,VkQueue q
     }
     ChVkTargetResourceStats stats;ch_vk_target_resource_stats(t[1],&stats);
     REQUIRE(stats.specialized_pipeline_builds>=24 && stats.specialized_pipeline_hits>=32);
+    /* Same combiner program with changing sampler kinds: missing, 2D and
+     * cube are distinct static fetch identities; texture contents are not. */
+    {
+        Nv2aCombiner fetch={.control=1,.stage_program=1,.final0=0xc,.final1=0x1c00};
+        fetch.color_icw[0]=0x08040000;fetch.alpha_icw[0]=0x18140000;
+        fetch.color_ocw[0]=fetch.alpha_ocw[0]=0xc00;
+        const ChVkTexture *sequence[]={textures[0],textures[2],NULL,textures[1],textures[0]};
+        state.alpha_test_enable=0;
+        for(unsigned j=0;j<5;j++) {
+            const ChVkTexture *stages[]={sequence[j],NULL,NULL,NULL};
+            for(unsigned mode=0;mode<2;mode++)
+                REQUIRE(ch_vk_target_draw_combiner_read(t[mode],black,v,3,indices,3,&state,NULL,NULL,&fetch,0,stages,rgba[mode],64)==VK_SUCCESS);
+            for(unsigned k=0;k<64;k++) REQUIRE(abs((int)rgba[0][k]-rgba[1][k])<=1);
+        }
+    }
     /* Vary q before interpolation: static instruction selection must retain
      * fragment-stage projective division. Exercise the NOAT module as well. */
     setenv("CHIHIRO_VULKAN_NOAT","1",1);

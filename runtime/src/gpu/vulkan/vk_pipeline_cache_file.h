@@ -1,6 +1,9 @@
 #ifndef CH_VK_PIPELINE_CACHE_FILE_H
 #define CH_VK_PIPELINE_CACHE_FILE_H
 #include <vulkan/vulkan.h>
+/* Shared with the build-time seed packager. Full driver caches can exceed
+ * 128 MiB after shader training; retain a bounded allocation ceiling. */
+#define CH_VK_PIPELINE_CACHE_MAX_MIB 512
 /* Optional local driver-cache persistence. Missing, corrupt, oversized or
  * incompatible files create an empty cache. Vulkan allocation errors propagate.
  * Caller owns the returned cache. loaded receives accepted driver bytes or 0.

@@ -5,7 +5,7 @@
 #if !defined(_WIN32)
 #include <unistd.h>
 #endif
-#define CACHE_LIMIT (128u*1024u*1024u)
+#define CACHE_LIMIT (CH_VK_PIPELINE_CACHE_MAX_MIB*1024u*1024u)
 static const unsigned char magic[8]={'C','H','V','K','P','C',0,1};
 static uint64_t read64(const unsigned char *p) {
     uint64_t n=0;for(unsigned i=0;i<8;i++) n|=(uint64_t)p[i]<<(8*i);return n;

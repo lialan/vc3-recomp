@@ -111,6 +111,19 @@ static int registered_fixed(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,u
         cb->flush();
         for(unsigned i=0;i<256;i++) {uint32_t pixel;memcpy(&pixel,guest+128+i*4,4);if(pixel!=0xffffffff) goto done;}
     }
+    /* Screen-space clockwise strip/fan fronts must survive back-face culling.
+     * Exercise both windings and FRONT_AND_BACK to catch partial topology loss. */
+    for(unsigned primitive=6;primitive<=7;primitive++) for(unsigned winding=0;winding<2;winding++)
+        for(unsigned face=0;face<3;face++) {
+            raw.prim=primitive;raw.indices=primitive==6?strip:fan;
+            state.cull_enable=1;state.front_face=winding?0x901:0x900;
+            state.cull_face=face==0?0x404:face==1?0x405:0x408;
+            cb->clear(&surface,&state,0xf3,0,0xffffff00);samples=0;
+            if(cb->draw_raw(&surface,&batch)!=1) goto done;
+            uint32_t expected=face==2?0:((face==0)==!!winding)?256:0;
+            if(samples!=expected) {fprintf(stderr,"fixed cull primitive=%u winding=%u face=%u samples=%u expected=%u\n",primitive,winding,face,samples,expected);goto done;}
+        }
+    state.cull_enable=0;
     int16_t packed_positions[][4]={{-1,-1,0,1},{1,-1,0,1},{1,1,0,1},{-1,1,0,1}};
     raw.attr[0]=(Nv2aAttrib){.data=packed_positions,.type=5,.size=4,.stride=8,.bytes=sizeof packed_positions};
     batch.zpass_out=NULL;ff.has_color=1;ff.color_slot=3;
@@ -171,6 +184,17 @@ int ch_test_program_render(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,ui
         uint32_t expected=test==0?0xffff0000:test==1?0xff00ff00:0xff0000ff;
         for(unsigned i=0;i<256;i++) {uint32_t pixel;memcpy(&pixel,guest+128+i*4,4);REQUIRE(pixel==expected);}
     }
+    for(unsigned primitive=6;primitive<=7;primitive++) for(unsigned winding=0;winding<2;winding++)
+        for(unsigned face=0;face<3;face++) {
+            raw.prim=primitive;raw.indices=primitive==6?strip:fan;
+            state.cull_enable=1;state.front_face=winding?0x901:0x900;
+            state.cull_face=face==0?0x404:face==1?0x405:0x408;
+            cb->clear(&surface,&state,0xf3,0,0xffffff00);samples=0;
+            REQUIRE(cb->draw_raw(&surface,&batch)==1);
+            uint32_t expected=face==2?0:((face==0)==!!winding)?256:0;
+            REQUIRE(samples==expected);
+        }
+    state.cull_enable=0;
     // Queued draw owns constants even when the caller overwrites them.
     batch.zpass_out=NULL;constants[97][0]=1;constants[97][2]=0;
     REQUIRE(cb->draw_raw(&surface,&batch)==1);memset(constants,0,sizeof constants);

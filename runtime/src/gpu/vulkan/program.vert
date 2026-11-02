@@ -4,6 +4,8 @@
 #include "fixed_layout.glsl"
 #include "attribute_decode.glsl"
 layout(std430,set=0,binding=3) readonly buffer RawParams {ChVkFixedParams p;} params;
+#include "vertex_program.glsl"
+#define CH_ATTRIBUTE_FORMAT(slot) (vp_fetch_specialized!=0u?vp_attribute_format(slot):params.p.attribute_format[slot])
 #include "attribute_stream.glsl"
 layout(location=0) out vec4 v_col;
 layout(location=1) out vec2 v_uv;
@@ -23,7 +25,11 @@ float fog_factor(float d) {
 }
 void main() {
     vec4 attributes[16];
-    for(int i=0;i<16;i++) attributes[i]=ch_attribute(ch_stream_attribute(uint(i),64u),params.p.attribute_format[i]);
+    uint used=vp_fetch_specialized!=0u?vp_input_mask:0xffffu;
+    [[unroll]] for(uint i=0u;i<16u;i++) {
+        attributes[i]=vec4(0);
+        if((used&(1u<<i))!=0u) attributes[i]=ch_attribute(ch_stream_attribute(i,64u),CH_ATTRIBUTE_FORMAT(i));
+    }
     vec4 pos,O[13];vp_run(attributes,pos,O);
     if(floatBitsToUint(pos.w)==0u) pos.w=1;
     vec3 s=vec3(pos.xy*vec2(params.p.aa[0],params.p.aa[1]),pos.z);float w=pos.w;

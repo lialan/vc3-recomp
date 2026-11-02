@@ -5,6 +5,60 @@
 #include "fixed_layout.glsl"
 #include "attribute_decode.glsl"
 layout(std430,set=0,binding=3) readonly buffer FixedParams { ChVkFixedParams p; } params;
+layout(constant_id=0) const uint ff_specialized=0u;
+layout(constant_id=1) const uint ff_format_0=0u;
+layout(constant_id=2) const uint ff_format_1=0u;
+layout(constant_id=3) const uint ff_format_2=0u;
+layout(constant_id=4) const uint ff_format_3=0u;
+layout(constant_id=5) const uint ff_format_4=0u;
+layout(constant_id=6) const uint ff_format_5=0u;
+layout(constant_id=7) const uint ff_format_6=0u;
+layout(constant_id=8) const uint ff_format_7=0u;
+layout(constant_id=9) const uint ff_skin_mode=0u;
+layout(constant_id=10) const uint ff_use_composite=0u;
+layout(constant_id=11) const uint ff_lighting=0u;
+layout(constant_id=12) const uint ff_flip_normals=0u;
+layout(constant_id=13) const uint ff_has_normal=0u;
+layout(constant_id=14) const uint ff_has_color=0u;
+layout(constant_id=15) const uint ff_colmat_amb=0u;
+layout(constant_id=16) const uint ff_colmat_dif=0u;
+layout(constant_id=17) const uint ff_texgen_on_0=0u;
+layout(constant_id=18) const uint ff_texgen_on_1=0u;
+layout(constant_id=19) const uint ff_texgen_on_2=0u;
+layout(constant_id=20) const uint ff_texgen_on_3=0u;
+uint ff_texgen_on(int slot) {
+    switch(slot) {
+    case 0:return ff_texgen_on_0;
+    case 1:return ff_texgen_on_1;
+    case 2:return ff_texgen_on_2;
+    case 3:return ff_texgen_on_3;
+    } return 0u;
+}
+layout(constant_id=21) const uint ff_texmat_on_0=0u;
+layout(constant_id=22) const uint ff_texmat_on_1=0u;
+layout(constant_id=23) const uint ff_texmat_on_2=0u;
+layout(constant_id=24) const uint ff_texmat_on_3=0u;
+uint ff_texmat_on(int slot) {
+    switch(slot) {
+    case 0:return ff_texmat_on_0;
+    case 1:return ff_texmat_on_1;
+    case 2:return ff_texmat_on_2;
+    case 3:return ff_texmat_on_3;
+    } return 0u;
+}
+uint ff_format(uint slot) {
+    switch(slot) {
+    case 0u:return ff_format_0;
+    case 1u:return ff_format_1;
+    case 2u:return ff_format_2;
+    case 3u:return ff_format_3;
+    case 4u:return ff_format_4;
+    case 5u:return ff_format_5;
+    case 6u:return ff_format_6;
+    case 7u:return ff_format_7;
+    } return 0u;
+}
+#define CH_ATTRIBUTE_FORMAT(slot) (ff_specialized!=0u?ff_format(slot):params.p.attribute_format[slot])
 #include "attribute_stream.glsl"
 vec4 a_pos;
 vec4 a_wt;
@@ -39,13 +93,14 @@ void load_state() {
     for(int k=0;k<4;k++) {
         u_mv[k]=matrix(params.p.state.mv[k]);u_tm[k]=matrix(params.p.state.texmat[k]);
         u_texgen[k]=uvec4(params.p.state.texgen[k][0],params.p.state.texgen[k][1],params.p.state.texgen[k][2],params.p.state.texgen[k][3]);
-        u_tgon[k]=int(params.p.state.texgen_on[k]);u_tmon[k]=int(params.p.state.texmat_on[k]);
+        u_tgon[k]=int(ff_specialized!=0u?ff_texgen_on(k):params.p.state.texgen_on[k]);
+        u_tmon[k]=int(ff_specialized!=0u?ff_texmat_on(k):params.p.state.texmat_on[k]);
     }
     u_c59=vec4(params.p.state.c59[0],params.p.state.c59[1],params.p.state.c59[2],params.p.state.c59[3]);
-    u_skin=params.p.state.skin_mode;u_usecomp=int(params.p.state.use_composite);
-    u_lighting=int(params.p.state.lighting);u_flipn=int(params.p.state.flip_normals);
-    u_hasnrm=int(params.p.state.has_normal);u_hascol=int(params.p.state.has_color);
-    u_colmat=ivec2(params.p.state.colmat_amb,params.p.state.colmat_dif);
+    u_skin=(ff_specialized!=0u?ff_skin_mode:params.p.state.skin_mode);u_usecomp=int((ff_specialized!=0u?ff_use_composite:params.p.state.use_composite));
+    u_lighting=int((ff_specialized!=0u?ff_lighting:params.p.state.lighting));u_flipn=int((ff_specialized!=0u?ff_flip_normals:params.p.state.flip_normals));
+    u_hasnrm=int((ff_specialized!=0u?ff_has_normal:params.p.state.has_normal));u_hascol=int((ff_specialized!=0u?ff_has_color:params.p.state.has_color));
+    u_colmat=ivec2((ff_specialized!=0u?ff_colmat_amb:params.p.state.colmat_amb),(ff_specialized!=0u?ff_colmat_dif:params.p.state.colmat_dif));
     u_samb=vec4(params.p.state.scene_amb[0],params.p.state.scene_amb[1],params.p.state.scene_amb[2],params.p.state.scene_amb[3]);
     u_matalpha=params.p.state.mat_alpha;
     for(int k=0;k<8;k++) {
@@ -59,14 +114,14 @@ void load_state() {
 }
 CH_NV_FIXED_SHADER_FUNCTIONS
 void main() {
-    a_pos=ch_attribute(ch_stream_attribute(0u,32u),params.p.attribute_format[0]);
-    a_wt=ch_attribute(ch_stream_attribute(1u,32u),params.p.attribute_format[1]);
-    a_nrm=ch_attribute(ch_stream_attribute(2u,32u),params.p.attribute_format[2]);
-    a_col=ch_attribute(ch_stream_attribute(3u,32u),params.p.attribute_format[3]);
-    a_t0=ch_attribute(ch_stream_attribute(4u,32u),params.p.attribute_format[4]);
-    a_t1=ch_attribute(ch_stream_attribute(5u,32u),params.p.attribute_format[5]);
-    a_t2=ch_attribute(ch_stream_attribute(6u,32u),params.p.attribute_format[6]);
-    a_t3=ch_attribute(ch_stream_attribute(7u,32u),params.p.attribute_format[7]);
+    a_pos=ch_attribute(ch_stream_attribute(0u,32u),CH_ATTRIBUTE_FORMAT(0u));
+    a_wt=ch_attribute(ch_stream_attribute(1u,32u),CH_ATTRIBUTE_FORMAT(1u));
+    a_nrm=ch_attribute(ch_stream_attribute(2u,32u),CH_ATTRIBUTE_FORMAT(2u));
+    a_col=ch_attribute(ch_stream_attribute(3u,32u),CH_ATTRIBUTE_FORMAT(3u));
+    a_t0=ch_attribute(ch_stream_attribute(4u,32u),CH_ATTRIBUTE_FORMAT(4u));
+    a_t1=ch_attribute(ch_stream_attribute(5u,32u),CH_ATTRIBUTE_FORMAT(5u));
+    a_t2=ch_attribute(ch_stream_attribute(6u,32u),CH_ATTRIBUTE_FORMAT(6u));
+    a_t3=ch_attribute(ch_stream_attribute(7u,32u),CH_ATTRIBUTE_FORMAT(7u));
     load_state();ch_nv_fixed_vertex();
     vec3 s=o_screen.xyz;float w=o_screen.w;
     bool bad=abs(w)<=1e-6 || any(isnan(o_screen)) || any(isinf(o_screen));

@@ -24,6 +24,8 @@ layout(location=1) in vec2 uv;
 #include "combiner.glsl"
 #ifdef SPECIALIZED
 #include "combiner_program.glsl"
+layout(constant_id=100) const uint ch_sample_static=0u;
+layout(constant_id=101) const uint ch_sample_types=0u;
 #endif
 #define CH_NV_SHADER_GLSL 1
 #include "../nv2a_stage_fetch.h"
@@ -45,6 +47,11 @@ void main() {
 #ifdef SPECIALIZED
     program=ch_rc_program(program);
 #endif
+    uvec4 stage_on=params.stage_on;
+#ifdef SPECIALIZED
+    if(ch_sample_static!=0u) stage_on=uvec4(ch_sample_types&3u,(ch_sample_types>>2)&3u,
+        (ch_sample_types>>4)&3u,(ch_sample_types>>6)&3u);
+#endif
     vec4 texels[4];
     CH_RC_UNROLL
     for(uint i=0;i<4;i++) {
@@ -53,8 +60,8 @@ void main() {
         if(mode>=1 && mode<=3) {
             float q=mode==3 || tc[i].w==0?1:tc[i].w;
             vec2 uv=tc[i].xy/q;
-            if(params.stage_on[i]==0) texels[i]=vec4(1);
-            else if((params.stage_on[i]&2u)!=0) {
+            if(stage_on[i]==0) texels[i]=vec4(1);
+            else if((stage_on[i]&2u)!=0) {
                 if(i==0) texels[i]=texture(cube_images[0],tc[i].xyz);
                 else if(i==1) texels[i]=texture(cube_images[1],tc[i].xyz);
                 else if(i==2) texels[i]=texture(cube_images[2],tc[i].xyz);
@@ -65,7 +72,7 @@ void main() {
             else if(i==2) texels[i]=texture(stage_images[2],uv);
             else texels[i]=texture(stage_images[3],uv);
         }
-        texels[i]=ch_nv_stage_fetch(mode,tc[i],texels[i],params.stage_on[i]);
+        texels[i]=ch_nv_stage_fetch(mode,tc[i],texels[i],stage_on[i]);
     }
     shaded=ch_rc_eval(program,diffuse,spec,vec4(params.fog_color.rgb,fog),texels);
 #endif

@@ -22,9 +22,14 @@ typedef struct {
     VkFrontFace front;
     unsigned shader,fixed,alpha_shader,specialized,fragment_depth;
     ChVkCombinerProgram program;
-    uint32_t vertex_count,vertex_program[136][4];
+    uint32_t sample_static,sample_types;
+    uint32_t vertex_count,vertex_program[136][4],vertex_fetch_specialized,vertex_formats[16];
+    /* IDs match fixed.vert; numeric matrices/materials remain dynamic. */
+    uint32_t fixed_fetch[25];
 } PipelineKey;
 _Static_assert(offsetof(PipelineKey,vertex_program)==offsetof(PipelineKey,vertex_count)+4,"vertex specialization layout");
+_Static_assert(offsetof(PipelineKey,sample_static)==offsetof(PipelineKey,program)+sizeof(ChVkCombinerProgram),"fragment fetch specialization layout");
+_Static_assert(offsetof(PipelineKey,vertex_fetch_specialized)==offsetof(PipelineKey,vertex_count)+545*4,"vertex fetch specialization layout");
 #define BASE_PIPELINE_SLOTS 32u
 #define PIPELINE_SLOTS 128u
 /* Bound descriptor/snapshot lifetimes without forcing a wait every 64 draws.
@@ -80,6 +85,7 @@ struct ChVkTarget {
     int sampled_color_read;
     int sampled_depth_read;
     ChVkColorPack *color_pack,*paired_color_pack;
+    int specialize_fetch;
     int color_bgra; /* 0 RGBA, 1 linear BGRA, 2 rectangular Morton BGRA */
     VkDeviceMemory depth_mem;
     VkImageView depth_view;
@@ -423,6 +429,9 @@ static VkResult create_depth(VkPhysicalDevice physical,VkDevice device,VkQueue q
     /* Keep opt-in: the first Quest pair regressed and warm repeats show no
      * benefit. A discard-free module is not automatically faster. */
     t->split_alpha=split && atoi(split);
+    const char *fetch=getenv("CHIHIRO_VULKAN_SPECIALIZE_FETCH");
+    /* Keep opt-in until an uncontended game comparison establishes a win. */
+    t->specialize_fetch=fetch && atoi(fetch);
     const char *specialize=getenv("CHIHIRO_VULKAN_SPECIALIZE_RC");
     t->specialize_rc=!specialize || atoi(specialize);
     t->depth_format=depth_format;t->input_depth=input_depth;
@@ -1217,16 +1226,29 @@ static VkResult create_pipeline(ChVkTarget *t, const VkPipelineColorBlendAttachm
     VkPipelineShaderStageCreateInfo stages[]={
         {.sType=VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,.stage=VK_SHADER_STAGE_VERTEX_BIT,.module=vert,.pName="main"},
         {.sType=VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,.stage=VK_SHADER_STAGE_FRAGMENT_BIT,.module=frag,.pName="main"}};
-    VkSpecializationMapEntry entries[sizeof(key->program)/sizeof(uint32_t)];
+    VkSpecializationMapEntry entries[sizeof(key->program)/sizeof(uint32_t)+2];
     for(unsigned i=0;i<sizeof entries/sizeof entries[0];i++)
         entries[i]=(VkSpecializationMapEntry){.constantID=i,.offset=i*sizeof(uint32_t),.size=sizeof(uint32_t)};
+    entries[sizeof entries/sizeof entries[0]-2].constantID=100;
+    entries[sizeof entries/sizeof entries[0]-1].constantID=101;
     VkSpecializationInfo specialization={.mapEntryCount=sizeof entries/sizeof entries[0],.pMapEntries=entries,
-        .dataSize=sizeof key->program,.pData=&key->program};
+        .dataSize=sizeof key->program+8,.pData=&key->program};
     if(key->specialized) stages[1].pSpecializationInfo=&specialization;
-    VkSpecializationMapEntry vp_entries[545];
-    for(unsigned i=0;i<545;i++) vp_entries[i]=(VkSpecializationMapEntry){i,i*4,4};
-    VkSpecializationInfo vp_specialization={545,vp_entries,545*4,&key->vertex_count};
+    VkSpecializationMapEntry vp_entries[563];
+    for(unsigned i=0;i<563;i++) vp_entries[i]=(VkSpecializationMapEntry){i,i*4,4};
+    uint32_t vp_data[563];memcpy(vp_data,&key->vertex_count,562*4);vp_data[562]=0;
+    /* Instruction input reads are immutable program metadata. Scan only when
+     * creating a pipeline, conservatively including all encoded source muxes. */
+    for(unsigned i=0;i<key->vertex_count;i++) {
+        uint32_t y=key->vertex_program[i][1],z=key->vertex_program[i][2],w=key->vertex_program[i][3];
+        if(((z>>26)&3)==2 || ((z>>11)&3)==2 || ((w>>28)&3)==2) vp_data[562]|=1u<<((y>>9)&15);
+    }
+    VkSpecializationInfo vp_specialization={563,vp_entries,sizeof vp_data,vp_data};
     if(key->vertex_count) stages[0].pSpecializationInfo=&vp_specialization;
+    VkSpecializationMapEntry fixed_entries[25];
+    for(unsigned i=0;i<25;i++) fixed_entries[i]=(VkSpecializationMapEntry){i,i*4,4};
+    VkSpecializationInfo fixed_specialization={25,fixed_entries,sizeof key->fixed_fetch,key->fixed_fetch};
+    if(key->fixed && !key->vertex_count) stages[0].pSpecializationInfo=&fixed_specialization;
     VkVertexInputBindingDescription binding={0,t->fixed?ch_vk_raw_vertex_stride(t->fixed):sizeof(ChVkColorVertex),VK_VERTEX_INPUT_RATE_VERTEX};
 
     VkVertexInputAttributeDescription attrs[]={
@@ -1421,10 +1443,32 @@ static VkResult draw_full(ChVkTarget *t, const float rgba[4],
     key.depth=depth_state; key.cull=cull; key.front=front;
     key.shader=effect?3:rc?2:texture?1:0;key.fixed=fixed!=NULL;
     if(fixed && fixed->program_count) {key.vertex_count=fixed->program_count;memcpy(key.vertex_program,fixed->program,sizeof key.vertex_program);}
+    if(key.vertex_count && t->specialize_fetch) {
+        key.vertex_fetch_specialized=1;
+        memcpy(key.vertex_formats,fixed->attribute_format,sizeof key.vertex_formats);
+    }
+    if(fixed && !key.vertex_count && t->specialize_fetch) {
+        key.fixed_fetch[0]=1;
+        memcpy(key.fixed_fetch+1,fixed->attribute_format,8*sizeof(uint32_t));
+        const Nv2aFixedState *ff=&fixed->state;
+        key.fixed_fetch[9]=ff->skin_mode;key.fixed_fetch[10]=ff->use_composite;
+        key.fixed_fetch[11]=ff->lighting;key.fixed_fetch[12]=ff->flip_normals;
+        key.fixed_fetch[13]=ff->has_normal;key.fixed_fetch[14]=ff->has_color;
+        key.fixed_fetch[15]=ff->colmat_amb;key.fixed_fetch[16]=ff->colmat_dif;
+        memcpy(key.fixed_fetch+17,ff->texgen_on,4*sizeof(uint32_t));
+        memcpy(key.fixed_fetch+21,ff->texmat_on,4*sizeof(uint32_t));
+    }
     key.fragment_depth=t->quantized_depth==5 && depth_state.depthTestEnable;
     key.alpha_shader=!!state->alpha_test_enable || !t->split_alpha;
     key.specialized=key.shader==2 && t->specialize_rc;
-    if(key.specialized) ch_vk_combiner_program(rc,&key.program);
+    if(key.specialized) {
+        ch_vk_combiner_program(rc,&key.program);
+        if(t->specialize_fetch) {
+            key.sample_static=1;
+            for(unsigned i=0;i<4;i++) if(stage_images && stage_images[i])
+                key.sample_types|=(ch_vk_texture_is_cube(stage_images[i])?3u:1u)<<(i*2);
+        }
+    }
     PipelineResources *entry=NULL,*oldest=NULL;
     unsigned capacity=t->reuse_resources?(t->specialize_rc?PIPELINE_SLOTS:BASE_PIPELINE_SLOTS):1;
     /* Consecutive draws commonly reuse the selected pipeline. Validate the

@@ -1,0 +1,2 @@
+device=Apple M4 Pro vendor=106b deviceID=0064 api=1.4.354
+PASS: fixed shader specialization: 48 transform/skin/lighting/material/texgen/fog/clipping cases, exact visibility and <=1 UNORM byte

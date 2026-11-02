@@ -3,6 +3,7 @@
 import argparse
 import hashlib
 import json
+import re
 from pathlib import Path
 import struct
 import zlib
@@ -13,10 +14,12 @@ p.add_argument('--manifest', type=Path, required=True)
 p.add_argument('--seed', type=Path, action='append', default=[])
 p.add_argument('--vendor-id', type=lambda s: int(s, 0), help='Require this target GPU vendor (Quest: 0x5143)')
 a = p.parse_args()
+limit_header = Path(__file__).with_name("vk_pipeline_cache_file.h").read_text()
+cache_limit = int(re.search(r"^#define CH_VK_PIPELINE_CACHE_MAX_MIB ([0-9]+)$", limit_header, re.M)[1]) * 1024 * 1024
 entries = []
 seen = set()
 for path in a.seed:
-    if path.stat().st_size > 128 * 1024 * 1024 + 24:
+    if path.stat().st_size > cache_limit + 24:
         p.error(f'oversized cache: {path}')
     data = path.read_bytes()
     if len(data) < 56 or data[:8] != b'CHVKPC\x00\x01':

@@ -1,0 +1,35 @@
+  PID  PPID  %CPU COMM
+12476 12464  54.0 /Library/Developer/CommandLineTools/usr/bin/clang
+12434 12433  52.1 /Library/Developer/CommandLineTools/usr/bin/clang
+12482 61388  48.3 node
+12480 12469  47.2 /Library/Developer/CommandLineTools/usr/bin/clang
+12438 12437  41.4 /Library/Developer/CommandLineTools/usr/bin/clang
+12416 12414  41.1 /Library/Developer/CommandLineTools/usr/bin/clang
+12436 12435  41.0 /Library/Developer/CommandLineTools/usr/bin/clang
+12474 12463  39.3 /Library/Developer/CommandLineTools/usr/bin/clang
+12481 12470  39.2 /Library/Developer/CommandLineTools/usr/bin/clang
+12427 12424  39.1 /Library/Developer/CommandLineTools/usr/bin/clang
+12418 12417  39.0 /Library/Developer/CommandLineTools/usr/bin/clang
+12428 12425  38.5 /Library/Developer/CommandLineTools/usr/bin/clang
+12478 12466  38.5 /Library/Developer/CommandLineTools/usr/bin/clang
+12475 12465  38.1 /Library/Developer/CommandLineTools/usr/bin/clang
+12412 12410  36.9 /Library/Developer/CommandLineTools/usr/bin/clang
+12432 12431  36.4 /Library/Developer/CommandLineTools/usr/bin/clang
+12473 12462  36.4 /Library/Developer/CommandLineTools/usr/bin/clang
+12426 12423  36.4 /Library/Developer/CommandLineTools/usr/bin/clang
+12430 12429  36.1 /Library/Developer/CommandLineTools/usr/bin/clang
+12411 12409  36.1 /Library/Developer/CommandLineTools/usr/bin/clang
+12479 12468  35.4 /Library/Developer/CommandLineTools/usr/bin/clang
+12477 12467  34.4 /Library/Developer/CommandLineTools/usr/bin/clang
+12506 12503  33.6 /Library/Developer/CommandLineTools/usr/bin/clang
+78641 31641  20.9 codex
+  575     1  17.3 /usr/libexec/xprotectd
+12514 12509   9.0 /Library/Developer/CommandLineTools/usr/bin/clang
+  611     1   7.6 /System/Library/CoreServices/loginwindow.app/Contents/MacOS/loginwindow
+28929 56308   4.5 /Users/lialan/.codex/packages/app-server-daemon/releases/0.166.0-aarch64-apple-darwin/bin/codex
+  885     1   4.1 adb
+  607     1   3.1 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer
+  576     1   2.9 /usr/libexec/opendirectoryd
+12509 12458   2.2 /Library/Developer/CommandLineTools/usr/bin/clang++
+61388 61365   2.1 /Users/lialan/.local/share/claude/versions/2.1.316
+12516 12458   1.9 /Library/Developer/CommandLineTools/usr/bin/clang++

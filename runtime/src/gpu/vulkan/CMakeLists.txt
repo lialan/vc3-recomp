@@ -30,7 +30,8 @@ set(packaged_cache "${CMAKE_CURRENT_BINARY_DIR}/packaged_pipeline_cache.c")
 add_custom_command(OUTPUT "${packaged_cache}" "${CMAKE_CURRENT_BINARY_DIR}/pipeline-cache-manifest.json"
     COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/package_pipeline_cache.py"
         --output "${packaged_cache}" --manifest "${CMAKE_CURRENT_BINARY_DIR}/pipeline-cache-manifest.json" ${cache_seed_args}
-    DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/package_pipeline_cache.py" ${cache_seed_files}
+    DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/package_pipeline_cache.py"
+        "${CMAKE_CURRENT_SOURCE_DIR}/vk_pipeline_cache_file.h" ${cache_seed_files}
     VERBATIM)
 
 if(CMAKE_HOST_SYSTEM_NAME STREQUAL "Darwin")
@@ -71,7 +72,7 @@ foreach(stage program vert frag textured combiner effect fixed frag_noat texture
         set(defines -O)
     elseif(base_stage STREQUAL "fixed")
         set(input fixed.vert)
-        set(defines)
+        set(defines -O)
     elseif(base_stage STREQUAL "textured")
         set(input color.frag)
         set(defines -DTEXTURED)
@@ -300,6 +301,11 @@ if(CHIHIRO_VULKAN_TESTS OR CHIHIRO_VULKAN_SHADER_TESTS)
 endif()
 
 if(CHIHIRO_VULKAN_TESTS OR CHIHIRO_VULKAN_SHADER_TESTS)
+    add_executable(vulkan_fixed_specialization_check "${CH_VK_ROOT}/tools/vulkan-combiner-driver.c"
+        "${CH_VK_ROOT}/tools/vulkan-fixed-specialization-test.c")
+    target_compile_definitions(vulkan_fixed_specialization_check PRIVATE CH_VK_PROGRAM_RENDER_TEST=1 ch_test_program_render=ch_test_fixed_specialization)
+    target_compile_options(vulkan_fixed_specialization_check PRIVATE -Wall -Wextra -Werror)
+    target_link_libraries(vulkan_fixed_specialization_check PRIVATE chihiro_vulkan)
     add_executable(vulkan_program_render_check "${CH_VK_ROOT}/tools/vulkan-combiner-driver.c"
         "${CH_VK_ROOT}/tools/vulkan-program-render-test.c")
     target_compile_definitions(vulkan_program_render_check PRIVATE CH_VK_PROGRAM_RENDER_TEST=1)

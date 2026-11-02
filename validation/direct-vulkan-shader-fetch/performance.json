@@ -1,0 +1,162 @@
+{
+  "fixed-warm-on": {
+    "combat": {
+      "frames": 239,
+      "fps": 59.97084262797753,
+      "p95_ms": 22.443,
+      "max_ms": 24.977,
+      "over_33ms": 0,
+      "pipeline_ms": 24.677,
+      "zero_pipeline_frames": 230,
+      "zero_pipeline_p95_ms": 22.267
+    },
+    "activation": {
+      "frames": 119,
+      "fps": 59.77112180852346,
+      "p95_ms": 21.252,
+      "max_ms": 29.064,
+      "over_33ms": 0,
+      "pipeline_ms": 12.783,
+      "zero_pipeline_frames": 114,
+      "zero_pipeline_p95_ms": 21.129
+    },
+    "held": {
+      "frames": 239,
+      "fps": 59.67503323949288,
+      "p95_ms": 20.74,
+      "max_ms": 65.233,
+      "over_33ms": 1,
+      "pipeline_ms": 47.726,
+      "zero_pipeline_frames": 237,
+      "zero_pipeline_p95_ms": 20.615
+    }
+  },
+  "fixed-warm-off": {
+    "combat": {
+      "frames": 239,
+      "fps": 59.959528572596945,
+      "p95_ms": 19.887,
+      "max_ms": 21.549,
+      "over_33ms": 0,
+      "pipeline_ms": 4.802,
+      "zero_pipeline_frames": 233,
+      "zero_pipeline_p95_ms": 19.825
+    },
+    "activation": {
+      "frames": 119,
+      "fps": 53.4820884440937,
+      "p95_ms": 24.316,
+      "max_ms": 267.868,
+      "over_33ms": 1,
+      "pipeline_ms": 265.093,
+      "zero_pipeline_frames": 114,
+      "zero_pipeline_p95_ms": 23.894
+    },
+    "held": {
+      "frames": 239,
+      "fps": 59.97787092611605,
+      "p95_ms": 20.429,
+      "max_ms": 24.065,
+      "over_33ms": 0,
+      "pipeline_ms": 1.535,
+      "zero_pipeline_frames": 238,
+      "zero_pipeline_p95_ms": 20.429
+    }
+  },
+  "fixed-repeat-off": {
+    "combat": {
+      "frames": 239,
+      "fps": 59.613767637506385,
+      "p95_ms": 20.292,
+      "max_ms": 70.433,
+      "over_33ms": 1,
+      "pipeline_ms": 55.867999999999995,
+      "zero_pipeline_frames": 232,
+      "zero_pipeline_p95_ms": 20.188
+    },
+    "activation": {
+      "frames": 119,
+      "fps": 50.564753052793854,
+      "p95_ms": 34.85,
+      "max_ms": 80.49,
+      "over_33ms": 7,
+      "pipeline_ms": 13.198,
+      "zero_pipeline_frames": 114,
+      "zero_pipeline_p95_ms": 32.031
+    },
+    "held": {
+      "frames": 239,
+      "fps": 60.00455432056642,
+      "p95_ms": 19.38,
+      "max_ms": 21.484,
+      "over_33ms": 0,
+      "pipeline_ms": 1.531,
+      "zero_pipeline_frames": 238,
+      "zero_pipeline_p95_ms": 19.35
+    }
+  },
+  "fixed-repeat-on": {
+    "combat": {
+      "frames": 239,
+      "fps": 53.54807530517362,
+      "p95_ms": 29.356,
+      "max_ms": 64.987,
+      "over_33ms": 10,
+      "pipeline_ms": 6.563,
+      "zero_pipeline_frames": 233,
+      "zero_pipeline_p95_ms": 29.356
+    },
+    "activation": {
+      "frames": 119,
+      "fps": 37.78515487944472,
+      "p95_ms": 44.856,
+      "max_ms": 82.951,
+      "over_33ms": 18,
+      "pipeline_ms": 22.091,
+      "zero_pipeline_frames": 114,
+      "zero_pipeline_p95_ms": 39.547
+    },
+    "held": {
+      "frames": 239,
+      "fps": 40.05381624046501,
+      "p95_ms": 42.636,
+      "max_ms": 91.989,
+      "over_33ms": 28,
+      "pipeline_ms": 1.872,
+      "zero_pipeline_frames": 238,
+      "zero_pipeline_p95_ms": 42.636
+    }
+  },
+  "final-capture": {
+    "combat": {
+      "frames": 239,
+      "fps": 54.722005343981614,
+      "p95_ms": 19.433,
+      "max_ms": 265.49,
+      "over_33ms": 3,
+      "pipeline_ms": 487.379,
+      "zero_pipeline_frames": 232,
+      "zero_pipeline_p95_ms": 19.369
+    },
+    "activation": {
+      "frames": 119,
+      "fps": 47.190836570598286,
+      "p95_ms": 19.893,
+      "max_ms": 387.501,
+      "over_33ms": 3,
+      "pipeline_ms": 600.403,
+      "zero_pipeline_frames": 113,
+      "zero_pipeline_p95_ms": 19.203
+    },
+    "held": {
+      "frames": 239,
+      "fps": 56.44467064298509,
+      "p95_ms": 19.23,
+      "max_ms": 296.369,
+      "over_33ms": 1,
+      "pipeline_ms": 279.29200000000003,
+      "zero_pipeline_frames": 238,
+      "zero_pipeline_p95_ms": 19.182
+    }
+  }
+}
