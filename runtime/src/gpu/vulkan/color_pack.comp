@@ -15,7 +15,7 @@ void main() {
         if(i>=pc.count) break;
         uint at=i;
         if(pc.morton!=0u) {
-            at=ch_morton_index(i%pc.width,i/pc.width,pc.width,pc.height)+pc.count;
+            at=ch_morton_linear_index(i,pc.width,pc.height)+pc.count;
         }
         uint v=data.words[pc.upload!=0u?at:i];
         data.words[pc.upload!=0u?i:at]=(v&0xff00ff00u)|((v&255u)<<16)|((v>>16)&255u);

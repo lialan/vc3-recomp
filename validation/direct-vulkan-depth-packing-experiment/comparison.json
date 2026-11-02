@@ -1,0 +1,42 @@
+{
+  "control": {
+    "combat": {
+      "frames": 234,
+      "completion_ms": 4.641786324786325,
+      "batch_gpu_ms": 3.2971324786324785,
+      "draw_cpu_ms": 1.7246410256410256
+    },
+    "activation": {
+      "frames": 115,
+      "completion_ms": 4.714052173913044,
+      "batch_gpu_ms": 3.8920695652173913,
+      "draw_cpu_ms": 2.9410347826086958
+    },
+    "held": {
+      "frames": 239,
+      "completion_ms": 4.775100418410042,
+      "batch_gpu_ms": 3.7434351464435145,
+      "draw_cpu_ms": 2.749225941422594
+    }
+  },
+  "candidate": {
+    "combat": {
+      "frames": 234,
+      "completion_ms": 4.978730769230769,
+      "batch_gpu_ms": 3.453871794871795,
+      "draw_cpu_ms": 1.8062008547008548
+    },
+    "activation": {
+      "frames": 115,
+      "completion_ms": 5.006739130434783,
+      "batch_gpu_ms": 4.053147826086956,
+      "draw_cpu_ms": 3.0678260869565217
+    },
+    "held": {
+      "frames": 239,
+      "completion_ms": 4.971995815899581,
+      "batch_gpu_ms": 3.848397489539749,
+      "draw_cpu_ms": 2.9119456066945606
+    }
+  }
+}

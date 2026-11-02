@@ -1,0 +1,79 @@
+diff --git a/runtime/src/gpu/vulkan/color_pack.comp b/runtime/src/gpu/vulkan/color_pack.comp
+index 53465e5..41d92cd 100644
+--- a/runtime/src/gpu/vulkan/color_pack.comp
++++ b/runtime/src/gpu/vulkan/color_pack.comp
+@@ -15,7 +15,7 @@ void main() {
+         if(i>=pc.count) break;
+         uint at=i;
+         if(pc.morton!=0u) {
+-            at=ch_morton_index(i%pc.width,i/pc.width,pc.width,pc.height)+pc.count;
++            at=ch_morton_linear_index(i,pc.width,pc.height)+pc.count;
+         }
+         uint v=data.words[pc.upload!=0u?at:i];
+         data.words[pc.upload!=0u?i:at]=(v&0xff00ff00u)|((v&255u)<<16)|((v>>16)&255u);
+diff --git a/runtime/src/gpu/vulkan/depth_pack.comp b/runtime/src/gpu/vulkan/depth_pack.comp
+index d47e7fd..4d64b12 100644
+--- a/runtime/src/gpu/vulkan/depth_pack.comp
++++ b/runtime/src/gpu/vulkan/depth_pack.comp
+@@ -6,23 +6,32 @@ layout(local_size_x=64) in;
+ layout(std430,set=0,binding=0) buffer Storage {uint words[];} data;
+ layout(push_constant) uniform Params {uint count;uint upload;uint width;uint height;uint morton;uint native_z24;} pc;
+ void main() {
+-    uint group=gl_GlobalInvocationID.x,base=group*4u;
+-    if(base>=pc.count) return;
+     uint packed_offset=pc.count+(pc.count+3u)/4u;
+-    uint stencil=pc.upload!=0u?0u:data.words[pc.count+group];
+-    for(uint j=0u;j<4u && base+j<pc.count;j++) {
+-        uint i=base+j,at=i;
+-        if(pc.morton!=0u) {
+-            at=ch_morton_index(i%pc.width,i/pc.width,pc.width,pc.height);
+-        }
+-        if(pc.upload!=0u) {
+-            uint word=data.words[packed_offset+at];
+-            data.words[i]=pc.native_z24!=0u?word>>8:floatBitsToUint(ch_depth_unpack(word>>8));
+-            stencil|=(word&255u)<<(j*8u);
+-        } else {
++    if(pc.upload==0u) {
++        // Adjacent lanes read adjacent depth values and write adjacent packed
++        // pixels. Stencil words are read-only and shared by four lanes.
++        uint base=gl_WorkGroupID.x*(gl_WorkGroupSize.x*4u)+gl_LocalInvocationID.x;
++        for(uint j=0u;j<4u;j++) {
++            uint i=base+j*gl_WorkGroupSize.x;
++            if(i>=pc.count) break;
++            uint at=pc.morton!=0u?ch_morton_linear_index(i,pc.width,pc.height):i;
++            uint stencil=data.words[pc.count+(i>>2u)];
+             uint z=pc.native_z24!=0u?data.words[i]&0xffffffu:ch_depth_pack(uintBitsToFloat(data.words[i]));
+-            data.words[packed_offset+at]=(z<<8)|((stencil>>(j*8u))&255u);
++            data.words[packed_offset+at]=(z<<8)|((stencil>>((i&3u)*8u))&255u);
+         }
++        return;
++    }
++    // Upload keeps a single writer for each packed stencil word. Assigning
++    // its four bytes to separate lanes would introduce read-modify-write races.
++    uint group=gl_GlobalInvocationID.x,base=group*4u;
++    if(base>=pc.count) return;
++    uint stencil=0u;
++    for(uint j=0u;j<4u && base+j<pc.count;j++) {
++        uint i=base+j;
++        uint at=pc.morton!=0u?ch_morton_linear_index(i,pc.width,pc.height):i;
++        uint word=data.words[packed_offset+at];
++        data.words[i]=pc.native_z24!=0u?word>>8:floatBitsToUint(ch_depth_unpack(word>>8));
++        stencil|=(word&255u)<<(j*8u);
+     }
+-    if(pc.upload!=0u) data.words[pc.count+group]=stencil;
++    data.words[pc.count+group]=stencil;
+ }
+diff --git a/runtime/src/gpu/vulkan/morton.glsl b/runtime/src/gpu/vulkan/morton.glsl
+index f90f4d1..a1fc7d7 100644
+--- a/runtime/src/gpu/vulkan/morton.glsl
++++ b/runtime/src/gpu/vulkan/morton.glsl
+@@ -13,4 +13,9 @@ uint ch_morton_index(uint x,uint y,uint width,uint height) {
+     uint tail=(width>height?x:y)>>bits;
+     return low|(tail<<(2u*bits));
+ }
++// Linear input offset for the same full power-of-two allocations. Avoid
++// dynamic integer division/modulo when converting it back to coordinates.
++uint ch_morton_linear_index(uint i,uint width,uint height) {
++    return ch_morton_index(i&(width-1u),i>>uint(findMSB(width)),width,height);
++}
+ #endif

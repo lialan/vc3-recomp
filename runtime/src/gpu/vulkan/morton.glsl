@@ -13,4 +13,9 @@ uint ch_morton_index(uint x,uint y,uint width,uint height) {
     uint tail=(width>height?x:y)>>bits;
     return low|(tail<<(2u*bits));
 }
+// Linear input offset for the same full power-of-two allocations. Avoid
+// dynamic integer division/modulo when converting it back to coordinates.
+uint ch_morton_linear_index(uint i,uint width,uint height) {
+    return ch_morton_index(i&(width-1u),i>>uint(findMSB(width)),width,height);
+}
 #endif
