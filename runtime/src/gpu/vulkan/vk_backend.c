@@ -16,7 +16,8 @@
 struct Surface { Nv2aSurface guest; ChVkGuestLayout layout; uint32_t zeta; Nv2aRenderState state; float *depth; uint8_t *stencil; ChVkTarget *target; unsigned char *rgba,*observed,*cpu,*raw; ChGuestWriteRange *write_range; size_t raw_span; int observed_valid,resident,color_bgra,color_fallback_reported,color_dirty,native_z24,quantized_z24; size_t bytes; uint64_t color_serial; };
 typedef struct {uint64_t pipeline_ns,batch_wait_ns,batch_gpu_ns,upload_wait_ns;
     uint64_t batch_submit_ns,batch_record_ns,batch_retire_ns,batch_submissions,batch_draws;
-    uint64_t sync_render_submissions,sync_render_gpu_ns,sync_render_host_ns;} FrameCosts;
+    uint64_t sync_render_submissions,sync_render_gpu_ns,sync_render_host_ns;
+    uint64_t depth_copy_ns,depth_copy_calls;} FrameCosts;
 struct ChVkBackend { ChVkFixedScratch raw_scratch; struct {int enabled;uint64_t completion_us,completion_cpu_ns,completion_calls,prepare_us,prepare_cpu_ns;uint64_t draw_cpu_ns,clear_cpu_ns,flip_cpu_ns,trim_cpu_ns;uint64_t draw_us,clear_us,flip_us,trim_us,surface_us,coherence_us,imports_us,raster_us,store_us,texture_uploads;FrameCosts retired,previous;} costs; VkPipelineCache pipeline_cache; struct {int enabled;uint64_t start,n,surface,coherence,imports,draw,store,no_color,flushes,depth_flushes,paired_flushes;} profile; struct {int enabled;uint64_t previous,us[120];unsigned count;} frame_profile; ChVkBackendConfig host; ChVkTextureCache *textures; ChVkDepthResident *zeta; uint64_t raw_compact_batches,raw_snapshot_bytes,raw_expanded_bytes; uint64_t color_snapshot_copy_bytes_saved,unchanged_color_draws,unchanged_depth_draws,early_color_reads,clear_color_imports_avoided,clear_color_bytes_avoided; uint64_t frames,raw_draws,raw_programs,raw_program_vertices,raw_declined,color_clock,cpu_batches,cpu_vertices,cpu_texels,cpu_texture_us,cpu_color_pixels,cpu_color_us,cpu_depth_pixels; struct Surface surfaces[MAX_SURFACES]; unsigned count; };
 static ChVkBackend *active;
 static void flush_color(struct Surface *);
@@ -97,6 +98,7 @@ static int add_target_costs(FrameCosts *costs,ChVkTarget *target) {
     costs->pipeline_ns+=resource.pipeline_create_ns;
     costs->batch_wait_ns+=timing.batch_wait_ns;costs->batch_gpu_ns+=timing.batch_gpu_ns;
     costs->upload_wait_ns+=timing.depth_upload_wait_ns;
+    costs->depth_copy_ns+=timing.depth_copy_ns;costs->depth_copy_calls+=timing.depth_copy_calls;
     costs->batch_submit_ns+=timing.batch_submit_ns;costs->batch_record_ns+=timing.batch_record_ns;
     costs->batch_retire_ns+=timing.batch_retire_ns;costs->batch_submissions+=timing.batch_submissions;
     costs->batch_draws+=timing.batch_draws;costs->sync_render_submissions+=timing.sync_render_submissions;
@@ -121,13 +123,14 @@ static void profile_frame(void) {
             active->costs.clear_cpu_ns/1e6,active->costs.flip_cpu_ns/1e6,active->costs.trim_cpu_ns/1e6,active->costs.completion_cpu_ns/1e6,active->costs.prepare_cpu_ns/1e6,(unsigned long long)active->costs.completion_calls,thread_cpu_ns()!=0);
         /* These are nested phase totals, not additive frame durations. All
          * timestamps already exist; reporting introduces no queries or waits. */
-        if(previous) fprintf(stderr,"[Vulkan frame submissions] frame=%llu batch_submit_ms=%.3f batch_record_ms=%.3f batch_retire_ms=%.3f batch_submissions=%llu batch_draws=%llu sync_render_submissions=%llu sync_render_gpu_ms=%.3f sync_render_host_ms=%.3f\n",
+        if(previous) fprintf(stderr,"[Vulkan frame submissions] frame=%llu batch_submit_ms=%.3f batch_record_ms=%.3f batch_retire_ms=%.3f batch_submissions=%llu batch_draws=%llu sync_render_submissions=%llu sync_render_gpu_ms=%.3f sync_render_host_ms=%.3f depth_copy_ms=%.3f depth_copy_calls=%llu\n",
             (unsigned long long)active->frames,(total.batch_submit_ns-old->batch_submit_ns)/1e6,
             (total.batch_record_ns-old->batch_record_ns)/1e6,(total.batch_retire_ns-old->batch_retire_ns)/1e6,
             (unsigned long long)(total.batch_submissions-old->batch_submissions),
             (unsigned long long)(total.batch_draws-old->batch_draws),
             (unsigned long long)(total.sync_render_submissions-old->sync_render_submissions),
-            (total.sync_render_gpu_ns-old->sync_render_gpu_ns)/1e6,(total.sync_render_host_ns-old->sync_render_host_ns)/1e6);
+            (total.sync_render_gpu_ns-old->sync_render_gpu_ns)/1e6,(total.sync_render_host_ns-old->sync_render_host_ns)/1e6,
+            (total.depth_copy_ns-old->depth_copy_ns)/1e6,(unsigned long long)(total.depth_copy_calls-old->depth_copy_calls));
         active->costs.completion_us=active->costs.completion_cpu_ns=active->costs.completion_calls=active->costs.prepare_us=active->costs.prepare_cpu_ns=0;
         active->costs.texture_uploads=textures.uploads;
         active->costs.surface_us=active->costs.coherence_us=active->costs.imports_us=active->costs.raster_us=active->costs.store_us=0;

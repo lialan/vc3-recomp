@@ -1,0 +1,26 @@
+{
+  "combat": {
+    "frames": 234,
+    "depth_copy_ms": 1.341,
+    "depth_copy_calls": 1.0,
+    "completion_ms": 4.674,
+    "batch_wait_ms": 5.51,
+    "batch_gpu_ms": 4.239
+  },
+  "activation": {
+    "frames": 115,
+    "depth_copy_ms": 0.809,
+    "depth_copy_calls": 1.0,
+    "completion_ms": 4.89,
+    "batch_wait_ms": 6.359,
+    "batch_gpu_ms": 4.458
+  },
+  "held": {
+    "frames": 239,
+    "depth_copy_ms": 0.794,
+    "depth_copy_calls": 1.0,
+    "completion_ms": 4.648,
+    "batch_wait_ms": 5.681,
+    "batch_gpu_ms": 3.936
+  }
+}

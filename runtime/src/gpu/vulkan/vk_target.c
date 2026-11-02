@@ -1804,7 +1804,7 @@ static void record_depth_copy(VkCommandBuffer command,ChVkTarget *s,ChVkTarget *
     vkCmdPipelineBarrier(command,VK_PIPELINE_STAGE_TRANSFER_BIT,depth_stages,0,0,NULL,0,NULL,2,barriers);
 }
 
-VkResult ch_vk_target_copy_depth_stencil(ChVkTarget *source,ChVkTarget *destination) {
+static VkResult copy_depth_stencil(ChVkTarget *source,ChVkTarget *destination) {
     ChVkTarget *s=source,*t=destination;
     if(!s || !t || s->failed || t->failed || !s->initialized || !t->initialized ||
        s->device!=t->device || s->queue!=t->queue || s->family!=t->family ||
@@ -1835,6 +1835,16 @@ VkResult ch_vk_target_copy_depth_stencil(ChVkTarget *source,ChVkTarget *destinat
     return VK_SUCCESS;
 fail:
     s->failed=t->failed=1;return result;
+}
+
+VkResult ch_vk_target_copy_depth_stencil(ChVkTarget *source,ChVkTarget *destination) {
+    uint64_t start=source && source->timing?time_ns():0;
+    VkResult result=copy_depth_stencil(source,destination);
+    if(start) {
+        source->timing_stats.depth_copy_ns+=time_ns()-start;
+        source->timing_stats.depth_copy_calls++;
+    }
+    return result;
 }
 
 VkResult ch_vk_target_draw_combiner_read(ChVkTarget *t,const float rgba[4],const ChVkColorVertex *v,uint32_t n,
