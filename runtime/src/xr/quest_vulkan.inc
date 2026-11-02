@@ -207,21 +207,28 @@ static unsigned vk_present(const Frame *f,const XrCompositionLayerBaseHeader **l
     int overlay_want=s_overlay_ok>0 && s_views_ok && s_qo.gun_valid;
     int overlay_reuse=overlay_want && overlay_reuse_frame(s_vk_overlay_have_last,overlay_full,s_menu.open,s_vk_overlay_frame,display_period);
     if(!overlay_want) s_vk_overlay_have_last=0;
+    /* Diagnostics for the eye mapping: EYE_TEST tints the left eye's overlay
+     * red and the right eye's blue; SWAP_EYES draws each eye's overlay from
+     * the other view (the image still goes to the same layer slot). */
+    static int eye_test=-1,swap_eyes=-1;
+    if(eye_test<0) eye_test=ch_env("XR_EYE_TEST") && *ch_env("XR_EYE_TEST")=='1';
+    if(swap_eyes<0) swap_eyes=ch_env("XR_SWAP_EYES") && *ch_env("XR_SWAP_EYES")=='1';
     if(overlay_want && !overlay_reuse) {
         for(unsigned e=0;e<2;e++) {
-            float vp[16],eye[3]={s_views[e].pose.position.x,s_views[e].pose.position.y,s_views[e].pose.position.z};
+            const XrView *v=&s_views[swap_eyes?1-e:e];
+            float vp[16],eye[3]={v->pose.position.x,v->pose.position.y,v->pose.position.z};
             uint32_t index;VkImage image;
             size_t bytes=(size_t)s_vk_eye[e].w*s_vk_eye[e].h*4;
-            static const float transparent[4]={0,0,0,0};
-            eye_viewproj(&s_views[e],vp);
-            vk_check(ch_vk_target_clear_read(s_vk_eye[e].target,transparent,s_vk_eye[e].pixels,bytes),"overlay clear");
+            static const float transparent[4]={0,0,0,0},tint[2][4]={{.35f,0,0,.35f},{0,0,.35f,.35f}};
+            eye_viewproj(v,vp);
+            vk_check(ch_vk_target_clear_read(s_vk_eye[e].target,eye_test?tint[e]:transparent,s_vk_eye[e].pixels,bytes),"overlay clear");
             vk_check(ch_vk_overlay_read(s_vk_eye[e].target,&s_qo,vp,eye,qo_sight_height(s_vr.sight),
                 s_vk_eye[e].pixels,bytes),"overlay draw");
             vk_xr_check(ch_vk_xr_swapchain_wait(s_vk_eye[e].chain,XR_INFINITE_DURATION,&index,&image),"overlay acquire");
             vk_xr_check(ch_vk_xr_swapchain_copy_release(s_vk_eye[e].chain,s_vk_eye[e].target,NULL,0,&result),"overlay copy");
             vk_check(result,"overlay copy completion");
             s_vk_overlay_views[e]=(XrCompositionLayerProjectionView){
-                .type=XR_TYPE_COMPOSITION_LAYER_PROJECTION_VIEW,.pose=s_views[e].pose,.fov=s_views[e].fov,
+                .type=XR_TYPE_COMPOSITION_LAYER_PROJECTION_VIEW,.pose=v->pose,.fov=v->fov,
                 .subImage={.swapchain=ch_vk_xr_swapchain_handle(s_vk_eye[e].chain),
                     .imageRect={.extent={(int32_t)s_vk_eye[e].w,(int32_t)s_vk_eye[e].h}}}};
         }

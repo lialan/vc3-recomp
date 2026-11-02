@@ -2576,6 +2576,24 @@ static void xr_frame(void)
         s_views_ok = XR_SUCCEEDED(xrLocateViews(s_sess, &vl, &vs, 2, &nv, s_views)) && nv == 2
             && (vs.viewStateFlags & XR_VIEW_STATE_POSITION_VALID_BIT)
             && (vs.viewStateFlags & XR_VIEW_STATE_ORIENTATION_VALID_BIT);
+        if (s_views_ok) {
+            /* Once a session, where the runtime puts each eye in the head's
+             * frame: view 0 must be the left eye (x < 0). */
+            static int logged;
+            if (!logged) {
+                XrQuaternionf q = s_views[0].pose.orientation, qi = { -q.x, -q.y, -q.z, q.w };
+                float d[3], h[3];
+                int k;
+                logged = 1;
+                for (k = 0; k < 3; k++)
+                    d[k] = (&s_views[1].pose.position.x)[k] - (&s_views[0].pose.position.x)[k];
+                qrot(qi, d, h);
+                fprintf(stderr, "[xr] eyes: view1-view0 in head frame %+.4f %+.4f %+.4f m; "
+                        "fov0 L%.1f R%.1f fov1 L%.1f R%.1f deg\n", h[0], h[1], h[2],
+                        s_views[0].fov.angleLeft * 57.2958f, s_views[0].fov.angleRight * 57.2958f,
+                        s_views[1].fov.angleLeft * 57.2958f, s_views[1].fov.angleRight * 57.2958f);
+            }
+        }
         view_publish();
     }
     perf_frame();
