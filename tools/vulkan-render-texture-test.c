@@ -243,7 +243,22 @@ static int scenario(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,uint32_t 
     if(test>=13 && test!=15) {uint32_t edit=0x7349a1fe;memcpy(memory+dest.color_va+4,&edit,4);}
     if(test==14) {uint32_t edit=0x40000039;memcpy(memory+8192,&edit,4);}
     if(test>=15) cb->draw(&source,&draw_source); /* Independent pending depth owner. */
+    if(test>=17) {
+        uint32_t edit=0x27395bef;memcpy(memory+source.color_va+4,&edit,4);
+        if(test==18) {src_state.clear_rect_set=3;src_state.clear_rect_h=1u<<16;src_state.clear_rect_v=1u<<16;}
+        if(test==19) {src_state.clear_rect_set=3;src_state.clear_rect_h=3u<<16;src_state.clear_rect_v=3u<<16;}
+        cb->clear(&source,&src_state,0xf0,0x98654321,0);
+        src_state.clear_rect_set=0;
+        edit=0x1234abef;memcpy(memory+source.color_va+8,&edit,4);
+        cb->draw(&dest,&draw_dest); /* CPU edit after clear still must merge. */
+    }
     cb->flush();
+    if(test>=17) {
+        const unsigned char cleared[]={0x21,0x43,0x65,0x98},edited[]={0xef,0xab,0x34,0x12};
+        REQUIRE(!memcmp(memory+source.color_va,cleared,4));
+        REQUIRE(!memcmp(memory+source.color_va+4,cleared,4));
+        REQUIRE(!memcmp(memory+source.color_va+8,edited,4));
+    }
     if(test==8) {
         static const unsigned char expected[]={9,15,12,8}; /* Guest BGRA ordering. */
         for(unsigned i=0;i<64;i++) REQUIRE(memory[dest.color_va+i]==expected[i%4]);
@@ -453,7 +468,7 @@ int ch_test_render_textures(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,u
     unsigned char *reference=malloc(sizeof memory),*candidate=malloc(sizeof memory);
     if(!reference || !candidate) {free(reference);free(candidate);return 1;}
     int failed=0;
-    for(unsigned test=0;test<17 && !failed;test++) {
+    for(unsigned test=0;test<20 && !failed;test++) {
         unsigned control=0,fast=0;
         failed=scenario(gpu,device,queue,family,0,test,reference,&control,VK_NULL_HANDLE) ||
             scenario(gpu,device,queue,family,1,test,candidate,&fast,VK_NULL_HANDLE);
