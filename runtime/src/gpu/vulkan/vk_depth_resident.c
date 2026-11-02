@@ -204,7 +204,7 @@ static VkResult bind_depth(DepthImage *d,ChVkTarget *target,
          * Completion/sample/layout boundaries still publish through flush. */
         r=ch_vk_target_depth_morton(target,d->morton);
         if(r==VK_SUCCESS) r=observe(d);
-        if(r==VK_SUCCESS) r=ch_vk_target_copy_depth_stencil(d->target,target);
+        if(r==VK_SUCCESS) r=ch_vk_target_copy_depth_stencil_queued(d->target,target);
         if(r!=VK_SUCCESS) return r;
         d->target=target;d->surface=*surface;d->state=*state;d->layout=layout;
         d->stats.gpu_copies++;return VK_SUCCESS;

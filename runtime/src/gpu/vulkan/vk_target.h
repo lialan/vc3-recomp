@@ -31,6 +31,7 @@ typedef struct {
     uint64_t batch_draws,batch_clears,batch_submissions,combined_depth_copies,combined_texture_copies,combined_depth_readbacks,combined_color_readbacks,queued_depth_uploads,queued_color_readbacks;
     uint64_t coherent_staging_skips,staging_maintenance_bytes;
     uint64_t pipeline_consecutive_hits,pipeline_scan_entries;
+    uint64_t queued_depth_copies;
     uint64_t combined_new_texture_copies,read_only_color_barriers_avoided;
     uint64_t batch_pipeline_binds,batch_blend_updates,batch_push_updates;
     uint64_t depth_roundtrips_by_compare[8]; /* Batched full-surface conversions, VkCompareOp order. */
@@ -209,6 +210,9 @@ VkResult ch_vk_target_read_z24s8(ChVkTarget *,uint32_t *words,size_t pixels);
 VkResult ch_vk_target_write_z24s8(ChVkTarget *,const uint32_t *words,size_t pixels);
 /* Exact same-device/queue/extent/format copy. Completes both pending targets,
  * preserves their colors and restores depth/stencil attachment layouts. */
+/* May return with an in-flight source batch. Target operations and destruction
+ * retain/drain both images; destination CPU draw preparation may overlap it. */
+VkResult ch_vk_target_copy_depth_stencil_queued(ChVkTarget *,ChVkTarget *);
 VkResult ch_vk_target_copy_depth_stencil(ChVkTarget *source,ChVkTarget *destination);
 /* Premultiplied effect shading; xy[4..5] is local effect UV. */
 VkResult ch_vk_target_draw_effect_read(ChVkTarget *,const ChVkColorVertex *,uint32_t,

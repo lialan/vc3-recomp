@@ -1,0 +1,186 @@
+{
+  "control": {
+    "windows": [
+      {
+        "first_flip": 1321,
+        "last_flip": 1441,
+        "fps": 59.97,
+        "mean_ms": 16.68,
+        "p95_ms": 22.56,
+        "p99_ms": 24.89,
+        "max_ms": 25.59,
+        "over_20ms": 20,
+        "over_33ms": 0
+      },
+      {
+        "first_flip": 1441,
+        "last_flip": 1561,
+        "fps": 60.07,
+        "mean_ms": 16.65,
+        "p95_ms": 22.01,
+        "p99_ms": 24.52,
+        "max_ms": 26.47,
+        "over_20ms": 21,
+        "over_33ms": 0
+      },
+      {
+        "first_flip": 1561,
+        "last_flip": 1681,
+        "fps": 59.9,
+        "mean_ms": 16.69,
+        "p95_ms": 21.34,
+        "p99_ms": 26.89,
+        "max_ms": 28.45,
+        "over_20ms": 17,
+        "over_33ms": 0
+      },
+      {
+        "first_flip": 1681,
+        "last_flip": 1801,
+        "fps": 60.0,
+        "mean_ms": 16.67,
+        "p95_ms": 22.68,
+        "p99_ms": 25.71,
+        "max_ms": 27.73,
+        "over_20ms": 17,
+        "over_33ms": 0
+      },
+      {
+        "first_flip": 1801,
+        "last_flip": 1921,
+        "fps": 60.01,
+        "mean_ms": 16.67,
+        "p95_ms": 21.9,
+        "p99_ms": 26.95,
+        "max_ms": 30.84,
+        "over_20ms": 24,
+        "over_33ms": 0
+      }
+    ],
+    "combat": {
+      "frames": 234,
+      "draw_ms": 4.138,
+      "draw_cpu_ms": 1.869,
+      "batch_draws": 319.5,
+      "batch_submissions": 12.308,
+      "completion_ms": 4.576,
+      "depth_copy_ms": 0.91,
+      "batch_wait_ms": 4.72,
+      "batch_gpu_ms": 3.15
+    },
+    "activation": {
+      "frames": 115,
+      "draw_ms": 6.553,
+      "draw_cpu_ms": 3.088,
+      "batch_draws": 370.757,
+      "batch_submissions": 16.565,
+      "completion_ms": 4.693,
+      "depth_copy_ms": 0.787,
+      "batch_wait_ms": 5.634,
+      "batch_gpu_ms": 3.587
+    },
+    "held": {
+      "frames": 239,
+      "draw_ms": 6.286,
+      "draw_cpu_ms": 2.933,
+      "batch_draws": 375.226,
+      "batch_submissions": 15.808,
+      "completion_ms": 4.742,
+      "depth_copy_ms": 0.863,
+      "batch_wait_ms": 5.714,
+      "batch_gpu_ms": 3.681
+    }
+  },
+  "candidate": {
+    "windows": [
+      {
+        "first_flip": 1321,
+        "last_flip": 1441,
+        "fps": 59.94,
+        "mean_ms": 16.68,
+        "p95_ms": 22.89,
+        "p99_ms": 25.58,
+        "max_ms": 28.5,
+        "over_20ms": 32,
+        "over_33ms": 0
+      },
+      {
+        "first_flip": 1441,
+        "last_flip": 1561,
+        "fps": 59.94,
+        "mean_ms": 16.68,
+        "p95_ms": 23.76,
+        "p99_ms": 27.08,
+        "max_ms": 28.91,
+        "over_20ms": 28,
+        "over_33ms": 0
+      },
+      {
+        "first_flip": 1561,
+        "last_flip": 1681,
+        "fps": 60.01,
+        "mean_ms": 16.66,
+        "p95_ms": 21.8,
+        "p99_ms": 23.82,
+        "max_ms": 25.55,
+        "over_20ms": 21,
+        "over_33ms": 0
+      },
+      {
+        "first_flip": 1681,
+        "last_flip": 1801,
+        "fps": 59.9,
+        "mean_ms": 16.7,
+        "p95_ms": 22.05,
+        "p99_ms": 27.11,
+        "max_ms": 27.93,
+        "over_20ms": 23,
+        "over_33ms": 0
+      },
+      {
+        "first_flip": 1801,
+        "last_flip": 1921,
+        "fps": 60.11,
+        "mean_ms": 16.64,
+        "p95_ms": 21.28,
+        "p99_ms": 22.92,
+        "max_ms": 26.24,
+        "over_20ms": 19,
+        "over_33ms": 0
+      }
+    ],
+    "combat": {
+      "frames": 234,
+      "draw_ms": 3.496,
+      "draw_cpu_ms": 1.832,
+      "batch_draws": 319.265,
+      "batch_submissions": 12.256,
+      "completion_ms": 5.098,
+      "depth_copy_ms": 0.413,
+      "batch_wait_ms": 4.843,
+      "batch_gpu_ms": 3.655
+    },
+    "activation": {
+      "frames": 115,
+      "draw_ms": 6.09,
+      "draw_cpu_ms": 3.075,
+      "batch_draws": 370.443,
+      "batch_submissions": 16.53,
+      "completion_ms": 5.066,
+      "depth_copy_ms": 0.375,
+      "batch_wait_ms": 5.729,
+      "batch_gpu_ms": 4.08
+    },
+    "held": {
+      "frames": 239,
+      "draw_ms": 5.698,
+      "draw_cpu_ms": 2.936,
+      "batch_draws": 375.268,
+      "batch_submissions": 15.895,
+      "completion_ms": 5.113,
+      "depth_copy_ms": 0.38,
+      "batch_wait_ms": 5.623,
+      "batch_gpu_ms": 3.976
+    }
+  }
+}

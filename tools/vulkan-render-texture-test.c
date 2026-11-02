@@ -312,6 +312,64 @@ done:
 #undef CHECK
     return failed;
 }
+static int queued_depth_copies(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,uint32_t family) {
+    ChVkTarget *a=NULL,*b=NULL;ChVkTexture *snapshot=NULL;int failed=1;
+    const float black[]={0,0,0,1};unsigned char rgba[64];float depth[16];uint8_t stencil[16];
+    const uint16_t indices[]={0,1,2};
+    ChVkColorVertex vertices[]={{{-1,-1,.25f,1},{1,0,0,1}},{{3,-1,.25f,1},{1,0,0,1}},{{-1,3,.25f,1},{1,0,0,1}}};
+    Nv2aRenderState state={.color_mask=0x01010101,.depth_test_enable=1,.depth_write=1,.depth_func=0x207};
+#define CHECK(x) do {if(!(x)){fprintf(stderr,"queued depth copy line%d case%u: %s\n",__LINE__,test,#x);goto done;}}while(0)
+    for(unsigned test=0;test<13;test++) {
+        CHECK(ch_vk_target_create(gpu,device,queue,family,4,4,&a)==VK_SUCCESS);
+        CHECK(ch_vk_target_create(gpu,device,queue,family,4,4,&b)==VK_SUCCESS);
+        CHECK(ch_vk_target_batching(a,1)==VK_SUCCESS && ch_vk_target_batching(b,1)==VK_SUCCESS);
+        CHECK(ch_vk_target_clear_aspects_read(a,7,black,1,7,rgba,sizeof rgba)==VK_SUCCESS);
+        CHECK(ch_vk_target_clear_aspects_read(b,7,black,1,3,rgba,sizeof rgba)==VK_SUCCESS);
+        ch_vk_target_defer_color_readback(a,1);ch_vk_target_defer_color_readback(b,1);
+        for(unsigned i=0;i<3;i++) vertices[i].xy[2]=.25f;
+        CHECK(ch_vk_target_draw_state_read(a,NULL,vertices,3,indices,3,&state,rgba,sizeof rgba)==VK_SUCCESS);
+        if(test>=9) {
+            for(unsigned i=0;i<3;i++) vertices[i].xy[2]=.75f;
+            CHECK(ch_vk_target_draw_state_read(b,NULL,vertices,3,indices,3,&state,rgba,sizeof rgba)==VK_SUCCESS);
+            for(unsigned i=0;i<3;i++) vertices[i].xy[2]=.25f;
+        }
+        CHECK(ch_vk_target_copy_depth_stencil_queued(a,b)==VK_SUCCESS);
+        ChVkTargetResourceStats stats;ch_vk_target_resource_stats(a,&stats);
+        const char *option=getenv("CHIHIRO_VULKAN_ASYNC_DEPTH_COPIES");
+        CHECK(stats.queued_depth_copies==(!option || atoi(option)?1u:0u));
+        if(stats.queued_depth_copies) CHECK(ch_vk_target_completion_fence(b)==VK_NULL_HANDLE);
+        if(test==1) CHECK(ch_vk_target_read_color(a,rgba,sizeof rgba)==VK_SUCCESS && rgba[0]==255);
+        if(test==2 || test==5 || test==10) {
+            for(unsigned i=0;i<3;i++) vertices[i].xy[2]=.5f;
+            CHECK(ch_vk_target_draw_state_read(test==2?a:b,NULL,vertices,3,indices,3,&state,rgba,sizeof rgba)==VK_SUCCESS);
+        }
+        if(test==3 || test==11) {ch_vk_target_destroy(a);a=NULL;}
+        if(test==4 || test==12) {ch_vk_target_destroy(b);b=NULL;}
+        if(test==6) CHECK(ch_vk_target_copy_depth_stencil_queued(b,a)==VK_SUCCESS);
+        if(test==7) {
+            CHECK(ch_vk_target_snapshot_texture(a,1,&snapshot)==VK_SUCCESS);
+            CHECK(ch_vk_texture_read_rgba(snapshot,rgba,sizeof rgba)==VK_SUCCESS && rgba[0]==255);
+            ch_vk_texture_destroy(snapshot);snapshot=NULL;
+        }
+        if(test==8) {
+            CHECK(ch_vk_target_read_depth_begin(a,depth,stencil,16,0,NULL,0)==VK_SUCCESS);
+            CHECK(ch_vk_target_read_depth_end(a)==VK_SUCCESS && depth[0]==.25f);
+        }
+        if(b) {
+            CHECK(ch_vk_target_read_depth_stencil(b,depth,stencil,16)==VK_SUCCESS);
+            for(unsigned i=0;i<16;i++) CHECK(depth[i]==(test==5 || test==10?.5f:.25f) && stencil[i]==7);
+        }
+        if(a) {
+            CHECK(ch_vk_target_read_depth_stencil(a,depth,stencil,16)==VK_SUCCESS);
+            for(unsigned i=0;i<16;i++) CHECK(depth[i]==(test==2?.5f:.25f) && stencil[i]==7);
+        }
+        ch_vk_target_destroy(a);a=NULL;ch_vk_target_destroy(b);b=NULL;
+    }
+    failed=0;puts("PASS: queued depth copy preserves source/destination readbacks, redraws, reverse copies, snapshotting and either destruction order");
+done:
+    ch_vk_texture_destroy(snapshot);ch_vk_target_destroy(a);ch_vk_target_destroy(b);return failed;
+#undef CHECK
+}
 static int paired_readbacks(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,uint32_t family) {
     ChVkTarget *t=NULL;int failed=1;
     unsigned char rgba[64],reference[64],stencil[16],stencil_ref[16];float depth[16],depth_ref[16];uint32_t words[16],words_ref[16];
@@ -512,7 +570,7 @@ int ch_test_texture_watch(VkPhysicalDevice,VkDevice,VkQueue,uint32_t);
 int ch_test_render_textures(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,uint32_t family) {
     if(ch_test_texture_watch(gpu,device,queue,family)) return 1;
     if(cold_eviction(gpu,device,queue,family)) return 1;
-    if(cache_roundtrip(gpu,device,queue,family) || paired_readbacks(gpu,device,queue,family) || queued_uploads(gpu,device,queue,family) || snapshots(gpu,device,queue,family)) return 1;
+    if(queued_depth_copies(gpu,device,queue,family) || cache_roundtrip(gpu,device,queue,family) || paired_readbacks(gpu,device,queue,family) || queued_uploads(gpu,device,queue,family) || snapshots(gpu,device,queue,family)) return 1;
     unsigned char *reference=malloc(sizeof memory),*candidate=malloc(sizeof memory);
     if(!reference || !candidate) {free(reference);free(candidate);return 1;}
     int failed=0;

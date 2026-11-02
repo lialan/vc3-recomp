@@ -90,7 +90,10 @@ struct ChVkTarget {
     VkFence fence;
     VkCommandBuffer upload_command;
     VkFence upload_fence;
-    int upload_pending,async_depth_uploads;
+    int upload_pending,async_depth_uploads,async_depth_copies;
+    /* One queued copy edge; GPU ownership lasts through its source fence.
+     * A new copy drains existing edges, so this graph cannot form a cycle. */
+    ChVkTarget *copy_source,*copy_destination;
     int color_readback_active,color_readback_batched;
     void *color_readback_pixels;
     uint32_t width, height;
@@ -126,6 +129,8 @@ struct ChVkTarget {
     struct { const char *caller; int readback; uint64_t count; } finish_reasons[32];
 };
 static VkResult finish_batch_named(ChVkTarget *,int,const char *);
+static VkResult wait_copy_source(ChVkTarget *);
+static VkResult retire_copy_out(ChVkTarget *);
 static void record_depth_copy(VkCommandBuffer,ChVkTarget *,ChVkTarget *);
 #define TRY(expr) do { result=(expr); if(result!=VK_SUCCESS) goto fail; } while(0)
 static uint64_t time_ns(void) {
@@ -327,6 +332,7 @@ VkResult ch_vk_target_pipeline_cache(ChVkTarget *t,VkPipelineCache cache) {
 }
 void ch_vk_target_destroy(ChVkTarget *t) {
     if(!t) return;
+    (void)wait_copy_source(t);(void)retire_copy_out(t);
     if(t->color_readback_active) (void)ch_vk_target_read_color_end(t);
     if(t->readback_active) (void)ch_vk_target_read_depth_end(t);
     /* Finish deferred work before destroying anything it references. */
@@ -395,6 +401,8 @@ static VkResult create_depth(VkPhysicalDevice physical,VkDevice device,VkQueue q
     t->batch_limit=BATCH_DRAWS;
     const char *async_upload=getenv("CHIHIRO_VULKAN_ASYNC_DEPTH_UPLOADS");
     t->async_depth_uploads=!async_upload || atoi(async_upload);
+    const char *async_copy=getenv("CHIHIRO_VULKAN_ASYNC_DEPTH_COPIES");
+    t->async_depth_copies=!async_copy || atoi(async_copy);
     VkPhysicalDeviceProperties device_properties;
     vkGetPhysicalDeviceProperties(physical,&device_properties);
     t->noncoherent_atom=device_properties.limits.nonCoherentAtomSize;
@@ -570,6 +578,12 @@ static VkResult retire_batch(ChVkTarget *t) {
     if(!t->submitted) return VK_SUCCESS;
     VkResult result;uint64_t wait_start=t->timing?time_ns():0;
     TRY(vkWaitForFences(t->device,1,&t->fence,VK_TRUE,5000000000ULL));
+    /* A destination submission follows its copy on the same queue. Its
+     * completed fence proves the source copy is also safe to retire. */
+    TRY(wait_copy_source(t));
+    /* Detach before retirement callbacks: the copy is complete, and a callback
+     * may release resources associated with the dependent target. */
+    if(t->copy_destination) {t->copy_destination->copy_source=NULL;t->copy_destination=NULL;}
     if(t->timing) {
         t->timing_stats.batch_wait_ns+=time_ns()-wait_start;
         uint64_t elapsed;TRY(timestamp_elapsed(t,&elapsed));t->timing_stats.batch_gpu_ns+=elapsed;
@@ -588,13 +602,20 @@ static VkResult retire_batch(ChVkTarget *t) {
     t->submitted=0;return VK_SUCCESS;
 fail:
     t->failed=1;vkQueueWaitIdle(t->queue);t->submitted=0;t->pending=t->pending_clears=0;
+    if(t->copy_destination) {t->copy_destination->failed=1;t->copy_destination->copy_source=NULL;t->copy_destination=NULL;}
     retire_samples(t);return result;
+}
+static VkResult wait_copy_source(ChVkTarget *t) {
+    return t && t->copy_source?retire_batch(t->copy_source):VK_SUCCESS;
+}
+static VkResult retire_copy_out(ChVkTarget *t) {
+    return t && t->copy_destination?retire_batch(t):VK_SUCCESS;
 }
 static VkResult finish_batch_with_copy(ChVkTarget *t,int readback,const char *caller,ChVkTarget *depth_destination,ChVkTexture *texture_destination,int defer_wait) {
     if(!t || t->failed) return VK_ERROR_INITIALIZATION_FAILED;
-    if(t->submitted) return retire_batch(t);
-    if(!t->pending) return wait_upload(t);
     VkResult result;
+    if(t->submitted) return retire_batch(t);
+    if(!t->pending) {TRY(wait_copy_source(t));return wait_upload(t);}
     uint64_t finish_start=t->timing?time_ns():0;
     vkCmdEndRenderPass(t->command);
     VkImageMemoryBarrier barrier={.sType=VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
@@ -714,6 +735,7 @@ VkResult ch_vk_target_quantize_depth_draw(ChVkTarget *t) {return quantize_depth(
 VkResult ch_vk_target_quantize_depth_input(ChVkTarget *t) {return quantize_depth(t,3);}
 static VkResult begin_batch(ChVkTarget *t) {
     VkResult result;
+    TRY(retire_copy_out(t));
     if(!t->pending) {
         t->recorded_pipeline=VK_NULL_HANDLE;t->recorded_push_layout=VK_NULL_HANDLE;t->recorded_blend_valid=0;t->recorded_stencil_valid=0;
         TRY(vkResetCommandBuffer(t->command,0));TRY(vkResetFences(t->device,1,&t->fence));
@@ -973,6 +995,7 @@ void ch_vk_target_defer_color_readback(ChVkTarget *t,int enabled) {
 VkResult ch_vk_target_read_color_begin(ChVkTarget *t,void *pixels,VkDeviceSize bytes) {
     if(!t || t->failed || !pixels || bytes<t->bytes || t->color_readback_active || t->readback_active)
         return VK_ERROR_INITIALIZATION_FAILED;
+    VkResult copied=retire_copy_out(t);if(copied!=VK_SUCCESS) return copied;
     int batched=!!t->pending;
     VkResult r=batched?finish_batch_with_copy(t,2,__func__,NULL,NULL,1):ch_vk_target_read_color(t,pixels,bytes);
     if(r!=VK_SUCCESS) return r;
@@ -999,6 +1022,7 @@ VkResult ch_vk_target_read_color_end(ChVkTarget *t) {
 }
 VkResult ch_vk_target_read_color(ChVkTarget *t,void *pixels,VkDeviceSize bytes) {
     if(!t || t->color_readback_active || t->readback_active) return VK_ERROR_INITIALIZATION_FAILED;
+    VkResult copied=retire_copy_out(t);if(copied!=VK_SUCCESS) return copied;
     if(t->pending) {
         if(!pixels || bytes<t->bytes) return VK_ERROR_INITIALIZATION_FAILED;
         VkResult r=finish_batch_named(t,2,__func__);
@@ -1022,6 +1046,7 @@ VkResult ch_vk_target_snapshot_texture(ChVkTarget *t,uint32_t levels,ChVkTexture
     if(!out) return VK_ERROR_INITIALIZATION_FAILED;
     *out=NULL;
     if(!t || t->failed || !t->initialized) return VK_ERROR_INITIALIZATION_FAILED;
+    VkResult copied=retire_copy_out(t);if(copied!=VK_SUCCESS) return copied;
     /* Allocate before retiring an open batch so the first snapshot, like a
      * refresh, can copy and generate mips in the source submission. The copy
      * remains private until the source fence proves both operations complete. */
@@ -1042,6 +1067,7 @@ VkResult ch_vk_target_snapshot_texture(ChVkTarget *t,uint32_t levels,ChVkTexture
 VkResult ch_vk_target_refresh_texture(ChVkTarget *t,ChVkTexture *texture) {
     if(!t || t->failed || !t->initialized) return VK_ERROR_INITIALIZATION_FAILED;
     if(!ch_vk_texture_image_copy_valid(texture,t->device,t->queue,t->image,t->width,t->height)) return VK_ERROR_INITIALIZATION_FAILED;
+    VkResult copied=retire_copy_out(t);if(copied!=VK_SUCCESS) return copied;
     if(t->pending) return finish_batch_with_copy(t,0,__func__,NULL,texture,0);
     VkResult r=finish_batch_named(t,0,__func__);
     if(r!=VK_SUCCESS) return r;
@@ -1252,6 +1278,7 @@ static VkResult draw_full(ChVkTarget *t, const float rgba[4],
     if(!t || t->failed || !vertices || !indices || !vertex_count || !index_count ||
        index_count%3 || !pixels || bytes<t->bytes)
         return VK_ERROR_INITIALIZATION_FAILED;
+    VkResult copied=retire_copy_out(t);if(copied!=VK_SUCCESS) return copied;
     for(uint32_t i=0;i<index_count;i++) if(indices[i]>=vertex_count)
         return VK_ERROR_INITIALIZATION_FAILED;
     if(samples && !t->queries) return VK_ERROR_FEATURE_NOT_PRESENT;
@@ -1503,7 +1530,7 @@ VkResult ch_vk_target_draw_texture_read(ChVkTarget *t, const float rgba[4],
 }
 
 VkDevice ch_vk_target_device(const ChVkTarget *t) { return t?t->device:VK_NULL_HANDLE; }
-VkFence ch_vk_target_completion_fence(const ChVkTarget *t) { return t && !t->pending?(t->upload_pending?t->upload_fence:t->fence):VK_NULL_HANDLE; }
+VkFence ch_vk_target_completion_fence(const ChVkTarget *t) { return t && !t->pending && !t->copy_source?(t->upload_pending?t->upload_fence:t->fence):VK_NULL_HANDLE; }
 VkResult ch_vk_target_export_image(ChVkTarget *t,VkImage destination,void *verify,VkDeviceSize bytes) {
     if(!t || t->failed || !t->initialized || !destination || destination==t->image ||
         (verify && bytes<t->bytes)) return VK_ERROR_INITIALIZATION_FAILED;
@@ -1644,6 +1671,7 @@ static VkResult transfer_depth_stencil(ChVkTarget *t,void *depth,void *stencil,s
         return VK_ERROR_INITIALIZATION_FAILED;
     if(rgba && (upload || color_bytes<t->bytes)) return VK_ERROR_INITIALIZATION_FAILED;
     if(t->color_readback_active || (phase==2)!=!!t->readback_active) return VK_ERROR_INITIALIZATION_FAILED;
+    VkResult copied=retire_copy_out(t);if(copied!=VK_SUCCESS) return copied;
     int gpu_packed=packed;
     if(gpu_packed && !t->depth_pack) {
         uint32_t count=0;vkGetPhysicalDeviceQueueFamilyProperties(t->physical,&count,NULL);
@@ -1804,16 +1832,37 @@ static void record_depth_copy(VkCommandBuffer command,ChVkTarget *s,ChVkTarget *
     vkCmdPipelineBarrier(command,VK_PIPELINE_STAGE_TRANSFER_BIT,depth_stages,0,0,NULL,0,NULL,2,barriers);
 }
 
-static VkResult copy_depth_stencil(ChVkTarget *source,ChVkTarget *destination) {
+static VkResult copy_depth_stencil(ChVkTarget *source,ChVkTarget *destination,int queued) {
     ChVkTarget *s=source,*t=destination;
     if(!s || !t || s->failed || t->failed || !s->initialized || !t->initialized ||
        s->device!=t->device || s->queue!=t->queue || s->family!=t->family ||
        s->width!=t->width || s->height!=t->height || s->depth_format!=t->depth_format)
         return VK_ERROR_INITIALIZATION_FAILED;
+    if(s->readback_active || s->color_readback_active || t->readback_active || t->color_readback_active)
+        return VK_ERROR_INITIALIZATION_FAILED;
     VkResult result;
-    /* Append the copy before submitting the source batch. The idle destination
-     * has no unsubmitted accesses; both images remain alive until this call's
-     * source fence completes. Busy destinations keep the established ordering. */
+    TRY(retire_copy_out(s));TRY(retire_copy_out(t));
+    TRY(wait_copy_source(s));TRY(wait_copy_source(t));
+    if(queued && s->async_depth_copies && s!=t && s->pending) {
+        /* Pending targets use distinct attachments and immutable sampled
+         * snapshots. Submit the older destination accesses before overwriting
+         * its depth, then append the copy to the source batch. Retire only the
+         * destination's old fence before associating the later copy: its old
+         * fence does not cover that incoming copy. */
+        int destination_pending=!!t->pending;
+        if(destination_pending) TRY(finish_batch_with_copy(t,0,__func__,NULL,NULL,1));
+        result=finish_batch_with_copy(s,0,__func__,t,NULL,1);
+        if(result==VK_SUCCESS && destination_pending) result=retire_batch(t);
+        if(result!=VK_SUCCESS) {
+            if(t->submitted) (void)retire_batch(t);
+            if(s->submitted) (void)retire_batch(s);
+            goto fail;
+        }
+        s->copy_destination=t;t->copy_source=s;s->resource_stats.queued_depth_copies++;
+        return VK_SUCCESS;
+    }
+    /* Synchronous callers can also combine an idle-destination copy with
+     * source rendering, but retain the public completion guarantee. */
     if(s!=t && s->pending && !t->pending) {
         result=finish_batch_with_copy(s,0,__func__,t,NULL,0);
         if(result!=VK_SUCCESS) goto fail;
@@ -1839,7 +1888,17 @@ fail:
 
 VkResult ch_vk_target_copy_depth_stencil(ChVkTarget *source,ChVkTarget *destination) {
     uint64_t start=source && source->timing?time_ns():0;
-    VkResult result=copy_depth_stencil(source,destination);
+    VkResult result=copy_depth_stencil(source,destination,0);
+    if(start) {
+        source->timing_stats.depth_copy_ns+=time_ns()-start;
+        source->timing_stats.depth_copy_calls++;
+    }
+    return result;
+}
+
+VkResult ch_vk_target_copy_depth_stencil_queued(ChVkTarget *source,ChVkTarget *destination) {
+    uint64_t start=source && source->timing?time_ns():0;
+    VkResult result=copy_depth_stencil(source,destination,1);
     if(start) {
         source->timing_stats.depth_copy_ns+=time_ns()-start;
         source->timing_stats.depth_copy_calls++;
