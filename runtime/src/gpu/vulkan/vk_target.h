@@ -28,7 +28,7 @@ VkResult ch_vk_target_depth_quantization(ChVkTarget *,int mode);
 VkResult ch_vk_target_pipeline_cache(ChVkTarget *,VkPipelineCache);
 typedef struct {
     uint64_t pipeline_builds,pipeline_hits,pipeline_evictions,geometry_allocations;
-    uint64_t batch_draws,batch_clears,batch_submissions,combined_depth_copies,combined_texture_copies,combined_depth_readbacks,direct_depth_readbacks,direct_color_readbacks,direct_paired_readbacks,combined_color_readbacks,queued_depth_uploads,queued_color_readbacks;
+    uint64_t batch_draws,batch_clears,batch_submissions,combined_depth_copies,combined_texture_copies,combined_depth_readbacks,direct_depth_readbacks,direct_color_readbacks,direct_paired_readbacks,combined_color_readbacks,queued_depth_uploads,queued_color_readbacks,ring_submissions;
     uint64_t coherent_staging_skips,staging_maintenance_bytes;
     uint64_t pipeline_consecutive_hits,pipeline_scan_entries;
     uint64_t queued_depth_copies;

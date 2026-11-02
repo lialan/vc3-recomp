@@ -38,17 +38,19 @@ _Static_assert(offsetof(PipelineKey,vertex_fetch_specialized)==offsetof(Pipeline
 /* Bound descriptor/snapshot lifetimes without forcing a wait every 64 draws.
  * Queries, guest publication, resource pressure and target changes still finish. */
 #define BATCH_DRAWS CH_VK_MAX_BATCH_DRAWS
+typedef struct {ChVkTexture *image;void (*release)(void *,ChVkTexture *);void *context;int owned;} Retired;
 typedef struct {
     PipelineKey key;
     uint64_t used;
     VkDescriptorSetLayout descriptor_layout;
     VkDescriptorPool descriptor_pool;
-    VkDescriptorSet descriptor_set,sets[BATCH_DRAWS];
-    uint32_t set_count,set_used;
+    /* One bank per batch slot: an in-flight batch keeps its sets. */
+    VkDescriptorSet descriptor_set,sets[2][BATCH_DRAWS];
+    uint32_t set_count[2],set_used;
     VkPipelineLayout pipeline_layout;
     VkPipeline pipeline;
     int has_descriptors;
-    int pending; /* Referenced by the current batch until its fence completes. */
+    unsigned pending; /* Bit per batch slot referencing it until that slot's fence completes. */
 } PipelineResources;
 struct ChVkTarget {
     uint32_t family;
@@ -141,13 +143,27 @@ struct ChVkTarget {
     uint32_t batch_limit;
     uint32_t pending,pending_clears,retired_count;
     VkDeviceSize geometry_used;
-    struct {ChVkTexture *image;void (*release)(void *,ChVkTexture *);void *context;int owned;} retired[BATCH_DRAWS*5];
+    Retired *retired;
+    /* Batch ring: the recording batch's command buffer, fence, timing pool,
+     * geometry arena and retired samples live in the fields above; the other
+     * slot keeps its own while a submitted batch is in flight. An in-flight
+     * slot is retired before any CPU read of this target's results. */
+    int ring;unsigned slot;
+    struct {
+        VkCommandBuffer command;VkFence fence;VkQueryPool timing;
+        VkBuffer geometry;VkDeviceMemory geometry_memory;void *geometry_map;
+        VkDeviceSize geometry_capacity;int geometry_coherent;
+        Retired *retired;uint32_t retired_count;
+        int inflight,reason,tail_stamped;uint64_t finish_start;
+    } slots[2];
     int initialized;
     int failed;
-    struct { const char *caller; int readback; uint64_t count,wait_ns,gpu_ns; } finish_reasons[32];
+    struct { const char *caller; int readback; uint64_t count,wait_ns,gpu_ns,tail_ns; } finish_reasons[32];
+    int tail_stamped; /* timing slot 2: the render pass ended, readbacks/copies follow */
     int submitted_reason;
 };
 static VkResult finish_batch_named(ChVkTarget *,int,const char *);
+static VkResult drain_ring(ChVkTarget *);
 static VkResult wait_copy_source(ChVkTarget *);
 static VkResult retire_copy_out(ChVkTarget *);
 static void record_depth_copy(VkCommandBuffer,ChVkTarget *,ChVkTarget *);
@@ -186,11 +202,11 @@ static void report_batch_timing(ChVkTarget *t,uint64_t now) {
             (unsigned long long)t->finish_reasons[i].count);
     }
     for(unsigned i=0;i<32;i++) if(t->finish_reasons[i].count) {
-        fprintf(stderr,"\n[Vulkan boundary costs] %ux%u %s/read%d count=%llu wait_ms=%.3f gpu_ms=%.3f",
+        fprintf(stderr,"\n[Vulkan boundary costs] %ux%u %s/read%d count=%llu wait_ms=%.3f gpu_ms=%.3f tail_ms=%.3f",
             t->width,t->height,t->finish_reasons[i].caller,t->finish_reasons[i].readback,
             (unsigned long long)t->finish_reasons[i].count,
-            t->finish_reasons[i].wait_ns/1e6,t->finish_reasons[i].gpu_ns/1e6);
-        t->finish_reasons[i].count=t->finish_reasons[i].wait_ns=t->finish_reasons[i].gpu_ns=0;
+            t->finish_reasons[i].wait_ns/1e6,t->finish_reasons[i].gpu_ns/1e6,t->finish_reasons[i].tail_ns/1e6);
+        t->finish_reasons[i].count=t->finish_reasons[i].wait_ns=t->finish_reasons[i].gpu_ns=t->finish_reasons[i].tail_ns=0;
     }
     fputc('\n',stderr);
     fprintf(stderr,"[Vulkan depth uploads] %ux%u count=%llu inclusive %.2fms own_fence_wait %.2fms\n",
@@ -321,13 +337,8 @@ void ch_vk_target_resource_stats(const ChVkTarget *t,ChVkTargetResourceStats *ou
     *out=t?t->resource_stats:(ChVkTargetResourceStats){0};
     if(t) out->geometry_capacity=t->geometry_capacity;
 }
-static void retire_samples(ChVkTarget *t) {
-    for(unsigned i=0;i<t->retired_count;i++) {
-        if(t->retired[i].owned) ch_vk_texture_destroy(t->retired[i].image);
-        else if(t->retired[i].release) t->retired[i].release(t->retired[i].context,t->retired[i].image);
-    }
-    t->retired_count=0;
-}
+static void retire_retired(Retired *,uint32_t *);
+static void retire_samples(ChVkTarget *t) {retire_retired(t->retired,&t->retired_count);}
 uint32_t ch_vk_target_pending(const ChVkTarget *t) {return t?t->pending:0;}
 VkResult ch_vk_target_batch_limit(ChVkTarget *t,uint32_t draws) {
     if(!t || t->failed || t->resource_stats.pipeline_builds || draws>BATCH_DRAWS) return VK_ERROR_INITIALIZATION_FAILED;
@@ -363,8 +374,17 @@ void ch_vk_target_destroy(ChVkTarget *t) {
     /* Finish deferred work before destroying anything it references. */
     if(!t->failed) (void)finish_batch_named(t,0,__func__);
     if(t->failed) vkQueueWaitIdle(t->queue);
+    if(t->ring) (void)drain_ring(t);
     retire_samples(t);
     for(unsigned i=0;i<t->pipeline_extent;i++) destroy_pipeline(t,&t->pipelines[i]);
+    if(t->ring) {
+        unsigned o=t->slot^1u;
+        if(t->slots[o].geometry) vkDestroyBuffer(t->device,t->slots[o].geometry,NULL);
+        if(t->slots[o].geometry_memory) vkFreeMemory(t->device,t->slots[o].geometry_memory,NULL);
+        if(t->slots[o].timing) vkDestroyQueryPool(t->device,t->slots[o].timing,NULL);
+        if(t->slots[o].fence) vkDestroyFence(t->device,t->slots[o].fence,NULL);
+    }
+    free(t->slots[0].retired);free(t->slots[1].retired);
     if(t->pipeline_cache && !t->borrowed_pipeline_cache) vkDestroyPipelineCache(t->device,t->pipeline_cache,NULL);
     destroy_geometry(t);
     if(t->framebuffer) vkDestroyFramebuffer(t->device,t->framebuffer,NULL);
@@ -538,6 +558,15 @@ static VkResult create_depth(VkPhysicalDevice physical,VkDevice device,VkQueue q
     TRY(vkAllocateCommandBuffers(device,&cmd,&t->command));
     VkFenceCreateInfo fence={.sType=VK_STRUCTURE_TYPE_FENCE_CREATE_INFO};
     TRY(vkCreateFence(device,&fence,NULL,&t->fence));
+    {const char *ring=getenv("CHIHIRO_VULKAN_BATCH_RING");t->ring=!ring || atoi(ring)!=0;}
+    t->slots[0].retired=t->retired=calloc(BATCH_DRAWS*5,sizeof *t->retired);
+    if(!t->retired) {result=VK_ERROR_OUT_OF_HOST_MEMORY;goto fail;}
+    if(t->ring) {
+        t->slots[1].retired=calloc(BATCH_DRAWS*5,sizeof *t->retired);
+        if(!t->slots[1].retired) {result=VK_ERROR_OUT_OF_HOST_MEMORY;goto fail;}
+        TRY(vkAllocateCommandBuffers(device,&cmd,&t->slots[1].command));
+        TRY(vkCreateFence(device,&fence,NULL,&t->slots[1].fence));
+    }
     const char *profile=getenv("CHIHIRO_VULKAN_PROFILE");
     const char *timestamps=getenv("CHIHIRO_VULKAN_GPU_TIMESTAMPS");
     if(profile && atoi(profile) && (!timestamps || atoi(timestamps))) {
@@ -551,8 +580,9 @@ static VkResult create_depth(VkPhysicalDevice physical,VkDevice device,VkQueue q
             VkPhysicalDeviceProperties properties;vkGetPhysicalDeviceProperties(physical,&properties);
             t->timestamp_period=properties.limits.timestampPeriod;
             VkQueryPoolCreateInfo timing={.sType=VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO,
-                .queryType=VK_QUERY_TYPE_TIMESTAMP,.queryCount=2};
+                .queryType=VK_QUERY_TYPE_TIMESTAMP,.queryCount=3};
             TRY(vkCreateQueryPool(device,&timing,NULL,&t->timing));
+            if(t->ring) TRY(vkCreateQueryPool(device,&timing,NULL,&t->slots[1].timing));
         }
     }
     *out=t; return VK_SUCCESS;
@@ -712,7 +742,9 @@ static void wait_stack_note(uint64_t ns) {
             wait_stacks[s].ns+=ns;wait_stacks[s].count++;break;
         }
     }
-    if(++wait_stacks_total%20000) return;
+    static uint64_t every;
+    if(!every) {const char *e=getenv("CHIHIRO_VULKAN_WAIT_STACKS_EVERY");every=e && atoi(e)>0?(uint64_t)atoi(e):20000;}
+    if(++wait_stacks_total%every) return;
     fprintf(stderr,"[Vulkan wait stacks] after %llu waits, top by time:\n",(unsigned long long)wait_stacks_total);
     for(int r=0;r<8;r++) {
         int best=-1;
@@ -733,7 +765,9 @@ static void wait_stack_note(uint64_t ns) {
 #else
 static void wait_stack_note(uint64_t ns) {(void)ns;}
 #endif
+static VkResult drain_ring(ChVkTarget *);
 static VkResult retire_batch(ChVkTarget *t) {
+    {VkResult drained=drain_ring(t);if(drained!=VK_SUCCESS) return drained;}
     if(!t->submitted) return VK_SUCCESS;
     VkResult result;uint64_t wait_start=time_ns();
     TRY(vkWaitForFences(t->device,1,&t->fence,VK_TRUE,5000000000ULL));
@@ -751,13 +785,20 @@ static VkResult retire_batch(ChVkTarget *t) {
         if(t->submitted_reason>=0) {
             t->finish_reasons[t->submitted_reason].wait_ns+=waited;
             t->finish_reasons[t->submitted_reason].gpu_ns+=elapsed;
+            if(t->tail_stamped) {
+                uint64_t stamps[3];
+                if(vkGetQueryPoolResults(t->device,t->timing,0,3,sizeof stamps,stamps,sizeof(uint64_t),VK_QUERY_RESULT_64_BIT)==VK_SUCCESS) {
+                    uint64_t mask=t->timestamp_bits==64?UINT64_MAX:((UINT64_C(1)<<t->timestamp_bits)-1);
+                    t->finish_reasons[t->submitted_reason].tail_ns+=(uint64_t)(((stamps[1]-stamps[2])&mask)*t->timestamp_period);
+                }
+            }
         }
     }
     /* This queue submission follows any depth upload, so its fence also
      * proves that upload command and staging reads have completed. */
     t->upload_pending=0;
     t->pending=t->pending_clears=0;t->geometry_used=0;
-    for(unsigned i=0;i<t->pipeline_extent;i++) {t->pipelines[i].set_used=0;t->pipelines[i].pending=0;}
+    for(unsigned i=0;i<t->pipeline_extent;i++) {t->pipelines[i].set_used=0;t->pipelines[i].pending&=~(1u<<t->slot);}
     uint64_t retire_start=t->timing?time_ns():0;
     retire_samples(t);
     if(t->timing) {
@@ -776,13 +817,73 @@ static VkResult wait_copy_source(ChVkTarget *t) {
 static VkResult retire_copy_out(ChVkTarget *t) {
     return t && (t->copy_destination || t->deferred_retire)?retire_batch(t):VK_SUCCESS;
 }
+static void retire_retired(Retired *list,uint32_t *count) {
+    for(unsigned i=0;i<*count;i++) {
+        if(list[i].owned) ch_vk_texture_destroy(list[i].image);
+        else if(list[i].release) list[i].release(list[i].context,list[i].image);
+    }
+    *count=0;
+}
+static VkResult retire_slot(ChVkTarget *t,unsigned k) {
+    VkResult result;
+    if(!t->slots[k].inflight) return VK_SUCCESS;
+    uint64_t wait_start=time_ns();
+    TRY(vkWaitForFences(t->device,1,&t->slots[k].fence,VK_TRUE,5000000000ULL));
+    wait_stack_note(time_ns()-wait_start);
+    if(t->slots[k].timing) {
+        uint64_t waited=time_ns()-wait_start,stamps[3];
+        t->timing_stats.batch_wait_ns+=waited;
+        int n=t->slots[k].tail_stamped?3:2;
+        if(vkGetQueryPoolResults(t->device,t->slots[k].timing,0,(uint32_t)n,sizeof stamps,stamps,sizeof(uint64_t),VK_QUERY_RESULT_64_BIT)==VK_SUCCESS) {
+            uint64_t mask=t->timestamp_bits==64?UINT64_MAX:((UINT64_C(1)<<t->timestamp_bits)-1);
+            uint64_t gpu=(uint64_t)(((stamps[1]-stamps[0])&mask)*t->timestamp_period);
+            t->timing_stats.batch_gpu_ns+=gpu;
+            if(t->slots[k].reason>=0) {
+                t->finish_reasons[t->slots[k].reason].wait_ns+=waited;
+                t->finish_reasons[t->slots[k].reason].gpu_ns+=gpu;
+                if(n==3) t->finish_reasons[t->slots[k].reason].tail_ns+=(uint64_t)(((stamps[1]-stamps[2])&mask)*t->timestamp_period);
+            }
+        }
+        uint64_t now=time_ns();t->timing_stats.batch_finish_ns+=now-t->slots[k].finish_start;report_batch_timing(t,now);
+    }
+    for(unsigned i=0;i<t->pipeline_extent;i++) t->pipelines[i].pending&=~(1u<<k);
+    retire_retired(t->slots[k].retired,&t->slots[k].retired_count);
+    t->slots[k].inflight=0;return VK_SUCCESS;
+fail:
+    t->failed=1;vkQueueWaitIdle(t->queue);t->slots[k].inflight=0;
+    retire_retired(t->slots[k].retired,&t->slots[k].retired_count);return result;
+}
+static VkResult drain_ring(ChVkTarget *t) {
+    return t->ring?retire_slot(t,t->slot^1u):VK_SUCCESS;
+}
+/* The just-submitted batch moves to its slot; recording continues in the
+ * other one once that slot's earlier batch has completed. */
+static VkResult rotate(ChVkTarget *t) {
+    unsigned k=t->slot,n=k^1u;
+    t->slots[k].command=t->command;t->slots[k].fence=t->fence;t->slots[k].timing=t->timing;
+    t->slots[k].geometry=t->geometry;t->slots[k].geometry_memory=t->geometry_memory;t->slots[k].geometry_map=t->geometry_map;
+    t->slots[k].geometry_capacity=t->geometry_capacity;t->slots[k].geometry_coherent=t->geometry_coherent;
+    t->slots[k].retired=t->retired;t->slots[k].retired_count=t->retired_count;
+    t->slots[k].reason=t->submitted_reason;t->slots[k].finish_start=t->submitted_finish_start;
+    t->slots[k].tail_stamped=t->tail_stamped;t->slots[k].inflight=1;
+    VkResult r=retire_slot(t,n);
+    t->slot=n;
+    t->command=t->slots[n].command;t->fence=t->slots[n].fence;t->timing=t->slots[n].timing;
+    t->geometry=t->slots[n].geometry;t->geometry_memory=t->slots[n].geometry_memory;t->geometry_map=t->slots[n].geometry_map;
+    t->geometry_capacity=t->slots[n].geometry_capacity;t->geometry_coherent=t->slots[n].geometry_coherent;
+    t->retired=t->slots[n].retired;t->retired_count=t->slots[n].retired_count;
+    t->upload_pending=0;t->pending=t->pending_clears=0;t->geometry_used=0;t->tail_stamped=0;
+    for(unsigned i=0;i<t->pipeline_extent;i++) t->pipelines[i].set_used=0;
+    return r;
+}
 static VkResult finish_batch_with_copy(ChVkTarget *t,int readback,const char *caller,ChVkTarget *depth_destination,ChVkTexture *texture_destination,int defer_wait) {
     if(!t || t->failed) return VK_ERROR_INITIALIZATION_FAILED;
     VkResult result;
     if(t->submitted) return retire_batch(t);
-    if(!t->pending) {TRY(wait_copy_source(t));return wait_upload(t);}
+    if(!t->pending) {TRY(drain_ring(t));TRY(wait_copy_source(t));return wait_upload(t);}
     uint64_t finish_start=t->timing?time_ns():0;
     vkCmdEndRenderPass(t->command);
+    if(t->timing) {vkCmdWriteTimestamp(t->command,VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,t->timing,2);t->tail_stamped=1;}
     VkImageMemoryBarrier barrier={.sType=VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
         .srcAccessMask=VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,.dstAccessMask=VK_ACCESS_TRANSFER_READ_BIT,
         .oldLayout=VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,.newLayout=VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
@@ -818,6 +919,9 @@ static VkResult finish_batch_with_copy(ChVkTarget *t,int readback,const char *ca
     t->resource_stats.combined_texture_copies+=texture_destination!=NULL;
     if(readback==1 || readback==3) t->resource_stats.combined_depth_readbacks++;
     if(readback==2 || readback==3) t->resource_stats.combined_color_readbacks++;
+    /* Nothing for the host to read and no copy edge: hand the batch to the
+     * GPU and keep recording into the other slot. */
+    if(defer_wait && t->ring && !readback && !depth_destination) {t->submitted=0;t->resource_stats.ring_submissions++;return rotate(t);}
     return defer_wait?VK_SUCCESS:retire_batch(t);
 fail:
     t->failed=1;vkQueueWaitIdle(t->queue);t->pending=t->pending_clears=0;
@@ -906,7 +1010,7 @@ static VkResult begin_batch(ChVkTarget *t) {
         TRY(vkBeginCommandBuffer(t->command,&begin));
         color_staging_reuse(t);
         if(t->timing) {
-            vkCmdResetQueryPool(t->command,t->timing,0,2);
+            vkCmdResetQueryPool(t->command,t->timing,0,3);t->tail_stamped=0;
             vkCmdWriteTimestamp(t->command,VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,t->timing,0);
         }
         VkImageMemoryBarrier barriers[2]={
@@ -978,7 +1082,7 @@ static VkResult record_batch(ChVkTarget *t,VkBuffer geometry,VkDeviceSize index_
             vkCmdBeginRenderPass(t->command,&pass,VK_SUBPASS_CONTENTS_INLINE);
         }
     }
-    t->active_pipeline->pending=1;
+    t->active_pipeline->pending|=1u<<t->slot;
     t->pending++;t->resource_stats.batch_draws++;
     if(t->timing) t->timing_stats.batch_record_ns+=time_ns()-record_start;
     return VK_SUCCESS;
@@ -1003,7 +1107,7 @@ static VkResult render_read(ChVkTarget *t, const float rgba[4], uint32_t clear_f
     TRY(vkBeginCommandBuffer(t->command,&begin));
     color_staging_reuse(t);
     if(t->timing) {
-        vkCmdResetQueryPool(t->command,t->timing,0,2);
+        vkCmdResetQueryPool(t->command,t->timing,0,3);t->tail_stamped=0;
         vkCmdWriteTimestamp(t->command,VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,t->timing,0);
     }
     VkImageSubresourceRange range={VK_IMAGE_ASPECT_COLOR_BIT,0,1,0,1};
@@ -1402,13 +1506,15 @@ static VkResult create_pipeline(ChVkTarget *t, const VkPipelineColorBlendAttachm
         VkDescriptorPoolSize sizes[2];n=0;
         if(images) sizes[n++]=(VkDescriptorPoolSize){VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,images};
         if(buffers) sizes[n++]=(VkDescriptorPoolSize){VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,buffers};
-        for(unsigned i=0;i<n;i++) sizes[i].descriptorCount*=t->batch_enabled?t->batch_limit:1;
-        VkDescriptorPoolCreateInfo pool={.sType=VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,.maxSets=t->batch_enabled?t->batch_limit:1,.poolSizeCount=n,.pPoolSizes=sizes};
+        uint32_t banks=t->ring?2:1;
+        for(unsigned i=0;i<n;i++) sizes[i].descriptorCount*=(t->batch_enabled?t->batch_limit:1)*banks;
+        VkDescriptorPoolCreateInfo pool={.sType=VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,.maxSets=(t->batch_enabled?t->batch_limit:1)*banks,.poolSizeCount=n,.pPoolSizes=sizes};
         TRY(vkCreateDescriptorPool(t->device,&pool,NULL,&t->active_pipeline->descriptor_pool));
         VkDescriptorSetAllocateInfo alloc={.sType=VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
             .descriptorPool=t->active_pipeline->descriptor_pool,.descriptorSetCount=1,.pSetLayouts=&t->active_pipeline->descriptor_layout};
         TRY(vkAllocateDescriptorSets(t->device,&alloc,&t->active_pipeline->descriptor_set));
-        t->active_pipeline->sets[0]=t->active_pipeline->descriptor_set;t->active_pipeline->set_count=1;
+        t->active_pipeline->sets[t->slot][0]=t->active_pipeline->descriptor_set;
+        t->active_pipeline->set_count[t->slot]=1;t->active_pipeline->set_count[t->slot^1u]=0;
         layout.setLayoutCount=1;layout.pSetLayouts=&t->active_pipeline->descriptor_layout;
     }
     TRY(vkCreatePipelineLayout(t->device,&layout,NULL,&t->active_pipeline->pipeline_layout));
@@ -1502,7 +1608,8 @@ static VkResult draw_full(ChVkTarget *t, const float rgba[4],
     VkResult result;
     if(!state) return VK_ERROR_INITIALIZATION_FAILED;
     int batched=t->batch_enabled && t->reuse_resources && t->defer_color_readback && !samples && !rgba && t->initialized;
-    if((!batched || t->pending==t->batch_limit) && t->pending) TRY(finish_batch_named(t,0,__func__));
+    if(batched && t->ring && t->pending==t->batch_limit) TRY(finish_batch_with_copy(t,0,"batch_limit",NULL,NULL,1));
+    else if((!batched || t->pending==t->batch_limit) && t->pending) TRY(finish_batch_named(t,0,__func__));
     if(state->alpha_test_enable && (state->alpha_func<0x200 || state->alpha_func>0x207))
         return VK_ERROR_FEATURE_NOT_PRESENT;
     VkCullModeFlags cull=VK_CULL_MODE_NONE;
@@ -1624,14 +1731,18 @@ static VkResult draw_full(ChVkTarget *t, const float rgba[4],
     VkDeviceSize payload=header+vertex_bytes+(VkDeviceSize)index_count*sizeof(*indices);
     VkDeviceSize base=t->pending?(t->geometry_used+255)/256*256:0;
     if(base>UINT64_MAX-payload) {result=VK_ERROR_OUT_OF_HOST_MEMORY;goto fail;}
-    if(t->pending && base+payload>t->geometry_capacity) {TRY(finish_batch_named(t,0,__func__));base=0;}
+    if(t->pending && base+payload>t->geometry_capacity) {
+        if(t->ring && t->batch_enabled) TRY(finish_batch_with_copy(t,0,"geometry_full",NULL,NULL,1));
+        else TRY(finish_batch_named(t,0,__func__));
+        base=0;
+    }
     if(entry->has_descriptors) {
-        if(entry->set_used==entry->set_count) {
+        if(entry->set_used==entry->set_count[t->slot]) {
             VkDescriptorSetAllocateInfo alloc={.sType=VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
                 .descriptorPool=entry->descriptor_pool,.descriptorSetCount=1,.pSetLayouts=&entry->descriptor_layout};
-            TRY(vkAllocateDescriptorSets(t->device,&alloc,&entry->sets[entry->set_count]));entry->set_count++;
+            TRY(vkAllocateDescriptorSets(t->device,&alloc,&entry->sets[t->slot][entry->set_count[t->slot]]));entry->set_count[t->slot]++;
         }
-        entry->descriptor_set=entry->sets[entry->set_used++];
+        entry->descriptor_set=entry->sets[t->slot][entry->set_used++];
     }
     t->vertex_offset=base+header;
     VkDeviceSize offset=t->vertex_offset+vertex_bytes;
@@ -1754,7 +1865,7 @@ VkResult ch_vk_target_draw_texture_read(ChVkTarget *t, const float rgba[4],
 }
 
 VkDevice ch_vk_target_device(const ChVkTarget *t) { return t?t->device:VK_NULL_HANDLE; }
-VkFence ch_vk_target_completion_fence(const ChVkTarget *t) { return t && !t->pending && !t->copy_source?(t->upload_pending?t->upload_fence:t->fence):VK_NULL_HANDLE; }
+VkFence ch_vk_target_completion_fence(const ChVkTarget *t) { return t && !t->pending && !t->copy_source && !(t->ring && t->slots[t->slot^1u].inflight)?(t->upload_pending?t->upload_fence:t->fence):VK_NULL_HANDLE; }
 VkResult ch_vk_target_export_image(ChVkTarget *t,VkImage destination,void *verify,VkDeviceSize bytes) {
     if(!t || t->failed || !t->initialized || !destination || destination==t->image ||
         (verify && bytes<t->bytes)) return VK_ERROR_INITIALIZATION_FAILED;
