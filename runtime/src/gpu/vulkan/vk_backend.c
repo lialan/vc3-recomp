@@ -649,6 +649,8 @@ static void flip(void) {
             (unsigned long long)stats.hits,(unsigned long long)stats.uploads,
             (unsigned long long)stats.evictions,stats.bytes/(1024.*1024.),stats.entries,stats.capacity,
             (unsigned long long)stats.gpu_copies,(unsigned long long)stats.gpu_hits,(unsigned long long)stats.gpu_reuses);
+        fprintf(stderr,"[Vulkan texture lookup] hint_hits=%llu scanned_entries=%llu\n",
+            (unsigned long long)stats.lookup_hint_hits,(unsigned long long)stats.lookup_scan_entries);
         fprintf(stderr,"[Vulkan texture comparisons] checks=%llu logical_bytes=%llu changed=%llu tracked=%llu reused=%llu GPU decoded=%llu CPU decoded pixels=%llu\n",
             (unsigned long long)stats.cpu_checks,(unsigned long long)stats.cpu_check_bytes,(unsigned long long)stats.cpu_changes,(unsigned long long)stats.tracked_checks,(unsigned long long)stats.cpu_reuses,(unsigned long long)stats.gpu_decodes,(unsigned long long)stats.cpu_decode_pixels);
     }

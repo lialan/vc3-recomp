@@ -17,10 +17,12 @@ struct Entry {
     ChGuestWriteRange *raw_watch,*palette_watch;
     int observed_valid,observed_same;
 };
+#define LOOKUP_HINTS 1024u
 struct ChVkTextureCache {
     ChVkTextureCacheConfig config;
     struct Entry *entries;
     uint64_t clock,frame;
+    uint32_t hints[LOOKUP_HINTS]; /* entry index + 1, always validated */
     uint32_t extent; /* Skip the never-populated tail of the bounded table. */
     ChVkTextureCacheStats stats;
     int trace;
@@ -140,18 +142,33 @@ static VkResult image_cost(const ChVkTextureCache *c,const Nv2aTexture *t,size_t
     if(staging>c->config.max_bytes-pixels) return VK_NOT_READY;
     *cost=pixels+(size_t)staging;return VK_SUCCESS;
 }
+/* Hints deliberately hash only cheap identity fields. Collisions, slot reuse
+ * and different sampler states are resolved by the complete key check. */
+static uint32_t hint_bucket(const Nv2aTexture *t,const ChVkTarget *source) {
+    uint64_t h=(uint64_t)t->offset*0x9e3779b1u;
+    h^=(uint64_t)t->palette*0x85ebca6bu;
+    h^=(uint64_t)t->width<<17;h^=(uint64_t)t->height<<5;
+    h^=(uintptr_t)source>>4;h^=h>>32;h^=h>>16;
+    return (uint32_t)h&(LOOKUP_HINTS-1);
+}
+static struct Entry *lookup_hint(ChVkTextureCache *c,const Nv2aTexture *t,ChVkTarget *source) {
+    uint32_t index=c->hints[hint_bucket(t,source)];
+    if(!index || index>c->extent) return NULL;
+    struct Entry *e=&c->entries[index-1];
+    if(!e->image || e->source!=source || memcmp(&e->key,t,sizeof *t)) return NULL;
+    return e;
+}
 static void release(void *context,ChVkTexture *image) {
-    ChVkTextureCache *c=context;
-    for(uint32_t i=0;i<c->extent;i++) if(c->entries[i].image==image) {
-        if(!c->entries[i].pins) abort();
-        c->entries[i].pins--;return;
-    }
-    abort();
+    /* Entries live in a fixed allocation and cannot be evicted while pinned. */
+    struct Entry *e=context;
+    if(e->image!=image || !e->pins) abort();
+    e->pins--;
 }
 static void pin(ChVkTextureCache *c,struct Entry *e,ChVkSampleImage *out) {
     e->pins++;e->used=++c->clock;e->frame=c->frame;
+    c->hints[hint_bucket(&e->key,e->source)]=(uint32_t)(e-c->entries)+1;
     *out=(ChVkSampleImage){.width=e->key.width,.height=e->key.height,.gpu=e->image,
-        .release=release,.release_context=c};
+        .release=release,.release_context=e};
 }
 VkResult ch_vk_texture_cache_create(const ChVkTextureCacheConfig *config,ChVkTextureCache **out) {
     if(!out) return VK_ERROR_INITIALIZATION_FAILED;
@@ -183,8 +200,15 @@ VkResult ch_vk_texture_cache_resolve(void *context,const Nv2aTexture *t,ChVkSamp
     VkSamplerCreateInfo sampler;
     r=ch_vk_sampler_state(t,&sampler);if(r!=VK_SUCCESS) return r;
     struct Entry *reusable=NULL;
+    struct Entry *hint=lookup_hint(c,t,NULL);
+    if(hint && unchanged(c,hint,t)) {
+        c->stats.hits++;c->stats.lookup_hint_hits++;pin(c,hint,out);return VK_SUCCESS;
+    }
+    if(hint && c->config.reuse_uploads && !hint->pins) reusable=hint;
     for(uint32_t i=0;i<c->extent;i++) {
         struct Entry *e=&c->entries[i];
+        if(e==hint) continue;
+        c->stats.lookup_scan_entries++;
         if(e->image && !e->source && !memcmp(&e->key,t,sizeof *t)) {
             if(unchanged(c,e,t)) {c->stats.hits++;pin(c,e,out);return VK_SUCCESS;}
             if(c->config.reuse_uploads && !e->pins) reusable=e;
@@ -253,8 +277,15 @@ VkResult ch_vk_texture_cache_resolve_target(ChVkTextureCache *c,const Nv2aTextur
     VkSamplerCreateInfo sampler;VkResult r=ch_vk_sampler_state(t,&sampler);
     if(r!=VK_SUCCESS) return r;
     struct Entry *reusable=NULL;
+    struct Entry *hint=lookup_hint(c,t,source);
+    if(hint && hint->serial==serial) {
+        c->stats.hits++;c->stats.gpu_hits++;c->stats.lookup_hint_hits++;pin(c,hint,out);return VK_SUCCESS;
+    }
+    if(hint && !hint->pins) reusable=hint;
     for(uint32_t i=0;i<c->extent;i++) {
         struct Entry *e=&c->entries[i];
+        if(e==hint) continue;
+        c->stats.lookup_scan_entries++;
         if(e->image && e->source==source && !memcmp(&e->key,t,sizeof *t)) {
             if(e->serial==serial) {c->stats.hits++;c->stats.gpu_hits++;pin(c,e,out);return VK_SUCCESS;}
             if(!e->pins) reusable=e;
