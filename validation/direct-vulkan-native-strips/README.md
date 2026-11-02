@@ -1,3 +1,5 @@
+> Superseded: native-strip changes were reverted after the matched comparison in ../direct-vulkan-native-strips-ab. Do not package the experimental binary.
+
 # Native triangle strips in the shared Vulkan runtime
 
 Reusable fixed/program geometry keeps triangle-strip indices instead of expanding every triangle into a list. Geometry carries an explicit strip flag through NV2A submission; pipeline keys and input assembly use the corresponding topology. Bounds checks, immutable index snapshots, draw order and disabled primitive restart remain intact. Other draws retain triangle lists. Standalone preparation retains expanded-list behavior for callers and parity comparisons. Fans remain expanded because triangle-fan support is optional on Vulkan portability devices. No guest timing or game-specific behavior changes.

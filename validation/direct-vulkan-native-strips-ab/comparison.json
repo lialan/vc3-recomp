@@ -1,0 +1,177 @@
+{
+  "control": {
+    "windows": [
+      {
+        "first_flip": 1321,
+        "last_flip": 1441,
+        "fps": 59.91,
+        "mean_ms": 16.69,
+        "p95_ms": 21.2,
+        "p99_ms": 22.33,
+        "max_ms": 30.08,
+        "over_20ms": 23,
+        "over_33ms": 0
+      },
+      {
+        "first_flip": 1441,
+        "last_flip": 1561,
+        "fps": 60.06,
+        "mean_ms": 16.65,
+        "p95_ms": 21.44,
+        "p99_ms": 22.6,
+        "max_ms": 24.53,
+        "over_20ms": 23,
+        "over_33ms": 0
+      },
+      {
+        "first_flip": 1561,
+        "last_flip": 1681,
+        "fps": 59.88,
+        "mean_ms": 16.7,
+        "p95_ms": 22.72,
+        "p99_ms": 27.64,
+        "max_ms": 27.65,
+        "over_20ms": 19,
+        "over_33ms": 0
+      },
+      {
+        "first_flip": 1681,
+        "last_flip": 1801,
+        "fps": 59.93,
+        "mean_ms": 16.69,
+        "p95_ms": 22.79,
+        "p99_ms": 25.27,
+        "max_ms": 27.78,
+        "over_20ms": 27,
+        "over_33ms": 0
+      },
+      {
+        "first_flip": 1801,
+        "last_flip": 1921,
+        "fps": 60.04,
+        "mean_ms": 16.66,
+        "p95_ms": 22.46,
+        "p99_ms": 23.17,
+        "max_ms": 25.14,
+        "over_20ms": 23,
+        "over_33ms": 0
+      }
+    ],
+    "total_pipeline_ms": 1036.905,
+    "combat": {
+      "frames": 233,
+      "draw_cpu_ms": 1.764,
+      "prepare_cpu_ms": 0.211,
+      "completion_cpu_ms": 1.459,
+      "completion_ms": 4.699,
+      "batch_gpu_ms": 3.348,
+      "batch_wait_ms": 4.818
+    },
+    "activation": {
+      "frames": 115,
+      "draw_cpu_ms": 3.045,
+      "prepare_cpu_ms": 0.296,
+      "completion_cpu_ms": 1.643,
+      "completion_ms": 4.915,
+      "batch_gpu_ms": 4.071,
+      "batch_wait_ms": 6.052
+    },
+    "held": {
+      "frames": 239,
+      "draw_cpu_ms": 2.931,
+      "prepare_cpu_ms": 0.305,
+      "completion_cpu_ms": 1.711,
+      "completion_ms": 4.999,
+      "batch_gpu_ms": 3.862,
+      "batch_wait_ms": 5.776
+    }
+  },
+  "candidate": {
+    "windows": [
+      {
+        "first_flip": 1321,
+        "last_flip": 1441,
+        "fps": 59.8,
+        "mean_ms": 16.72,
+        "p95_ms": 22.74,
+        "p99_ms": 24.61,
+        "max_ms": 25.94,
+        "over_20ms": 25,
+        "over_33ms": 0
+      },
+      {
+        "first_flip": 1441,
+        "last_flip": 1561,
+        "fps": 60.14,
+        "mean_ms": 16.63,
+        "p95_ms": 24.13,
+        "p99_ms": 27.47,
+        "max_ms": 28.27,
+        "over_20ms": 24,
+        "over_33ms": 0
+      },
+      {
+        "first_flip": 1561,
+        "last_flip": 1681,
+        "fps": 57.85,
+        "mean_ms": 17.29,
+        "p95_ms": 25.18,
+        "p99_ms": 27.73,
+        "max_ms": 28.95,
+        "over_20ms": 26,
+        "over_33ms": 0
+      },
+      {
+        "first_flip": 1681,
+        "last_flip": 1801,
+        "fps": 59.21,
+        "mean_ms": 16.89,
+        "p95_ms": 23.29,
+        "p99_ms": 28.47,
+        "max_ms": 28.48,
+        "over_20ms": 25,
+        "over_33ms": 0
+      },
+      {
+        "first_flip": 1801,
+        "last_flip": 1921,
+        "fps": 59.44,
+        "mean_ms": 16.82,
+        "p95_ms": 23.12,
+        "p99_ms": 28.75,
+        "max_ms": 29.53,
+        "over_20ms": 19,
+        "over_33ms": 0
+      }
+    ],
+    "total_pipeline_ms": 104.618,
+    "combat": {
+      "frames": 232,
+      "draw_cpu_ms": 1.899,
+      "prepare_cpu_ms": 0.212,
+      "completion_cpu_ms": 1.545,
+      "completion_ms": 5.578,
+      "batch_gpu_ms": 2.666,
+      "batch_wait_ms": 6.526
+    },
+    "activation": {
+      "frames": 114,
+      "draw_cpu_ms": 3.165,
+      "prepare_cpu_ms": 0.267,
+      "completion_cpu_ms": 1.542,
+      "completion_ms": 6.077,
+      "batch_gpu_ms": 4.479,
+      "batch_wait_ms": 10.164
+    },
+    "held": {
+      "frames": 239,
+      "draw_cpu_ms": 3.013,
+      "prepare_cpu_ms": 0.276,
+      "completion_cpu_ms": 1.674,
+      "completion_ms": 5.794,
+      "batch_gpu_ms": 3.256,
+      "batch_wait_ms": 7.955
+    }
+  },
+  "seed_sha256": "2429842d228b9978471a86dcd320cfc4021313290be30d1a09db8cc4578ffcf5"
+}

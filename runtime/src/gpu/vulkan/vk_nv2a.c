@@ -254,7 +254,7 @@ static VkResult draw_decoded(ChVkTarget *t, const Nv2aSurface *s,
     }
     uint64_t textures_done=profile?profile_us():0;
     uint32_t samples=0;
-    if(fixed) result=ch_vk_target_draw_fixed_read(t,&params,fixed->triangle_strip,fixed->vertices,fixed->vertex_count,
+    if(fixed) result=ch_vk_target_draw_fixed_read(t,&params,fixed->vertices,fixed->vertex_count,
         fixed->indices,fixed->index_count,b->state,texture,b->zpass_out?&samples:NULL,rc,b->fog_color,
         (const ChVkTexture *const *)stage_images,pixels,bytes);
     else if(panel) result=ch_vk_target_draw_panel_read(t,v,b->count,indices,b->count,b->state,texture,

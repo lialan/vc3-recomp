@@ -21,8 +21,6 @@ static int raw_snapshots(void) {
         for(unsigned a=0;a<16;a++) raw.attr[a]=(Nv2aAttrib){.data=a==15?NULL:source[a],.type=types[type],.size=size,
             .stride=trial==0?0:element+3,.bytes=(count-1)*(trial==0?0:element+3)+element,.value={3,4,5,6}};
         SNAP(ch_vk_raw_prepare_reuse(&raw,&g,&scratch)==VK_SUCCESS && g.borrowed==3 && g.vertex_count==count);
-        SNAP(g.triangle_strip==(raw.prim==6));
-        SNAP(g.index_count==(raw.prim==7?(raw.index_count-2)*3:raw.index_count));
         for(unsigned a=0;a<16;a++) for(unsigned i=0;i<count;i++) {
             float expected[4]={0,0,0,1};
             if(a==15)memcpy(expected,raw.attr[a].value,sizeof expected);
@@ -39,7 +37,7 @@ static int raw_snapshots(void) {
         }
         for(unsigned i=0;i<g.index_count;i++) {
             unsigned tri=i/3,lane=i%3;
-            unsigned at=raw.prim==5 || g.triangle_strip?i:raw.prim==7?(lane==0?0:tri+lane):lane==0?tri+(tri&1):lane==1?tri+((tri&1)^1):tri+2;
+            unsigned at=raw.prim==5?i:raw.prim==7?(lane==0?0:tri+lane):lane==0?tri+(tri&1):lane==1?tri+((tri&1)^1):tri+2;
             SNAP(g.indices[i]==indices[at]);
         }
         ch_vk_fixed_release(&g);
@@ -69,13 +67,7 @@ static int stream_render_parity(VkPhysicalDevice gpu,VkDevice device,VkQueue que
     const unsigned types[]={0,1,2,4,5,6};
 #define STREAM(x) do {if(!(x)){fprintf(stderr,"stream parity line%d: %s\n",__LINE__,#x);goto done;}}while(0)
     STREAM(ch_vk_target_create(gpu,device,queue,family,16,16,&target)==VK_SUCCESS);
-    for(unsigned deferred=0;deferred<2;deferred++) for(unsigned prim=5;prim<=8;prim++) for(unsigned t=0;t<6;t++) for(unsigned size=1;size<=4;size++) for(unsigned constant=0;constant<2;constant++) {
-        raw.prim=prim==8?6:prim;raw.index_count=prim==5 || prim==8?6:4;
-        STREAM(ch_vk_target_batching(target,1)==VK_SUCCESS);
-        ch_vk_target_defer_color_readback(target,deferred);
-        const uint16_t list[]={0,1,2,0,2,3},strip[]={0,1,3,2},fan[]={0,1,2,3},degenerate[]={0,1,3,3,1,2};
-        memcpy(indices,prim==5?list:prim==6?strip:prim==7?fan:degenerate,raw.index_count*sizeof *indices);
-        state.cull_enable=1;state.cull_face=constant?0x404:0x405;state.front_face=0x900;
+    for(unsigned t=0;t<6;t++) for(unsigned size=1;size<=4;size++) for(unsigned constant=0;constant<2;constant++) {
         for(unsigned i=0;i<4;i++) {memcpy(source+1+i*33,position[i],16);for(unsigned j=0;j<4;j++) {
             uint32_t bits=0x3f404142;memcpy(source+18+i*33+j*4,&bits,4);}}
         unsigned element=types[t]==0 || types[t]==6?4:types[t]==1 || types[t]==5?size*2:types[t]==4?size:size*4;
@@ -87,12 +79,11 @@ static int stream_render_parity(VkPhysicalDevice gpu,VkDevice device,VkQueue que
         for(unsigned path=0;path<2;path++) {
             STREAM(ch_vk_target_clear_read(target,black,pixels[path],sizeof pixels[path])==VK_SUCCESS);
             STREAM(ch_vk_nv2a_draw_fixed_resolved_read(target,&surface,&batch,&g[path],decode,NULL,NULL,pixels[path],sizeof pixels[path])==VK_SUCCESS);
-            STREAM(ch_vk_target_read_color(target,pixels[path],sizeof pixels[path])==VK_SUCCESS);
         }
         STREAM(!memcmp(pixels[0],pixels[1],sizeof pixels[0]));
         ch_vk_fixed_release(&g[0]);ch_vk_fixed_release(&g[1]);
     }
-    puts("PASS: GPU compact/expanded stream parity for every encoded type/size, unaligned interleaving, zero stride and immutable snapshots; native strips match expanded lists including culling, degenerates and batched draws");failed=0;
+    puts("PASS: GPU compact/expanded stream parity for every encoded type/size, unaligned interleaving, zero stride and immutable snapshots");failed=0;
 done:
     ch_vk_fixed_release(&g[0]);ch_vk_fixed_release(&g[1]);ch_vk_fixed_scratch_release(&scratch);ch_vk_target_destroy(target);return failed;
 #undef STREAM

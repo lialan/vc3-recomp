@@ -28,12 +28,10 @@ typedef struct {
     ChVkFixedVertex *vertices;
     uint16_t *indices;
     uint32_t vertex_count,index_count;
-    int triangle_strip; /* Native strip topology; otherwise triangle list. */
     unsigned borrowed; /* scratch-owned vertices/index bits; release still required */
 } ChVkFixedGeometry;
 /* Reuse preparation may return compact streams (params.stream_bytes nonzero);
- * vertices then names that many encoded bytes, not padded vertex records.
- * triangle_strip selects native strip indices; other primitives are lists. */
+ * vertices then names that many encoded bytes, not padded vertex records. */
 /* Serialized scratch storage; no prepared geometry may outlive its next use.
  * Inputs must not alias this storage. Retains at most16MiB vertices+1MiB indices. */
 typedef struct {void *vertices,*indices;size_t vertex_bytes,index_bytes;} ChVkFixedScratch;
