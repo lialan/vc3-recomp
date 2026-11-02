@@ -12,8 +12,9 @@
  * guard), with three sights:
  *
  *   iron sights    a three-dot front post and rear notch;
- *   red dot        a small reflex sight on the slide, a 3 MOA dot;
- *   holographic    a window sight, a 65 MOA ring round a 1 MOA dot.
+ *   red dot        a small pane of glass on the slide, a 3 MOA dot;
+ *   holographic    a wider pane, a 65 MOA ring round a 1 MOA dot --
+ *                  both bare glass on a low mount, no housing or hood.
  *
  * The aim ray quest_host.c fires along is the sight's line (the bore raised
  * by qo_sight_height), so whichever sight is on, it shows where the shot
@@ -63,7 +64,7 @@ void qo_muzzle(float out[3])
 static GLuint prog_gun, prog_spot, prog_panel, vao_gun, vbo_gun, vao_spot, vbo_spot,
               vao_quad, vbo_quad, panel_tex;
 static GLuint prog_ret;                  /* the sight's glass with its reticle */
-static GLint u_ret_mvp, u_ret_color, u_ret_tint, u_ret_c, u_ret_r;
+static GLint u_ret_mvp, u_ret_color, u_ret_tint, u_ret_c, u_ret_r, u_ret_box;
 static GLint u_gun_mvp, u_gun_model, u_spot_mvp, u_spot_color, u_spot_shape,
              u_panel_mvp, u_panel_tex;
 
@@ -127,20 +128,36 @@ int qo_init(void)
         "          : clamp(1.0 - d, 0.0, 1.0);\n"
         "  a = color.a * (shape.x < 0.0 ? 1.0 : a * a);\n"
         "  o = vec4(color.rgb * a, a); }\n");      /* premultiplied */
-    /* The glass: a faint tint, and the reticle where the eye's line to the
-     * target crosses it (t: glass coordinates in metres, c: that point,
-     * r: dot radius, ring radius, ring half-width). Premultiplied. */
+    /* The glass: a bare pane, its top corners rounded, a faint blue tint
+     * with a sheen across it and a thin bright edge, and the reticle where
+     * the eye's line to the target crosses it (t: glass coordinates in
+     * metres, c: that point, r: dot radius, ring radius, ring half-width,
+     * box: the pane's x0 y0 x1 y1). Outside the outline, nothing: the
+     * reticle is clipped to it. Premultiplied. */
     prog_ret = program(
         "#version 300 es\nlayout(location=0) in vec3 p; layout(location=1) in vec2 uv;\n"
         "uniform mat4 mvp; out vec2 t; void main() { t = uv; gl_Position = mvp * vec4(p, 1.0); }\n",
         "#version 300 es\nprecision highp float; in vec2 t; uniform vec4 color, tint;\n"
-        "uniform vec2 c; uniform vec3 r; out vec4 o;\n"
-        "void main() { float d = length(t - c);\n"
+        "uniform vec2 c; uniform vec3 r; uniform vec4 box; out vec4 o;\n"
+        "void main() {\n"
+        "  vec2 mid = 0.5 * (box.xy + box.zw), hs = 0.5 * (box.zw - box.xy);\n"
+        "  float rad = t.y > mid.y ? 0.0035 : 0.0008;\n"   /* round top, near-square foot */
+        "  vec2 q = abs(t - mid) - hs + rad;\n"
+        "  float sd = length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - rad;\n"
+        "  float aa = max(fwidth(sd), 1e-5);\n"
+        "  float cov = 1.0 - smoothstep(-aa, aa, sd);\n"
+        "  if (cov <= 0.0) discard;\n"
+        "  float d = length(t - c);\n"
         "  float dotA = 1.0 - smoothstep(r.x * 0.55, r.x, d);\n"
         "  float ringA = r.y > 0.0 ? 1.0 - smoothstep(r.z * 0.4, r.z, abs(d - r.y)) : 0.0;\n"
         "  float a = max(dotA, ringA) * color.a;\n"
-        "  float ta = tint.a * (1.0 - a);\n"
-        "  o = vec4(color.rgb * a + tint.rgb * ta, a + ta); }\n");
+        "  vec2 u = (t - box.xy) / (box.zw - box.xy);\n"
+        "  float sheen = exp(-pow((u.x + u.y * 0.6 - 0.95) * 7.0, 2.0)) * 0.07;\n"
+        "  float rim = (1.0 - smoothstep(0.0, 0.0006, -sd)) * 0.30;\n"
+        "  float ta = tint.a * (0.8 + 0.4 * (1.0 - u.y)) + sheen + rim;\n"
+        "  vec3 tc = (tint.rgb * tint.a + vec3(0.92, 0.96, 1.0) * (sheen + rim)) / ta;\n"
+        "  ta = min(ta, 0.6) * (1.0 - a);\n"
+        "  o = vec4(color.rgb * a + tc * ta, a + ta) * cov; }\n");
     prog_panel = program(
         "#version 300 es\nlayout(location=0) in vec2 p; uniform mat4 mvp; out vec2 t;\n"
         "void main() { t = vec2(p.x * 0.5 + 0.5, 0.5 - p.y * 0.5);\n"
@@ -154,6 +171,7 @@ int qo_init(void)
     u_ret_tint = glGetUniformLocation(prog_ret, "tint");
     u_ret_c = glGetUniformLocation(prog_ret, "c");
     u_ret_r = glGetUniformLocation(prog_ret, "r");
+    u_ret_box = glGetUniformLocation(prog_ret, "box");
     u_gun_mvp = glGetUniformLocation(prog_gun, "mvp");
     u_gun_model = glGetUniformLocation(prog_gun, "model");
     u_spot_mvp = glGetUniformLocation(prog_spot, "mvp");
@@ -232,15 +250,16 @@ static void spot(const float *vp, const float eye[3], const float p[3], float ra
 static void glass_reticle(const float *vp, const float *model, int sight, const float eye[3],
                           const float target[3])
 {
-    float q[6][5], center[2], r[3];
-    qo_glass_vertices(q, center, r, model, sight, qo_sight_height(sight), eye, target);
+    float q[6][5], center[2], r[3], box[4];
+    qo_glass_vertices(q, center, r, box, model, sight, qo_sight_height(sight), eye, target);
     glUseProgram(prog_ret);
     glBindBuffer(GL_ARRAY_BUFFER, vbo_spot);
     glBufferData(GL_ARRAY_BUFFER, 6 * 5 * sizeof(float), q, GL_DYNAMIC_DRAW);
     glUniformMatrix4fv(u_ret_mvp, 1, GL_FALSE, vp);
     glUniform4f(u_ret_color, 1.0f, 0.09f, 0.05f, 1.0f);
-    glUniform4f(u_ret_tint, 0.55f, 0.75f, 0.85f, 0.10f);
+    glUniform4f(u_ret_tint, 0.55f, 0.75f, 0.85f, 0.06f);
     glUniform2f(u_ret_c, center[0], center[1]);
+    glUniform4f(u_ret_box, box[0], box[1], box[2], box[3]);
     glUniform3f(u_ret_r, r[0], r[1], r[2]);
     glDrawArrays(GL_TRIANGLES, 0, 6);
     glUseProgram(prog_spot);
@@ -311,7 +330,7 @@ void qo_draw(const QoFrame *f, const float viewproj[16], const float eye[3])
     glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
 
     /* The optic's glass with its reticle, part of the gun: depth-tested
-     * against the gun (the hood in front of it hides it), not written. */
+     * against the gun, not written. */
     if (f->gun_valid && f->show_gun && sight != QO_SIGHT_IRON) {
         glEnable(GL_DEPTH_TEST);
         glDepthFunc(GL_LEQUAL);

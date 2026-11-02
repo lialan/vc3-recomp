@@ -65,6 +65,10 @@ mkdir -p "$OUT"
 STAMP=$(date +%H%M%S)
 
 KEYS=30:coin,31:start,40:fire,44:fire,46:fire,48:fire,50:fire,55:fire,60:fire,65:fire,70:fire,75:fire
+PEDAL2=$(for t in $(seq 98 0.5 106) $(seq 120 0.5 132); do printf '%s:pedal,' $t; done)
+PEDAL2=${PEDAL2%,}
+FIRE2=$(for t in $(seq 86 2 148); do printf '%s:fire,' $t; done)
+FIRE2=${FIRE2%,}
 PEDAL=64:pedal,64.5:pedal,65:pedal,65.5:pedal,66:pedal,66.5:pedal,67:pedal,67.5:pedal,68:pedal,68.5:pedal,69:pedal,69.5:pedal,70:pedal,70.5:pedal,71:pedal,71.5:pedal,72:pedal,72.5:pedal,73:pedal,73.5:pedal,74:pedal,74.5:pedal,75:pedal,75.5:pedal,76:pedal,76.5:pedal,77:pedal,77.5:pedal,78:pedal,78.5:pedal,79:pedal,79.5:pedal,80:pedal,80.5:pedal,81:pedal,81.5:pedal,82:pedal,82.5:pedal,83:pedal,83.5:pedal,84:pedal
 # name | settings lines (;-separated) | extra env (space-separated)
 SCEN=(
@@ -74,25 +78,52 @@ SCEN=(
   "immersive-1x|stereo=1;vr_screen=immersive;vr_res=1x|"
   "immersive-2x|stereo=1;vr_screen=immersive;vr_res=2x|"
   "immersive-native|stereo=1;vr_screen=immersive;vr_res=native|"
-  # native's levers, each turned off: foveation (on for immersive frames by
-  # default), the frame blitted straight into the swapchain, deferred clears
+  # native's levers: foveation off (on for immersive frames by default),
+  # stronger; the frame blitted straight into the swapchain (off by default:
+  # Meta's runtime stalls on it, see quest_host.c direct_on)
   "immersive-native-nofov|stereo=1;vr_screen=immersive;vr_res=native|CHIHIRO_FOVEATION=0"
-  "immersive-native-nodirect|stereo=1;vr_screen=immersive;vr_res=native|CHIHIRO_XR_DIRECT=0"
+  "immersive-native-direct|stereo=1;vr_screen=immersive;vr_res=native|CHIHIRO_XR_DIRECT=1"
   "immersive-native-fovgain8|stereo=1;vr_screen=immersive;vr_res=native|CHIHIRO_FOV_GAIN=8"
-  # the push-buffer decode and the GL submission on one thread (the default
-  # is two, RECOMP_PB_DECODE_THREAD=1)
-  "immersive-native-decode0|stereo=1;vr_screen=immersive;vr_res=native|RECOMP_PB_DECODE_THREAD=0"
-  "immersive-2x-decode0|stereo=1;vr_screen=immersive;vr_res=2x|RECOMP_PB_DECODE_THREAD=0"
+  # the mission intro at native with fixed-function draw merging (runtime
+  # gl_backend.c, RECOMP_GL_MERGE; off by default), against immersive-native:
+  # GL thread per draw ([DEFER] submit busy), [GLMERGE] runs, GPU time.
+  # -cmp checks merged against unmerged vertices bit for bit (slow; the
+  # [GLMERGE] "differ" count must be 0).
+  "immersive-native-merge|stereo=1;vr_screen=immersive;vr_res=native|RECOMP_GL_MERGE=1 CHIHIRO_GL_TIMING=1"
+  "immersive-native-nomerge|stereo=1;vr_screen=immersive;vr_res=native|RECOMP_GL_MERGE=0 CHIHIRO_GL_TIMING=1"
+  "immersive-native-merge-cmp|stereo=1;vr_screen=immersive;vr_res=native|RECOMP_GL_MERGE=2"
+  # attract with no coin and no input (run it with --secs 125): the title
+  # logo must give way to the demo -- the attract stall on the device
+  "attract-native|stereo=1;vr_screen=immersive;vr_res=native;vr_coins=manual|VC3_AUTOKEYS=none CHIHIRO_IMM_LOG=1"
+  # the push-buffer decode and the GL submission on two threads (the Quest's
+  # default is one: no gain measured there)
+  "immersive-native-decode1|stereo=1;vr_screen=immersive;vr_res=native|RECOMP_PB_DECODE_THREAD=1"
+  "immersive-2x-decode1|stereo=1;vr_screen=immersive;vr_res=2x|RECOMP_PB_DECODE_THREAD=1"
   # E.S. mode (the pedal held from 64 s): the game's ~40 full-screen
   # distortion layers over the scene, combat's heaviest fill
   "immersive-2x-es|stereo=1;vr_screen=immersive;vr_res=2x|VC3_AUTOKEYS=$KEYS,$PEDAL"
   "immersive-native-es|stereo=1;vr_screen=immersive;vr_res=native|VC3_AUTOKEYS=$KEYS,$PEDAL"
-  "immersive-native-es-nofov|stereo=1;vr_screen=immersive;vr_res=native|VC3_AUTOKEYS=$KEYS,$PEDAL CHIHIRO_FOVEATION=0"
+  "immersive-native-es-diag|stereo=1;vr_screen=immersive;vr_res=native|VC3_AUTOKEYS=$KEYS,$PEDAL CHIHIRO_GL_EFFECT_LOG=1"
+  "immersive-native-es-nofov|stereo=1;vr_screen=immersive;vr_res=native|VC3_AUTOKEYS=$KEYS,$PEDAL CHIHIRO_FOVEATION=0 CHIHIRO_GL_TIMING=1"
   # the E.S. stack's effect target (gl_backend.c): off (every layer at full
-  # size), and at a third and a quarter each way (the default is half)
-  "immersive-native-es-fx1|stereo=1;vr_screen=immersive;vr_res=native|VC3_AUTOKEYS=$KEYS,$PEDAL CHIHIRO_GL_EFFECT_SCALE=1"
+  # size), at a half and a third each way (the default is a quarter)
+  "immersive-native-es-seg|stereo=1;vr_screen=immersive;vr_res=native|VC3_AUTOKEYS=$KEYS,$PEDAL CHIHIRO_GPU_TIME_SEG=1"
+  "immersive-native-es-bis-nodepth|stereo=1;vr_screen=immersive;vr_res=native|VC3_AUTOKEYS=$KEYS,$PEDAL CHIHIRO_FX_NODEPTH=1 CHIHIRO_GL_TIMING=1"
+  "immersive-native-es-bis-nosmall|stereo=1;vr_screen=immersive;vr_res=native|VC3_AUTOKEYS=$KEYS,$PEDAL CHIHIRO_FX_NOSMALL=1 CHIHIRO_GL_TIMING=1"
+  "immersive-native-es-fx8|stereo=1;vr_screen=immersive;vr_res=native|VC3_AUTOKEYS=$KEYS,$PEDAL CHIHIRO_GL_EFFECT_SCALE=8 CHIHIRO_GL_TIMING=1"
+  "immersive-native-es-fx2|stereo=1;vr_screen=immersive;vr_res=native|VC3_AUTOKEYS=$KEYS,$PEDAL CHIHIRO_GL_EFFECT_SCALE=2"
+  "immersive-native-es-fx1|stereo=1;vr_screen=immersive;vr_res=native|VC3_AUTOKEYS=$KEYS,$PEDAL CHIHIRO_GL_EFFECT_SCALE=1 CHIHIRO_GL_TIMING=1"
   "immersive-native-es-fx3|stereo=1;vr_screen=immersive;vr_res=native|VC3_AUTOKEYS=$KEYS,$PEDAL CHIHIRO_GL_EFFECT_SCALE=3"
-  "immersive-native-es-fx4|stereo=1;vr_screen=immersive;vr_res=native|VC3_AUTOKEYS=$KEYS,$PEDAL CHIHIRO_GL_EFFECT_SCALE=4"
+  # E.S. bisect switches: the combiner interpreter, the effect target's
+  # source at full size; GL errors checked (VC3_GL_ERRCHECK)
+  "immersive-native-es-nospec|stereo=1;vr_screen=immersive;vr_res=native|VC3_AUTOKEYS=$KEYS,$PEDAL CHIHIRO_GL_RC_SPEC=0"
+  "immersive-native-es-nofxlow|stereo=1;vr_screen=immersive;vr_res=native|VC3_AUTOKEYS=$KEYS,$PEDAL CHIHIRO_GL_FX_LOW=0"
+  # E.S. entered and left three times (64-84, 98-106, 120-132 s), firing
+  # throughout: run with --secs 150
+  "immersive-native-es-multi|stereo=1;vr_screen=immersive;vr_res=native|VC3_AUTOKEYS=$KEYS,$PEDAL,$PEDAL2,$FIRE2 CHIHIRO_GL_EFFECT_LOG=1"
+  "immersive-native-xform-cpu|stereo=1;vr_screen=immersive;vr_res=native|RECOMP_GPU_XF=0 CHIHIRO_GL_ERRCHECK=1 CHIHIRO_GL_TIMING=1"
+  "immersive-native-es-diagnostic|stereo=1;vr_screen=immersive;vr_res=native|VC3_AUTOKEYS=$KEYS,$PEDAL CHIHIRO_GL_ERRCHECK=1 CHIHIRO_GL_EFFECT_LOG=2 CHIHIRO_GL_TIMING=1"
+  "immersive-native-es-errcheck|stereo=1;vr_screen=immersive;vr_res=native|VC3_AUTOKEYS=$KEYS,$PEDAL CHIHIRO_GL_ERRCHECK=1"
   "immersive-2x-foveation|stereo=1;vr_screen=immersive;vr_res=2x|CHIHIRO_FOVEATION=1"
   "immersive-2x-nofov|stereo=1;vr_screen=immersive;vr_res=2x|CHIHIRO_FOVEATION=0"
   "immersive-2x-bigcores|stereo=1;vr_screen=immersive;vr_res=2x|CHIHIRO_BIGCORES=1"

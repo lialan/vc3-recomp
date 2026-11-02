@@ -56,7 +56,9 @@ static void unapply(const float *m, const float p[3], float o[3])
         o[i] = m[4 * i] * d[0] + m[4 * i + 1] * d[1] + m[4 * i + 2] * d[2];
 }
 
-static void qo_glass_vertices(float q[6][5], float center[2], float radii[3], const float *model, int sight, float sight_height, const float eye[3], const float target[3])
+/* The pane, its coordinates in metres from the sight's line (the reticle
+ * and the edge are worked out in them); box: its x0 y0 x1 y1 there. */
+static void qo_glass_vertices(float q[6][5], float center[2], float radii[3], float box[4], const float *model, int sight, float sight_height, const float eye[3], const float target[3])
 {
     static const float c[6][2] = { { -1, -1 }, { 1, -1 }, { 1, 1 }, { -1, -1 }, { 1, 1 }, { -1, 1 } };
     const float *gz = GLASS[sight];
@@ -64,10 +66,11 @@ static void qo_glass_vertices(float q[6][5], float center[2], float radii[3], co
     radii[0] = radii[1] = radii[2] = 0;
     int k;
     for (k = 0; k < 6; k++) {
-        float lp[3] = { c[k][0] * gz[1], sight_height + c[k][1] * gz[2], gz[0] };
+        float y = c[k][1] < 0 ? gz[2] : gz[3];
+        float lp[3] = { c[k][0] * gz[1], y, gz[0] };
         apply(model, lp, q[k]);
         q[k][3] = c[k][0] * gz[1];
-        q[k][4] = c[k][1] * gz[2];
+        q[k][4] = y - sight_height;
     }
     unapply(model, eye, e);
     unapply(model, target, t);
@@ -78,7 +81,7 @@ static void qo_glass_vertices(float q[6][5], float center[2], float radii[3], co
             float L = sqrtf((px - e[0]) * (px - e[0]) + (py - e[1]) * (py - e[1])
                             + (gz[0] - e[2]) * (gz[0] - e[2]));
             cx = px;
-            cy = py - SIGHT_Y[sight];
+            cy = py - sight_height;
             if (sight == QO_SIGHT_RED_DOT) {
                 radii[0] = 0.0025f * L;                 /* a dot about 0.3 degrees across */
             } else {                                /* a ring of 1.2 degrees, a small dot */
@@ -89,4 +92,6 @@ static void qo_glass_vertices(float q[6][5], float center[2], float radii[3], co
         }
     }
     center[0] = cx; center[1] = cy;
+    box[0] = -gz[1]; box[1] = gz[2] - sight_height;
+    box[2] = gz[1]; box[3] = gz[3] - sight_height;
 }

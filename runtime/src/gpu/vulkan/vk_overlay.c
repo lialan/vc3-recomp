@@ -91,10 +91,12 @@ VkResult ch_vk_overlay_read(ChVkTarget *target,const QoFrame *f,const float vp[1
     back[14]=.022f*(f->kick>.6f?(1-f->kick)/.4f:f->kick/.6f); mul(slide,model,back);
     const float local_muzzle[3]={0,0,MUZZLE_Z}; apply(model,local_muzzle,muzzle);
     if(f->show_gun && sight!=QO_SIGHT_IRON) {
-        float center[2],radii[3];
-        qo_glass_vertices(q,center,radii,slide,sight,sight_height,eye,f->end);
-        ChVkEffect effect={.kind=2,.color={1,.09f,.05f,1},.tint={.55f,.75f,.85f,.10f},
-            .shape={radii[0],radii[1],radii[2],0},.reticle={center[0],center[1],0,0}};
+        float center[2],radii[3],box[4];
+        qo_glass_vertices(q,center,radii,box,slide,sight,sight_height,eye,f->end);
+        /* The pane is symmetric about x = 0: shape.w its half width,
+         * reticle.zw its bottom and top. */
+        ChVkEffect effect={.kind=2,.color={1,.09f,.05f,1},.tint={.55f,.75f,.85f,.06f},
+            .shape={radii[0],radii[1],radii[2],box[2]},.reticle={center[0],center[1],box[1],box[3]}};
         result=effect_read(target,vp,(const float (*)[5])q,&effect,1,pixels,bytes);
         if(result!=VK_SUCCESS) return result;
     }

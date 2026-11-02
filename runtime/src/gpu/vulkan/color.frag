@@ -83,12 +83,27 @@ void main() {
         a=alpha.effect_color.a*(alpha.effect_shape.x<0?1:a*a);
         shaded=vec4(alpha.effect_color.rgb*a,a);
     } else {
+        /* bare glass: rounded top corners, tint, sheen and a bright rim;
+         * nothing outside the outline, so the reticle is clipped to it */
+        vec4 box=vec4(-alpha.effect_shape.w,alpha.effect_reticle.z,alpha.effect_shape.w,alpha.effect_reticle.w);
+        vec2 mid=.5*(box.xy+box.zw),hs=.5*(box.zw-box.xy);
+        float rad=uv.y>mid.y?.0035:.0008;
+        vec2 q=abs(uv-mid)-hs+rad;
+        float sd=length(max(q,0))+min(max(q.x,q.y),0)-rad;
+        float aa=max(fwidth(sd),1e-5);
+        float cov=1-smoothstep(-aa,aa,sd);
+        if(cov<=0) discard;
         float d=length(uv-alpha.effect_reticle.xy);
         float dot_a=1-smoothstep(alpha.effect_shape.x*.55,alpha.effect_shape.x,d);
         float ring_a=alpha.effect_shape.y>0?1-smoothstep(alpha.effect_shape.z*.4,alpha.effect_shape.z,abs(d-alpha.effect_shape.y)):0;
         float a=max(dot_a,ring_a)*alpha.effect_color.a;
-        float ta=alpha.effect_tint.a*(1-a);
-        shaded=vec4(alpha.effect_color.rgb*a+alpha.effect_tint.rgb*ta,a+ta);
+        vec2 u=(uv-box.xy)/(box.zw-box.xy);
+        float sheen=exp(-pow((u.x+u.y*.6-.95)*7,2))*.07;
+        float rim=(1-smoothstep(0,.0006,-sd))*.30;
+        float ta=alpha.effect_tint.a*(.8+.4*(1-u.y))+sheen+rim;
+        vec3 tc=(alpha.effect_tint.rgb*alpha.effect_tint.a+vec3(.92,.96,1)*(sheen+rim))/ta;
+        ta=min(ta,.6)*(1-a);
+        shaded=vec4(alpha.effect_color.rgb*a+tc*ta,a+ta)*cov;
     }
 #endif
 #ifndef NOAT

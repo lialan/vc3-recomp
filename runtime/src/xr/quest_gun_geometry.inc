@@ -31,21 +31,16 @@ static const Box REAR_SIGHT[] = {   /* the notch, white dots either side */
     { {  0.0075f, 0.0285f, 0.1092f }, { 0.0010f, 0.0010f, 0.0003f }, WHITE },
     { { -0.0075f, 0.0285f, 0.1092f }, { 0.0010f, 0.0010f, 0.0003f }, WHITE },
 };
-static const Box RED_DOT[] = {      /* a reflex sight, like an RMR, where the rear sight was */
-    { { 0, 0.0275f, 0.082f }, { 0.0125f, 0.0035f, 0.022f }, OPTIC },        /* body */
-    { {  0.0115f, 0.0385f, 0.066f }, { 0.0015f, 0.0075f, 0.0055f }, OPTIC },/* hood */
-    { { -0.0115f, 0.0385f, 0.066f }, { 0.0015f, 0.0075f, 0.0055f }, OPTIC },
-    { { 0, 0.0475f, 0.066f }, { 0.013f, 0.0015f, 0.0055f }, OPTIC },
-    { { 0, 0.0330f, 0.097f }, { 0.007f, 0.0025f, 0.006f }, OPTIC },         /* emitter */
-    { { 0.0125f, 0.0300f, 0.084f }, { 0.0012f, 0.0020f, 0.003f }, DARK },   /* button */
+/* The optics are bare glass: a thin pane standing on the slide, on a low
+ * mount strip, with no housing, hood or frame round it -- nothing in the
+ * way of the view through it or past it. */
+#define SLIDE_TOP 0.024f
+#define MOUNT_H   0.0012f                    /* the mount strip's height */
+static const Box RED_DOT[] = {      /* an RMR-sized pane where the rear sight was */
+    { { 0, SLIDE_TOP + MOUNT_H / 2, 0.066f }, { 0.0100f, MOUNT_H / 2, 0.0025f }, DARK },
 };
-static const Box HOLO[] = {         /* a window sight, like an EOTech */
-    { { 0, 0.0300f, 0.072f }, { 0.0150f, 0.0060f, 0.040f }, OPTIC },        /* body */
-    { {  0.0170f, 0.0500f, 0.050f }, { 0.0025f, 0.0140f, 0.020f }, { 0.14f, 0.14f, 0.15f } },
-    { { -0.0170f, 0.0500f, 0.050f }, { 0.0025f, 0.0140f, 0.020f }, { 0.14f, 0.14f, 0.15f } },
-    { { 0, 0.0655f, 0.050f }, { 0.0195f, 0.0025f, 0.020f }, { 0.14f, 0.14f, 0.15f } },
-    { { 0.0070f, 0.0365f, 0.100f }, { 0.0050f, 0.0008f, 0.006f }, DARK },   /* buttons */
-    { { -0.0070f, 0.0365f, 0.100f }, { 0.0050f, 0.0008f, 0.006f }, DARK },
+static const Box HOLO[] = {         /* a wider window, like an EOTech's */
+    { { 0, SLIDE_TOP + MOUNT_H / 2, 0.050f }, { 0.0125f, MOUNT_H / 2, 0.0030f }, DARK },
 };
 static const Box FRAME[] = {
     { { 0, -0.014f, 0.027f }, { 0.0115f, 0.008f, 0.092f }, POLY },          /* dust cover to tang */
@@ -66,11 +61,14 @@ static const Box FRAME[] = {
     { { 0, -0.1290f, 0.112f }, { 0.0155f, 0.0025f, 0.026f }, DARK },        /* magazine base */
 };
 
-/* Each sight's line above the bore, and its glass: centre z, half width,
- * half height (around the line). */
-static const float SIGHT_Y[QO_SIGHT_COUNT] = { 0.0285f, 0.0385f, 0.0500f };
-static const float GLASS[QO_SIGHT_COUNT][3] = {
-    { 0, 0, 0 }, { 0.066f, 0.0100f, 0.0075f }, { 0.050f, 0.0145f, 0.0125f },
+/* Each sight's line above the bore, and its glass: z, half width, bottom
+ * and top (gun-space y; the bottom on the mount strip, the line between).
+ * The lines are games/vc3/src/game.c's sight_height too. */
+static const float SIGHT_Y[QO_SIGHT_COUNT] = { 0.0285f, 0.0335f, 0.0400f };
+static const float GLASS[QO_SIGHT_COUNT][4] = {
+    { 0, 0, 0, 0 },
+    { 0.066f, 0.0100f, SLIDE_TOP + MOUNT_H, 0.0420f },     /* 20 x 17 mm */
+    { 0.050f, 0.0125f, SLIDE_TOP + MOUNT_H, 0.0540f },     /* 25 x 29 mm */
 };
 
 #define MAX_BOXES 64

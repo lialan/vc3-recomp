@@ -97,6 +97,16 @@ int ch_test_fixed_parity(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,uint
     fs=compile(GL_FRAGMENT_SHADER,"#version 320 es\nprecision highp float;in vec4 v_col;in vec4 v_tc0,v_tc1,v_tc2,v_tc3;in float v_fog;uniform int mode;out vec4 color;void main(){color=mode==0?v_col:mode==1?clamp(v_tc0,0.0,1.0):mode==2?clamp(v_tc1,0.0,1.0):mode==3?clamp(v_tc2,0.0,1.0):mode==4?clamp(v_tc3,0.0,1.0):vec4(vec3(v_fog),1.0);}");
     REQUIRE(vs && fs);program=glCreateProgram();glAttachShader(program,vs);glAttachShader(program,fs);glLinkProgram(program);
     GLint linked=0;glGetProgramiv(program,GL_LINK_STATUS,&linked);REQUIRE(linked);glUseProgram(program);
+    /* The reference's draw-merge block is active even with u_merge zero:
+     * bind zeroed storage to it, as the GL back end does. */
+    GLuint merge_block=glGetUniformBlockIndex(program,"FfMerge"),merge_buffer=0;
+    if(merge_block!=GL_INVALID_INDEX) {
+        GLint size=0;glGetActiveUniformBlockiv(program,merge_block,GL_UNIFORM_BLOCK_DATA_SIZE,&size);REQUIRE(size>0);
+        void *zero=calloc(1,(size_t)size);REQUIRE(zero);
+        glGenBuffers(1,&merge_buffer);glBindBuffer(GL_UNIFORM_BUFFER,merge_buffer);
+        glBufferData(GL_UNIFORM_BUFFER,size,zero,GL_STATIC_DRAW);free(zero);
+        glUniformBlockBinding(program,merge_block,0);glBindBufferBase(GL_UNIFORM_BUFFER,0,merge_buffer);
+    }
     glGenVertexArrays(1,&vao);glBindVertexArray(vao);glGenBuffers(1,&buffer);glBindBuffer(GL_ARRAY_BUFFER,buffer);
     for(unsigned i=0;i<8;i++) {glEnableVertexAttribArray(i);glVertexAttribPointer(i,4,GL_FLOAT,GL_FALSE,sizeof(ChVkFixedVertex),(void *)(uintptr_t)(i*16));}
     REQUIRE(ch_vk_target_create(gpu,device,queue,family,W,H,&target)==VK_SUCCESS);

@@ -27,6 +27,7 @@
  * instead of wall time, for comparisons between differently paced renderers.
  */
 
+#include <math.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -42,7 +43,7 @@
 #include "chihiro/chihiro_profile.h"
 #include "nv2a_backend.h"
 
-#define AUTO_MAX     32
+#define AUTO_MAX     512   /* at 32 the E.S. scenarios' later pedal presses were dropped */
 #define AUTO_HOLD_MS 500   /* > one poll at the current frame rate */
 
 typedef struct { uint32_t at_ms; char key[12]; } auto_t;
@@ -94,13 +95,13 @@ static uint32_t auto_hold_ms(const char *key)
 /* Is the scripted key held right now? */
 static int auto_held(const char *key, uint32_t t)
 {
-    static uint32_t logged;          /* one bit per script entry */
+    static unsigned char logged[AUTO_MAX];   /* per script entry */
     int i;
     for (i = 0; i < s_nauto; i++)
         if (!strcmp(s_auto[i].key, key) && t >= s_auto[i].at_ms
                 && t < s_auto[i].at_ms + auto_hold_ms(key)) {
-            if (!(logged & (1u << i))) {
-                logged |= 1u << i;
+            if (!logged[i]) {
+                logged[i] = 1;
                 fprintf(stderr, "[INPUT] auto %s at %.1fs\n", key, t / 1000.0);
             }
             return 1;
@@ -558,13 +559,22 @@ void host_input_poll(chihiro_input_t *in)
 
     /* A scripted shot with no window under the mouse aims at VC3_AUTOAIM
      * ("x,y" in 0..1, default the centre), so unattended runs can shoot; an
-     * explicit VC3_AUTOAIM also holds the aim between shots. */
+     * explicit VC3_AUTOAIM also holds the aim between shots;
+     * VC3_AUTOAIM=sweep[:s] keeps it moving over the screen, as a player's
+     * does, from s seconds on (the centre before: shots that hit fill the
+     * E.S. gauge). */
     if (ux < 0.0 && (auto_held("fire", t) || ch_env("AUTOAIM"))) {
         const char *aim = ch_env("AUTOAIM");
         ux = 0.5;
         uy = 0.5;
-        if (aim)
+        if (aim && !strncmp(aim, "sweep", 5)) {
+            if (t >= (uint32_t)(atof(aim[5] == ':' ? aim + 6 : "0") * 1000.0)) {
+                ux = 0.5 + 0.38 * sin(t / 1000.0 * 1.7);   /* t: ms */
+                uy = 0.5 + 0.30 * sin(t / 1000.0 * 1.1 + 0.7);
+            }
+        } else if (aim) {
             sscanf(aim, "%lf,%lf", &ux, &uy);
+        }
     }
 
     in->test = bound(k, VC3_KEY_TEST) || auto_held("test", t)

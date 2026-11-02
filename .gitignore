@@ -72,6 +72,7 @@ quest/*/build/
 quest/*/src/main/libs/
 quest/*/src/main/java/org/libsdl/
 quest/devtest-out/
+quest/playrec-out/
 
 # PGO profiles (quest/pgo-profile.sh)
 quest/*.profdata

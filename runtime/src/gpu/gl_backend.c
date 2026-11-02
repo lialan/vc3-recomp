@@ -386,6 +386,7 @@ static int s_failed;
 static GLuint s_vao, s_vao_raw, s_vao_vp, s_white;
 static GLuint s_fs_obj, s_fs_rc_obj;     /* linked into each program shader */
 static GLuint s_fs_na_obj, s_fs_rc_na_obj;   /* the same without the alpha test */
+static GLuint s_vs_cpu, s_vs_ff;             /* kept for rc_spec */
 
 /* A linked program and its uniform locations, looked up once at link time:
  * glGetUniformLocation per draw was a string search per call. The fragment
@@ -399,7 +400,7 @@ typedef struct {
     /* The fixed-function vertex shader (Nv2aFixedState). */
     GLint comp, mv, proj, tm, c59, skin, usecomp, lighting, lkind, light, samb,
           matalpha, colmat, flipn, hasnrm, hascol, texgen, tgon, tmon, ascale,
-          packed, aa, vpz, nearz, fogen, fogmode, fogp, uvs0, bgra;
+          packed, aa, vpz, nearz, fogen, fogmode, fogp, uvs0, bgra, merge;
     /* The immersive view (vr_view.h): this eye's matrix, the game's
      * projection, on / 1 / pz. */
     GLint immvp, gp, gw;
@@ -521,7 +522,26 @@ static void cu4fv(GLint l, GLsizei n, const GLfloat *p)
 static void cu4uiv(GLint l, GLsizei n, const GLuint *p)
 { if (!uc_same(l, p, (size_t)n * 16)) glUniform4uiv(l, n, p); }
 static void cuMatrix4fv(GLint l, GLsizei n, GLboolean t, const GLfloat *p)
-{ if (!uc_same(l, p, (size_t)n * 64)) glUniformMatrix4fv(l, n, t, p); }
+{
+    if (uc_same(l, p, (size_t)n * 64))
+        return;
+#if defined(VC3_GLES)
+    /* ES requires transpose == GL_FALSE. Guest fixed-function matrices are
+     * row-major; desktop GL transposes them during upload, ES needs a copy. */
+    if (t && n > 0) {
+        GLfloat transposed[(size_t)n * 16];
+        GLsizei k;
+        int row, col;
+        for (k = 0; k < n; k++)
+            for (row = 0; row < 4; row++)
+                for (col = 0; col < 4; col++)
+                    transposed[k * 16 + col * 4 + row] = p[k * 16 + row * 4 + col];
+        glUniformMatrix4fv(l, n, GL_FALSE, transposed);
+        return;
+    }
+#endif
+    glUniformMatrix4fv(l, n, t, p);
+}
 static uint32_t s_frame = 1;
 /* What the draw path last bound; anything else that binds a program or a
  * vertex array (the frame interpolator) zeroes these. */
@@ -700,6 +720,20 @@ static const char *VS_FF =
     "uniform vec2 u_xs;\n"
     "uniform vec2 u_eye;\n"
     "uniform mat4 u_comp, u_mv[4], u_proj, u_tm[4];\n"   /* uploaded transposed */
+    /* A merged run (RECOMP_GL_MERGE): each draw's composite and model-views
+     * in a slot of FfMerge, the vertex's slot found by its index among the
+     * slots' first vertices (mg_first; past the run: 2^31-1). No attribute
+     * for it: one enabled and disabled around each run changed the vertex
+     * layout, and the Mac's driver rebuilt its pipeline state twice a run.
+     * Row-major, as the uniforms' transposed upload reads the same floats.
+     * Both paths go through g_comp / g_mv, so a run draws what its draws
+     * would alone. */
+    "uniform int u_merge;\n"
+    "layout(std140, row_major) uniform FfMerge { mat4 mg_comp[32]; mat4 mg_mv[128]; mat4 mg_proj[32];\n"
+    "                                         vec4 mg_gp[32]; vec4 mg_gw[32]; ivec4 mg_first[8]; };\n"
+    "mat4 g_comp, g_mv[4], g_proj;\n"
+    "vec4 g_gp;\n"
+    "vec2 g_gw;\n"
     "uniform mat4 u_immvp;\n"
     "uniform vec4 u_gp;\n"
     "uniform vec2 u_gw;\n"
@@ -733,8 +767,29 @@ static const char *VS_FF =
     "out float v_fog;\n"
     "out vec4 v_tc0, v_tc1, v_tc2, v_tc3;\n"
     "out vec4 o_screen;\n"                    /* RECOMP_GPU_XF_CHECK: x y z w */
+    /* The shared fixed-function code reads u_mv/u_comp/u_proj; here they
+     * name the per-draw selections (g_*) so a merged run of draws picks
+     * its own matrices by vertex index. */
+    "#define u_mv g_mv\n#define u_comp g_comp\n#define u_proj g_proj\n"
     CH_NV_FIXED_SHADER_SOURCE "\n"
+    "#undef u_mv\n#undef u_comp\n#undef u_proj\n"
     "void main() {\n"
+    "  if (u_merge != 0) {\n"
+    "    int k = 0;\n"
+    "    for (int st = 16; st > 0; st >>= 1)\n"
+    "      if (gl_VertexID >= mg_first[(k + st) >> 2][(k + st) & 3]) k += st;\n"
+    "    g_comp = mg_comp[k];\n"
+    "    g_proj = mg_proj[k];\n"
+    "    g_gp = mg_gp[k];\n"
+    "    g_gw = mg_gw[k].xy;\n"
+    "    for (int i = 0; i < 4; i++) g_mv[i] = mg_mv[k * 4 + i];\n"
+    "  } else {\n"
+    "    g_comp = u_comp;\n"
+    "    g_proj = u_proj;\n"
+    "    g_gp = u_gp;\n"
+    "    g_gw = u_gw;\n"
+    "    for (int i = 0; i < 4; i++) g_mv[i] = u_mv[i];\n"
+    "  }\n"
     "  ch_nv_fixed_vertex();\n"
     "  vec3 s = o_screen.xyz; float w = o_screen.w;\n"
     "  int seye = u_st2 != 0 ? gl_InstanceID : 0;\n"
@@ -748,10 +803,10 @@ static const char *VS_FF =
     "  bool bad = abs(w) <= 1e-6 || any(isnan(o_screen)) || any(isinf(o_screen));\n"
     /* immersive: the eye position back from s and w, through this eye; the
      * headset's frustum clips (the game's planes no longer apply) */
-    "  bool imm = u_gw.x != 0.0;\n"
-    "  float iez = w * u_gw.y;\n"
-    "  vec4 ipos = ivp * vec4((s.x - u_gp.z) / u_gp.x * iez, (s.y - u_gp.w) / u_gp.y * iez,\n"
-    "                             -w * abs(u_gw.y), 1.0);\n"
+    "  bool imm = g_gw.x != 0.0;\n"
+    "  float iez = w * g_gw.y;\n"
+    "  vec4 ipos = ivp * vec4((s.x - g_gp.z) / g_gp.x * iez, (s.y - g_gp.w) / g_gp.y * iez,\n"
+    "                             -w * abs(g_gw.y), 1.0);\n"
     "  ipos.y = -ipos.y;\n"                  /* top row first, as the surfaces */
     "  gl_Position = bad ? vec4(0.0, 0.0, 0.0, 1.0) : (imm ? ipos : vec4(ndc * w, zn * w, w));\n"
     "#if !defined(GL_ES) || defined(GL_EXT_clip_cull_distance)\n"
@@ -909,6 +964,7 @@ static const char *FS =
     "uniform vec4 u_sbs[2];\n"                /* per stage: stereo surface?, eye's half */
     "flat in int v_eye;\n"                    /* one-pass stereo: the eye */
     "out vec4 o_col;\n"
+    "#ifndef RC_SPEC\n"
     "vec4 R[16];\n"
     "float map_in(float x, uint b) {\n"
     "  float p = max(x, 0.0);\n"
@@ -946,6 +1002,9 @@ static const char *FS =
     "  uint mode = (u_sprog >> uint(st * 5)) & 31u;\n"
     "  return ch_nv_stage_fetch(mode, tc, texel, uint(u_on[st]));\n"
     "}\n"
+    "#else\n"
+    "vec4 combiners();\n"                    /* rc_glsl's, appended */
+    "#endif\n"
     "vec2 sbs(int st, vec2 uv) {\n"
     "  vec2 e = st == 0 ? u_sbs[0].xy : st == 1 ? u_sbs[0].zw : st == 2 ? u_sbs[1].xy : u_sbs[1].zw;\n"
     "  return e.x != 0.0 ? vec2(clamp(uv.x, 0.0, 1.0) * 0.5 + e.y + 0.5 * float(v_eye), uv.y) : uv;\n"
@@ -955,6 +1014,7 @@ static const char *FS =
     "  float q = tc.w != 0.0 ? tc.w : 1.0;\n"
     "  return sbs(st, (mode == 3u ? tc.xy : tc.xy / q) * u_ts[st]);\n"
     "}\n"
+    "#ifndef RC_SPEC\n"
     "vec4 combiners() {\n"
     "  vec4 t0 = stage(0, v_tc0, u_iscube[0] != 0 ? texture(u_c0, v_tc0.xyz) : texture(u_tex, stage_uv(0, v_tc0)));\n"
     "  vec4 t1 = stage(1, v_tc1, u_iscube[1] != 0 ? texture(u_c1, v_tc1.xyz) : texture(u_t1, stage_uv(1, v_tc1)));\n"
@@ -1023,6 +1083,7 @@ static const char *FS =
     "  }\n"
     "  return clamp(o, 0.0, 1.0);\n"
     "}\n"
+    "#endif\n"
     "void main() {\n"
     "  vec4 c = v_col;\n"
 
@@ -1154,6 +1215,8 @@ static const char *const k_check_varyings[] = {
     "o_screen", "v_col", "v_spec", "v_fog", "v_tc0", "v_tc1", "v_tc2", "v_tc3"
 };
 
+#define MG_BINDING 2                       /* the FfMerge block's binding */
+
 /* Link vs with the shared fragment shader and look its uniforms up. */
 static int prog_link(Prog *p, GLuint vs, GLuint fs, int feedback)
 {
@@ -1200,8 +1263,30 @@ static int prog_link(Prog *p, GLuint vs, GLuint fs, int feedback)
     LOC(ascale, "u_ascale"); LOC(packed, "u_packed"); LOC(aa, "u_aa");
     LOC(vpz, "u_vpz"); LOC(nearz, "u_nearz"); LOC(fogen, "u_fogen");
     LOC(fogmode, "u_fogmode"); LOC(fogp, "u_fogp"); LOC(uvs0, "u_uvs0");
-    LOC(bgra, "u_bgra");
+    LOC(bgra, "u_bgra"); LOC(merge, "u_merge");
 #undef LOC
+    {   /* a merged run's matrices (RECOMP_GL_MERGE) */
+        GLuint bi = glGetUniformBlockIndex(p->prog, "FfMerge");
+        if (bi != GL_INVALID_INDEX) {
+            static GLuint fallback;
+            static GLint fallback_bytes;
+            GLint bytes = 0;
+            glUniformBlockBinding(p->prog, bi, MG_BINDING);
+            /* An active block needs storage even when u_merge is zero.
+             * ES validates all active blocks before drawing; leaving this
+             * unbound rejects ordinary fixed-function draws as well. The
+             * actual merged run replaces this binding before its draw. */
+            glGetActiveUniformBlockiv(p->prog, bi, GL_UNIFORM_BLOCK_DATA_SIZE, &bytes);
+            if (!fallback)
+                glGenBuffers(1, &fallback);
+            if (bytes > fallback_bytes) {
+                glBindBuffer(GL_UNIFORM_BUFFER, fallback);
+                glBufferData(GL_UNIFORM_BUFFER, bytes, NULL, GL_STATIC_DRAW);
+                fallback_bytes = bytes;
+            }
+            glBindBufferBase(GL_UNIFORM_BUFFER, MG_BINDING, fallback);
+        }
+    }
     glUseProgram(p->prog);
     glUniform1i(glGetUniformLocation(p->prog, "u_tex"), 0);
     glUniform1i(glGetUniformLocation(p->prog, "u_t1"), 1);
@@ -1233,6 +1318,7 @@ typedef struct {
     uint32_t inputs;                      /* the v[] it reads, a bit each */
     Prog p, p_rc;
     Prog p_na, p_rc_na;                   /* without the alpha test (prog 0: none) */
+    GLuint vs;                            /* kept for the specialised combiner programs */
 } VpProg;
 static VpProg s_vp[VP_SLOTS];
 static VpProg *s_vp_cur;                  /* the program gl_draw draws with */
@@ -1240,6 +1326,229 @@ static uint32_t s_vp_built, s_vp_failed;
 
 #define VC_BINDING 1                       /* the VshConst block's binding */
 
+/* ── Combiner specialisation ────────────────────────────────────────────
+ *
+ * The combiner fragment shader above interprets the register combiners:
+ * every pixel samples all four stages, loops over up to eight stages and
+ * reads its sixteen registers by computed index. A desktop GPU shrugs; a
+ * mobile one keeps R[] in memory and runs the loop -- the Quest spent ~200
+ * ms a frame on VC3's E.S. stack (63 near-full layers of a four-stage
+ * setup) at 2x. So a batch through the combiners gets a fragment shader
+ * generated for its own setup (rc_glsl): the stages unrolled, the registers
+ * plain temporaries, every input and output mapping folded to its one
+ * expression, only the textures something reads fetched. What stays a
+ * uniform is what changes between batches of one setup: the factors, the
+ * final constants, the fog colour, which stages have a texture. Each
+ * setup's programs are linked once, with the vertex shader the batch uses,
+ * and cached (RCS_SLOTS, oldest out). It computes what combiners() does,
+ * line for line; VC3_GL_RC_SPEC=0 draws with the interpreter instead. */
+#define RCS_SLOTS 96
+
+typedef struct {
+    uint32_t ctl, sprog, fin0, fin1, n;
+    uint32_t cicw[8], aicw[8], cocw[8], aocw[8];
+} RcKey;
+
+static struct {
+    RcKey key;
+    GLuint vs;
+    int noat, raw;                /* raw: the program feeds back (prog_link) */
+    uint32_t used;
+    Prog p;
+} s_rcs[RCS_SLOTS];
+static int s_rcs_n;
+static uint32_t s_rcs_built, s_rcs_failed;
+
+static void rc_key(const Nv2aCombiner *rc, RcKey *k)
+{
+    uint32_t s;
+    memset(k, 0, sizeof *k);
+    k->ctl = rc->control;
+    k->sprog = rc->stage_program;
+    k->fin0 = rc->final0;
+    k->fin1 = rc->final1;
+    k->n = rc->control & 0xFF;
+    if (k->n > 8)
+        k->n = 8;
+    for (s = 0; s < k->n; s++) {
+        k->cicw[s] = rc->color_icw[s];
+        k->aicw[s] = rc->alpha_icw[s];
+        k->cocw[s] = rc->color_ocw[s];
+        k->aocw[s] = rc->alpha_ocw[s];
+    }
+}
+
+/* An input byte as GLSL: register, its alpha replicated or not, mapped. */
+static void rc_in(char *o, size_t n, uint32_t b, int alpha_only)
+{
+    char v[40];
+    unsigned r = b & 15u;
+    int rep = (b & 0x10u) != 0;
+    if (alpha_only)
+        snprintf(v, sizeof v, "r%u.%c", r, rep ? 'a' : 'b');
+    else if (rep)
+        snprintf(v, sizeof v, "vec3(r%u.a)", r);
+    else
+        snprintf(v, sizeof v, "r%u.rgb", r);
+    switch ((b >> 5) & 7u) {
+    case 0: snprintf(o, n, "max(%s, 0.0)", v); break;
+    case 1: snprintf(o, n, "(1.0 - clamp(%s, 0.0, 1.0))", v); break;
+    case 2: snprintf(o, n, "(2.0 * max(%s, 0.0) - 1.0)", v); break;
+    case 3: snprintf(o, n, "(-2.0 * max(%s, 0.0) + 1.0)", v); break;
+    case 4: snprintf(o, n, "(max(%s, 0.0) - 0.5)", v); break;
+    case 5: snprintf(o, n, "(-max(%s, 0.0) + 0.5)", v); break;
+    case 6: snprintf(o, n, "(%s)", v); break;
+    default: snprintf(o, n, "(-%s)", v); break;
+    }
+}
+
+static const char *rc_out_fmt(uint32_t om)
+{
+    switch (om) {
+    case 0x08: return "(%s - 0.5)";
+    case 0x10: return "(%s * 2.0)";
+    case 0x18: return "((%s - 0.5) * 2.0)";
+    case 0x20: return "(%s * 4.0)";
+    case 0x30: return "(%s * 0.5)";
+    default: return "(%s)";
+    }
+}
+
+#define RCP(...) do { int k_ = snprintf(src + len, cap - len, __VA_ARGS__); \
+                      if (k_ < 0 || (size_t)k_ >= cap - len) return 0; len += (size_t)k_; } while (0)
+
+/* The setup's combiners() in GLSL; 0 if it does not fit. */
+static int rc_glsl(const RcKey *k, char *src, size_t cap)
+{
+    size_t len = 0;
+    uint32_t s, flags = k->ctl >> 8, used = 0, st;
+    char A[96], B[96], C[96], D[96], t1[160], t2[160];
+    int fin = k->fin0 != 0 || k->fin1 != 0;
+
+    /* which registers an input reads (a texture is fetched only if read) */
+    for (s = 0; s < k->n; s++)
+        for (st = 0; st < 32; st += 8) {
+            used |= 1u << ((k->cicw[s] >> st) & 15u);
+            used |= 1u << ((k->aicw[s] >> st) & 15u);
+        }
+    if (fin) {
+        for (st = 0; st < 32; st += 8)
+            used |= 1u << ((k->fin0 >> st) & 15u);
+        for (st = 8; st < 32; st += 8)
+            used |= 1u << ((k->fin1 >> st) & 15u);
+        used |= 1u << 5 | 1u << 12;           /* the final's sum reads r5, r12 */
+    } else {
+        used |= 1u << 12;
+    }
+    RCP("vec4 combiners() {\n");
+    for (st = 0; st < 4; st++) {
+        uint32_t mode = (k->sprog >> (st * 5)) & 31u;
+        int need = (used >> (8 + st)) & 1u;
+        if (st == 0 && (k->sprog & 31u) && ((used >> 12) & 1u))
+            need = 1;                          /* r12.a starts as t0.a */
+        if (!need || mode == 0)
+            RCP("  vec4 t%u = vec4(0.0, 0.0, 0.0, 1.0);\n", st);
+        else if (mode == 4)
+            RCP("  vec4 t%u = clamp(v_tc%u, 0.0, 1.0);\n", st, st);
+        else if (mode <= 3)
+            RCP("  vec4 t%u = u_on[%u] != 0 ? texture(%s, stage_uv(%u, v_tc%u)) : vec4(1.0);\n",
+                st, st, st == 0 ? "u_tex" : st == 1 ? "u_t1" : st == 2 ? "u_t2" : "u_t3", st, st);
+        else
+            RCP("  vec4 t%u = vec4(0.0);\n", st);
+    }
+    RCP("  vec4 r0 = vec4(0.0), r1 = vec4(0.0), r2 = vec4(0.0), r6 = vec4(0.0), r7 = vec4(0.0);\n"
+        "  vec4 r13 = vec4(0.0), r14 = vec4(0.0), r15 = vec4(0.0);\n"
+        "  vec4 r3 = vec4(u_fogc, u_nofog != 0 ? 1.0 : v_fog);\n"
+        "  vec4 r4 = v_col, r5 = v_spec;\n"
+        "  vec4 r8 = t0, r9 = t1, r10 = t2, r11 = t3;\n"
+        "  vec4 r12 = vec4(0.0, 0.0, 0.0, %s);\n", (k->sprog & 31u) ? "t0.a" : "1.0");
+    for (s = 0; s < k->n; s++) {
+        uint32_t icw = k->cicw[s], ocw = k->cocw[s], aicw = k->aicw[s], aocw = k->aocw[s];
+        uint32_t fl = ocw >> 12, afl = aocw >> 12, d;
+        const char *om = rc_out_fmt(fl & 0x38u), *aom = rc_out_fmt(afl & 0x38u);
+        RCP("  {\n    r1 = u_f0[%u]; r2 = u_f1[%u];\n", (flags & 0x010u) ? s : 0u,
+            (flags & 0x100u) ? s : 0u);
+        if ((fl & 4u) || (afl & 4u))
+            RCP("    bool mux = %s;\n", (flags & 1u) ? "r12.a >= 0.5"
+                                                       : "(int(r12.a * 255.0) & 1) != 0");
+        rc_in(A, sizeof A, icw >> 24, 0);
+        rc_in(B, sizeof B, icw >> 16, 0);
+        rc_in(C, sizeof C, icw >> 8, 0);
+        rc_in(D, sizeof D, icw, 0);
+        if (fl & 2u)
+            RCP("    vec3 pab = vec3(dot(%s, %s));\n", A, B);
+        else
+            RCP("    vec3 pab = %s * %s;\n", A, B);
+        if (fl & 1u)
+            RCP("    vec3 pcd = vec3(dot(%s, %s));\n", C, D);
+        else
+            RCP("    vec3 pcd = %s * %s;\n", C, D);
+        if (fl & 4u)
+            RCP("    vec3 sum = mux ? pcd : pab;\n");
+        else
+            RCP("    vec3 sum = pab + pcd;\n");
+        rc_in(A, sizeof A, aicw >> 24, 1);
+        rc_in(B, sizeof B, aicw >> 16, 1);
+        rc_in(C, sizeof C, aicw >> 8, 1);
+        rc_in(D, sizeof D, aicw, 1);
+        RCP("    float apab = %s * %s, apcd = %s * %s;\n", A, B, C, D);
+        if (afl & 4u)
+            RCP("    float asum = mux ? apcd : apab;\n");
+        else
+            RCP("    float asum = apab + apcd;\n");
+        snprintf(t1, sizeof t1, om, "pab");
+        RCP("    vec3 ab = clamp(%s, -1.0, 1.0);\n", t1);
+        snprintf(t1, sizeof t1, om, "pcd");
+        RCP("    vec3 cd = clamp(%s, -1.0, 1.0);\n", t1);
+        snprintf(t1, sizeof t1, om, "sum");
+        RCP("    vec3 ms = clamp(%s, -1.0, 1.0);\n", t1);
+        snprintf(t1, sizeof t1, aom, "apab");
+        snprintf(t2, sizeof t2, aom, "apcd");
+        RCP("    float aab = clamp(%s, -1.0, 1.0), acd = clamp(%s, -1.0, 1.0);\n", t1, t2);
+        snprintf(t1, sizeof t1, aom, "asum");
+        RCP("    float ams = clamp(%s, -1.0, 1.0);\n", t1);
+        if ((d = (ocw >> 4) & 15u)) {
+            RCP("    r%u.rgb = ab;\n", d);
+            if (fl & 0x80u)
+                RCP("    r%u.a = ab.z;\n", d);
+        }
+        if ((d = ocw & 15u)) {
+            RCP("    r%u.rgb = cd;\n", d);
+            if (fl & 0x40u)
+                RCP("    r%u.a = cd.z;\n", d);
+        }
+        if ((d = (ocw >> 8) & 15u))
+            RCP("    r%u.rgb = ms;\n", d);
+        if ((d = (aocw >> 4) & 15u))
+            RCP("    r%u.a = aab;\n", d);
+        if ((d = aocw & 15u))
+            RCP("    r%u.a = acd;\n", d);
+        if ((d = (aocw >> 8) & 15u))
+            RCP("    r%u.a = ams;\n", d);
+        RCP("    r0 = vec4(0.0);\n  }\n");
+    }
+    if (fin) {
+        uint32_t ff = k->fin1 & 0xFFu;
+        RCP("  r1 = u_fc0; r2 = u_fc1;\n");
+        RCP("  vec3 fa = %s, fb = %s;\n", (ff & 0x40u) ? "1.0 - r5.rgb" : "r5.rgb",
+            (ff & 0x20u) ? "1.0 - r12.rgb" : "r12.rgb");
+        RCP("  r14 = vec4(%s, 0.0);\n", (ff & 0x80u) ? "clamp(fa + fb, 0.0, 1.0)" : "fa + fb");
+        rc_in(A, sizeof A, k->fin1 >> 24, 0);
+        rc_in(B, sizeof B, k->fin1 >> 16, 0);
+        RCP("  r15 = vec4(%s * %s, 0.0);\n", A, B);
+        rc_in(A, sizeof A, k->fin0 >> 24, 0);
+        rc_in(B, sizeof B, k->fin0 >> 16, 0);
+        rc_in(C, sizeof C, k->fin0 >> 8, 0);
+        rc_in(D, sizeof D, k->fin0, 0);
+        rc_in(t1, sizeof t1, k->fin1 >> 8, 1);
+        RCP("  vec3 fA = %s;\n", A);
+        RCP("  vec4 o = vec4(%s + %s * (1.0 - fA) + %s * fA, %s);\n", D, C, B, t1);
+    } else {
+        RCP("  vec4 o = r12;\n");
+    }
+    RCP("  return clamp(o, 0.0, 1.0);\n}\n");
+    return 1;
+}
 /* A vertex program's constants block at VC_BINDING. */
 static void vc_block(const Prog *p)
 {
@@ -1248,11 +1557,90 @@ static void vc_block(const Prog *p)
         glUniformBlockBinding(p->prog, i, VC_BINDING);
 }
 
+
+static int rc_spec_on(void)
+{
+    static int on = -1;
+    if (on < 0)
+        on = !(genv("GL_RC_SPEC") && genv("GL_RC_SPEC")[0] == '0');
+    return on;
+}
+
+/* The program for b's combiner setup with vertex shader vs (fb: the
+ * program feeds back, as raw batches' do; vp: a vertex program's, with its
+ * constants block); NULL if it cannot be built. */
+static Prog *rc_spec(const Nv2aBatch *b, GLuint vs, int fb, int vp, int noat)
+{
+    static char body[32768], full[160000];
+    static const char *defs_at = "#define RC\n#define RC_SPEC\n";
+    static const char *defs_na = "#define RC\n#define RC_SPEC\n#define NOAT\n";
+    RcKey k;
+    int i, slot = -1;
+    GLuint fs;
+    if (!vs)
+        return NULL;
+    rc_key(b->rc, &k);
+    for (i = 0; i < s_rcs_n; i++)
+        if (s_rcs[i].vs == vs && s_rcs[i].noat == noat && !memcmp(&s_rcs[i].key, &k, sizeof k)) {
+            s_rcs[i].used = s_frame;
+            return s_rcs[i].p.prog ? &s_rcs[i].p : NULL;
+        }
+    if (s_rcs_n < RCS_SLOTS) {
+        slot = s_rcs_n++;
+    } else {
+        slot = 0;
+        for (i = 1; i < RCS_SLOTS; i++)
+            if (s_rcs[i].used < s_rcs[slot].used)
+                slot = i;
+        if (s_rcs[slot].p.prog) {
+            glDeleteProgram(s_rcs[slot].p.prog);
+            free(s_rcs[slot].p.uc);
+            if (U == &s_rcs[slot].p)
+                U = &s_pcpu;
+            s_cur_prog = 0;
+        }
+    }
+    memset(&s_rcs[slot], 0, sizeof s_rcs[slot]);
+    s_rcs[slot].key = k;
+    s_rcs[slot].vs = vs;
+    s_rcs[slot].noat = noat;
+    s_rcs[slot].used = s_frame;
+    if (!rc_glsl(&k, body, sizeof body)
+        || (size_t)snprintf(full, sizeof full, "%s%s", FS, body) >= sizeof full) {
+        s_rcs_failed++;
+        return NULL;
+    }
+    s_compile_defs = noat ? defs_na : defs_at;
+    fs = compile(GL_FRAGMENT_SHADER, full);
+    s_compile_defs = "";
+    if (!fs || !prog_link(&s_rcs[slot].p, vs, fs, fb)) {
+        if (fs)
+            glDeleteShader(fs);
+        memset(&s_rcs[slot].p, 0, sizeof s_rcs[slot].p);
+        s_rcs_failed++;
+        fprintf(stderr, "[GL] combiner setup %08X/%05X: no specialised program; interpreted\n",
+                k.ctl, k.sprog);
+        return NULL;
+    }
+    glDeleteShader(fs);                 /* the program keeps it */
+    if (vp)
+        vc_block(&s_rcs[slot].p);
+    s_cur_prog = 0;                     /* prog_link left it in use */
+    s_rcs_built++;
+    if (genv("GL_RC_SPEC_LOG"))
+        fprintf(stderr, "[GL] combiner setup %08X/%05X (%u stages): specialised program %u\n%s",
+                k.ctl, k.sprog, k.n, s_rcs[slot].p.prog, body);
+    return &s_rcs[slot].p;
+}
+
+static uint64_t tm_now(void);
+
 static VpProg *vp_get(const Nv2aRawGeometry *g)
 {
     static char body[65536], src[98304], decl[2048], fetches[2048];
     VpProg *e = NULL;
     uint32_t ninsn = 0, wc = 0, inputs = 0, dl = 0, fl = 0, r;
+    uint64_t t0;
     GLuint vs;
     int i, n;
 
@@ -1266,6 +1654,8 @@ static VpProg *vp_get(const Nv2aRawGeometry *g)
         if (!e || s_vp[i].used < e->used) e = &s_vp[i];
     }
     if (e->state > 0) {
+        if (e->vs)
+            glDeleteShader(e->vs);
         glDeleteProgram(e->p.prog);
         if (e->p_rc.prog != e->p.prog)
             glDeleteProgram(e->p_rc.prog);
@@ -1315,6 +1705,7 @@ static VpProg *vp_get(const Nv2aRawGeometry *g)
     if (genv("GL_VP_DUMP"))                /* the GLSL, to compare with the microcode */
         fprintf(stderr, "[GL] vertex program %016llx GLSL:\n%s\n",
                 (unsigned long long)g->program_hash, body);
+    t0 = tm_now();
     vs = compile(GL_VERTEX_SHADER, src);
     if (!vs || !prog_link(&e->p, vs, s_fs_obj, 1)) {
         s_vp_failed++;
@@ -1337,12 +1728,12 @@ static VpProg *vp_get(const Nv2aRawGeometry *g)
         memset(&e->p_rc_na, 0, sizeof e->p_rc_na);
     else
         vc_block(&e->p_rc_na);
-    glDeleteShader(vs);                        /* the programs keep it */
+    e->vs = vs;                                /* rc_spec links it again */
     e->state = 1;
     s_vp_built++;
-    fprintf(stderr, "[GL] vertex program %016llx: %u instructions on the GPU%s\n",
-            (unsigned long long)g->program_hash, ninsn,
-            wc ? " (its writes to c[] ignored: CXT_WRITE off)" : "");
+    fprintf(stderr, "[GL] vertex program %016llx: %u instructions on the GPU%s; compiled and"
+            " linked in %.1f ms\n", (unsigned long long)g->program_hash, ninsn,
+            wc ? " (its writes to c[] ignored: CXT_WRITE off)" : "", (tm_now() - t0) / 1e6);
     return e;
 }
 
@@ -1369,18 +1760,29 @@ typedef struct {
     uint8_t *mem;                /* persistent mapping, or NULL */
     int seg;                     /* the segment being written */
     GLsync fence[RING_SEGS];
+    unsigned pending;            /* crossed segments used by the upcoming draw */
 } Ring;
-static Ring s_vring = { 0, GL_ARRAY_BUFFER, 16 << 20, 0, NULL, 0, { 0 } };
-static Ring s_iring = { 0, GL_ELEMENT_ARRAY_BUFFER, 4 << 20, 0, NULL, 0, { 0 } };
+/* Sized so a segment comes round again long after the GPU is done with it:
+ * at 16 and 4 MB, E.S. mode (more GPU work queued) had the GL thread
+ * waiting on the rings' fences a quarter of each second on the Quest. */
+static Ring s_vring = { 0, GL_ARRAY_BUFFER, 64 << 20, 0, NULL, 0, { 0 }, 0 };
+static Ring s_iring = { 0, GL_ELEMENT_ARRAY_BUFFER, 32 << 20, 0, NULL, 0, { 0 }, 0 };
 /* The vertex programs' constants (the VshConst block, 192 vec4): a copy
  * streamed in whenever they change and bound as a range at VC_BINDING for
  * every program at once -- where each program had its 192 uniforms sent per
  * draw that changed them, and again on every switch of program. Ranges
  * start at the driver's uniform-buffer alignment. */
 #define VC_BYTES (192 * 16)
-static Ring s_cring = { 0, GL_UNIFORM_BUFFER, 16 << 20, 0, NULL, 0, { 0 } };
+static Ring s_cring = { 0, GL_UNIFORM_BUFFER, 32 << 20, 0, NULL, 0, { 0 }, 0 };
 static GLint s_ubo_align = 256;
 static uint32_t s_vc_gen_bound;         /* the constants' change count bound */
+
+static uint32_t s_ring_waits;           /* the GL thread waited for a segment (GPU log) */
+static uint64_t s_ring_wait_ns;
+/* Indexed vertex/index/constant so device captures identify which stream
+ * is exhausting its capacity. Reset alongside the per-second GLTIME log. */
+static uint32_t s_ring_wait_by_target[3];
+static uint64_t s_ring_ns_by_target[3];
 
 #if defined(VC3_GLES)
 typedef void (*BufferStorageFn)(GLenum, GLsizeiptr, const void *, GLbitfield);
@@ -1424,15 +1826,60 @@ static void ring_enter(Ring *r, GLsizeiptr from, GLsizeiptr to)
     GLsizeiptr seg = r->size / RING_SEGS;
     int sg, s0 = (int)(from / seg), s1 = (int)((to - 1) / seg);
 
+    /* A previous allocation may span several segments. Its consuming draw
+     * was submitted after ring_map returned, so only now can those segments
+     * receive fences covering that draw. */
+    for (sg = 0; sg < RING_SEGS; sg++) {
+        if (!(r->pending & (1u << sg)))
+            continue;
+        if (r->fence[sg])
+            glDeleteSync(r->fence[sg]);
+        r->fence[sg] = glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
+    }
+    r->pending = 0;
     for (sg = s0; sg <= s1; sg++) {
         if (sg == r->seg)
             continue;
-        if (r->fence[r->seg])
-            glDeleteSync(r->fence[r->seg]);
-        r->fence[r->seg] = glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
+        if (sg == s0) {
+            if (r->fence[r->seg])
+                glDeleteSync(r->fence[r->seg]);
+            r->fence[r->seg] = glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
+        } else {
+            /* This segment contains part of THIS allocation; its last use
+             * is the draw that has not been submitted yet. */
+            r->pending |= 1u << r->seg;
+        }
         r->seg = sg;
         if (r->fence[sg]) {
-            glClientWaitSync(r->fence[sg], GL_SYNC_FLUSH_COMMANDS_BIT, 1000000000ull);
+            struct timespec a_, b_;
+            clock_gettime(CLOCK_MONOTONIC, &a_);
+            GLenum poll = glClientWaitSync(r->fence[sg], 0, 0);
+            if (poll == GL_WAIT_FAILED) {
+                fprintf(stderr, "[GL] ring poll failed (target 0x%X segment %d); finishing\n",
+                        (unsigned)r->target, sg);
+                glFinish();
+            } else if (poll == GL_TIMEOUT_EXPIRED) {
+                int stream = r == &s_vring ? 0 : r == &s_iring ? 1 : 2;
+                s_ring_waits++;
+                s_ring_wait_by_target[stream]++;
+                GLenum result = glClientWaitSync(r->fence[sg], GL_SYNC_FLUSH_COMMANDS_BIT,
+                                                   1000000000ull);
+                /* A timeout is not completion. Never overwrite storage the
+                 * GPU may still read, even under a long driver stall. */
+                while (result == GL_TIMEOUT_EXPIRED)
+                    result = glClientWaitSync(r->fence[sg], GL_SYNC_FLUSH_COMMANDS_BIT,
+                                              1000000000ull);
+                if (result == GL_WAIT_FAILED) {
+                    fprintf(stderr, "[GL] ring wait failed (target 0x%X segment %d); finishing\n",
+                            (unsigned)r->target, sg);
+                    glFinish();
+                }
+                clock_gettime(CLOCK_MONOTONIC, &b_);
+                uint64_t waited = (uint64_t)((b_.tv_sec - a_.tv_sec) * 1000000000ll
+                                             + (b_.tv_nsec - a_.tv_nsec));
+                s_ring_wait_ns += waited;
+                s_ring_ns_by_target[stream] += waited;
+            }
             glDeleteSync(r->fence[sg]);
             r->fence[sg] = 0;
         }
@@ -1597,6 +2044,14 @@ static int gl_ready(void)
             s_failed = 1;
             return 0;
         }
+        s_vs_cpu = compile(GL_VERTEX_SHADER, VS);   /* for rc_spec */
+        s_vs_ff = compile(GL_VERTEX_SHADER, VS_FF);
+        if (genv("GL_RINGS_OLD") && genv("GL_RINGS_OLD")[0] == '1') {   /* the A/B: 16, 4, 16 MB */
+            s_vring.size = 16 << 20;
+            s_iring.size = 4 << 20;
+            s_cring.size = 16 << 20;
+            fprintf(stderr, "[GL] streaming rings at the old sizes (VC3_GL_RINGS_OLD=1)\n");
+        }
         /* Without it every batch is transformed on the CPU, as before. */
         if (!prog_link(&s_praw, compile(GL_VERTEX_SHADER, VS_FF), fs, 1))
             fprintf(stderr, "[GL] fixed-function shader failed; raw draws declined\n");
@@ -1717,6 +2172,7 @@ typedef struct {
      * left eye's picture at x 0 (what guest memory gets), the right's at pw. */
     int st;
     int fov;                   /* foveated (fov_params) */
+    int nofov;                 /* made without foveation: an effect target's S (fov_frame) */
     GLuint fbo, color, depth;
     int dirty;                 /* drawn since the last readback */
     /* Guest memory as the GPU last left it, to spot the CPU writing the
@@ -1734,6 +2190,11 @@ typedef struct {
      * the render target the skipped copies read. */
     uint32_t last_sampled, first_drawn;
     int not_copy, skipping;
+    /* The effect target's source (fx_low): drawn at the effect scale while
+     * only effect-target runs sample it. The frames it was last sampled by
+     * one and by anything else; frames in a row it qualified. */
+    int fxlow, sc_stale;
+    uint32_t fx_samp, other_samp, fxlow_run;
     uint32_t copy_src;
     /* Depth discard (z_*): this frame's first depth/stencil access (0 none,
      * 1 a clear, 2 a draw), left for another surface this frame, came back
@@ -1758,6 +2219,8 @@ static struct {
     GLuint save_fbo;
     GLsizei save_pw, save_ph, save_cw;
     uint32_t n_this, n_prev, runs;   /* qualifying batches this frame, the last */
+    uint64_t t_begin, t_small, t_resolve, t_draws;   /* ns this second (VC3_GL_EFFECT_LOG) */
+    uint32_t last_frame;             /* the frame of the last run begun (fov_frame) */
     /* the render target the run samples, reduced as L is, once a run */
     GLuint small_fbo, small_tex;
     GLsizei small_w, small_h;
@@ -1798,7 +2261,6 @@ static void clear_leave(Surf *p);
  * depth discarded would have drawn wrong once. Only the HUD surface kept
  * the pattern throughout. */
 #define Z_LEARN 120               /* frames: two seconds of the same pattern */
-static uint64_t tm_now(void);
 static int s_zd = -1;                  /* 0 off, 1 on, 2 dry */
 static uint32_t s_zd_n, s_zd_bad;      /* discards, violations (this second) */
 static Surf *s_z_prev;                 /* the surface surf_bind bound last */
@@ -2087,11 +2549,13 @@ void vc3_gl_stereo_separation(float ndc)
 
 /* Fixed foveation (QCOM_texture_foveated) of the stereo surfaces: full
  * detail round each eye's centre of view, coarser towards the edges, one
- * focal point per eye's half. VC3_FOVEATION: unset or "auto", on for the
- * frames drawn immersive at native size (each eye's picture is the whole
- * field of view; the periphery is what the lenses blur anyway) and flat
- * (gain 0: every pixel full detail) for everything else -- the virtual
- * screen shows the whole picture; 1: always; 0: never. The gain and the
+ * focal point per eye's half. VC3_FOVEATION: unset or 0, never (off by
+ * default: in real play VC3's E.S. mode still flickered with it on, see
+ * fov_frame); "auto", on for the frames drawn immersive at native size
+ * (each eye's picture is the whole field of view; the periphery is what the
+ * lenses blur anyway) and flat (gain 0: every pixel full detail) for
+ * everything else -- the virtual screen shows the whole picture; 1:
+ * always. The gain and the
  * full-detail area (VC3_FOV_GAIN, default 4; VC3_FOV_AREA, 0.4) are the
  * extension's: pixel density falls off as 1 / (gain * distance^2 - area)
  * from the focal point, across -1..1. Skipped without the extension or two
@@ -2111,7 +2575,7 @@ static int fov_mode(void)
         const char *e = genv("FOVEATION");
         GLint i, k = 0;
         int have = 0;
-        s_fov_mode = !e || !strcmp(e, "auto") ? 2 : e[0] == '1' ? 1 : 0;
+        s_fov_mode = e && !strcmp(e, "auto") ? 2 : e && e[0] == '1' ? 1 : 0;
         if (s_fov_mode) {
             glGetIntegerv(GL_NUM_EXTENSIONS, &k);
             for (i = 0; i < k; i++) {
@@ -2170,7 +2634,7 @@ static void surf_foveate(Surf *f)
 #if defined(VC3_GLES)
     GLint n = 0;
     f->fov = 0;
-    if (!fov_mode())
+    if (!fov_mode() || f->nofov)
         return;
     glTexParameteri(GL_TEXTURE_2D, 0x8BFB /* TEXTURE_FOVEATED_FEATURE_BITS_QCOM */,
                     0x1 /* FOVEATION_ENABLE_BIT */ | 0x2 /* SCALED_BIN_METHOD_BIT */);
@@ -2184,12 +2648,34 @@ static void surf_foveate(Surf *f)
 #endif
 }
 
-/* At the flip, for the next frame: foveated or flat (s_fov_now). */
+/* At the flip, for the next frame: foveated or flat (s_fov_now).
+ *
+ * The effect target's surface S is not foveated while the target is in use
+ * (a run begun within FOV_FX_HOLD frames). The target takes S's depth with
+ * a blit, and on the Quest (Adreno) the depth of a foveated surface does
+ * not read back right -- some frames the E.S. layers were depth-tested
+ * against garbage and wiped or smeared the scene, both eyes differently: a
+ * bad flicker. Flat (gain 0) is not enough: a texture's foveation cannot
+ * be switched off once on. So S is made again without it (surf_bind, next
+ * frame: sc_stale) and with it once E.S. is over. Native E.S. without
+ * foveation still holds ~58. */
+#define FOV_FX_HOLD 120
 static void fov_frame(void)
 {
     int i, now;
     if (!fov_mode())
         return;
+    for (i = 0; i < s_nsurfs; i++) {
+        Surf *f = &s_surfs[i];
+        int busy = s_fx.runs && f == s_fx.s && s_frame - s_fx.last_frame < FOV_FX_HOLD;
+        if (busy != f->nofov && f->fbo) {
+            f->nofov = busy;
+            f->sc_stale = 1;
+            if (genv("GL_EFFECT_LOG"))
+                fprintf(stderr, "[FX] %08X made again %s foveation\n", f->va,
+                        busy ? "without" : "with");
+        }
+    }
     now = s_fov_mode == 1 || (s_imm && s_view.scale == 0 && s_view.eye_w > 0);
     if (now == s_fov_now && !now)
         return;
@@ -2246,6 +2732,17 @@ static int msaa_samples(void)
     return n;
 }
 
+static int fx_scale(void);
+
+/* The scale a surface is drawn at: the frame's, divided by the effect
+ * scale for an effect target's source (fx_low). */
+static void surf_want(const Surf *f, float *sx, float *sy)
+{
+    int sc = f->fxlow ? fx_scale() : 1;
+    *sx = s_sx / (float)sc;
+    *sy = s_sy / (float)sc;
+}
+
 static void surf_alloc(Surf *f, GLsizei w, GLsizei h)
 {
     GLsizei pw, ph;
@@ -2257,8 +2754,8 @@ static void surf_alloc(Surf *f, GLsizei w, GLsizei h)
     }
     f->w = w;
     f->h = h;
-    f->sx = s_sx;
-    f->sy = s_sy;
+    f->sc_stale = 0;
+    surf_want(f, &f->sx, &f->sy);
     f->wide = surf_widens(w, h);
     pw = (GLsizei)((float)w * f->sx + 0.5f);
     ph = (GLsizei)((float)h * f->sy + 0.5f);
@@ -2435,8 +2932,10 @@ static void gt_flip(void)
         s_zp_frame = s_sw_frame = 0;
         fprintf(stderr, "[GPUTIME]   attribute pointers kept %u, set %u; state calls made %u,"
                 " not repeated %u; uniforms sent %u, not repeated %u; program constants"
-                " sent %u\n", s_va_hit, s_va_miss, s_sh.made, s_sh.skipped, s_uc_sent,
-                s_uc_kept, s_vc_sent);
+                " sent %u; ring waits %u (%.1f ms)\n", s_va_hit, s_va_miss, s_sh.made, s_sh.skipped,
+                s_uc_sent, s_uc_kept, s_vc_sent, s_ring_waits, s_ring_wait_ns / 1e6);
+        s_ring_waits = 0;
+        s_ring_wait_ns = 0;
         s_sh.made = s_sh.skipped = 0;
         s_uc_sent = s_uc_kept = s_vc_sent = 0;
         s_va_hit = s_va_miss = 0;
@@ -2482,7 +2981,13 @@ static Surf *surf_bind(const Nv2aSurface *s)
         memset(f, 0, sizeof *f);
         f->va = s->color_va;
     }
-    if (!f->fbo || w > f->w || h > f->h || f->sx != s_sx || f->sy != s_sy
+    {
+        float wsx, wsy;
+        surf_want(f, &wsx, &wsy);
+        if (f->sx != wsx || f->sy != wsy)
+            f->sc_stale = 1;            /* the frame's scale, or fx_low, changed */
+    }
+    if (!f->fbo || w > f->w || h > f->h || f->sc_stale
         || f->wide != surf_widens(w > f->w ? w : f->w, h > f->h ? h : f->h)
         || f->st != surf_stereo(w > f->w ? w : f->w, h > f->h ? h : f->h))
         surf_alloc(f, w > f->w ? w : f->w, h > f->h ? h : f->h);
@@ -3335,6 +3840,10 @@ static int tex_bind(const Nv2aTexture *t, float *sw, float *sh)
             }
         }
         /* drawing into the effect target: the render target reduced alike */
+        if (s_fx.draw && rt != s_fx.s)
+            rt->fx_samp = s_frame;
+        else
+            rt->other_samp = s_frame;
         bound = s_fx.draw && rt != s_fx.s ? fx_small(rt) : rt->color;
         glBindTexture(GL_TEXTURE_2D, bound);
         if (rt->st && s_unit < 4)
@@ -3736,6 +4245,9 @@ static void clear_leave(Surf *p)
 #endif
 }
 
+static void mg_flush(void);      /* RECOMP_GL_MERGE: a pending run, drawn */
+static void mg_report(void);
+
 static void gl_clear(const Nv2aSurface *s, const Nv2aRenderState *rs,
                      uint32_t flags, uint32_t argb, uint32_t zstencil)
 {
@@ -3745,6 +4257,7 @@ static void gl_clear(const Nv2aSurface *s, const Nv2aRenderState *rs,
     (void)rs;
     if (!gl_ready())
         return;
+    mg_flush();
     if (s_fx.on)
         fx_resolve();
     GLCK("before clear (elsewhere)", NULL, s->color_va);
@@ -4565,14 +5078,854 @@ static int batch_needs_rc(const Surf *f, const Nv2aBatch *b, int raw)
     return 0;
 }
 
+/* The draw calls of a batch once everything is bound: one instanced draw
+ * for both eyes (one-pass stereo), each eye on its own, or one. raw: indexed
+ * (mode, count, itype at ioff, base vertex bv); otherwise b's vertices. */
+static void emit_eyes(Surf *f, const Nv2aBatch *b, int raw, int hud, int imm3d, GLenum mode,
+                      GLsizei count, GLenum itype, GLsizeiptr ioff, GLint bv)
+{
+    /* Stereo in one pass: one instanced draw, instance = eye, each in its
+     * half of a double-wide viewport, the other half clipped -- one draw
+     * call and one set of uniforms for both eyes. VC3_STEREO_1PASS=0
+     * draws each eye on its own (as where clip distances are missing). */
+    static int one_pass = -1;
+    if (one_pass < 0)
+        one_pass = !(genv("STEREO_1PASS") && genv("STEREO_1PASS")[0] == '0');
+    if (f->st && !hud && one_pass && s_has_clip) {
+        GLfloat sb[8], e2[4];
+        GLenum cd = raw ? GL_CLIP_DISTANCE0 + 2 : GL_CLIP_DISTANCE0;
+        int k;
+        for (k = 0; k < 4; k++) {
+            sb[2 * k] = s_sbs[k];
+            sb[2 * k + 1] = 0.0f;
+        }
+        cu4fv(U->sbs, 2, sb);
+        e2[0] = s_imm ? 0.0f : 0.5f * s_st_sep;
+        e2[1] = s_st_depth;
+        e2[2] = s_imm ? 0.0f : -0.5f * s_st_sep;
+        e2[3] = s_st_depth;
+        cu2fv(U->eye2, 2, e2);
+        if (imm3d)
+            cuMatrix4fv(U->immvp2, 2, GL_FALSE, &s_view.vp[0][0]);
+        cu1i(U->st2, 1);
+        glViewport(0, 0, 2 * f->pw, f->ph);
+        (void)cd;
+        if (raw)
+            glDrawElementsInstancedBaseVertex(mode, count, itype, (void *)ioff, 2, bv);
+        else
+            glDrawArraysInstanced(GL_TRIANGLES, 0, (GLsizei)b->count, 2);
+        GLCK(raw ? "draw: one-pass stereo (raw)" : "draw: one-pass stereo (cpu)", b, f->va);
+        glViewport(0, 0, f->pw, f->ph);
+    }
+    /* Stereo: the same draw for each eye, in its half. */
+    int eye, eyes = f->st && !hud ? 2 : 1;
+    if (f->st && !hud && one_pass && s_has_clip)
+        eyes = 0;                       /* drawn above */
+    else
+        cu1i(U->st2, 0);
+    for (eye = 0; eye < eyes; eye++) {
+        GLfloat sb[8];
+        int k;
+        for (k = 0; k < 4; k++) {
+            sb[2 * k] = s_sbs[k];
+            sb[2 * k + 1] = 0.5f * (GLfloat)eye;
+        }
+        cu4fv(U->sbs, 2, sb);
+        if (hud) {
+            cu2f(U->eye, 0.0f, s_st_depth);
+        } else if (f->st) {
+            glViewport(eye * f->pw, 0, f->pw, f->ph);
+            if (imm3d)
+                cuMatrix4fv(U->immvp, 1, GL_FALSE, s_view.vp[eye]);
+            cu2f(U->eye, s_imm ? 0.0f : eye ? -0.5f * s_st_sep : 0.5f * s_st_sep,
+                        s_st_depth);
+        } else {
+            cu2f(U->eye, 0.0f, s_st_depth);
+        }
+        if (raw)
+            glDrawElementsBaseVertex(mode, count, itype, (void *)ioff, bv);
+        else
+            glDrawArrays(GL_TRIANGLES, 0, (GLsizei)b->count);
+        GLCK(hud ? (raw ? "draw: HUD picture (raw)" : "draw: HUD picture (cpu)")
+             : raw ? "draw: draw (raw)" : "draw: draw (cpu)", b, f->va);
+    }
+}
+
+/* ── Merged runs of fixed-function draws (RECOMP_GL_MERGE) ─────────────────
+ * A 3D scene has runs of consecutive fixed-function batches that differ
+ * only in their transforms: the same target, program, render state,
+ * textures, lights and vertex layout, another composite, model-views and
+ * projection. Each was a draw call with its matrix uploads, which cost
+ * about 13 us apiece on the Quest's GL thread. Here such a run is one draw
+ * call:
+ *
+ *   - the first batch is set up as ever (gl_draw_inner) but not drawn:
+ *     mg_start records it, and how it would have been drawn alone;
+ *   - each next batch that matches it but for those matrices (and, when
+ *     immersive, the game projection taken from them) joins in mg_append,
+ *     from gl_draw_raw. Its vertices are staged, its indices become a
+ *     triangle list, and its matrices go into the run's next slot;
+ *   - anything else (another batch, a clear, a flip) first draws the run
+ *     (mg_flush). The staged vertices go into the stream behind the first
+ *     draw's, and the vertex pointers stay where they are. The joined list
+ *     is drawn from the first draw's base vertex, with the FfMerge block
+ *     holding each slot's matrices and first vertex. The shader finds a
+ *     vertex's slot from gl_VertexID. A run of one is drawn as it was.
+ *
+ * What a pixel sees does not change:
+ *   - the same vertices go through the same shader code with the same
+ *     matrices (read from the block rather than from uniforms; the same
+ *     floats);
+ *   - the same triangles are drawn in the same order. A strip or fan
+ *     becomes the list of its triangles, each in GL's own vertex order;
+ *   - the same state applies.
+ * Batches whose state could make the order or the setup matter are never
+ * joined: visibility tests, the immersive HUD, the E.S. effect target, the
+ * frame interpolator's snapshots, RECOMP_GPU_XF_CHECK.
+ *
+ * RECOMP_GL_MERGE=1 merges. =2 compares: each run's vertices go through the
+ * shader both ways into transform feedback and must match bit for bit (the
+ * vertices its indices use; [GLMERGE] ... differ). The run is then drawn
+ * unmerged. RECOMP_GL_MERGE_WHY=1 adds which words of the state kept a
+ * batch out of a run. */
+
+#define MG_SLOTS 32
+#define MG_SPAN 65535                      /* vertices a run may span: 16-bit indices */
+#define MG_BLOCK (MG_SLOTS * (6 * 64 + 32 + 4)) /* FfMerge: comp, mv[4], proj, gp, gw, first */
+
+static Ring s_mring = { 0, GL_UNIFORM_BUFFER, 4 << 20, 0, NULL, 0, { 0 } };   /* FfMerge */
+
+static int s_mg_mode = -1;                 /* 0 off, 1 merge, 2 compare */
+
+/* VC3_GL_CALL_DELAY_US=<us>: a busy wait per draw set up and issued here --
+ * per batch drawn on its own, per merged run (not per batch joining one) --
+ * to stand in for a slower GL thread's per-draw cost (the Quest's ~13 us in
+ * the mission intro). RECOMP_EXEC_GL_DELAY_US, the toolkit's, is per batch
+ * handed over, which a merge cannot save. */
+static void gl_call_delay(void)
+{
+    static long us = -1;
+    uint64_t end;
+    if (us < 0)
+        us = genv("GL_CALL_DELAY_US") ? atol(genv("GL_CALL_DELAY_US")) : 0;
+    if (us <= 0)
+        return;
+    end = tm_now() + (uint64_t)us * 1000ull;
+    while (tm_now() < end)
+        ;
+}
+
+typedef struct {
+    int n;                                 /* draws in the run; 0: none */
+    Surf *f;
+    Prog *prog;
+    Nv2aSurface s;
+    Nv2aRenderState rs;
+    Nv2aTexture tex, stage[4];
+    Nv2aCombiner rc;
+    uint8_t has_tex, has_stage[4], has_rc;
+    /* 0: the plain program, which reads of the combiners only whether they
+     * make a lightmap batch (stage 1 times the texture) and its stage modes;
+     * 1: the combiner program, which reads all of them */
+    uint8_t full_rc, lmap;
+    uint32_t fog_color;
+    Nv2aFixedState ff;                     /* the first's; composite and mv aside */
+    float aa[2], vpz, fogp[2], uvs0[2];
+    uint32_t nearz, fogen, fogmode;
+    VrGameProj bgp;
+    int bgp_ok;
+    uint32_t sig[8], stride;
+    float cval[8][4];
+    int imm3d, is3d, textured;
+    /* the first draw, as gl_draw_inner would have drawn it */
+    GLenum mode0;
+    GLsizei count0;
+    GLsizeiptr ioff0;
+    GLint bv0;
+    GLint bv[MG_SLOTS];                    /* each draw's first vertex, from the stream base */
+    uint32_t nv[MG_SLOTS];
+    float mat[MG_SLOTS][6][16];   /* composite, mv 0-3, projection */
+    float gpw[MG_SLOTS][8];       /* immersive: the zoomed projection; 1, 1 / pz */
+    uint32_t *idx;                         /* the run's triangle list, from bv[0] */
+    size_t nidx, cap;
+    /* RECOMP_GL_MERGE=2: each draw's own indices */
+    uint16_t *oidx;
+    size_t noidx, ocap, ooff[MG_SLOTS];
+    uint32_t ocount[MG_SLOTS], oprim[MG_SLOTS];
+    uint8_t dbg[MG_SLOTS][32];             /* =2: each draw's first vertex bytes */
+    uint8_t *vst;                          /* draws 1..n-1's vertices, staged */
+    size_t vstn, vstcap;
+    size_t iofs1;                          /* where draw 1's indices start */
+} MergeRun;
+static MergeRun s_mg;
+
+static struct {
+    uint32_t offered, joined, runs, calls_saved, singles;
+    uint32_t why[8];                       /* why a batch did not join */
+    uint32_t cmp_runs, cmp_verts, cmp_diff;
+} s_mgs;
+enum { MW_SURF, MW_STATE, MW_TEX, MW_FF, MW_LAYOUT, MW_PROJ, MW_ROOM, MW_OTHER };
+
+static int mg_mode(void)
+{
+    if (s_mg_mode < 0) {
+        const char *e = getenv("RECOMP_GL_MERGE");
+        s_mg_mode = e ? atoi(e) : 0;
+        if (s_mg_mode < 0 || s_mg_mode > 2)
+            s_mg_mode = 0;
+        if (s_mg_mode)
+            fprintf(stderr, "[GL] merging runs of fixed-function draws that differ only in"
+                    " transforms (RECOMP_GL_MERGE=%d%s)\n", s_mg_mode,
+                    s_mg_mode == 2 ? ": compared, drawn unmerged" : "");
+    }
+    return s_mg_mode;
+}
+
+/* A batch's vertex layout, as raw_attribs groups it: 1 if one interleaved
+ * stream (base, bytes, stride), with each role's signature as s_va keeps it
+ * and the constant value of each role without a stream. */
+static int mg_layout(const Nv2aRawGeometry *g, uint32_t sig[8], uint32_t *stride,
+                     const uint8_t **base, uint32_t *bytes, float cval[8][4])
+{
+    static const float none[4] = { 0.0f, 0.0f, 0.0f, 1.0f };
+    const uint8_t *gb = NULL;
+    uint32_t gs = 0, gn = 0;
+    int slot[8], r, have = 0;
+
+    raw_roles(g, slot);
+    for (r = 0; r < 8; r++) {               /* raw_attribs' grouping, one group */
+        const Nv2aAttrib *a = slot[r] >= 0 ? &g->attr[slot[r]] : NULL;
+        const uint8_t *p;
+        if (!a || !a->data)
+            continue;
+        p = (const uint8_t *)a->data;
+        if (!have) {
+            gb = p;
+            gs = a->stride;
+            gn = a->bytes;
+            have = 1;
+        } else if (gs == a->stride && p >= gb && p < gb + a->stride) {
+            uint32_t end = (uint32_t)(p - gb) + a->bytes;
+            if (end > gn)
+                gn = end;
+        } else if (gs == a->stride && p < gb && gb < p + a->stride) {
+            uint32_t shift = (uint32_t)(gb - p);
+            gb = p;
+            gn = gn + shift > a->bytes ? gn + shift : a->bytes;
+        } else {
+            return 0;                       /* a second stream */
+        }
+    }
+    if (!have || !gs)
+        return 0;
+    for (r = 0; r < 8; r++) {
+        const Nv2aAttrib *a = slot[r] >= 0 ? &g->attr[slot[r]] : NULL;
+        if (!a || !a->data) {
+            sig[r] = 0;
+            memcpy(cval[r], a ? a->value : none, 16);
+        } else {
+            sig[r] = 0x80000000u | (a->type & 15u) | ((a->size & 15u) << 4)
+                   | ((uint32_t)((const uint8_t *)a->data - gb) << 8);
+            memset(cval[r], 0, 16);
+        }
+    }
+    *stride = gs;
+    *base = gb;
+    *bytes = gn;
+    return 1;
+}
+
+/* A strip or fan as the list of its triangles, each in GL's vertex order
+ * (strip triangle i: i, i+1, i+2, the first two swapped when i is odd), the
+ * indices plus add. Returns the count written. */
+static size_t mg_tris(uint32_t *out, const uint16_t *in, uint32_t n, uint32_t prim, uint32_t add)
+{
+    size_t o = 0;
+    uint32_t i;
+    if (prim == 6) {
+        for (i = 0; i + 2 < n; i++) {
+            out[o++] = (uint32_t)in[i + (i & 1)] + add;
+            out[o++] = (uint32_t)in[i + 1 - (i & 1)] + add;
+            out[o++] = (uint32_t)in[i + 2] + add;
+        }
+    } else if (prim == 7) {
+        for (i = 1; i + 1 < n; i++) {
+            out[o++] = (uint32_t)in[0] + add;
+            out[o++] = (uint32_t)in[i] + add;
+            out[o++] = (uint32_t)in[i + 1] + add;
+        }
+    } else {
+        for (i = 0; i + 2 < n; i += 3) {
+            out[o++] = (uint32_t)in[i] + add;
+            out[o++] = (uint32_t)in[i + 1] + add;
+            out[o++] = (uint32_t)in[i + 2] + add;
+        }
+    }
+    return o;
+}
+
+static int mg_room(void **buf, size_t *cap, size_t need, size_t elem)
+{
+    if (need <= *cap)
+        return 1;
+    {
+        size_t c = *cap ? *cap : 4096;
+        void *p;
+        while (c < need)
+            c *= 2;
+        if (!(p = realloc(*buf, c * elem)))
+            return 0;
+        *buf = p;
+        *cap = c;
+    }
+    return 1;
+}
+
+static void mg_slot_gp(int k, int imm3d, const VrGameProj *g)
+{
+    float *v = s_mg.gpw[k];
+    memset(v, 0, 8 * sizeof *v);
+    if (imm3d) {
+        VrGameProj zg = zoom_proj(g);
+        v[0] = zg.kx;
+        v[1] = zg.ky;
+        v[2] = zg.cx;
+        v[3] = zg.cy;
+        v[4] = 1.0f;
+        v[5] = g->inv_pz;
+    }
+}
+
+static void mg_slot(int k, const Nv2aFixedState *ff)
+{
+    memcpy(s_mg.mat[k][0], ff->composite, 64);
+    memcpy(s_mg.mat[k][1], ff->mv, 4 * 64);
+    memcpy(s_mg.mat[k][5], ff->proj, 64);
+}
+
+static void mg_save_indices(int k, const Nv2aRawGeometry *g)
+{
+    if (s_mg_mode != 2)
+        return;
+    if (!mg_room((void **)&s_mg.oidx, &s_mg.ocap, s_mg.noidx + g->index_count, 2))
+        return;
+    s_mg.ooff[k] = s_mg.noidx;
+    memcpy(s_mg.oidx + s_mg.noidx, g->indices, (size_t)g->index_count * 2);
+    s_mg.noidx += g->index_count;
+    s_mg.ocount[k] = g->index_count;
+    s_mg.oprim[k] = g->prim;
+}
+
+/* From gl_draw_inner, everything bound for a fixed-function batch and its
+ * vertices and indices in the rings: 1 if it begins a run (not drawn yet). */
+static int mg_start(Surf *f, const Nv2aBatch *b, const Nv2aRawGeometry *g, int imm3d,
+                    int is3d, int textured, GLsizeiptr ioff)
+{
+    MergeRun *m = &s_mg;
+    const uint8_t *gb;
+    uint32_t gn, k;
+
+    if (mg_mode() <= 0 || m->n || !g->ff || g->check_out || b->zpass_out || !s_va.valid
+        || U->merge < 0 || s_fx.on || s_fx.draw || vc3_fps_get() > 60)
+        return 0;
+    if (!mg_layout(g, m->sig, &m->stride, &gb, &gn, m->cval) || m->stride != s_va.stride
+        || memcmp(m->sig, s_va.sig, sizeof m->sig))
+        return 0;
+    if (!mg_room((void **)&m->idx, &m->cap, (size_t)g->index_count * 3, 4))
+        return 0;
+    m->f = f;
+    m->prog = U;
+    m->s.color_va = f->va;
+    m->rs = *b->state;
+    m->has_tex = b->texture != NULL;
+    if (b->texture)
+        m->tex = *b->texture;
+    for (k = 0; k < 4; k++) {
+        m->has_stage[k] = b->stage[k] != NULL;
+        if (b->stage[k])
+            m->stage[k] = *b->stage[k];
+    }
+    m->has_rc = b->rc != NULL;
+    if (b->rc)
+        m->rc = *b->rc;
+    m->full_rc = U == &s_praw_rc || U == &s_praw_rc_na || s_use_rc || genv("GL_CUBE_RC")
+              || genv("GL_RC_SURF");
+    m->lmap = b->rc && lightmap_batch(b);
+    m->fog_color = b->fog_color;
+    m->ff = *g->ff;
+    m->aa[0] = g->aa_sx;
+    m->aa[1] = g->aa_sy;
+    m->vpz = g->vp_off_z;
+    m->nearz = g->near_z;
+    m->fogen = g->fog_enable;
+    m->fogmode = g->fog_mode;
+    memcpy(m->fogp, g->fog_param, sizeof m->fogp);
+    memcpy(m->uvs0, g->uv_scale0, sizeof m->uvs0);
+    m->bgp = s_bgp;
+    m->bgp_ok = s_bgp_ok;
+    m->imm3d = imm3d;
+    m->is3d = is3d;
+    m->textured = textured;
+    m->mode0 = raw_mode(g->prim);
+    m->count0 = (GLsizei)g->index_count;
+    m->ioff0 = ioff;
+    m->bv0 = s_basevertex;
+    m->bv[0] = s_basevertex;
+    memcpy(m->dbg[0], gb, gn < 32 ? gn : 32);
+    m->nv[0] = g->max_index - g->min_index + 1;
+    mg_slot(0, g->ff);
+    mg_slot_gp(0, imm3d, &s_bgp);
+    m->nidx = mg_tris(m->idx, g->indices, g->index_count, g->prim, 0);
+    m->iofs1 = m->nidx;
+    m->vstn = 0;
+    m->noidx = 0;
+    mg_save_indices(0, g);
+    m->n = 1;
+    return 1;
+}
+
+static int mg_same_tex(int has, const Nv2aTexture *t, uint8_t mhas, const Nv2aTexture *mt)
+{
+    return has == mhas && (!has || !memcmp(t, mt, sizeof *t));
+}
+
+static int s_mg_why = -1;
+static uint32_t s_mgw[4][512];          /* rs, rc, ff, tex: per 4-byte word */
+static void mg_why_words(int t, const void *a, const void *b, size_t n)
+{
+    size_t w;
+    for (w = 0; w * 4 < n && w < 255; w++)
+        if (memcmp((const char *)a + w * 4, (const char *)b + w * 4, 4))
+            s_mgw[t][w]++;
+    if (n / 4 > 255)                      /* past the table: one bucket */
+        for (w = 255; w * 4 < n; w++)
+            if (memcmp((const char *)a + w * 4, (const char *)b + w * 4, 4)) {
+                s_mgw[t][256 + (w * 4 * 255 / n)]++;
+                break;
+            }
+}
+
+/* From gl_draw_raw: 1 if b joined the run (its draw is the run's). */
+static int mg_append(const Nv2aSurface *s, const Nv2aBatch *b)
+{
+    MergeRun *m = &s_mg;
+    const Nv2aRawGeometry *g = b->raw;
+    uint32_t sig[8], stride, gn, nv, k, r;
+    const uint8_t *gb;
+    float cval[8][4];
+    GLint bv;
+    int why = MW_OTHER, gpok;
+    VrGameProj gp;
+
+    if (!g || g->kind != NV2A_RAW_FIXED || !g->ff || g->check_out || b->zpass_out
+        || g->index_count < 3)
+        goto no;
+    s_mgs.offered++;
+    why = MW_SURF;
+    if (s->color_va != m->f->va || surf_find(s->color_va) != m->f)
+        goto no;
+    why = MW_STATE;
+    if (memcmp(b->state, &m->rs, sizeof m->rs) || b->fog_color != m->fog_color
+        || (b->rc != NULL) != m->has_rc)
+        goto no;
+    if (b->rc && (m->full_rc ? memcmp(b->rc, &m->rc, sizeof m->rc) != 0
+                  : lightmap_batch(b) != m->lmap
+                    || (m->lmap && b->rc->stage_program != m->rc.stage_program)))
+        goto no;
+    why = MW_TEX;
+    if (!mg_same_tex(b->texture != NULL, b->texture, m->has_tex, &m->tex))
+        goto no;
+    for (k = 0; k < 4; k++)                 /* the stages the program samples */
+        if ((m->full_rc || (k == 1 && m->lmap))
+            && !mg_same_tex(b->stage[k] != NULL, b->stage[k], m->has_stage[k], &m->stage[k]))
+            goto no;
+    why = MW_FF;
+    /* everything after composite, model-views and projection (the slot's) */
+    if (memcmp((const char *)g->ff + offsetof(Nv2aFixedState, texmat),
+               (const char *)&m->ff + offsetof(Nv2aFixedState, texmat),
+               sizeof m->ff - offsetof(Nv2aFixedState, texmat)) || g->aa_sx != m->aa[0] || g->aa_sy != m->aa[1]
+        || g->vp_off_z != m->vpz || g->near_z != m->nearz || g->fog_enable != m->fogen
+        || g->fog_mode != m->fogmode || memcmp(g->fog_param, m->fogp, sizeof m->fogp)
+        || memcmp(g->uv_scale0, m->uvs0, sizeof m->uvs0))
+        goto no;
+    why = MW_LAYOUT;
+    if (!mg_layout(g, sig, &stride, &gb, &gn, cval) || stride != m->stride
+        || memcmp(sig, m->sig, sizeof sig) || memcmp(cval, m->cval, sizeof cval))
+        goto no;
+    for (r = 0; r < 16; r++)
+        if (g->attr[r].data && g->attr[r].bytes > (uint32_t)(s_vring.size / 8))
+            goto no;
+    why = MW_PROJ;
+    /* The game's projection raw_uniforms would take from it: whether there
+     * is one decides 3D or not; its values go in the slot (immersive: u_gp,
+     * u_gw) and stay with the surface (f->gp), as the last batch's. */
+    gpok = vr_game_proj_from(g->ff->composite, g->ff->mv[0], (int)g->ff->use_composite,
+                             g->ff->proj, g->aa_sx, g->aa_sy, g->ff->c59, &gp);
+    if (gpok != m->bgp_ok)
+        goto no;
+    why = MW_ROOM;
+    if (m->n >= MG_SLOTS
+        || (GLsizeiptr)(m->nidx + (size_t)g->index_count * 3) * 4 > s_iring.size / 2
+        || !mg_room((void **)&m->idx, &m->cap, m->nidx + (size_t)g->index_count * 3, 4))
+        goto no;
+    nv = g->max_index - g->min_index + 1;
+    {   /* the vertices, staged at a whole number of strides: the run's go
+         * into the ring behind the first's in one copy at the flush, which
+         * must find the room there (nothing else writes the ring meanwhile) */
+        GLsizeiptr al = 16, next = (s_vring.at + al - 1) / al * al;
+        size_t vo = (m->vstn + stride - 1) / stride * stride;
+        if (!s_va.valid || next + (GLsizeiptr)(vo + gn) + 2 * (GLsizeiptr)stride > s_vring.size
+            || vo / stride + nv + m->nv[0] + 2 > MG_SPAN
+            || !mg_room((void **)&m->vst, &m->vstcap, vo + gn, 1))
+            goto no;                        /* the ring would go round: draw first */
+        memcpy(m->vst + vo, gb, gn);
+        memcpy(m->dbg[m->n], gb, gn < 32 ? gn : 32);
+        m->vstn = vo + gn;
+        bv = (GLint)(vo / stride);          /* in the staging, until the flush */
+    }
+    if (lazy_skip(m->f, b))                 /* as gl_draw_inner would */
+        return 1;
+    k = (uint32_t)m->n;
+    m->bv[k] = bv;
+    m->nv[k] = nv;
+    mg_slot((int)k, g->ff);
+    mg_slot_gp((int)k, m->imm3d, &gp);
+    m->nidx += mg_tris(m->idx + m->nidx, g->indices, g->index_count, g->prim, (uint32_t)bv);
+    mg_save_indices((int)k, g);
+    m->n++;
+    s_mgs.joined++;
+    s_bgp_ok = gpok;                        /* as raw_uniforms and gl_draw_inner leave them */
+    if (gpok) {
+        s_bgp = gp;
+        m->f->gp = gp;
+        m->f->gp_ok = 1;
+    }
+    /* gl_draw_inner's counts, as if drawn */
+    s_st.draws++;
+    s_st.tris += g->prim == 5 ? g->index_count / 3 : g->index_count - 2;
+    if (m->textured)
+        s_st.textured++;
+    else if (!b->texture)
+        s_st.untex++;
+    s_rst.draws++;
+    s_rst.tris += g->prim == 5 ? g->index_count / 3 : g->index_count - 2;
+    if (m->is3d && m->f->st) {
+        s_3d_this++;
+        m->f->n3d++;
+    }
+    return 1;
+no:
+    s_mgs.why[why]++;
+    if (s_mg_why > 0) {  /* RECOMP_GL_MERGE_WHY: which words differ (debug) */
+        if (why == MW_STATE) {
+            mg_why_words(0, b->state, &m->rs, sizeof m->rs);
+            if (b->rc && m->has_rc)
+                mg_why_words(1, b->rc, &m->rc, sizeof m->rc);
+            else if ((b->rc != NULL) != m->has_rc)
+                s_mgw[1][255]++;
+            if (b->fog_color != m->fog_color)
+                s_mgw[0][255]++;
+        } else if (why == MW_FF) {
+            mg_why_words(2, g->ff, &m->ff, sizeof m->ff);
+        } else if (why == MW_TEX) {
+            if (b->texture && m->has_tex)
+                mg_why_words(3, b->texture, &m->tex, sizeof m->tex);
+            else
+                s_mgw[3][255]++;
+        }
+    }
+    return 0;
+}
+
+/* RECOMP_GL_MERGE=2: draw k's immersive projection, as gl_draw_inner sets it. */
+static void mg_gp_uniforms(int k)
+{
+    const float *v = s_mg.gpw[k];
+    if (s_mg.imm3d) {
+        cu4f(U->gp, v[0], v[1], v[2], v[3]);
+        cu2f(U->gw, v[4], v[5]);
+    }
+}
+
+/* RECOMP_GL_MERGE=2: the shader's outputs for vertices first..first+n
+ * (pointers as bound) into out, NV2A_RAW_CHECK_FLOATS each. */
+static int mg_capture(GLint first, GLsizei n, float *out)
+{
+    static GLuint tfb;
+    GLsizeiptr bytes = (GLsizeiptr)n * NV2A_RAW_CHECK_FLOATS * sizeof(float);
+    void *p;
+    int ok = 0;
+
+    if (!tfb)
+        glGenBuffers(1, &tfb);
+    glBindBuffer(GL_TRANSFORM_FEEDBACK_BUFFER, tfb);
+    glBufferData(GL_TRANSFORM_FEEDBACK_BUFFER, bytes, NULL, GL_STREAM_READ);
+    glBindBufferBase(GL_TRANSFORM_FEEDBACK_BUFFER, 0, tfb);
+    glEnable(GL_RASTERIZER_DISCARD);
+    glBeginTransformFeedback(GL_POINTS);
+    glDrawArrays(GL_POINTS, first, n);
+    glEndTransformFeedback();
+    glDisable(GL_RASTERIZER_DISCARD);
+    p = glMapBufferRange(GL_TRANSFORM_FEEDBACK_BUFFER, 0, bytes, GL_MAP_READ_BIT);
+    if (p) {
+        memcpy(out, p, (size_t)bytes);
+        glUnmapBuffer(GL_TRANSFORM_FEEDBACK_BUFFER);
+        ok = 1;
+    }
+    glBindBufferBase(GL_TRANSFORM_FEEDBACK_BUFFER, 0, 0);
+    {
+        static int logged;
+        GLenum e = glGetError();
+        if ((e || !ok) && logged++ < 4)
+            fprintf(stderr, "[GLMERGE] capture of %d vertices from %d: %s, GL error 0x%04X\n",
+                    (int)n, (int)first, ok ? "read" : "not read", e);
+    }
+    return ok;
+}
+
+static void mg_compare_and_draw(GLsizei span, int n)
+{
+    MergeRun *m = &s_mg;
+    static float *a, *bb;
+    static uint8_t *used;
+    static size_t acap, bcap, ucap;
+    int k;
+    uint32_t diff = 0;
+
+    if (!mg_room((void **)&a, &acap, (size_t)span * NV2A_RAW_CHECK_FLOATS, 4))
+        return;
+    cu1i(U->merge, 1);
+    if (mg_capture(m->bv[0], span, a)) {
+        cu1i(U->merge, 0);
+        for (k = 0; k < n; k++) {
+            uint32_t v, d = 0, v0 = 0;
+            if (!mg_room((void **)&bb, &bcap, (size_t)m->nv[k] * NV2A_RAW_CHECK_FLOATS, 4))
+                break;
+            cuMatrix4fv(U->comp, 1, GL_TRUE, m->mat[k][0]);
+            cuMatrix4fv(U->mv, 4, GL_TRUE, m->mat[k][1]);
+            cuMatrix4fv(U->proj, 1, GL_TRUE, m->mat[k][5]);
+            mg_gp_uniforms(k);
+            if (!mg_capture(m->bv[k], (GLsizei)m->nv[k], bb))
+                continue;
+            /* the vertices its indices use (the others, in min..max but
+             * never drawn, may hold anything) */
+            if (!mg_room((void **)&used, &ucap, m->nv[k], 1))
+                break;
+            memset(used, 0, m->nv[k]);
+            for (v = 0; v < m->ocount[k]; v++)
+                if (m->oidx[m->ooff[k] + v] < m->nv[k])
+                    used[m->oidx[m->ooff[k] + v]] = 1;
+            for (v = 0; v < m->nv[k]; v++)
+                if (used[v]
+                    && memcmp(a + (size_t)(m->bv[k] - m->bv[0] + (GLint)v) * NV2A_RAW_CHECK_FLOATS,
+                              bb + (size_t)v * NV2A_RAW_CHECK_FLOATS,
+                              NV2A_RAW_CHECK_FLOATS * sizeof(float))) {
+                    if (!d)
+                        v0 = v;
+                    d++;
+                }
+            static int logged;
+            if (d && logged++ < 6) {
+                const float *x = a + (size_t)(m->bv[k] - m->bv[0] + (GLint)v0) * NV2A_RAW_CHECK_FLOATS;
+                const float *y = bb + (size_t)v0 * NV2A_RAW_CHECK_FLOATS;
+                int c;
+                fprintf(stderr, "[GLMERGE] run of %d into %08X: draw %d, %u of %u vertices differ;"
+                        " vertex %u merged | alone:", n, m->f->va, k, d, m->nv[k], v0);
+                for (c = 0; c < NV2A_RAW_CHECK_FLOATS; c++)
+                    if (memcmp(&x[c], &y[c], 4))
+                        fprintf(stderr, " [%d] %.9g|%.9g", c, x[c], y[c]);
+                fprintf(stderr, "\n");
+#if !defined(VC3_GLES)
+                {   /* is the stream what was copied? */
+                    uint8_t got[32];
+                    GLsizeiptr at = s_va.base + (GLsizeiptr)m->bv[k] * m->stride;
+                    glBindBuffer(GL_ARRAY_BUFFER, s_vring.buf);
+                    glGetBufferSubData(GL_ARRAY_BUFFER, at, 32, got);
+                    fprintf(stderr, "[GLMERGE]   stream at %ld (base %ld, bv %d-%d, stride %u, ring at %ld):"
+                            " %s; sig0 %08X\n", (long)at, (long)s_va.base, m->bv[k], m->bv[0],
+                            m->stride, (long)s_vring.at,
+                            memcmp(got, m->dbg[k], 32) ? "DIFFERS from the copy" : "as copied",
+                            m->sig[0]);
+                }
+#endif
+            }
+            diff += d;
+            s_mgs.cmp_verts += m->nv[k];
+        }
+    }
+    cu1i(U->merge, 0);
+    s_mgs.cmp_runs++;
+    s_mgs.cmp_diff += diff;
+    /* drawn unmerged: each draw with its own matrices and indices */
+    for (k = 0; k < n; k++) {
+        GLsizeiptr io = ring_put(&s_iring, m->oidx + m->ooff[k], (GLsizeiptr)m->ocount[k] * 2);
+        if (io < 0)
+            continue;
+        cuMatrix4fv(U->comp, 1, GL_TRUE, m->mat[k][0]);
+        cuMatrix4fv(U->mv, 4, GL_TRUE, m->mat[k][1]);
+        cuMatrix4fv(U->proj, 1, GL_TRUE, m->mat[k][5]);
+        mg_gp_uniforms(k);
+        emit_eyes(m->f, NULL, 1, 0, m->imm3d, raw_mode(m->oprim[k]), (GLsizei)m->ocount[k],
+                  GL_UNSIGNED_SHORT, io, m->bv[k]);
+    }
+    U->ff_valid = 0;                        /* the uniforms hold the last draw's */
+}
+
+/* Draw the run, if there is one. Called before anything else touches GL. */
+static void mg_flush(void)
+{
+    MergeRun *m = &s_mg;
+    int n = m->n, k;
+    GLsizeiptr moff, ioff;
+    GLsizei span;
+    uint8_t *mp;
+
+    if (!n)
+        return;
+    m->n = 0;
+    if (U != m->prog) {                     /* cannot happen: nothing drew since */
+        U = m->prog;
+        glUseProgram(U->prog);
+        s_cur_prog = U->prog;
+    }
+    if (n == 1) {
+        s_mgs.singles++;
+        emit_eyes(m->f, NULL, 1, 0, m->imm3d, m->mode0, m->count0, GL_UNSIGNED_SHORT,
+                  m->ioff0, m->bv0);
+        if (m->f->st)
+            glViewport(0, 0, m->f->pw, m->f->ph);
+        return;
+    }
+    {   /* the staged vertices behind the first draw's, a whole number of
+         * strides from the stream's base */
+        GLsizeiptr off0, at, d;
+        GLint b1;
+        size_t i;
+        uint8_t *vp = (uint8_t *)ring_map(&s_vring, (GLsizeiptr)m->vstn + m->stride, &off0);
+        if (!vp)
+            return;
+        at = off0;
+        if (at < s_va.base) {               /* cannot happen: checked at each join */
+            ring_unmap(&s_vring);
+            fprintf(stderr, "[GLMERGE] run of %d dropped: the vertex ring went round\n", n);
+            return;
+        }
+        d = (at - s_va.base) % (GLsizeiptr)m->stride;
+        if (d)
+            at += (GLsizeiptr)m->stride - d;
+        memcpy(vp + (at - off0), m->vst, m->vstn);
+        ring_unmap(&s_vring);
+        b1 = (GLint)((at - s_va.base) / (GLsizeiptr)m->stride);
+        for (k = 1; k < n; k++)
+            m->bv[k] += b1;
+        for (i = m->iofs1; i < m->nidx; i++)
+            m->idx[i] += (uint32_t)(b1 - m->bv[0]);
+    }
+    span = (GLsizei)(m->bv[n - 1] - m->bv[0]) + (GLsizei)m->nv[n - 1];
+    mp = (uint8_t *)ring_map(&s_mring, MG_BLOCK, &moff);
+    if (!mp)
+        return;
+    for (k = 0; k < n; k++) {
+        memcpy(mp + k * 64, m->mat[k][0], 64);
+        memcpy(mp + MG_SLOTS * 64 + k * 4 * 64, m->mat[k][1], 4 * 64);
+        memcpy(mp + MG_SLOTS * 5 * 64 + k * 64, m->mat[k][5], 64);
+        memcpy(mp + MG_SLOTS * 6 * 64 + k * 16, m->gpw[k], 16);
+        memcpy(mp + MG_SLOTS * 6 * 64 + MG_SLOTS * 16 + k * 16, m->gpw[k] + 4, 16);
+    }
+    {   /* each slot's first vertex from the stream's base: gl_VertexID, the
+         * index plus the base vertex, the run's first */
+        int32_t *first = (int32_t *)(mp + MG_SLOTS * (6 * 64 + 32));
+        for (k = 0; k < MG_SLOTS; k++)
+            first[k] = k < n ? (int32_t)m->bv[k] : 0x7FFFFFFF;
+    }
+    ring_unmap(&s_mring);
+    glBindBufferRange(GL_UNIFORM_BUFFER, MG_BINDING, s_mring.buf, moff, MG_BLOCK);
+    /* The pointers stay where they are (s_va.base): the run is drawn from
+     * its first vertex as a base vertex. Moving them for a run made the
+     * Mac's driver build a pipeline state for nearly every run. */
+    gl_call_delay();                        /* the run's one draw */
+    if (s_mg_mode == 2) {
+        mg_compare_and_draw(span, n);
+    } else {
+        static uint16_t *i16;
+        static size_t i16cap;
+        size_t i;
+        if (!mg_room((void **)&i16, &i16cap, m->nidx, 2))
+            return;
+        for (i = 0; i < m->nidx; i++)
+            i16[i] = (uint16_t)m->idx[i];
+        if ((ioff = ring_put(&s_iring, i16, (GLsizeiptr)(m->nidx * 2))) >= 0) {
+            cu1i(U->merge, 1);
+            emit_eyes(m->f, NULL, 1, 0, m->imm3d, GL_TRIANGLES, (GLsizei)m->nidx,
+                      GL_UNSIGNED_SHORT, ioff, m->bv[0]);
+            cu1i(U->merge, 0);
+        }
+    }
+    if (m->f->st)
+        glViewport(0, 0, m->f->pw, m->f->ph);
+    s_mgs.runs++;
+    s_mgs.calls_saved += (uint32_t)(n - 1);
+    /* The uniforms hold the first draw's state, raw_uniforms' memory too;
+     * the projection (s_bgp) is the last's: have the next batch's
+     * recomputed rather than compared with the first's. */
+    U->ff_valid = 0;
+}
+
+/* Once a second, from the flip. */
+static void mg_report(void)
+{
+    static uint64_t last;
+    uint64_t now;
+    if (s_mg_mode <= 0)
+        return;
+    now = tm_now();
+    if (!last)
+        last = now;
+    if (now - last < 1000000000ull)
+        return;
+    last = now;
+    if (s_mg_why < 0)
+        s_mg_why = getenv("RECOMP_GL_MERGE_WHY") != NULL;
+    fprintf(stderr, "[GLMERGE] 1 s: %u fixed-function batches offered to a run, %u joined"
+            " (%u runs; %u runs of one), %u draw calls saved; not joined: surface %u, state %u,"
+            " textures %u, transform state %u, layout %u, projection %u, room %u, other %u",
+            s_mgs.offered, s_mgs.joined, s_mgs.runs, s_mgs.singles, s_mgs.calls_saved,
+            s_mgs.why[MW_SURF], s_mgs.why[MW_STATE], s_mgs.why[MW_TEX], s_mgs.why[MW_FF],
+            s_mgs.why[MW_LAYOUT], s_mgs.why[MW_PROJ], s_mgs.why[MW_ROOM], s_mgs.why[MW_OTHER]);
+    if (s_mg_mode == 2)
+        fprintf(stderr, "; compared %u runs, %u vertices, %u differ", s_mgs.cmp_runs,
+                s_mgs.cmp_verts, s_mgs.cmp_diff);
+    fprintf(stderr, "\n");
+    if (s_mg_why > 0) {
+        static const char *nm[4] = { "state", "combiners", "ff", "texture" };
+        int t, w;
+        for (t = 0; t < 4; t++) {
+            fprintf(stderr, "[GLMERGE]   %s words differing:", nm[t]);
+            for (w = 0; w < 512; w++)
+                if (s_mgw[t][w] * 50 > s_mgs.offered && s_mgw[t][w])
+                    fprintf(stderr, " %d:%u", w, s_mgw[t][w]);
+            fprintf(stderr, "\n");
+        }
+        memset(s_mgw, 0, sizeof s_mgw);
+    }
+    memset(&s_mgs, 0, sizeof s_mgs);
+}
+
 static void gl_draw_inner(const Nv2aSurface *s, const Nv2aBatch *b);
 
 static void gl_draw(const Nv2aSurface *s, const Nv2aBatch *b)
 {
     if (!gl_ready())
         return;
+    mg_flush();
     fx_pre(s, b);
-    gl_draw_inner(s, b);
+    if (s_fx.draw) {
+        uint64_t t0 = tm_now();
+        gl_draw_inner(s, b);
+        s_fx.t_draws += tm_now() - t0;
+    } else {
+        gl_draw_inner(s, b);
+    }
     fx_post();
 }
 
@@ -4588,6 +5941,7 @@ static void gl_draw_inner(const Nv2aSurface *s, const Nv2aBatch *b)
 
     if ((!raw && !b->count) || !gl_ready())
         return;
+    gl_call_delay();
     GLCK("before draw (elsewhere)", b, s->color_va);
     if (!(f = surf_bind(s)))
         return;
@@ -4610,6 +5964,21 @@ static void gl_draw_inner(const Nv2aSurface *s, const Nv2aBatch *b)
             na = rc ? &s_pcpu_rc_na : &s_pcpu_na;
         }
         U = !at && na->prog && !genv("GL_ATEST_ALL") ? na : a;
+        /* a combiner batch: its setup's own program (rc_spec), not the
+         * interpreter -- unless a stage is a cube map */
+        if (rc && b->rc && rc_spec_on()) {
+            int st, cube = 0;
+            for (st = 0; st < 4; st++)
+                if (b->stage[st] && b->stage[st]->cube)
+                    cube = 1;
+            if (!cube) {
+                int vp = raw && raw->kind == NV2A_RAW_PROGRAM;
+                Prog *sp = rc_spec(b, vp ? s_vp_cur->vs : raw ? s_vs_ff : s_vs_cpu, raw != NULL,
+                                   vp, U == na);
+                if (sp)
+                    U = sp;
+            }
+        }
     }
     memset(s_sbs, 0, sizeof s_sbs);
     {
@@ -4634,7 +6003,20 @@ static void gl_draw_inner(const Nv2aSurface *s, const Nv2aBatch *b)
     cu2f(U->surf, (float)f->w, (float)f->h);
     {
         float xs, xo;
-        surf_xform(f, b, &xs, &xo);
+        /* An immersive frame's 3D program batch is drawn through the eyes'
+         * matrices: the 16:9 placement is not its, and asking it for the
+         * batch's extent ran the program over every vertex on the CPU --
+         * VC3's E.S. meshes (first vertex behind the eye, so "screen
+         * space" to batch_extent), 60 us each, a quarter of a second a
+         * second on the Quest. It gets what a 3D batch gets.
+         * VC3_GL_IMM_XFORM_CPU=1: asked as before (the A/B). */
+        if (s_imm && f->st && raw && raw->kind == NV2A_RAW_PROGRAM && raw_vp_3d(raw)
+            && !(genv("GL_IMM_XFORM_CPU") && genv("GL_IMM_XFORM_CPU")[0] == '1')) {
+            xs = f->wide ? (float)f->cw / (float)f->pw : 1.0f;
+            xo = 0.0f;
+        } else {
+            surf_xform(f, b, &xs, &xo);
+        }
         cu2f(U->xs, xs, xo);
         if (s_ftr == 1 && f->wide)
             fprintf(stderr, "[GLTR]   16:9 x scale %.3f offset %+.3f\n", xs, xo);
@@ -4973,74 +6355,12 @@ static void gl_draw_inner(const Nv2aSurface *s, const Nv2aBatch *b)
             clear_flush(f, ~(GLbitfield)0);
             apply_state(b->state);
         }
-        /* Stereo in one pass: one instanced draw, instance = eye, each in its
-         * half of a double-wide viewport, the other half clipped -- one draw
-         * call and one set of uniforms for both eyes. VC3_STEREO_1PASS=0
-         * draws each eye on its own (as where clip distances are missing). */
-        static int one_pass = -1;
-        if (one_pass < 0)
-            one_pass = !(genv("STEREO_1PASS") && genv("STEREO_1PASS")[0] == '0');
-        if (f->st && !hud && one_pass && s_has_clip) {
-            GLfloat sb[8], e2[4];
-            GLenum cd = raw ? GL_CLIP_DISTANCE0 + 2 : GL_CLIP_DISTANCE0;
-            int k;
-            for (k = 0; k < 4; k++) {
-                sb[2 * k] = s_sbs[k];
-                sb[2 * k + 1] = 0.0f;
-            }
-            cu4fv(U->sbs, 2, sb);
-            e2[0] = s_imm ? 0.0f : 0.5f * s_st_sep;
-            e2[1] = s_st_depth;
-            e2[2] = s_imm ? 0.0f : -0.5f * s_st_sep;
-            e2[3] = s_st_depth;
-            cu2fv(U->eye2, 2, e2);
-            if (imm3d)
-                cuMatrix4fv(U->immvp2, 2, GL_FALSE, &s_view.vp[0][0]);
-            cu1i(U->st2, 1);
-            glViewport(0, 0, 2 * f->pw, f->ph);
-            (void)cd;
-            if (raw)
-                glDrawElementsInstancedBaseVertex(raw_mode(raw->prim),
-                                                  (GLsizei)raw->index_count, GL_UNSIGNED_SHORT,
-                                                  (void *)ioff, 2, s_basevertex);
-            else
-                glDrawArraysInstanced(GL_TRIANGLES, 0, (GLsizei)b->count, 2);
-            GLCK(raw ? "draw: one-pass stereo (raw)" : "draw: one-pass stereo (cpu)", b, f->va);
-            glViewport(0, 0, f->pw, f->ph);
-        }
-        /* Stereo: the same draw for each eye, in its half. */
-        int eye, eyes = f->st && !hud ? 2 : 1;
-        if (f->st && !hud && one_pass && s_has_clip)
-            eyes = 0;                       /* drawn above */
-        else
-            cu1i(U->st2, 0);
-        for (eye = 0; eye < eyes; eye++) {
-            GLfloat sb[8];
-            int k;
-            for (k = 0; k < 4; k++) {
-                sb[2 * k] = s_sbs[k];
-                sb[2 * k + 1] = 0.5f * (GLfloat)eye;
-            }
-            cu4fv(U->sbs, 2, sb);
-            if (hud) {
-                cu2f(U->eye, 0.0f, s_st_depth);
-            } else if (f->st) {
-                glViewport(eye * f->pw, 0, f->pw, f->ph);
-                if (imm3d)
-                    cuMatrix4fv(U->immvp, 1, GL_FALSE, s_view.vp[eye]);
-                cu2f(U->eye, s_imm ? 0.0f : eye ? -0.5f * s_st_sep : 0.5f * s_st_sep,
-                            s_st_depth);
-            } else {
-                cu2f(U->eye, 0.0f, s_st_depth);
-            }
-            if (raw)
-                glDrawElementsBaseVertex(raw_mode(raw->prim), (GLsizei)raw->index_count,
-                                         GL_UNSIGNED_SHORT, (void *)ioff, s_basevertex);
-            else
-                glDrawArrays(GL_TRIANGLES, 0, (GLsizei)b->count);
-            GLCK(hud ? (raw ? "draw: HUD picture (raw)" : "draw: HUD picture (cpu)")
-                 : raw ? "draw: draw (raw)" : "draw: draw (cpu)", b, f->va);
-        }
+        /* A fixed-function batch may instead begin a run that later ones
+         * with only other transforms join (RECOMP_GL_MERGE): drawn then. */
+        if (!(raw && rawff && !hud && mg_start(f, b, raw, imm3d, is3d, textured, ioff)))
+            emit_eyes(f, b, raw != NULL, hud, imm3d, raw ? raw_mode(raw->prim) : 0,
+                      raw ? (GLsizei)raw->index_count : 0, GL_UNSIGNED_SHORT, ioff,
+                      s_basevertex);
         if (hud)
             glBindFramebuffer(GL_FRAMEBUFFER, f->fbo);
         if (f->st)
@@ -5115,6 +6435,11 @@ static int gl_draw_raw(const Nv2aSurface *s, const Nv2aBatch *b)
 
     if (!g || g->index_count < 3 || !gl_ready())
         return 0;
+    if (s_mg.n) {                           /* a run: this joins it, or it is drawn */
+        if (mg_append(s, b))
+            return 1;
+        mg_flush();
+    }
     if (g->kind == NV2A_RAW_PROGRAM) {
         /* A screen-space batch (the CPU's first vertex at w = 1: HUD,
          * sprites, the full-screen copies) and one whose first vertex is
@@ -5559,7 +6884,7 @@ static void quad_into(GLuint fbo, GLsizei w, GLsizei h)
  *
  * So a run of such batches (blended that way, sampling another render
  * target, no depth or stencil writes, 3D, into a large stereo surface S,
- * after a frame that had at least FX_MIN of them) is drawn into
+ * after a frame that had enough of them) is drawn into
  * an effect target L of 1/scale the size each way instead: its depth is S's
  * scaled down (the meshes are depth-tested against the scene); its colour
  * starts as (0, 0, 0, 1) and each batch blends colour as it would over S
@@ -5570,18 +6895,22 @@ static void quad_into(GLuint fbo, GLsizei w, GLsizei h)
  * give, but with the contribution at the effect's resolution and the scene
  * itself kept native wherever the effect leaves it.
  *
- * VC3_GL_EFFECT_SCALE: 2 (default: half each way, a quarter of the pixels),
- * 3, 4, or 1 (off: every layer at full size). Only surfaces of FX_PX
- * pixels an eye and up (native immersive), never at 2x. */
-#define FX_MIN 8                   /* qualifying batches in the frame before */
-#define FX_PX 2000000L             /* an eye's pixels for the effect target */
+ * The scale, the run's minimum length and the surfaces' minimum size are
+ * the game's (ChihiroProfile gpu.effect_*: VC3 asks a quarter each way
+ * after 8 layers on 2 Mpx an eye; the defaults are a half, 8, 2 Mpx), the
+ * scale VC3_GL_EFFECT_SCALE's to override (1: off, every layer at full
+ * size). The detection is the batches' own -- blend, depth and stencil
+ * writes, what they sample -- not any game's addresses. */
+static int s_fx_min = 8;           /* qualifying batches in the frame before (profile) */
+static long s_fx_px = 2000000L;    /* an eye's pixels for the effect target (profile) */
+static int s_fx_scale_def = 2;     /* the profile's effect scale */
 
 static int fx_scale(void)
 {
     static int sc = -1;
     if (sc < 0) {
         const char *e = genv("GL_EFFECT_SCALE");
-        sc = e ? atoi(e) : 2;
+        sc = e ? atoi(e) : s_fx_scale_def;
         if (sc < 1 || sc > 8)
             sc = 1;
     }
@@ -5612,6 +6941,7 @@ static int fx_qualifies(const Surf *f, const Nv2aBatch *b)
 
 static void fx_begin(Surf *f)
 {
+    uint64_t t0 = tm_now();
     int sc = fx_scale();
     GLsizei w = (f->pw + sc - 1) / sc, h = (f->ph + sc - 1) / sc;
     static int logged;
@@ -5659,6 +6989,8 @@ static void fx_begin(Surf *f)
     s_fx.on = 1;
     s_fx.s = f;
     s_fx.runs++;
+    s_fx.last_frame = s_frame;
+    s_fx.t_begin += tm_now() - t0;
     GLCK("effect target: begin", NULL, f->va);
 }
 
@@ -5671,9 +7003,18 @@ static GLuint fx_small(const Surf *rt)
     int sc = fx_scale();
     GLsizei w = (rt->pw * (rt->st ? 2 : 1) + sc - 1) / sc, h = (rt->ph + sc - 1) / sc;
     GLint rd = 0, dr = 0, tex = 0;
+    uint64_t t0;
+    if (rt->fxlow)                      /* drawn at the effect scale already */
+        return rt->color;
     if (s_fx.small_run == s_fx.runs && s_fx.small_va == rt->va && s_fx.small_tex)
         return s_fx.small_tex;
+    t0 = tm_now();
     glGetIntegerv(GL_TEXTURE_BINDING_2D, &tex);
+    /* Allocation also binds GL_FRAMEBUFFER (both read and draw). Save
+     * before it so the first reduction/resize restores the effect target,
+     * rather than drawing into the texture the effect is sampling. */
+    glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &rd);
+    glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &dr);
     if (!s_fx.small_tex || s_fx.small_w != w || s_fx.small_h != h) {
         if (!s_fx.small_tex) {
             glGenTextures(1, &s_fx.small_tex);
@@ -5689,8 +7030,6 @@ static GLuint fx_small(const Surf *rt)
         s_fx.small_w = w;
         s_fx.small_h = h;
     }
-    glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &rd);
-    glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &dr);
     glBindFramebuffer(GL_READ_FRAMEBUFFER, rt->fbo);
     glBindFramebuffer(GL_DRAW_FRAMEBUFFER, s_fx.small_fbo);
     glDisable(GL_SCISSOR_TEST);
@@ -5701,6 +7040,7 @@ static GLuint fx_small(const Surf *rt)
     glBindTexture(GL_TEXTURE_2D, (GLuint)tex);
     s_fx.small_run = s_fx.runs;
     s_fx.small_va = rt->va;
+    s_fx.t_small += tm_now() - t0;
     return s_fx.small_tex;
 }
 
@@ -5710,6 +7050,7 @@ static void fx_resolve(void)
     static GLuint prog, vao;
     static GLint u_img, u_org, u_size;
     Surf *f = s_fx.s;
+    uint64_t t0 = tm_now();
 
     s_fx.on = 0;
     if (!f || !f->fbo)
@@ -5747,6 +7088,7 @@ static void fx_resolve(void)
     glViewport(0, 0, f->pw, f->ph);
     s_rs_valid = 0;
     f->dirty = 1;
+    s_fx.t_resolve += tm_now() - t0;
     GLCK("effect target: resolve", NULL, f->va);
 }
 
@@ -5763,7 +7105,8 @@ static void fx_pre(const Nv2aSurface *s, const Nv2aBatch *b)
     if (!q)
         return;
     s_fx.n_this++;
-    if (!s_fx.on && s_fx.n_prev >= FX_MIN && fx_scale() > 1 && (long)f->pw * f->ph >= FX_PX)
+    if (!s_fx.on && s_fx.n_prev >= (uint32_t)s_fx_min && fx_scale() > 1
+        && (long)f->pw * f->ph >= s_fx_px)
         fx_begin(f);
     if (s_fx.on) {
         s_fx.draw = 1;
@@ -6228,15 +7571,68 @@ static void scale_pick(int on)
     s_sx = s_sy = (float)vc3_scale_get();
 }
 
+/* The effect target's source at the effect scale (fx_low). VC3 copies its
+ * scene into 80C28000 three times an E.S. frame, full-screen, and in E.S.
+ * nothing samples 80C28000 but the effect-target run -- which wants it
+ * reduced (fx_small). So a stereo render target that, two frames in a row,
+ * only effect-target runs sampled is drawn at the effect scale itself: what
+ * goes into it (the copies) at a sixteenth of the pixels at 1/4, and no
+ * reduction. The first frame anything else samples it, it goes back to
+ * full size (that sampler reads the reduced picture, the right picture,
+ * once). VC3_GL_FX_LOW=0: never. */
+static void fx_low_frame(void)
+{
+    static int on = -1;
+    int i;
+    if (on < 0)
+        on = !(genv("GL_FX_LOW") && genv("GL_FX_LOW")[0] == '0');
+    for (i = 0; i < s_nsurfs; i++) {
+        Surf *f = &s_surfs[i];
+        int only_fx = on && f->st && fx_scale() > 1 && f->fx_samp == s_frame
+                      && f->other_samp != s_frame;
+        f->fxlow_run = only_fx ? f->fxlow_run + 1 : 0;
+        if (!f->fxlow && f->fxlow_run >= 2) {
+            f->fxlow = 1;
+            if (genv("GL_EFFECT_LOG"))
+                fprintf(stderr, "[FX] %08X drawn at 1/%d: only the effect target samples it\n",
+                        f->va, fx_scale());
+        } else if (f->fxlow && f->other_samp == s_frame) {
+            f->fxlow = 0;
+            if (genv("GL_EFFECT_LOG"))
+                fprintf(stderr, "[FX] %08X back to full size\n", f->va);
+        }
+    }
+}
+
 static void gl_flip(void)
 {
+    mg_flush();
+    mg_report();
     if (s_fx.on)                    /* the effect target's run ends with the frame */
         fx_resolve();
-    if (genv("GL_EFFECT_LOG") && s_fx.n_this)   /* VC3_GL_EFFECT_LOG=1 */
-        fprintf(stderr, "[FX] frame %u: %u qualifying batches, %u runs so far\n", s_frame,
-                s_fx.n_this, s_fx.runs);
+    if (genv("GL_EFFECT_LOG")) {                 /* VC3_GL_EFFECT_LOG=1 */
+        static uint32_t fr0, n, runs0;
+        n += s_fx.n_this;
+        /* =2: every frame with qualifying batches -- how many, in how many
+         * runs (one when the stack is whole) */
+        if (genv("GL_EFFECT_LOG")[0] == '2' && (s_fx.n_this || s_fx.n_prev))
+            fprintf(stderr, "[FXF] frame %u: %u qualifying, %u runs\n", s_frame, s_fx.n_this,
+                    s_fx.runs - runs0);
+        runs0 = s_fx.runs;
+        if (s_frame - fr0 >= 60) {
+            if (n)
+                fprintf(stderr, "[FX] %u frames: %u qualifying batches, %u runs so far; CPU ms:"
+                        " begin %.1f, reduce %.1f, draws %.1f, resolve %.1f\n", s_frame - fr0, n,
+                        s_fx.runs, s_fx.t_begin / 1e6, s_fx.t_small / 1e6, s_fx.t_draws / 1e6,
+                        s_fx.t_resolve / 1e6);
+            fr0 = s_frame;
+            n = 0;
+            s_fx.t_begin = s_fx.t_small = s_fx.t_draws = s_fx.t_resolve = 0;
+        }
+    }
     s_fx.n_prev = s_fx.n_this;
     s_fx.n_this = 0;
+    fx_low_frame();
     int i;
 
     if (gl_ready()) {
@@ -6255,6 +7651,12 @@ static void gl_flip(void)
             fprintf(stderr, "[GLTIME] state %.0f ms | tex0 %.0f | rc+lmap %.0f | upload+attribs %.0f"
                     " | draw %.0f ms\n", s_tm_ns[0] / 1e6, s_tm_ns[1] / 1e6, s_tm_ns[2] / 1e6,
                     s_tm_ns[3] / 1e6, s_tm_ns[4] / 1e6);
+            fprintf(stderr, "[GLRING] waits vertex %u/%.1fms index %u/%.1fms constants %u/%.1fms\n",
+                    s_ring_wait_by_target[0], s_ring_ns_by_target[0] / 1e6,
+                    s_ring_wait_by_target[1], s_ring_ns_by_target[1] / 1e6,
+                    s_ring_wait_by_target[2], s_ring_ns_by_target[2] / 1e6);
+            memset(s_ring_wait_by_target, 0, sizeof s_ring_wait_by_target);
+            memset(s_ring_ns_by_target, 0, sizeof s_ring_ns_by_target);
             memset(s_tm_ns, 0, sizeof s_tm_ns);
             t0 = n;
         }
@@ -6565,6 +7967,12 @@ void vc3_gl_backend_register(void)
         if (gp->gpu.picture_min_w > 0)
             s_pic_min_w = gp->gpu.picture_min_w;
         s_lazy_rt = gp->gpu.lazy_rt >= 0;
+        if (gp->gpu.effect_scale > 0)
+            s_fx_scale_def = gp->gpu.effect_scale;
+        if (gp->gpu.effect_min_layers > 0)
+            s_fx_min = gp->gpu.effect_min_layers;
+        if (gp->gpu.effect_min_px > 0)
+            s_fx_px = gp->gpu.effect_min_px;
         if (gp->gpu.stereo_depth > 0.0f)
             s_st_depth = gp->gpu.stereo_depth;
         if (gp->gpu.stereo_sep > 0.0f)
