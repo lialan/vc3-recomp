@@ -1,0 +1,9 @@
+# Detailed instrumentation control
+
+Same executable /tmp/vc3-pipeline-lookup-vc3, same seed copied from /tmp/vc3-pipeline-lookup.cache to independent cache files, sequential2100-frame runs, both exit0. Detailed: PROFILE/FRAME_COSTS/GPU_TIMESTAMPS/THREAD_LOG=1. Intervals: all four=0, FRAME_PROFILE=1 in both. Other input/timing/render settings unchanged. No headset. Binary includes unrelated existing host_input.c modifications. No capture or XR display timing.
+
+Combat/activation/held windows detailed FPS59.94,60.00,59.92,60.04,59.99; interval-only60.01,59.98,60.00,59.90,60.08. Detailedp9520.73,21.73,22.12,21.79,21.89ms; interval-only21.21,20.34,22.05,21.60,21.65ms. Both target-scene sets have zero >33ms frames. Per-frame scope log lines2099->0. Detailed instrumentation is not the primary explanation for remaining20–22ms tails. Onepair does not isolate individual profiler costs or prove an improvement.
+
+Runner provenance fix: process previously inherited all ambient environment but report listed only enumerated options. Now report records effective CHIHIRO_/VC3_/RECOMP_/VK_ settings from the exact child environment. Child settings unchanged. Python syntax validated, second real run completed using changed runner. First run had already launched with prior runner, but orchestration explicitly sanitized runtime variables and supplied the documented options.
+
+Next evidence target: shared POSIX WaitForMultipleObjectsEx polls usleep(1000); existing validation/direct-vulkan-cpu-profile/sample.txt lines3949-3980 show a VC3 worker in this path. Sleeping stack occupancy is not CPU utilization or proof of critical-path delay. Measure actual poll counts/CPU before adding notification machinery. No runtime optimization retained from this diagnostic turn; production renderer remains a3d870b. Goal active.

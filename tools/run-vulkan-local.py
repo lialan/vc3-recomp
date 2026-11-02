@@ -56,8 +56,14 @@ def main():
                 "CHIHIRO_VULKAN_GPU_RENDER_TEXTURES", "VC3_VULKAN_GPU_RENDER_TEXTURES"):
         if key in os.environ:
             env[key] = os.environ[key]
+    # The child also inherits environment options not in the explicit list
+    # above. Record their effective values so diagnostic/performance toggles
+    # cannot silently disappear from the benchmark provenance.
+    run_env = {**os.environ, **env}
+    recorded_env = {key: value for key, value in run_env.items()
+                    if key.startswith(("CHIHIRO_", "VC3_", "RECOMP_", "VK_"))}
     report = dict(binary=str(executable), binary_sha256=hashlib.sha256(executable.read_bytes()).hexdigest(),
-                  game=str(game), environment=env, requested_frames=args.frames,
+                  game=str(game), environment=recorded_env, requested_frames=args.frames,
                   scope="Local VC3 guest execution; no Quest or VR acceptance")
     if sys.platform == "darwin":
         libraries = subprocess.check_output(["otool", "-L", str(executable)], text=True)
@@ -71,7 +77,7 @@ def main():
             raise SystemExit("FAIL: executable still imports OpenGL: " + repr(bad))
     with (output / "game.log").open("w") as log:
         try:
-            process = subprocess.run([str(executable), str(game)], env={**os.environ, **env},
+            process = subprocess.run([str(executable), str(game)], env=run_env,
                                      stdout=log, stderr=subprocess.STDOUT, timeout=args.timeout)
             report["exit_code"] = process.returncode
         except subprocess.TimeoutExpired:
