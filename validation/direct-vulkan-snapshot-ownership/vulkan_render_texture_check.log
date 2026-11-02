@@ -1,0 +1,97 @@
+[Vulkan texture miss] 1x1 format=12 target=0 reuse=0 room_ms=0.000 snapshot_ms=0.001 upload_ms=2.529 watch_ms=0.001
+[Vulkan texture miss] 1x1 format=12 target=0 reuse=0 room_ms=0.000 snapshot_ms=0.000 upload_ms=1.989 watch_ms=0.000
+[Vulkan texture miss] 1x1 format=12 target=0 reuse=0 room_ms=0.000 snapshot_ms=0.000 upload_ms=1.896 watch_ms=0.000
+[Vulkan color transfer] 4x4 bpp=4 Morton=0 GPU conversion=1
+[Vulkan color transfer] 4x4 bpp=4 Morton=0 GPU conversion=1
+[Vulkan pipeline cache] saved_bytes=60836
+[Vulkan color transfer] 4x4 bpp=4 Morton=0 GPU conversion=1
+[Vulkan color transfer] 4x4 bpp=4 Morton=0 GPU conversion=1
+[Vulkan color transfer] 4x4 bpp=4 Morton=0 GPU conversion=0
+[Vulkan color transfer] 4x4 bpp=4 Morton=0 GPU conversion=0
+[Vulkan color transfer] 4x4 bpp=4 Morton=0 GPU conversion=1
+[Vulkan color transfer] 4x4 bpp=4 Morton=0 GPU conversion=1
+[Vulkan color transfer] 4x4 bpp=4 Morton=0 GPU conversion=0
+[Vulkan color transfer] 4x4 bpp=4 Morton=0 GPU conversion=0
+[Vulkan color transfer] 4x4 bpp=4 Morton=0 GPU conversion=1
+[Vulkan color transfer] 4x4 bpp=4 Morton=0 GPU conversion=1
+[Vulkan color transfer] 4x4 bpp=4 Morton=0 GPU conversion=0
+[Vulkan color transfer] 4x4 bpp=4 Morton=0 GPU conversion=0
+[Vulkan color transfer] 4x4 bpp=4 Morton=0 GPU conversion=1
+[Vulkan color transfer] 4x4 bpp=4 Morton=0 GPU conversion=1
+[Vulkan slow draw] geometry_ms=0.000 textures_ms=0.608 raster_ms=0.394
+[Vulkan color transfer] 4x4 bpp=4 Morton=0 GPU conversion=0
+[Vulkan color transfer] 4x4 bpp=4 Morton=0 GPU conversion=0
+[Vulkan color transfer] 4x4 bpp=4 Morton=0 GPU conversion=1
+[Vulkan color transfer] 4x4 bpp=4 Morton=0 GPU conversion=1
+[Vulkan color transfer] 4x4 bpp=4 Morton=0 GPU conversion=0
+[Vulkan color transfer] 4x4 bpp=4 Morton=0 GPU conversion=0
+[Vulkan color transfer] 4x4 bpp=4 Morton=0 GPU conversion=1
+[Vulkan color transfer] 4x4 bpp=4 Morton=0 GPU conversion=1
+[Vulkan color transfer] 4x4 bpp=4 Morton=1 GPU conversion=0
+[Vulkan color transfer] 4x4 bpp=4 Morton=0 GPU conversion=0
+[Vulkan color transfer] 4x4 bpp=4 Morton=1 GPU conversion=2
+[Vulkan color transfer] 4x4 bpp=4 Morton=0 GPU conversion=1
+[Vulkan color transfer] 4x4 bpp=4 Morton=1 GPU conversion=0
+[Vulkan color transfer] 4x4 bpp=4 Morton=0 GPU conversion=0
+[Vulkan color transfer] 4x4 bpp=4 Morton=1 GPU conversion=0
+[Vulkan color transfer] 4x4 bpp=4 Morton=0 GPU conversion=1
+[Vulkan color transfer] 4x4 bpp=4 Morton=0 GPU conversion=0
+[Vulkan color transfer] 4x4 bpp=4 Morton=0 GPU conversion=0
+[Vulkan color transfer] 4x4 bpp=4 Morton=0 GPU conversion=1
+[Vulkan color transfer] 4x4 bpp=4 Morton=0 GPU conversion=1
+[Vulkan color transfer] 4x4 bpp=4 Morton=0 GPU conversion=0
+[Vulkan color transfer] 4x4 bpp=4 Morton=0 GPU conversion=0
+[Vulkan color transfer] 4x4 bpp=4 Morton=0 GPU conversion=1
+[Vulkan color transfer] 4x4 bpp=4 Morton=0 GPU conversion=1
+[Vulkan color transfer] 4x4 bpp=4 Morton=0 GPU conversion=0
+[Vulkan color transfer] 4x4 bpp=4 Morton=0 GPU conversion=0
+[Vulkan] resizing surface 00000100: 4x4 pitch=24 bpp=4 -> 2x2 pitch=24 bpp=4
+[Vulkan color transfer] 2x2 bpp=4 Morton=0 GPU conversion=0
+[Vulkan color transfer] 4x4 bpp=4 Morton=0 GPU conversion=1
+[Vulkan color transfer] 4x4 bpp=4 Morton=0 GPU conversion=1
+[Vulkan] resizing surface 00000100: 4x4 pitch=24 bpp=4 -> 2x2 pitch=24 bpp=4
+[Vulkan color transfer] 2x2 bpp=4 Morton=0 GPU conversion=1
+[Vulkan color transfer] 4x4 bpp=4 Morton=0 GPU conversion=0
+[Vulkan color transfer] 4x4 bpp=4 Morton=0 GPU conversion=0
+[Vulkan color transfer] 4x4 bpp=4 Morton=0 GPU conversion=1
+[Vulkan color transfer] 4x4 bpp=4 Morton=0 GPU conversion=1
+[Vulkan color transfer] 4x4 bpp=4 Morton=0 GPU conversion=1
+[Vulkan color transfer] 4x4 bpp=4 Morton=0 GPU conversion=1
+[Vulkan color transfer] 4x4 bpp=4 Morton=0 GPU conversion=0
+[Vulkan color transfer] 4x4 bpp=4 Morton=0 GPU conversion=0
+[Vulkan color transfer] 4x4 bpp=4 Morton=0 GPU conversion=1
+[Vulkan color transfer] 4x4 bpp=4 Morton=0 GPU conversion=1
+[Vulkan slow draw] geometry_ms=0.001 textures_ms=0.239 raster_ms=0.864
+[Vulkan color transfer] 4x4 bpp=4 Morton=0 GPU conversion=1
+[Vulkan color transfer] 4x4 bpp=4 Morton=0 GPU conversion=1
+[Vulkan color transfer] 4x4 bpp=4 Morton=0 GPU conversion=0
+[Vulkan color transfer] 4x4 bpp=4 Morton=0 GPU conversion=0
+[Vulkan] resizing surface 00000100: 4x4 pitch=24 bpp=4 -> 2x2 pitch=24 bpp=4
+[Vulkan color transfer] 2x2 bpp=4 Morton=0 GPU conversion=0
+[Vulkan color transfer] 4x4 bpp=4 Morton=0 GPU conversion=1
+[Vulkan color transfer] 4x4 bpp=4 Morton=0 GPU conversion=1
+[Vulkan] resizing surface 00000100: 4x4 pitch=24 bpp=4 -> 2x2 pitch=24 bpp=4
+[Vulkan color transfer] 2x2 bpp=4 Morton=0 GPU conversion=1
+[Vulkan color transfer] 4x4 bpp=4 Morton=0 GPU conversion=1
+[Vulkan color transfer] 4x4 bpp=4 Morton=0 GPU conversion=1
+[Vulkan] resizing surface 00000100: 4x4 pitch=24 bpp=4 -> 2x2 pitch=24 bpp=4
+[Vulkan color transfer] 2x2 bpp=4 Morton=0 GPU conversion=1
+[Vulkan color transfer] 4x4 bpp=4 Morton=0 GPU conversion=0
+[Vulkan color transfer] 4x4 bpp=4 Morton=0 GPU conversion=0
+[Vulkan color transfer] 4x4 bpp=4 Morton=0 GPU conversion=1
+[Vulkan color transfer] 4x4 bpp=4 Morton=0 GPU conversion=1
+[Vulkan color transfer] 4x4 bpp=4 Morton=0 GPU conversion=1
+[Vulkan color transfer] 4x4 bpp=4 Morton=0 GPU conversion=1
+[Vulkan color transfer] 4x4 bpp=4 Morton=0 GPU conversion=0
+[Vulkan color transfer] 4x4 bpp=4 Morton=0 GPU conversion=0
+[Vulkan color transfer] 4x4 bpp=4 Morton=0 GPU conversion=1
+[Vulkan color transfer] 4x4 bpp=4 Morton=0 GPU conversion=1
+[Vulkan slow draw] geometry_ms=0.001 textures_ms=0.359 raster_ms=0.882
+[Vulkan color transfer] 4x4 bpp=4 Morton=0 GPU conversion=1
+[Vulkan color transfer] 4x4 bpp=4 Morton=0 GPU conversion=1
+device=Apple M4 Pro vendor=106b deviceID=0064 api=1.4.354
+PASS: texture write tracking, aliases, palettes, pinned snapshots, repeated mismatch, restored bytes, active write leases and invalidation fallback
+PASS: amortized byte-budget eviction selects one fitting cold image, retains tiny snapshots, preserves frame grace and LRU control
+PASS: borrowed pipeline cache survives backend destruction; persisted cache preserves exact guest memory; corrupt/truncated/oversized/incompatible data falls back to empty cache
+PASS: exact GPU snapshots preserve all UNORM bytes/mips/orientation; version and sampler keys, pin-budget rejection, source destruction before pending sampling and shared bounded cache lifetime
+PASS: strict-vs-GPU render-target sampling preserves exact guest memory for pitched/Morton targets, CPU edits, self sampling, resize, sampler changes, format/subview rejection and budget/pin fallback; eligible cases avoid CPU decoding

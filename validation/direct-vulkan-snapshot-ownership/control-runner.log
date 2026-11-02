@@ -1,0 +1,31 @@
+[Vulkan frame costs] frame=2099 interval_ms=14.470 draw_ms=2.341 clear_ms=0.271 flip_flush_ms=0.001 cache_trim_ms=0.000 completion_ms=4.515 prepare_ms=0.173 other_ms=7.169 pipeline_ms=0.000 batch_wait_ms=3.528 batch_gpu_ms=2.387 depth_upload_wait_ms=0.000 gpu_timing=1 surface_ms=0.004 coherence_ms=0.144 imports_ms=1.454 raster_ms=0.703 store_ms=0.036 texture_uploads=2 draw_cpu_ms=1.327 clear_cpu_ms=0.272 flip_cpu_ms=0.000 cache_trim_cpu_ms=0.000 completion_cpu_ms=1.904 prepare_cpu_ms=0.171 completion_calls=7 thread_cpu_timing=1
+[Vulkan write tracking] ranges=9393 checks=1540730 unchanged=1499726 faults=4777 protection calls=140348
+[Vulkan frame costs] frame=2100 interval_ms=19.562 draw_ms=4.949 clear_ms=0.733 flip_flush_ms=0.000 cache_trim_ms=0.090 completion_ms=4.498 prepare_ms=0.173 other_ms=9.119 pipeline_ms=0.000 batch_wait_ms=4.184 batch_gpu_ms=3.022 depth_upload_wait_ms=0.000 gpu_timing=1 surface_ms=0.640 coherence_ms=0.452 imports_ms=2.421 raster_ms=1.400 store_ms=0.036 texture_uploads=3 draw_cpu_ms=2.287 clear_cpu_ms=0.414 flip_cpu_ms=0.000 cache_trim_cpu_ms=0.090 completion_cpu_ms=1.940 prepare_cpu_ms=0.177 completion_calls=6 thread_cpu_timing=1
+[Vulkan raw vertices] GPU fixed batches=294873 program batches=136396 program vertices=9765981 CPU declined batches=0
+[Vulkan raw snapshots] compact_batches=431269 snapshot_bytes=1083094136 expanded_bytes=6338875264
+[Vulkan command batches] live targets: draws=431269 submissions=23305 combined_depth_reads=8725 combined_color_reads=17456 queued_depth_uploads=2159 queued_color_reads=4716
+[Vulkan depth roundtrips] batched live targets NEVER/LESS/EQUAL/LEQUAL/GREATER/NOTEQUAL/GEQUAL/ALWAYS: 0 0 0 0 0 0 0 0
+[Vulkan depth residency] binds=435811 imports=2159 writebacks=11436 CPU merges=0 GPU copies=2096 clear skips=10479 clean reuses=0 queued readbacks=9624
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan depth switches] same-image disjoint/overlap=2093/136 different-image disjoint/overlap=0/0 dirty=529/68/0/0
+[Vulkan texture cache] hits=627927 uploads=2950 evictions=839 live=48.6MiB entries=243/2048 GPU copies/hits/reuses=1662/24079/1439
+[Vulkan texture lookup] hint_hits=577946 scanned_entries=7397851
+[Vulkan texture comparisons] checks=9213 logical_bytes=10209319104 changed=3716 tracked=601301 reused=2091 GPU decoded=2924 CPU decoded pixels=1030144
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=1030144 texture_ms=6.661 color_pixels=0 color_ms=0.000 (cumulative)
+[Vulkan] completed frame 2100: 640x480, guest=80534000
+[Vulkan] diagnostic frame limit reached: 2100
+  [KERNEL] summary: 736198 total calls, latest ordinal 119 (slot 80) esp=0x007BFFCC
+  [KERNEL]   ordinal 294 x280085
+  [KERNEL]   ordinal 277 x280031
+  [KERNEL]   ordinal 128 x49984
+  [KERNEL]   ordinal 291 x17203
+  [KERNEL]   ordinal 250 x12042
+  [KERNEL]   ordinal 246 x12009
+  [READ] from=0x00101A7D ev=4800000D apc=00000000 @800768 want=2048 got=2048 st=0x00000000  0E 3F 01 1E
+  [READ] from=0x00101A7D ev=4800000D apc=00000000 @802816 want=16384 got=16384 st=0x00000000  E3 FF 16 CE
+[Vulkan pipeline cache] saved_bytes=73724540
+[Vulkan pipeline cache] save=ok
+  [FILE] summary: 1 game file missing, 0 not found under absent directories, 1 failed open
+Execution passed=True; evidence=/private/tmp/vc3-snapshot-ownership-control

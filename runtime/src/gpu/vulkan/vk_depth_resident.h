@@ -7,7 +7,7 @@ typedef struct {uint64_t imports,writebacks,cpu_merges,binds,gpu_copies,clear_sk
     /* Index: bit1 different target image, bit0 overlapping guest storage. */
     uint64_t switches[4],dirty_switches[4];
     /* Guest transfer work only; row memcpy and CPU edit comparisons excluded. */
-    uint64_t cpu_layout_pixels,cpu_float_pixels,queued_readbacks;} ChVkDepthResidentStats;
+    uint64_t cpu_layout_pixels,cpu_float_pixels,queued_readbacks,snapshot_copy_bytes_saved;} ChVkDepthResidentStats;
 VkResult ch_vk_depth_resident_create(void *guest,size_t bytes,ChVkDepthResident **);
 /* Set before binding a target. Host keeps tracker and hooks alive. */
 void ch_vk_depth_resident_write_watch(ChVkDepthResident *,ChGuestWriteWatch *);

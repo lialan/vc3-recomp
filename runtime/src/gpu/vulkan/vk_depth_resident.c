@@ -128,7 +128,13 @@ static VkResult publish_depth(DepthImage *d,VkResult r) {
         uint64_t pixels=(uint64_t)d->surface.width*d->surface.height;
         if(d->layout.swizzled && !d->morton) d->stats.cpu_layout_pixels+=pixels;
         if(!d->packed) d->stats.cpu_float_pixels+=pixels;
-        memcpy(d->raw,storage(d),(size_t)d->layout.span);
+        if(d->packed && d->layout.span==pixels*4 && (d->morton ||
+           (!d->layout.swizzled && d->layout.pitch==(uint64_t)d->surface.width*4))) {
+            /* The packed readback already is the exact guest baseline. Its
+             * request is retired; keep it and recycle the previous baseline. */
+            uint8_t *scratch=d->raw;d->raw=(uint8_t *)d->words;d->words=(uint32_t *)scratch;
+            d->stats.snapshot_copy_bytes_saved+=d->layout.span;
+        } else memcpy(d->raw,storage(d),(size_t)d->layout.span);
     }
     ch_guest_write_watch_end(d->watch,storage(d),(size_t)d->layout.span);
     if(r!=VK_SUCCESS) return r;
@@ -458,7 +464,7 @@ void ch_vk_depth_resident_stats(const ChVkDepthResident *d,ChVkDepthResidentStat
     for(unsigned i=0;i<4;i++) if(d->image[i]) {
         ChVkDepthResidentStats s;single_stats(d->image[i],&s);
 #define SUM(field) out->field+=s.field
-        SUM(imports);SUM(writebacks);SUM(cpu_merges);SUM(binds);SUM(gpu_copies);SUM(clear_skips);SUM(clean_reuses);SUM(cpu_layout_pixels);SUM(cpu_float_pixels);SUM(queued_readbacks);
+        SUM(imports);SUM(writebacks);SUM(cpu_merges);SUM(binds);SUM(gpu_copies);SUM(clear_skips);SUM(clean_reuses);SUM(cpu_layout_pixels);SUM(cpu_float_pixels);SUM(queued_readbacks);SUM(snapshot_copy_bytes_saved);
 #undef SUM
         for(unsigned j=0;j<4;j++){out->switches[j]+=s.switches[j];out->dirty_switches[j]+=s.dirty_switches[j];}
     }

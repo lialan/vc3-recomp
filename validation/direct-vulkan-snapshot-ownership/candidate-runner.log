@@ -1,0 +1,31 @@
+[Vulkan GPU] 256x256 8 synchronous submissions (excludes command batches): GPU 0.00ms host record/submit/wait 5.33ms
+[Vulkan resources] 256x256: pipelines builds=2 hits=259 evictions=0 geometry allocations=1 capacity=4096KiB alpha-free builds/hits=0/0 specialized builds/hits=2/259 pipeline create total/max=2.15/1.13ms
+[Vulkan frame costs] frame=2094 interval_ms=16.747 draw_ms=4.637 clear_ms=0.645 flip_flush_ms=0.000 cache_trim_ms=0.082 completion_ms=3.315 prepare_ms=0.164 other_ms=7.904 pipeline_ms=0.000 batch_wait_ms=3.738 batch_gpu_ms=2.536 depth_upload_wait_ms=0.000 gpu_timing=1 surface_ms=0.732 coherence_ms=0.433 imports_ms=2.233 raster_ms=1.201 store_ms=0.038 texture_uploads=2 draw_cpu_ms=1.959 clear_cpu_ms=0.383 flip_cpu_ms=0.000 cache_trim_cpu_ms=0.081 completion_cpu_ms=1.116 prepare_cpu_ms=0.168 completion_calls=5 thread_cpu_timing=1
+[Vulkan frame costs] frame=2095 interval_ms=16.495 draw_ms=2.698 clear_ms=0.298 flip_flush_ms=0.001 cache_trim_ms=0.000 completion_ms=5.750 prepare_ms=0.179 other_ms=7.569 pipeline_ms=0.000 batch_wait_ms=5.361 batch_gpu_ms=4.061 depth_upload_wait_ms=0.000 gpu_timing=1 surface_ms=0.009 coherence_ms=0.146 imports_ms=1.781 raster_ms=0.726 store_ms=0.036 texture_uploads=2 draw_cpu_ms=1.306 clear_cpu_ms=0.299 flip_cpu_ms=0.000 cache_trim_cpu_ms=0.000 completion_cpu_ms=1.627 prepare_cpu_ms=0.176 completion_calls=6 thread_cpu_timing=1
+[Vulkan frame costs] frame=2096 interval_ms=16.764 draw_ms=4.106 clear_ms=0.657 flip_flush_ms=0.000 cache_trim_ms=0.091 completion_ms=3.992 prepare_ms=0.183 other_ms=7.735 pipeline_ms=0.000 batch_wait_ms=3.721 batch_gpu_ms=2.438 depth_upload_wait_ms=0.000 gpu_timing=1 surface_ms=0.703 coherence_ms=0.429 imports_ms=1.751 raster_ms=1.188 store_ms=0.035 texture_uploads=2 draw_cpu_ms=1.970 clear_cpu_ms=0.415 flip_cpu_ms=0.000 cache_trim_cpu_ms=0.092 completion_cpu_ms=1.493 prepare_cpu_ms=0.189 completion_calls=6 thread_cpu_timing=1
+  [READ] from=0x00101A7D ev=4800000D apc=00000000 @802816 want=16384 got=16384 st=0x00000000  E3 FF 16 CE
+[Vulkan frame costs] frame=2097 interval_ms=16.918 draw_ms=3.632 clear_ms=0.334 flip_flush_ms=0.000 cache_trim_ms=0.000 completion_ms=5.290 prepare_ms=0.181 other_ms=7.481 pipeline_ms=0.000 batch_wait_ms=5.597 batch_gpu_ms=4.011 depth_upload_wait_ms=0.000 gpu_timing=1 surface_ms=0.010 coherence_ms=0.160 imports_ms=2.641 raster_ms=0.791 store_ms=0.030 texture_uploads=2 draw_cpu_ms=1.425 clear_cpu_ms=0.336 flip_cpu_ms=0.000 cache_trim_cpu_ms=0.000 completion_cpu_ms=1.773 prepare_cpu_ms=0.178 completion_calls=7 thread_cpu_timing=1
+[Vulkan frame costs] frame=2098 interval_ms=16.676 draw_ms=4.893 clear_ms=0.821 flip_flush_ms=0.000 cache_trim_ms=0.093 completion_ms=3.004 prepare_ms=0.184 other_ms=7.681 pipeline_ms=0.000 batch_wait_ms=3.565 batch_gpu_ms=2.161 depth_upload_wait_ms=0.000 gpu_timing=1 surface_ms=0.619 coherence_ms=0.389 imports_ms=2.599 raster_ms=1.246 store_ms=0.040 texture_uploads=2 draw_cpu_ms=2.088 clear_cpu_ms=0.510 flip_cpu_ms=0.000 cache_trim_cpu_ms=0.093 completion_cpu_ms=1.462 prepare_cpu_ms=0.182 completion_calls=5 thread_cpu_timing=1
+[Vulkan frame costs] frame=2099 interval_ms=15.338 draw_ms=2.728 clear_ms=0.377 flip_flush_ms=0.000 cache_trim_ms=0.001 completion_ms=4.669 prepare_ms=0.175 other_ms=7.388 pipeline_ms=0.000 batch_wait_ms=4.130 batch_gpu_ms=2.778 depth_upload_wait_ms=0.000 gpu_timing=1 surface_ms=0.004 coherence_ms=0.164 imports_ms=1.729 raster_ms=0.788 store_ms=0.043 texture_uploads=2 draw_cpu_ms=1.394 clear_cpu_ms=0.380 flip_cpu_ms=0.001 cache_trim_cpu_ms=0.000 completion_cpu_ms=1.731 prepare_cpu_ms=0.183 completion_calls=6 thread_cpu_timing=1
+[Vulkan write tracking] ranges=9403 checks=1543537 unchanged=1502474 faults=4777 protection calls=140526
+[Vulkan frame costs] frame=2100 interval_ms=19.178 draw_ms=4.754 clear_ms=0.738 flip_flush_ms=0.000 cache_trim_ms=0.073 completion_ms=4.725 prepare_ms=0.160 other_ms=8.728 pipeline_ms=0.000 batch_wait_ms=4.609 batch_gpu_ms=3.204 depth_upload_wait_ms=0.000 gpu_timing=1 surface_ms=0.878 coherence_ms=0.444 imports_ms=1.960 raster_ms=1.443 store_ms=0.029 texture_uploads=3 draw_cpu_ms=2.168 clear_cpu_ms=0.421 flip_cpu_ms=0.000 cache_trim_cpu_ms=0.073 completion_cpu_ms=1.681 prepare_cpu_ms=0.171 completion_calls=7 thread_cpu_timing=1
+[Vulkan raw vertices] GPU fixed batches=295659 program batches=136526 program vertices=9766484 CPU declined batches=0
+[Vulkan raw snapshots] compact_batches=432185 snapshot_bytes=1084608884 expanded_bytes=6346047744
+[Vulkan command batches] live targets: draws=432185 submissions=23369 combined_depth_reads=8753 combined_color_reads=17480 queued_depth_uploads=2164 queued_color_reads=4727
+[Vulkan depth roundtrips] batched live targets NEVER/LESS/EQUAL/LEQUAL/GREATER/NOTEQUAL/GEQUAL/ALWAYS: 0 0 0 0 0 0 0 0
+[Vulkan snapshot copies avoided] color_bytes=35735109632 depth_bytes=10914250752
+[Vulkan depth residency] binds=436734 imports=2164 writebacks=11445 CPU merges=0 GPU copies=2099 clear skips=10488 clean reuses=0 queued readbacks=9634
+[Vulkan CPU resident depth] layout_pixels=0 float_pixels=0 (cumulative)
+[Vulkan depth switches] same-image disjoint/overlap=2096/138 different-image disjoint/overlap=0/0 dirty=517/69/0/0
+[Vulkan texture cache] hits=628971 uploads=2949 evictions=837 live=48.6MiB entries=242/2048 GPU copies/hits/reuses=1666/24079/1445
+[Vulkan texture lookup] hint_hits=578955 scanned_entries=7396446
+[Vulkan texture comparisons] checks=9207 logical_bytes=10204403392 changed=3712 tracked=602346 reused=2091 GPU decoded=2923 CPU decoded pixels=1030144
+[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)
+[Vulkan CPU strict depth] pixels=0 (cumulative)
+[Vulkan CPU graphics] texture_pixels=1030144 texture_ms=6.333 color_pixels=0 color_ms=0.000 (cumulative)
+[Vulkan] completed frame 2100: 640x480, guest=80534000
+[Vulkan] diagnostic frame limit reached: 2100
+[Vulkan pipeline cache] saved_bytes=73826660
+[Vulkan pipeline cache] save=ok
+  [FILE] summary: 1 game file missing, 0 not found under absent directories, 1 failed open
+Execution passed=True; evidence=/private/tmp/vc3-snapshot-ownership-candidate

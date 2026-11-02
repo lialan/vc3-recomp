@@ -14,7 +14,7 @@
 #define MAX_SURFACES 32
 struct Surface { Nv2aSurface guest; ChVkGuestLayout layout; uint32_t zeta; Nv2aRenderState state; float *depth; uint8_t *stencil; ChVkTarget *target; unsigned char *rgba,*observed,*cpu,*raw; ChGuestWriteRange *write_range; size_t raw_span; int observed_valid,resident,color_bgra,color_fallback_reported,color_dirty,native_z24,quantized_z24; size_t bytes; uint64_t color_serial; };
 typedef struct {uint64_t pipeline_ns,batch_wait_ns,batch_gpu_ns,upload_wait_ns;} FrameCosts;
-struct ChVkBackend { ChVkFixedScratch raw_scratch; struct {int enabled;uint64_t completion_us,completion_cpu_ns,completion_calls,prepare_us,prepare_cpu_ns;uint64_t draw_cpu_ns,clear_cpu_ns,flip_cpu_ns,trim_cpu_ns;uint64_t draw_us,clear_us,flip_us,trim_us,surface_us,coherence_us,imports_us,raster_us,store_us,texture_uploads;FrameCosts retired,previous;} costs; VkPipelineCache pipeline_cache; struct {int enabled;uint64_t start,n,surface,coherence,imports,draw,store,no_color,flushes,depth_flushes,paired_flushes;} profile; struct {int enabled;uint64_t previous,us[120];unsigned count;} frame_profile; ChVkBackendConfig host; ChVkTextureCache *textures; ChVkDepthResident *zeta; uint64_t raw_compact_batches,raw_snapshot_bytes,raw_expanded_bytes; uint64_t frames,raw_draws,raw_programs,raw_program_vertices,raw_declined,color_clock,cpu_batches,cpu_vertices,cpu_texels,cpu_texture_us,cpu_color_pixels,cpu_color_us,cpu_depth_pixels; struct Surface surfaces[MAX_SURFACES]; unsigned count; };
+struct ChVkBackend { ChVkFixedScratch raw_scratch; struct {int enabled;uint64_t completion_us,completion_cpu_ns,completion_calls,prepare_us,prepare_cpu_ns;uint64_t draw_cpu_ns,clear_cpu_ns,flip_cpu_ns,trim_cpu_ns;uint64_t draw_us,clear_us,flip_us,trim_us,surface_us,coherence_us,imports_us,raster_us,store_us,texture_uploads;FrameCosts retired,previous;} costs; VkPipelineCache pipeline_cache; struct {int enabled;uint64_t start,n,surface,coherence,imports,draw,store,no_color,flushes,depth_flushes,paired_flushes;} profile; struct {int enabled;uint64_t previous,us[120];unsigned count;} frame_profile; ChVkBackendConfig host; ChVkTextureCache *textures; ChVkDepthResident *zeta; uint64_t raw_compact_batches,raw_snapshot_bytes,raw_expanded_bytes; uint64_t color_snapshot_copy_bytes_saved; uint64_t frames,raw_draws,raw_programs,raw_program_vertices,raw_declined,color_clock,cpu_batches,cpu_vertices,cpu_texels,cpu_texture_us,cpu_color_pixels,cpu_color_us,cpu_depth_pixels; struct Surface surfaces[MAX_SURFACES]; unsigned count; };
 static ChVkBackend *active;
 static void flush_color(struct Surface *);
 static void observe_guest_colors(void);
@@ -329,6 +329,15 @@ static void store(struct Surface *f,VkResult result,const char *operation,int co
         if(result!=VK_SUCCESS) fatal(result,"depth writeback");
     }
 }
+/* In these layouts the canonical observation bytes are also an exact raw
+ * guest snapshot. Pitched/padded or converted views retain a separate copy. */
+static int color_snapshot_is_raw(const struct Surface *f) {
+    return f->raw_span==f->bytes && (f->color_bgra==2 ||
+        (f->color_bgra==1 && f->guest.pitch==(uint64_t)f->guest.width*4));
+}
+static const unsigned char *color_raw_snapshot(const struct Surface *f) {
+    return color_snapshot_is_raw(f)?f->observed:f->raw;
+}
 static void publish_color(struct Surface *f,int ready) {
     if(!f->resident || !f->color_dirty) return;
     VkResult r=ready?VK_SUCCESS:ch_vk_target_read_color(f->target,f->rgba,f->bytes);
@@ -336,8 +345,12 @@ static void publish_color(struct Surface *f,int ready) {
     ch_guest_write_watch_begin(active->host.guest_write_watch,storage,f->raw_span);
     if(r==VK_SUCCESS) r=store_surface_color(f,f->rgba);
     if(r==VK_SUCCESS) {
-        memcpy(f->observed,f->rgba,f->bytes);
-        memcpy(f->raw,storage,f->raw_span);
+        /* All readback requests have retired before publication. Transfer
+         * ownership of their result instead of copying it into the baseline. */
+        unsigned char *scratch=f->observed;f->observed=f->rgba;f->rgba=scratch;
+        active->color_snapshot_copy_bytes_saved+=f->bytes;
+        if(color_snapshot_is_raw(f)) active->color_snapshot_copy_bytes_saved+=f->raw_span;
+        else memcpy(f->raw,storage,f->raw_span);
     }
     ch_guest_write_watch_end(active->host.guest_write_watch,storage,f->raw_span);
     if(r!=VK_SUCCESS) fatal(r,"resident color writeback");
@@ -351,7 +364,7 @@ static void observe_guest_color(struct Surface *f) {
         !ch_guest_write_range_changed(f->write_range)) return;
     /* Fast unchanged-storage check before Morton/pixel decoding. Padding
      * changes fall through once, then the pixel comparison ignores them. */
-    if(f->resident && f->observed_valid && !memcmp(raw,f->raw,f->raw_span)) return;
+    if(f->resident && f->observed_valid && !memcmp(raw,color_raw_snapshot(f),f->raw_span)) return;
     unsigned char *cpu=f->resident?f->cpu:f->rgba;
     VkResult r=load_surface_color(f,cpu);
     if(r!=VK_SUCCESS) fatal(r,"guest color observation");
@@ -376,7 +389,7 @@ static void observe_guest_color(struct Surface *f) {
         }
         memcpy(f->observed,cpu,f->bytes); f->observed_valid=1;
     }
-    if(f->resident) memcpy(f->raw,raw,f->raw_span);
+    if(f->resident && !color_snapshot_is_raw(f)) memcpy(f->raw,raw,f->raw_span);
 }
 static void observe_guest_colors(void) {
     for(unsigned i=0;i<active->count;i++) observe_guest_color(&active->surfaces[i]);
@@ -643,6 +656,9 @@ static void flip(void) {
     }
     if(active->zeta && active->profile.enabled && (active->frames==1 || active->frames%60==0)) {
         ChVkDepthResidentStats stats;ch_vk_depth_resident_stats(active->zeta,&stats);
+        fprintf(stderr,"[Vulkan snapshot copies avoided] color_bytes=%llu depth_bytes=%llu\n",
+            (unsigned long long)active->color_snapshot_copy_bytes_saved,
+            (unsigned long long)stats.snapshot_copy_bytes_saved);
         fprintf(stderr,"[Vulkan depth residency] binds=%llu imports=%llu writebacks=%llu CPU merges=%llu GPU copies=%llu clear skips=%llu clean reuses=%llu queued readbacks=%llu\n",
             (unsigned long long)stats.binds,(unsigned long long)stats.imports,
             (unsigned long long)stats.writebacks,(unsigned long long)stats.cpu_merges,(unsigned long long)stats.gpu_copies,
