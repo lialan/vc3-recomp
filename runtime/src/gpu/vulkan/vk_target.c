@@ -137,7 +137,8 @@ struct ChVkTarget {
     struct {ChVkTexture *image;void (*release)(void *,ChVkTexture *);void *context;int owned;} retired[BATCH_DRAWS*5];
     int initialized;
     int failed;
-    struct { const char *caller; int readback; uint64_t count; } finish_reasons[32];
+    struct { const char *caller; int readback; uint64_t count,wait_ns,gpu_ns; } finish_reasons[32];
+    int submitted_reason;
 };
 static VkResult finish_batch_named(ChVkTarget *,int,const char *);
 static VkResult wait_copy_source(ChVkTarget *);
@@ -176,7 +177,13 @@ static void report_batch_timing(ChVkTarget *t,uint64_t now) {
     for(unsigned i=0;i<32;i++) if(t->finish_reasons[i].count) {
         fprintf(stderr," %s/read%d=%llu",t->finish_reasons[i].caller,t->finish_reasons[i].readback,
             (unsigned long long)t->finish_reasons[i].count);
-        t->finish_reasons[i].count=0;
+    }
+    for(unsigned i=0;i<32;i++) if(t->finish_reasons[i].count) {
+        fprintf(stderr,"\n[Vulkan boundary costs] %ux%u %s/read%d count=%llu wait_ms=%.3f gpu_ms=%.3f",
+            t->width,t->height,t->finish_reasons[i].caller,t->finish_reasons[i].readback,
+            (unsigned long long)t->finish_reasons[i].count,
+            t->finish_reasons[i].wait_ns/1e6,t->finish_reasons[i].gpu_ns/1e6);
+        t->finish_reasons[i].count=t->finish_reasons[i].wait_ns=t->finish_reasons[i].gpu_ns=0;
     }
     fputc('\n',stderr);
     fprintf(stderr,"[Vulkan depth uploads] %ux%u count=%llu inclusive %.2fms own_fence_wait %.2fms\n",
@@ -686,8 +693,13 @@ static VkResult retire_batch(ChVkTarget *t) {
      * may release resources associated with the dependent target. */
     if(t->copy_destination) {t->copy_destination->copy_source=NULL;t->copy_destination=NULL;}
     if(t->timing) {
-        t->timing_stats.batch_wait_ns+=time_ns()-wait_start;
+        uint64_t waited=time_ns()-wait_start;
+        t->timing_stats.batch_wait_ns+=waited;
         uint64_t elapsed;TRY(timestamp_elapsed(t,&elapsed));t->timing_stats.batch_gpu_ns+=elapsed;
+        if(t->submitted_reason>=0) {
+            t->finish_reasons[t->submitted_reason].wait_ns+=waited;
+            t->finish_reasons[t->submitted_reason].gpu_ns+=elapsed;
+        }
     }
     /* This queue submission follows any depth upload, so its fence also
      * proves that upload command and staging reads have completed. */
@@ -738,14 +750,14 @@ static VkResult finish_batch_with_copy(ChVkTarget *t,int readback,const char *ca
     TRY(vkQueueSubmit(t->queue,1,&submit,t->fence));
     uint64_t wait_start=t->timing?time_ns():0;
     if(t->timing) t->timing_stats.batch_submit_ns+=wait_start-submit_start;
-    t->submitted=1;t->submitted_finish_start=finish_start;
+    t->submitted=1;t->submitted_finish_start=finish_start;t->submitted_reason=-1;
     if(t->timing) {
         t->timing_stats.batch_draws+=t->pending-t->pending_clears;t->timing_stats.batch_submissions++;
         for(unsigned i=0;i<32;i++) {
             if(!t->finish_reasons[i].caller ||
                (t->finish_reasons[i].readback==readback && !strcmp(t->finish_reasons[i].caller,caller))) {
                 t->finish_reasons[i].caller=caller;t->finish_reasons[i].readback=readback;
-                t->finish_reasons[i].count++;break;
+                t->finish_reasons[i].count++;t->submitted_reason=(int)i;break;
             }
         }
     }
