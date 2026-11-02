@@ -1,0 +1,55 @@
+{
+  "control": {
+    "combat": {
+      "frames": 232,
+      "draw_cpu_ms": 1.8602241379310345,
+      "completion_cpu_ms": 1.5969353448275863,
+      "completion_ms": 4.547176724137931,
+      "batch_wait_ms": 4.537336206896551,
+      "batch_gpu_ms": 3.437875
+    },
+    "activation": {
+      "frames": 115,
+      "draw_cpu_ms": 3.177304347826087,
+      "completion_cpu_ms": 1.7970086956521738,
+      "completion_ms": 5.431217391304348,
+      "batch_wait_ms": 7.07775652173913,
+      "batch_gpu_ms": 5.240782608695652
+    },
+    "held": {
+      "frames": 239,
+      "draw_cpu_ms": 3.025200836820084,
+      "completion_cpu_ms": 1.7631338912133891,
+      "completion_ms": 5.137313807531381,
+      "batch_wait_ms": 6.577803347280335,
+      "batch_gpu_ms": 4.90418410041841
+    }
+  },
+  "candidate": {
+    "combat": {
+      "frames": 232,
+      "draw_cpu_ms": 1.872198275862069,
+      "completion_cpu_ms": 1.5200172413793103,
+      "completion_ms": 4.352504310344828,
+      "batch_wait_ms": 4.354323275862069,
+      "batch_gpu_ms": 2.9189353448275863
+    },
+    "activation": {
+      "frames": 115,
+      "draw_cpu_ms": 3.082086956521739,
+      "completion_cpu_ms": 1.6357478260869565,
+      "completion_ms": 5.158982608695652,
+      "batch_wait_ms": 6.715695652173913,
+      "batch_gpu_ms": 4.845591304347826
+    },
+    "held": {
+      "frames": 239,
+      "draw_cpu_ms": 2.9183807531380754,
+      "completion_cpu_ms": 1.6203723849372385,
+      "completion_ms": 4.291322175732217,
+      "batch_wait_ms": 4.722895397489539,
+      "batch_gpu_ms": 3.065284518828452
+    }
+  },
+  "seed_sha256": "b20cc8274dda4bffad3d9e87cf10bfe08ae48970453506b7a0814e234396c531"
+}

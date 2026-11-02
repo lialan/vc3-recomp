@@ -179,7 +179,7 @@ static int scenario(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,uint32_t 
 #define REQUIRE(x) do {if(!(x)) {fprintf(stderr,"render texture integration case%u fast%u line%d: %s\n",test,fast,__LINE__,#x);goto done;}}while(0)
     config.batch_draw_limit=257;
     REQUIRE(ch_vk_backend_create(&config,&backend)==VK_ERROR_INITIALIZATION_FAILED && !backend);
-    config.batch_draw_limit=test%3==0?1:test%3==1?64:0;
+    config.batch_draw_limit=test>=15?64:test%3==0?1:test%3==1?64:0;
     REQUIRE(ch_vk_backend_create(&config,&backend)==VK_SUCCESS && ch_vk_backend_attach(backend)==VK_SUCCESS);
     const Nv2aBackend *cb=ch_vk_backend_callbacks();
     Nv2aSurface source={.color_va=256,.width=4,.height=4,.pitch=24,.bytes_per_pixel=4};
@@ -190,6 +190,7 @@ static int scenario(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,uint32_t 
         src_state.depth_test_enable=src_state.depth_write=1;src_state.depth_func=0x201;
     }
     Nv2aRenderState dst_state=src_state;
+    if(test>=15) {dst_state.depth_test_enable=dst_state.depth_write=0;dst_state.zeta_va=0;}
     if(test==5 || test==6) src_state.surface_format=0x200|((test==6?3:2)<<16)|(2u<<24);
     Nv2aTexture tx={.offset=source.color_va,.width=4,.height=4,.pitch=source.pitch,
         .color=test==5 || test==6?0x06:test==4?0x1e:0x12,.levels=1,.filter=0x01010000,.addr_u=3,.addr_v=3};
@@ -239,8 +240,9 @@ static int scenario(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,uint32_t 
             tx.addr_u=tx.addr_v=1;cb->draw(&dest,&draw_dest); /* Independent sampler key. */
         }
     }
-    if(test>=13) {uint32_t edit=0x7349a1fe;memcpy(memory+dest.color_va+4,&edit,4);}
+    if(test>=13 && test!=15) {uint32_t edit=0x7349a1fe;memcpy(memory+dest.color_va+4,&edit,4);}
     if(test==14) {uint32_t edit=0x40000039;memcpy(memory+8192,&edit,4);}
+    if(test>=15) cb->draw(&source,&draw_source); /* Independent pending depth owner. */
     cb->flush();
     if(test==8) {
         static const unsigned char expected[]={9,15,12,8}; /* Guest BGRA ordering. */
@@ -451,7 +453,7 @@ int ch_test_render_textures(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,u
     unsigned char *reference=malloc(sizeof memory),*candidate=malloc(sizeof memory);
     if(!reference || !candidate) {free(reference);free(candidate);return 1;}
     int failed=0;
-    for(unsigned test=0;test<15 && !failed;test++) {
+    for(unsigned test=0;test<17 && !failed;test++) {
         unsigned control=0,fast=0;
         failed=scenario(gpu,device,queue,family,0,test,reference,&control,VK_NULL_HANDLE) ||
             scenario(gpu,device,queue,family,1,test,candidate,&fast,VK_NULL_HANDLE);

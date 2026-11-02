@@ -15,7 +15,7 @@
 #define MAX_SURFACES 32
 struct Surface { Nv2aSurface guest; ChVkGuestLayout layout; uint32_t zeta; Nv2aRenderState state; float *depth; uint8_t *stencil; ChVkTarget *target; unsigned char *rgba,*observed,*cpu,*raw; ChGuestWriteRange *write_range; size_t raw_span; int observed_valid,resident,color_bgra,color_fallback_reported,color_dirty,native_z24,quantized_z24; size_t bytes; uint64_t color_serial; };
 typedef struct {uint64_t pipeline_ns,batch_wait_ns,batch_gpu_ns,upload_wait_ns;} FrameCosts;
-struct ChVkBackend { ChVkFixedScratch raw_scratch; struct {int enabled;uint64_t completion_us,completion_cpu_ns,completion_calls,prepare_us,prepare_cpu_ns;uint64_t draw_cpu_ns,clear_cpu_ns,flip_cpu_ns,trim_cpu_ns;uint64_t draw_us,clear_us,flip_us,trim_us,surface_us,coherence_us,imports_us,raster_us,store_us,texture_uploads;FrameCosts retired,previous;} costs; VkPipelineCache pipeline_cache; struct {int enabled;uint64_t start,n,surface,coherence,imports,draw,store,no_color,flushes,depth_flushes,paired_flushes;} profile; struct {int enabled;uint64_t previous,us[120];unsigned count;} frame_profile; ChVkBackendConfig host; ChVkTextureCache *textures; ChVkDepthResident *zeta; uint64_t raw_compact_batches,raw_snapshot_bytes,raw_expanded_bytes; uint64_t color_snapshot_copy_bytes_saved,unchanged_color_draws,unchanged_depth_draws; uint64_t frames,raw_draws,raw_programs,raw_program_vertices,raw_declined,color_clock,cpu_batches,cpu_vertices,cpu_texels,cpu_texture_us,cpu_color_pixels,cpu_color_us,cpu_depth_pixels; struct Surface surfaces[MAX_SURFACES]; unsigned count; };
+struct ChVkBackend { ChVkFixedScratch raw_scratch; struct {int enabled;uint64_t completion_us,completion_cpu_ns,completion_calls,prepare_us,prepare_cpu_ns;uint64_t draw_cpu_ns,clear_cpu_ns,flip_cpu_ns,trim_cpu_ns;uint64_t draw_us,clear_us,flip_us,trim_us,surface_us,coherence_us,imports_us,raster_us,store_us,texture_uploads;FrameCosts retired,previous;} costs; VkPipelineCache pipeline_cache; struct {int enabled;uint64_t start,n,surface,coherence,imports,draw,store,no_color,flushes,depth_flushes,paired_flushes;} profile; struct {int enabled;uint64_t previous,us[120];unsigned count;} frame_profile; ChVkBackendConfig host; ChVkTextureCache *textures; ChVkDepthResident *zeta; uint64_t raw_compact_batches,raw_snapshot_bytes,raw_expanded_bytes; uint64_t color_snapshot_copy_bytes_saved,unchanged_color_draws,unchanged_depth_draws,early_color_reads; uint64_t frames,raw_draws,raw_programs,raw_program_vertices,raw_declined,color_clock,cpu_batches,cpu_vertices,cpu_texels,cpu_texture_us,cpu_color_pixels,cpu_color_us,cpu_depth_pixels; struct Surface surfaces[MAX_SURFACES]; unsigned count; };
 static ChVkBackend *active;
 static void flush_color(struct Surface *);
 static void observe_guest_colors(void);
@@ -418,6 +418,23 @@ static void flush(void) {
             if(active->profile.enabled) active->profile.paired_flushes++;
         }
     }
+    /* Color-only targets with disjoint depth storage can run while depth
+     * owners submit/retire. Hooks and overlapping storage keep the original
+     * observation order. No guest color publication happens early. */
+    if(active->zeta && !active->host.guest_color_changed) {
+        for(unsigned i=0;i<active->count;i++) {
+            struct Surface *f=&active->surfaces[i];
+            if(!f->resident || !f->color_dirty || !ch_vk_target_pending(f->target) ||
+                ch_vk_depth_resident_target_dirty(active->zeta,f->target) ||
+                ch_vk_depth_resident_check_color(active->zeta,f->guest.color_va,f->raw_span)!=VK_SUCCESS) continue;
+            observe_guest_color(f);
+            /* A CPU edit merge may already have retired the batch. */
+            if(!ch_vk_target_pending(f->target)) continue;
+            VkResult r=ch_vk_target_read_color_begin(f->target,f->rgba,f->bytes);
+            if(r!=VK_SUCCESS) fatal(r,"early color completion");
+            queued_colors|=1u<<i;active->early_color_reads++;
+        }
+    }
     if(active->zeta) {
         VkResult r=ch_vk_depth_resident_flush_many(active->zeta,colors,color_count);
         if(r!=VK_SUCCESS) fatal(r,"resident depth completion");
@@ -428,12 +445,12 @@ static void flush(void) {
      * still require notifications for every surface at this boundary. */
     if(active->host.guest_color_changed) observe_guest_colors();
     else for(unsigned i=0;i<active->count;i++)
-        if(active->surfaces[i].color_dirty) observe_guest_color(&active->surfaces[i]);
+        if(active->surfaces[i].color_dirty && !(queued_colors&(1u<<i))) observe_guest_color(&active->surfaces[i]);
     for(unsigned i=0;i<active->count;i++) {
         struct Surface *f=&active->surfaces[i];
         /* CPU color observation may have merged edits after the paired read.
          * Such an import advances the serial and requires a fresh GPU read. */
-        if(f->resident && f->color_dirty && !((paired&(1u<<i)) && f->color_serial==paired_serial[i])) {
+        if(f->resident && f->color_dirty && !(queued_colors&(1u<<i)) && !((paired&(1u<<i)) && f->color_serial==paired_serial[i])) {
             VkResult r=ch_vk_target_read_color_begin(f->target,f->rgba,f->bytes);
             if(r!=VK_SUCCESS) fatal(r,"queued color completion");
             queued_colors|=1u<<i;
@@ -654,6 +671,7 @@ static void flip(void) {
         uint64_t depth_ops[8]={0},staging_skips=0,staging_bytes=0;
         for(unsigned i=0;i<active->count;i++) {ChVkTargetResourceStats stats;ch_vk_target_resource_stats(active->surfaces[i].target,&stats);for(unsigned op=0;op<8;op++) depth_ops[op]+=stats.depth_roundtrips_by_compare[op];draws+=stats.batch_draws;submits+=stats.batch_submissions;depth_reads+=stats.combined_depth_readbacks;color_reads+=stats.combined_color_readbacks;queued_uploads+=stats.queued_depth_uploads;queued_colors+=stats.queued_color_readbacks;staging_skips+=stats.coherent_staging_skips;staging_bytes+=stats.staging_maintenance_bytes;}
         fprintf(stderr,"[Vulkan command batches] live targets: draws=%llu submissions=%llu combined_depth_reads=%llu combined_color_reads=%llu queued_depth_uploads=%llu queued_color_reads=%llu\n",(unsigned long long)draws,(unsigned long long)submits,(unsigned long long)depth_reads,(unsigned long long)color_reads,(unsigned long long)queued_uploads,(unsigned long long)queued_colors);
+        fprintf(stderr,"[Vulkan completion overlap] early_color_reads=%llu\n",(unsigned long long)active->early_color_reads);
         fprintf(stderr,"[Vulkan staging maintenance] live targets: coherent_skips=%llu explicit_bytes=%llu\n",
             (unsigned long long)staging_skips,(unsigned long long)staging_bytes);
         fprintf(stderr,"[Vulkan depth roundtrips] batched live targets NEVER/LESS/EQUAL/LEQUAL/GREATER/NOTEQUAL/GEQUAL/ALWAYS:");
