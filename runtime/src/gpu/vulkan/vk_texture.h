@@ -38,6 +38,10 @@ VkResult ch_vk_texture_upload_encoded(VkPhysicalDevice,VkDevice,VkQueue,uint32_t
 /* Immutable RGBA8 snapshot of a completed, same-device single-layer source in
  * TRANSFER_SRC_OPTIMAL. No CPU readback/upload. Source layout is unchanged;
  * optional mips use the same generation policy as CPU uploads. */
+/* Allocate an uninitialized copy destination. It must not be sampled until
+ * record_image_copy/copy_from_image has completed; destruction before use is safe. */
+VkResult ch_vk_texture_create_copy_target(VkPhysicalDevice,VkDevice,VkQueue,uint32_t family,
+    uint32_t width,uint32_t height,uint32_t levels,ChVkTexture **out);
 VkResult ch_vk_texture_copy_image(VkPhysicalDevice,VkDevice,VkQueue,uint32_t family,
     uint32_t width,uint32_t height,VkImage source,uint32_t levels,ChVkTexture **out);
 /* Reuse an existing image only after every previous sampling pin completes.

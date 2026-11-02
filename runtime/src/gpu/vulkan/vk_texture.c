@@ -313,6 +313,10 @@ VkResult ch_vk_texture_copy_from_image(ChVkTexture *t,VkDevice device,VkImage so
 fail:
     t->failed=1;return result;
 }
+VkResult ch_vk_texture_create_copy_target(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,uint32_t family,
+    uint32_t width,uint32_t height,uint32_t levels,ChVkTexture **out) {
+    return allocate_texture(gpu,device,queue,family,width,height,levels,1,out);
+}
 VkResult ch_vk_texture_copy_image(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,uint32_t family,
     uint32_t width,uint32_t height,VkImage source,uint32_t levels,ChVkTexture **out) {
     if(!out) return VK_ERROR_INITIALIZATION_FAILED;

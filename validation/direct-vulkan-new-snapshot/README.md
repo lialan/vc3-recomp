@@ -1,0 +1,11 @@
+# Combine first texture snapshots with pending source rendering
+
+Previously only refreshes of existing texture snapshots appended copy/mipmap work to an open source batch. First snapshots waited for that batch, then submitted/waited a second texture-owned copy command. Allocate an uninitialized private copy destination first and append the first copy/mips to the existing batch, retaining synchronous fence completion before exposing the texture. Already-submitted/nonpending source paths keep the existing behavior. Allocation failure leaves the source batch unsubmitted; submission errors drain the source queue before destination destruction. The helper documents that an uninitialized destination cannot be sampled until its copy completes.
+
+Native VC3 and Android shared Vulkan builds pass. Texture-render/depth-pack fixtures pass synchronization validation with no Validation Error/SYNC-HAZARD. Snapshot fixture now creates a new five-level snapshot from pending rendering and refreshes it subsequently, asserts one source submission and combined-copy counts, and checks exact output at every mip. Existing cache/source-destruction and guest-memory parity checks pass.
+
+Local /tmp/vc3-new-snapshot, preserved executable /tmp/vc3-new-snapshot-vc3,2100framesexit0, seeded from strip-ab-control cache. Only5 first snapshots across live targets used this path, removing5 standalone copy submissions and waits. This is a small reusable optimization, not the primary VC3 pacing fix; it adds no index/state scan to ordinary draws. Other source cases remain unchanged.
+
+Combat59.98/59.90FPS, activation60.03, held60.02/59.98. P9521.52–22.08ms, no target-window frames over33ms. All-run pipeline creation123.712ms; no matched A/B or FPS-gain claim. Non-compilation means combat/activation/held: drawCPU1.872/3.169/2.959ms, completion wall4.796/4.927/4.942ms, GPUbatch3.475/4.219/3.978ms. Scopes overlap. CPUgeometry0; CPUtextureconversion6.262ms cumulative. Native strips remain reverted.
+
+Local executable contains preexisting unrelated host_input.c edits excluded from commit. No headset/APK/push. No new shader or pipeline identity introduced by this change. Existing Quest cache-refresh work for earlier shader/state changes still pending device access. Goal remains active; primary completion/pacing overhead unresolved.

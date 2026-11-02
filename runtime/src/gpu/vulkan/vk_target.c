@@ -1015,6 +1015,18 @@ VkResult ch_vk_target_snapshot_texture(ChVkTarget *t,uint32_t levels,ChVkTexture
     if(!out) return VK_ERROR_INITIALIZATION_FAILED;
     *out=NULL;
     if(!t || t->failed || !t->initialized) return VK_ERROR_INITIALIZATION_FAILED;
+    /* Allocate before retiring an open batch so the first snapshot, like a
+     * refresh, can copy and generate mips in the source submission. The copy
+     * remains private until the source fence proves both operations complete. */
+    if(t->pending && !t->submitted) {
+        ChVkTexture *copy=NULL;
+        VkResult result=ch_vk_texture_create_copy_target(t->physical,t->device,t->queue,t->family,
+            t->width,t->height,levels,&copy);
+        if(result==VK_SUCCESS) result=finish_batch_with_copy(t,0,__func__,NULL,copy,0);
+        if(result!=VK_SUCCESS) {ch_vk_texture_destroy(copy);return result;}
+        t->resource_stats.combined_new_texture_copies++;
+        *out=copy;return VK_SUCCESS;
+    }
     VkResult result=finish_batch_named(t,0,__func__);
     if(result!=VK_SUCCESS) return result;
     if(t->layout!=VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL) return VK_ERROR_INITIALIZATION_FAILED;

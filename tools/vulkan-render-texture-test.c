@@ -115,9 +115,14 @@ static int snapshots(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,uint32_t
         ch_vk_target_resource_stats(source,&state_after);
         REQUIRE(state_after.batch_submissions==state_before.batch_submissions);
         REQUIRE(ch_vk_target_refresh_texture(source,NULL)==VK_ERROR_INITIALIZATION_FAILED && ch_vk_target_pending(source));
-        REQUIRE(ch_vk_target_refresh_texture(source,copy)==VK_SUCCESS && !ch_vk_target_pending(source));
+        if(!epoch) {
+            ch_vk_texture_destroy(copy);copy=NULL;
+            REQUIRE(ch_vk_target_snapshot_texture(source,5,&copy)==VK_SUCCESS && !ch_vk_target_pending(source));
+        } else REQUIRE(ch_vk_target_refresh_texture(source,copy)==VK_SUCCESS && !ch_vk_target_pending(source));
         ChVkTargetResourceStats stats;ch_vk_target_resource_stats(source,&stats);
         REQUIRE(stats.combined_texture_copies==epoch+1);
+        REQUIRE(stats.combined_new_texture_copies==1);
+        REQUIRE(stats.batch_submissions==state_before.batch_submissions+1);
         for(unsigned level=0;level<5;level++) {
             unsigned bytes=(16u>>level)*(16u>>level)*4;
             REQUIRE(ch_vk_texture_read_level_rgba(copy,level,got,sizeof got)==VK_SUCCESS);
