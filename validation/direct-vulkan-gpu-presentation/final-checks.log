@@ -1,0 +1,50 @@
+[0/2] Re-checking globbed directories...
+[1/8] Building C object runtime/src/gpu/vulkan/CMakeFiles/chihiro_vulkan.dir/vk_submission.c.o
+[2/8] Building C object CMakeFiles/vc3.dir/runtime/src/host/main.c.o
+In file included from /Users/lialan/Downloads/VR/vc3-vulkan/runtime/src/host/main.c:32:
+In file included from /Users/lialan/Downloads/VR/vc3-vulkan/external/xboxrecomp/include/xbox/xboxrecomp.h:46:
+/Users/lialan/Downloads/VR/vc3-vulkan/external/xboxrecomp/src/kernel/kernel.h:505:63: warning: '/*' within block comment [-Wcomment]
+  505 |  * Set during memory layout init from the XBE header. *xbox_va/*count are
+      |                                                               ^
+1 warning generated.
+[3/8] Building C object runtime/CMakeFiles/chihiro_rt.dir/src/gpu/vulkan/vk_runtime.c.o
+[4/8] Building C object runtime/src/gpu/vulkan/CMakeFiles/chihiro_vulkan.dir/vk_backend.c.o
+[5/8] Linking C static library runtime/src/gpu/vulkan/libchihiro_vulkan.a
+[6/8] Linking C static library runtime/libchihiro_rt.a
+[7/8] Linking C executable vc3
+[1/5] Building C object CMakeFiles/chihiro_vulkan.dir/vk_submission.c.o
+[2/5] Building C object CMakeFiles/chihiro_vulkan.dir/vk_backend.c.o
+[3/5] Building C object CMakeFiles/vulkan_render_texture_check.dir/Users/lialan/Downloads/VR/vc3-vulkan/tools/vulkan-render-texture-test.c.o
+[4/5] Linking C static library libchihiro_vulkan.a
+[5/5] Linking C executable vulkan_render_texture_check
+[0/2] Re-checking globbed directories...
+[1/9] Building C object runtime/src/gpu/vulkan/CMakeFiles/chihiro_vulkan.dir/vk_submission.c.o
+[2/9] Building C object CMakeFiles/vc3.dir/runtime/src/host/main.c.o
+In file included from /Users/lialan/Downloads/VR/vc3-vulkan/runtime/src/host/main.c:32:
+In file included from /Users/lialan/Downloads/VR/vc3-vulkan/external/xboxrecomp/include/xbox/xboxrecomp.h:46:
+/Users/lialan/Downloads/VR/vc3-vulkan/external/xboxrecomp/src/kernel/kernel.h:505:63: warning: '/*' within block comment [-Wcomment]
+  505 |  * Set during memory layout init from the XBE header. *xbox_va/*count are
+      |                                                               ^
+1 warning generated.
+[3/9] Building C object runtime/CMakeFiles/chihiro_rt.dir/src/gpu/vulkan/vk_runtime.c.o
+[4/9] Building C object runtime/src/gpu/vulkan/CMakeFiles/chihiro_vulkan.dir/vk_backend.c.o
+[5/9] Linking C static library runtime/src/gpu/vulkan/libchihiro_vulkan.a
+[6/9] Building C object runtime/CMakeFiles/chihiro_rt.dir/src/xr/quest_host.c.o
+[7/9] Linking C static library runtime/libchihiro_rt.a
+[8/9] Linking C shared library libmain.so
+[Vulkan pipeline cache] saved_bytes=61252
+[Vulkan] resizing surface 00000100: 4x4 pitch=24 bpp=4 -> 2x2 pitch=24 bpp=4
+[Vulkan] resizing surface 00000100: 4x4 pitch=24 bpp=4 -> 2x2 pitch=24 bpp=4
+[Vulkan] resizing surface 00000100: 4x4 pitch=24 bpp=4 -> 2x2 pitch=24 bpp=4
+[Vulkan] resizing surface 00000100: 4x4 pitch=24 bpp=4 -> 2x2 pitch=24 bpp=4
+[Vulkan] resizing surface 00000100: 4x4 pitch=24 bpp=4 -> 2x2 pitch=24 bpp=4
+device=Apple M4 Pro vendor=106b deviceID=0064 api=1.4.354
+PASS: GPU mailbox exact snapshots, bounded pins, dropped pending frames, reuse, source destruction and resize
+PASS: GPU presentation bypasses CPU callbacks and includes idle CPU edits in strict/resident/packed paths
+PASS: texture write tracking, aliases, palettes, pinned snapshots, repeated mismatch, restored bytes, active write leases and invalidation fallback
+PASS: colliding sampler identities preserve pinned hits across eviction and slot reuse
+PASS: amortized byte-budget eviction selects one fitting cold image, retains tiny snapshots, preserves frame grace and LRU control
+PASS: queued depth copy preserves source/destination readbacks, redraws, reverse copies, snapshotting and either destruction order
+PASS: borrowed pipeline cache survives backend destruction; persisted cache preserves exact guest memory; corrupt/truncated/oversized/incompatible data falls back to empty cache
+PASS: exact GPU snapshots preserve all UNORM bytes/mips/orientation; version and sampler keys, pin-budget rejection, source destruction before pending sampling and shared bounded cache lifetime
+PASS: strict-vs-GPU render-target sampling preserves exact guest memory for pitched/Morton targets, CPU edits, self sampling, resize, sampler changes, format/subview rejection and budget/pin fallback; eligible cases avoid CPU decoding

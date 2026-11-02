@@ -1,7 +1,7 @@
 /* Native Vulkan presentation for the shared Quest host. Included after the
  * common input/menu/view math; no session lifecycle or input polling here. */
 static ChVkXrQuad *s_vk_screen,*s_vk_menu;
-static ChVkTarget *s_vk_screen_target,*s_vk_menu_target;
+static ChVkTarget *s_vk_menu_target;
 static uint32_t s_vk_screen_w,s_vk_screen_h;
 static uint64_t s_vk_screen_sequence;
 static int s_vk_menu_dirty;
@@ -62,22 +62,22 @@ static void vk_xr_check(XrResult result,const char *operation)
     fprintf(stderr,"[quest Vulkan] %s: XrResult=%d\n",operation,result);
     abort();
 }
-static VkResult vk_publish(void *context,const Nv2aSurface *surface,const void *rgba,size_t bytes)
+static VkResult vk_publish(void *context,const Nv2aSurface *surface,ChVkTarget *target)
 {
     s_tid_exec=(pid_t)syscall(SYS_gettid);
     pace_game_frame();
-    return ch_vk_frame_mailbox_publish(context,surface,rgba,bytes);
+    return ch_vk_gpu_mailbox_publish(context,surface,target);
 }
 static int vk_host_init(void)
 {
     const char *profile=ch_env("VULKAN_PROFILE");
     s_vk_profile.enabled=profile && atoi(profile)!=0;
-    VkResult result=ch_vk_frame_mailbox_create(&s_vk_frames);
+    VkResult result=ch_vk_gpu_mailbox_create(&s_vk_frames);
     if(result!=VK_SUCCESS) return 0;
     ChVkBackendConfig config={.physical=s_vk.physical,.device=s_vk.device,
         .queue=s_vk.queue,.family=s_vk.family,.precise_queries=s_vk.precise_queries,.raw_fixed=s_vk.raw_fixed,
         .lock_queue=vk_queue_lock,.unlock_queue=vk_queue_unlock,.queue_context=&s_vk_queue,
-        .render_context=s_vk_frames,.present_rgba=vk_publish};
+        .render_context=s_vk_frames,.present_target=vk_publish};
     return ch_vk_runtime_configure(&config);
 }
 static void vk_initialized_target(uint32_t width,uint32_t height,ChVkTarget **target)
@@ -138,18 +138,15 @@ static unsigned vk_present(const Frame *f,const XrCompositionLayerBaseHeader **l
         XrExtent2Df size={s_height*(float)f->lw/f->lh,s_height};
         if(s_vk_screen_w!=(uint32_t)f->w || s_vk_screen_h!=(uint32_t)f->h) {
             vk_xr_check(ch_vk_xr_quad_destroy(s_vk_screen),"old screen");s_vk_screen=NULL;
-            ch_vk_target_destroy(s_vk_screen_target);s_vk_screen_target=NULL;
-            vk_initialized_target(f->w,f->h,&s_vk_screen_target);
             vk_xr_check(ch_vk_xr_quad_create(s_inst,s_sess,xrGetInstanceProcAddr,s_vk.device,
                 f->w,f->h,s_local,&pose,size,0,&s_vk_screen),"screen swapchain");
             s_vk_screen_w=f->w;s_vk_screen_h=f->h;s_vk_screen_sequence=0;
         }
         vk_xr_check(ch_vk_xr_quad_pose(s_vk_screen,&pose,size),"screen pose");
-        if(s_vk_screen_sequence!=f->cpu.sequence) {
-            vk_check(ch_vk_target_import_color(s_vk_screen_target,f->cpu.rgba,f->cpu.bytes),"screen upload");
-            vk_xr_check(ch_vk_xr_quad_update(s_vk_screen,s_vk_screen_target,XR_INFINITE_DURATION,&result),"screen copy");
+        if(s_vk_screen_sequence!=f->gpu.sequence) {
+            vk_xr_check(ch_vk_xr_quad_update_texture(s_vk_screen,f->gpu.image,XR_INFINITE_DURATION,&result),"GPU screen copy");
             vk_check(result,"screen copy completion");
-            s_vk_screen_sequence=f->cpu.sequence;
+            s_vk_screen_sequence=f->gpu.sequence;
         }
         const XrCompositionLayerBaseHeader *layer=ch_vk_xr_quad_layer(s_vk_screen);
         if(layer) layers[count++]=layer;

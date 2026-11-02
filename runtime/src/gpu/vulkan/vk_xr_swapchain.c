@@ -115,3 +115,12 @@ XrResult ch_vk_xr_swapchain_copy_release(ChVkXrSwapchain *s,ChVkTarget *t,
     if(*vk_result!=VK_SUCCESS) { s->failed=1; return XR_ERROR_GRAPHICS_DEVICE_INVALID; }
     return ch_vk_xr_swapchain_release(s,ch_vk_target_completion_fence(t),vk_result);
 }
+
+XrResult ch_vk_xr_swapchain_texture_release(ChVkXrSwapchain *s,ChVkTexture *texture,VkResult *vk_result) {
+    if(!s || !texture || !vk_result) return XR_ERROR_VALIDATION_FAILURE;
+    if(!s->waited || s->failed) return XR_ERROR_CALL_ORDER_INVALID;
+    VkFence fence;
+    *vk_result=ch_vk_texture_export_image(texture,s->device,s->images[s->index].image,s->width,s->height,&fence);
+    if(*vk_result!=VK_SUCCESS) {s->failed=1;return XR_ERROR_GRAPHICS_DEVICE_INVALID;}
+    return ch_vk_xr_swapchain_release(s,fence,vk_result);
+}

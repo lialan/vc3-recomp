@@ -7,7 +7,9 @@
 #include "nv2a_backend.h"
 static const Nv2aBackend *registered;
 void nv2a_backend_register(const Nv2aBackend *backend) {registered=backend;}
-uint32_t nv2a_backend_presented_va(void) {abort();} /* No guest flip in this fixture. */
+static uint32_t test_presented_va;
+void ch_test_presented_va(uint32_t va) {test_presented_va=va;}
+uint32_t nv2a_backend_presented_va(void) {return test_presented_va;}
 int ch_test_render_textures(VkPhysicalDevice,VkDevice,VkQueue,uint32_t);
 int ch_test_program_render(VkPhysicalDevice,VkDevice,VkQueue,uint32_t);
 #elif defined(CH_VK_DEPTH_FRAGMENT_TEST)

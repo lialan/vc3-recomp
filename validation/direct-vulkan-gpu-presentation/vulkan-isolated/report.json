@@ -1,0 +1,30 @@
+{
+  "binary": "/tmp/vc3-mac-gl-vk-compare/vulkan",
+  "sha256": "b6a4aa35ede96d6e9c769ed505b91b4e411935df0d9613f116d0874b987cbc48",
+  "environment": {
+    "CHIHIRO_AUTOKEYS": "12:coin,13:start,15:fire,20:start,22:start,25:start,26:pedal,26.5:pedal,27:pedal,27.5:pedal,28:pedal,28.5:pedal,29:pedal,29.5:pedal,30:pedal,30.5:pedal,31:pedal,31.5:pedal,32:pedal,26.5:fire,27.5:fire,28.5:fire,29.5:fire,30.5:fire,30:reload,31:reload",
+    "CHIHIRO_AUTOKEYS_CLOCK": "flips",
+    "RECOMP_HEADLESS": "1",
+    "RECOMP_FB_WINDOW": "0",
+    "VC3_SOUND": "0",
+    "VC3_SCALE": "1",
+    "VC3_ASPECT": "4:3",
+    "VC3_STEREO": "0",
+    "VC3_FPS": "60",
+    "VC3_SAVE_DIR": "/tmp/vc3-mac-gl-vk-compare/vulkan-isolated/save",
+    "VC3_CONFIG_DIR": "/tmp/vc3-mac-gl-vk-compare/vulkan-isolated/config",
+    "VK_ICD_FILENAMES": "/opt/homebrew/Cellar/mesa/26.2.6/share/vulkan/icd.d/kosmickrisp_mesa_icd.aarch64.json",
+    "CHIHIRO_VULKAN_PIPELINE_CACHE": "/tmp/vc3-mac-gl-vk-compare/vulkan.cache",
+    "VC3_VULKAN_DUMP_DIR": "/tmp/vc3-mac-gl-vk-compare/vulkan-isolated/frames",
+    "VC3_VULKAN_DUMP_FIRST": "1320",
+    "VC3_VULKAN_DUMP_COUNT": "3",
+    "VC3_VULKAN_DUMP_EVERY": "120",
+    "VC3_VULKAN_FRAME_LIMIT": "2100",
+    "CHIHIRO_VULKAN_PROFILE": "1",
+    "CHIHIRO_VULKAN_FRAME_COSTS": "1",
+    "CHIHIRO_VULKAN_FRAME_PROFILE": "1",
+    "CHIHIRO_VULKAN_GPU_TIMESTAMPS": "1"
+  },
+  "exit_code": 0,
+  "elapsed": 39.40765900001861
+}

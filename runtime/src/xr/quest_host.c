@@ -67,7 +67,7 @@
 #define XR_USE_PLATFORM_ANDROID
 #ifdef CHIHIRO_RENDERER_VULKAN
 #include "gpu/vulkan/vk_runtime.h"
-#include "gpu/vulkan/vk_frame_mailbox.h"
+#include "gpu/vulkan/vk_gpu_mailbox.h"
 #include "gpu/vulkan/vk_xr_quad.h"
 #include "gpu/vulkan/vk_overlay.h"
 #define XR_USE_GRAPHICS_API_VULKAN
@@ -187,10 +187,10 @@ static pthread_mutex_t s_lock = PTHREAD_MUTEX_INITIALIZER;
 typedef struct {
     int w,h,eyes,lw,lh;
     Vc3VrFrame vr;
-    ChVkCpuFrame cpu;
+    ChVkGpuFrame gpu;
 } Frame;
 static ChVkXrDevice s_vk;
-static ChVkFrameMailbox *s_vk_frames;
+static ChVkGpuMailbox *s_vk_frames;
 static pthread_mutex_t s_vk_queue = PTHREAD_MUTEX_INITIALIZER;
 static int vk_host_init(void);
 static void vk_menu_upload(const void *);
@@ -438,18 +438,18 @@ static Frame *take_frame(int *is_new, int allow)
 static Frame *take_frame(int *is_new,int allow)
 {
     static Frame frame;
-    ChVkCpuFrame next={0};
+    ChVkGpuFrame next={0};
     *is_new=0;
-    if(allow && ch_vk_frame_mailbox_take(s_vk_frames,&next)==VK_SUCCESS) {
-        ch_vk_cpu_frame_release(&frame.cpu);
-        frame.cpu=next;
+    if(allow && ch_vk_gpu_mailbox_take(s_vk_frames,&next)==VK_SUCCESS) {
+        ch_vk_gpu_frame_release(&frame.gpu);
+        frame.gpu=next;
         frame.w=frame.lw=(int)next.surface.width;
         frame.h=frame.lh=(int)next.surface.height;
         frame.eyes=1;
         s_frames_in=next.sequence;
         *is_new=1;
     }
-    return frame.cpu.rgba?&frame:NULL;
+    return frame.gpu.image?&frame:NULL;
 }
 #endif
 

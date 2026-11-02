@@ -1,0 +1,3 @@
+SKIP: external-FD device extensions are not part of the macOS XR copy test
+PASS: mailbox -> Vulkan target -> XR screen destination pixels, timeout holds sequence, newer frame waits, resize and opaque flat composition (injected XR)
+PASS: injected OpenXR enable2 call order, real Vulkan creation, XR/Vk failure propagation and cleanup, swapchain timeout retry and fence-gated ownership (real image copy/readback, injected XR ownership, quad/flat composition, no XR runtime)

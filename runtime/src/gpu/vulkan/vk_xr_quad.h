@@ -12,4 +12,5 @@ XrResult ch_vk_xr_quad_pose(ChVkXrQuad *,const XrPosef *,XrExtent2Df);
 XrResult ch_vk_xr_quad_update(ChVkXrQuad *,ChVkTarget *,XrDuration,VkResult *);
 const XrCompositionLayerBaseHeader *ch_vk_xr_quad_layer(const ChVkXrQuad *);
 XrResult ch_vk_xr_quad_destroy(ChVkXrQuad *);
+XrResult ch_vk_xr_quad_update_texture(ChVkXrQuad *,ChVkTexture *,XrDuration,VkResult *);
 #endif

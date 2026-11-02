@@ -72,4 +72,9 @@ int ch_vk_texture_can_decode32(const Nv2aTexture *);
 VkResult ch_vk_texture_replace_encoded32(ChVkTexture *,VkPipelineCache,const Nv2aTexture *,const void *,size_t,int);
 VkResult ch_vk_texture_upload_encoded32(VkPhysicalDevice,VkDevice,VkQueue,uint32_t,VkPipelineCache,const Nv2aTexture *,const void *,size_t,uint32_t,int,ChVkTexture **);
 
+/* Copy a completed, exclusively held texture into an equal-sized RGBA8
+ * transfer-destination image; discard its previous contents and finish in
+ * COLOR_ATTACHMENT_OPTIMAL. Caller serializes the queue and both images.
+ * No readback. Fence covers the completed copy and remains borrowed. */
+VkResult ch_vk_texture_export_image(ChVkTexture *,VkDevice,VkImage,uint32_t,uint32_t,VkFence *);
 #endif

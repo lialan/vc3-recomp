@@ -1,0 +1,11 @@
+[0/2] Re-checking globbed directories...
+[1/4] Building C object runtime/CMakeFiles/chihiro_rt.dir/src/gpu/vulkan/vk_runtime.c.o
+[2/4] Linking C static library runtime/libchihiro_rt.a
+[3/4] Linking C executable vc3
+[1/3] Building C object CMakeFiles/vulkan_render_texture_check.dir/Users/lialan/Downloads/VR/vc3-vulkan/tools/vulkan-combiner-driver.c.o
+[2/3] Building C object CMakeFiles/vulkan_render_texture_check.dir/Users/lialan/Downloads/VR/vc3-vulkan/tools/vulkan-render-texture-test.c.o
+[3/3] Linking C executable vulkan_render_texture_check
+[0/2] Re-checking globbed directories...
+[1/4] Building C object runtime/CMakeFiles/chihiro_rt.dir/src/gpu/vulkan/vk_runtime.c.o
+[2/4] Linking C static library runtime/libchihiro_rt.a
+[3/4] Linking C shared library libmain.so

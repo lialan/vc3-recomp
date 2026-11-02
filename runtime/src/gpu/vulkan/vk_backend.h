@@ -70,11 +70,14 @@ typedef struct {
     VkResult (*render_clear)(void *,const Nv2aSurface *,const Nv2aRenderState *,uint32_t,uint32_t,uint32_t);
     VkResult (*render_draw)(void *,const Nv2aSurface *,const Nv2aBatch *);
     VkResult (*render_flip)(void *,uint32_t presented_va);
+    /* GPU-native alternative, preferred over the CPU callbacks below. Target
+     * includes current CPU edits. Borrowed until return: copy for another
+     * thread while the backend queue lock is held. VK_NOT_READY drops only
+     * the host frame under bounded mailbox pressure. No ownership transfer. */
+    VkResult (*present_target)(void *,const Nv2aSurface *,ChVkTarget *);
     /* Completed flat guest image at flip, including intervening CPU writes.
      * Tightly packed RGBA8, top-left origin, straight guest alpha. Borrowed
-     * until return: copy into a host-owned frame for another thread. No Vulkan
-     * queue/target ownership is transferred. Nonzero unknown VA is an error.
-     * Called before render_flip; zero presented VA produces no image. */
+     * until return. Called before render_flip; zero presented VA has no image. */
     VkResult (*present_rgba)(void *,const Nv2aSurface *,const void *,size_t);
     /* Optional native guest-order handoff; requires present_rgba as fallback. */
     VkResult (*present_bgra)(void *,const Nv2aSurface *,const void *,size_t);

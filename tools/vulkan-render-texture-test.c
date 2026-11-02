@@ -1,6 +1,7 @@
 /* Real Vulkan copies/cache/coherence, with an isolated scalar ARGB fixture
  * decoder. Headless entry point injects executor registration only. */
 #include "vk_backend.h"
+#include "vk_gpu_mailbox.h"
 #include "vk_state.h"
 #include "vk_pipeline_cache_file.h"
 #include <unistd.h>
@@ -29,6 +30,95 @@ static void release_image(ChVkSampleImage *image) {
     memset(image,0,sizeof *image);
 }
 /* Sampler variants share the lookup bucket but remain separate images. */
+void ch_test_presented_va(uint32_t);
+static unsigned cpu_presents;
+static VkResult count_cpu_present(void *context,const Nv2aSurface *s,const void *p,size_t bytes) {
+    (void)context;(void)s;(void)p;(void)bytes;cpu_presents++;return VK_SUCCESS;
+}
+static int gpu_backend_present(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,uint32_t family) {
+    ChVkBackend *backend=NULL;ChVkGpuMailbox *box=NULL;ChVkGpuFrame frame={0};int failed=1;
+    unsigned char got[64];cpu_presents=0;
+#define REQUIRE(x) do {if(!(x)){fprintf(stderr,"GPU backend present line%d: %s\n",__LINE__,#x);goto done;}}while(0)
+    for(unsigned mode=0;mode<3;mode++) {
+        memset(memory,0,sizeof memory);
+        REQUIRE(ch_vk_gpu_mailbox_create(&box)==VK_SUCCESS);
+        ChVkBackendConfig cfg={.physical=gpu,.device=device,.queue=queue,.family=family,
+            .guest_base=memory,.guest_bytes=sizeof memory,.decode=decode,
+            .resident_color=mode!=0,.gpu_color_pack=mode==2,.batch_draws=1,
+            .render_context=box,.present_target=ch_vk_gpu_mailbox_publish,.present_rgba=count_cpu_present};
+        REQUIRE(ch_vk_backend_create(&cfg,&backend)==VK_SUCCESS && ch_vk_backend_attach(backend)==VK_SUCCESS);
+        const Nv2aBackend *cb=ch_vk_backend_callbacks();
+        Nv2aSurface surface={.color_va=256,.width=4,.height=4,.pitch=24,.bytes_per_pixel=4};
+        Nv2aRenderState state={.surface_format=0x100,.color_mask=0x01010101,.depth_max=1};
+        ch_test_presented_va(surface.color_va);
+        cb->clear(&surface,&state,0xf0,0x1749a1fe,0);if(cb->flush) cb->flush();
+        /* CPU movie/idle-surface write after guest completion must reach the
+         * GPU handoff, even though no further guest draw marks color dirty. */
+        uint32_t edit=0x753917ab;memcpy(memory+256+24+8,&edit,4);
+        cb->flip();
+        REQUIRE(ch_vk_gpu_mailbox_take(box,&frame)==VK_SUCCESS);
+        REQUIRE(ch_vk_texture_read_rgba(frame.image,got,sizeof got)==VK_SUCCESS);
+        for(unsigned y=0;y<4;y++) for(unsigned x=0;x<4;x++) {
+            uint32_t argb;memcpy(&argb,memory+256+y*24+x*4,4);
+            unsigned char expected[]={argb>>16,argb>>8,argb,argb>>24};
+            REQUIRE(!memcmp(got+(y*4+x)*4,expected,4));
+        }
+        REQUIRE(!cpu_presents);
+        ch_vk_backend_destroy(backend);backend=NULL;
+        REQUIRE(ch_vk_texture_read_rgba(frame.image,got,sizeof got)==VK_SUCCESS);
+        ch_vk_gpu_frame_release(&frame);REQUIRE(ch_vk_gpu_mailbox_destroy(box)==VK_SUCCESS);box=NULL;
+    }
+    puts("PASS: GPU presentation bypasses CPU callbacks and includes idle CPU edits in strict/resident/packed paths");failed=0;
+done:
+    ch_test_presented_va(0);ch_vk_gpu_frame_release(&frame);ch_vk_backend_destroy(backend);ch_vk_gpu_mailbox_destroy(box);return failed;
+#undef REQUIRE
+}
+static int gpu_mailbox(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,uint32_t family) {
+    ChVkGpuMailbox *box=NULL;ChVkGpuFrame held[3]={{0}},next={0};ChVkTarget *source=NULL;
+    unsigned char got[64],expected[3][64];int failed=1;const float black[4]={0};
+#define REQUIRE(x) do {if(!(x)){fprintf(stderr,"GPU mailbox line%d: %s\n",__LINE__,#x);goto done;}}while(0)
+    REQUIRE(ch_vk_gpu_mailbox_create(&box)==VK_SUCCESS);
+    REQUIRE(ch_vk_target_create(gpu,device,queue,family,4,4,&source)==VK_SUCCESS);
+    REQUIRE(ch_vk_target_clear_read(source,black,got,sizeof got)==VK_SUCCESS);
+    Nv2aSurface surface={.width=4,.height=4,.pitch=16,.bytes_per_pixel=4};
+    for(unsigned frame=0;frame<3;frame++) {
+        for(unsigned i=0;i<64;i++) expected[frame][i]=(unsigned char)(i*13+frame*71);
+        REQUIRE(ch_vk_target_import_color(source,expected[frame],64)==VK_SUCCESS);
+        REQUIRE(ch_vk_gpu_mailbox_publish(box,&surface,source)==VK_SUCCESS);
+        REQUIRE(ch_vk_gpu_mailbox_take(box,&held[frame])==VK_SUCCESS && held[frame].sequence==frame+1);
+    }
+    REQUIRE(ch_vk_gpu_mailbox_publish(box,&surface,source)==VK_NOT_READY);
+    REQUIRE(ch_vk_gpu_mailbox_destroy(box)==VK_NOT_READY);
+    for(unsigned i=0;i<3;i++) {
+        REQUIRE(ch_vk_texture_read_rgba(held[i].image,got,sizeof got)==VK_SUCCESS);
+        REQUIRE(!memcmp(got,expected[i],64));
+    }
+    /* Reuse only the released slot; queued replacement cannot touch the
+     * other two frames held by consumers. */
+    ChVkTexture *reused=held[1].image;ch_vk_gpu_frame_release(&held[1]);
+    REQUIRE(ch_vk_gpu_mailbox_publish(box,&surface,source)==VK_SUCCESS);
+    REQUIRE(ch_vk_gpu_mailbox_take(box,&next)==VK_SUCCESS && next.image==reused);
+    REQUIRE(ch_vk_texture_read_rgba(next.image,got,sizeof got)==VK_SUCCESS && !memcmp(got,expected[2],64));
+    ch_vk_gpu_frame_release(&next);ch_vk_gpu_frame_release(&held[2]);
+    for(unsigned i=0;i<5;i++) REQUIRE(ch_vk_gpu_mailbox_publish(box,&surface,source)==VK_SUCCESS);
+    REQUIRE(ch_vk_gpu_mailbox_take(box,&next)==VK_SUCCESS && next.sequence==9);
+    ch_vk_target_destroy(source);source=NULL;
+    REQUIRE(ch_vk_texture_read_rgba(held[0].image,got,sizeof got)==VK_SUCCESS && !memcmp(got,expected[0],64));
+    REQUIRE(ch_vk_texture_read_rgba(next.image,got,sizeof got)==VK_SUCCESS && !memcmp(got,expected[2],64));
+    ch_vk_gpu_frame_release(&next);
+    /* Resize keeps old leased images alive. */
+    REQUIRE(ch_vk_target_create(gpu,device,queue,family,2,2,&source)==VK_SUCCESS);
+    REQUIRE(ch_vk_target_clear_read(source,black,got,sizeof got)==VK_SUCCESS);
+    surface.width=surface.height=2;surface.pitch=8;
+    REQUIRE(ch_vk_gpu_mailbox_publish(box,&surface,source)==VK_SUCCESS);
+    REQUIRE(ch_vk_gpu_mailbox_take(box,&next)==VK_SUCCESS && next.surface.width==2);
+    REQUIRE(ch_vk_texture_read_rgba(held[0].image,got,sizeof got)==VK_SUCCESS && !memcmp(got,expected[0],64));
+    puts("PASS: GPU mailbox exact snapshots, bounded pins, dropped pending frames, reuse, source destruction and resize");failed=0;
+done:
+    ch_vk_gpu_frame_release(&next);for(unsigned i=0;i<3;i++) ch_vk_gpu_frame_release(&held[i]);
+    ch_vk_target_destroy(source);ch_vk_gpu_mailbox_destroy(box);return failed;
+#undef REQUIRE
+}
 static int sampler_collisions(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,uint32_t family) {
     ChVkTextureCache *cache=NULL;ChVkSampleImage a={0},b={0},probe={0};int failed=1;
 #define REQUIRE(x) do {if(!(x)){fprintf(stderr,"sampler collision line%d: %s\n",__LINE__,#x);goto done;}}while(0)
@@ -593,6 +683,7 @@ done:
 }
 int ch_test_texture_watch(VkPhysicalDevice,VkDevice,VkQueue,uint32_t);
 int ch_test_render_textures(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,uint32_t family) {
+    if(gpu_mailbox(gpu,device,queue,family) || gpu_backend_present(gpu,device,queue,family)) return 1;
     if(ch_test_texture_watch(gpu,device,queue,family)) return 1;
     if(sampler_collisions(gpu,device,queue,family)) return 1;
     if(cold_eviction(gpu,device,queue,family)) return 1;

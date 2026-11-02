@@ -180,12 +180,16 @@ int main(void) {
     ChVkXrDevice zink={0};VkResult vk_result=VK_SUCCESS;step=0;mode=0;
     if(ch_vk_xr_device_create_with_options((XrInstance)(uintptr_t)1,1,proc,&options,&zink,&vk_result)!=XR_ERROR_API_VERSION_UNSUPPORTED ||
        step!=1 || zink.instance || zink.device) return 1;
+#ifndef __APPLE__
     mode=3;step=0;
     if(ch_vk_xr_device_create_with_options((XrInstance)(uintptr_t)1,1,proc,&options,&zink,&vk_result)!=XR_SUCCESS ||
        vk_result!=VK_SUCCESS || zink.api_version!=VK_API_VERSION_1_2 || step!=4 || bad ||
        !vkGetDeviceProcAddr(zink.device,"vkGetMemoryFdKHR") || !vkGetDeviceProcAddr(zink.device,"vkImportSemaphoreFdKHR")) return 1;
     ch_vk_xr_device_destroy(&zink);
     puts("PASS: XR factory forwards Vulkan1.2/external-FD requests to runtime-selected GPU; rejects1.1 ceiling before instance creation (injected XR)");
+#else
+    puts("SKIP: external-FD device extensions are not part of the macOS XR copy test");
+#endif
     for(mode=0;mode<3;mode++) {
         ChVkXrDevice d={0}; VkResult vr=VK_SUCCESS; step=0;
         XrResult r=ch_vk_xr_device_create((XrInstance)(uintptr_t)1,1,proc,&d,&vr);
@@ -248,6 +252,16 @@ int main(void) {
             if(ch_vk_xr_quad_update(quad,eyes[0],0,&vr)!=XR_TIMEOUT_EXPIRED || ch_vk_xr_quad_layer(quad)) bad=1;
             if(ch_vk_xr_quad_pose(quad,&pose,size)!=XR_ERROR_CALL_ORDER_INVALID || ch_vk_xr_quad_destroy(quad)!=XR_ERROR_CALL_ORDER_INVALID) bad=1;
             if(ch_vk_xr_quad_update(quad,eyes[0],1000,&vr)!=XR_SUCCESS || !ch_vk_xr_quad_layer(quad)) bad=1;
+            ChVkTexture *gpu_frame=NULL;
+            if(ch_vk_target_snapshot_texture(eyes[0],1,&gpu_frame)!=VK_SUCCESS) return 1;
+            waits=0;
+            if(ch_vk_xr_quad_update_texture(quad,gpu_frame,0,&vr)!=XR_TIMEOUT_EXPIRED || ch_vk_xr_quad_layer(quad)) bad=1;
+            if(ch_vk_xr_quad_update_texture(quad,gpu_frame,1000,&vr)!=XR_SUCCESS || vr!=VK_SUCCESS || !ch_vk_xr_quad_layer(quad)) bad=1;
+            if(ch_vk_texture_read_rgba(gpu_frame,copied,sizeof copied)!=VK_SUCCESS || memcmp(source,copied,sizeof source)) bad=1;
+            capture_device=&d;capture_expected=source;capture_width=capture_height=16;
+            if(!capture_matches()) bad=1;
+            capture_device=NULL;capture_expected=NULL;
+            ch_vk_texture_destroy(gpu_frame);
             const XrCompositionLayerBaseHeader *extra[]={ch_vk_xr_quad_layer(quad)};
             for(frame_mode=0;frame_mode<5;frame_mode++) {
                 frame_phase=0; XrFrameState fs; XrView views[2]; XrViewStateFlags flags;

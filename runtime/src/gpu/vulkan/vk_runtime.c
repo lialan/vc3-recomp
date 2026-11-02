@@ -8,6 +8,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdatomic.h>
+#include <time.h>
 
 extern void xbox_FramebufferWindowPresentFrames(const void *const *,int,uint32_t,uint32_t,uint32_t,uint32_t);
 static ChVkBackendConfig host_config;
@@ -54,36 +55,44 @@ static void save_pipeline_cache(void)
             ch_vk_pipeline_cache_file_save(runtime.cache_device,runtime.pipeline_cache,runtime.cache_path)?"ok":"skipped");
 }
 
-static VkResult present_pixels(void *unused,const Nv2aSurface *surface,const void *rgba,size_t bytes,int bgra)
+static void frame_completed(const Nv2aSurface *surface)
 {
-    (void)unused;
-    size_t count=(size_t)surface->width*surface->height;
-    if(bytes!=count*4) return VK_ERROR_INITIALIZATION_FAILED;
-    if(!has_host_config && !bgra) {
-        if(bytes>runtime.capacity) {
-            void *p=realloc(runtime.argb,bytes);
-            if(!p) return VK_ERROR_OUT_OF_HOST_MEMORY;
-            runtime.argb=p;runtime.capacity=bytes;
-        }
-        const unsigned char *src=rgba;
-        for(size_t i=0;i<count;i++)
-            runtime.argb[i]=((uint32_t)src[4*i+3]<<24)|((uint32_t)src[4*i]<<16)
-                |((uint32_t)src[4*i+1]<<8)|src[4*i+2];
-        const void *planes[]={runtime.argb};
-        xbox_FramebufferWindowPresentFrames(planes,1,surface->width,surface->height,surface->width*4,4);
-    } else if(!has_host_config) {
-        const void *planes[]={rgba};
-        xbox_FramebufferWindowPresentFrames(planes,1,surface->width,surface->height,surface->width*4,4);
-    } else if(host_config.present_rgba) {
-        VkResult result=host_config.present_rgba(host_config.render_context,surface,rgba,bytes);
-        if(result!=VK_SUCCESS) return result;
+    runtime.frames++;
+    if(ch_env("VULKAN_INTERVAL_LOG")) {
+        static uint64_t previous;
+        struct timespec t;clock_gettime(CLOCK_MONOTONIC,&t);
+        uint64_t now=(uint64_t)t.tv_sec*1000000000u+t.tv_nsec;
+        if(previous) fprintf(stderr,"[Vulkan present intervals] frame=%llu interval_ms=%.3f\n",
+            (unsigned long long)runtime.frames,(now-previous)/1e6);
+        previous=now;
     }
-    const unsigned char *src=rgba;
+    if(runtime.frames==1 || runtime.frames%60==0)
+        fprintf(stderr,"[Vulkan] completed frame %llu: %ux%u, guest=%08X\n",
+                (unsigned long long)runtime.frames,surface->width,surface->height,surface->color_va);
+    const char *limit=ch_env("VULKAN_FRAME_LIMIT");
+    if(limit && strtoull(limit,NULL,10)>0 && runtime.frames>=strtoull(limit,NULL,10)) {
+        fprintf(stderr,"[Vulkan] diagnostic frame limit reached: %llu\n",(unsigned long long)runtime.frames);
+        save_pipeline_cache();
+        fflush(NULL);
+        exit(EXIT_SUCCESS);
+    }
+}
+
+static int capture_due(void)
+{
     const char *dir=ch_env("VULKAN_DUMP_DIR"),*first=ch_env("VULKAN_DUMP_FIRST"),*n=ch_env("VULKAN_DUMP_COUNT");
     const char *step=ch_env("VULKAN_DUMP_EVERY");
     uint64_t start=first?strtoull(first,NULL,10):0,number=n?strtoull(n,NULL,10):1;
     uint64_t every=step?strtoull(step,NULL,10):0;
-    if(dir && runtime.frames>=start && (runtime.frames-start<number || (every && (runtime.frames-start)%every==0))) {
+    return dir && runtime.frames>=start && (runtime.frames-start<number || (every && (runtime.frames-start)%every==0));
+}
+static VkResult capture_pixels(const Nv2aSurface *surface,const void *rgba,int bgra)
+{
+    if(!capture_due()) return VK_SUCCESS;
+    size_t count=(size_t)surface->width*surface->height;
+    const unsigned char *src=rgba;
+    const char *dir=ch_env("VULKAN_DUMP_DIR");
+    {
         size_t rgb_bytes=count*3;
         if(rgb_bytes>runtime.capture_capacity) {
             void *p=realloc(runtime.capture_rgb,rgb_bytes);
@@ -111,17 +120,60 @@ static VkResult present_pixels(void *unused,const Nv2aSurface *surface,const voi
         if(rename(pending,path)) {remove(pending);return VK_ERROR_INITIALIZATION_FAILED;}
         fprintf(stderr,"[Vulkan] captured %s\n",path);
     }
-    runtime.frames++;
-    if(runtime.frames==1 || runtime.frames%60==0)
-        fprintf(stderr,"[Vulkan] completed frame %llu: %ux%u, guest=%08X\n",
-                (unsigned long long)runtime.frames,surface->width,surface->height,surface->color_va);
-    const char *limit=ch_env("VULKAN_FRAME_LIMIT");
-    if(limit && strtoull(limit,NULL,10)>0 && runtime.frames>=strtoull(limit,NULL,10)) {
-        fprintf(stderr,"[Vulkan] diagnostic frame limit reached: %llu\n",(unsigned long long)runtime.frames);
-        save_pipeline_cache();
-        fflush(NULL);
-        exit(EXIT_SUCCESS);
+    return VK_SUCCESS;
+}
+
+/* GPU-native hosts own the image handoff. Keep frame accounting and cache
+ * shutdown identical to the CPU presenter without materializing pixels. */
+static VkResult present_target(void *unused,const Nv2aSurface *surface,ChVkTarget *target)
+{
+    (void)unused;
+    VkResult r=host_config.present_target(host_config.render_context,surface,target);
+    if(r!=VK_SUCCESS && r!=VK_NOT_READY) return r;
+    /* Explicit screenshot diagnostics are the only presentation readback in
+     * the GPU-host path. The normal path never allocates CPU frame pixels. */
+    if(capture_due()) {
+        ChVkTexture *copy=NULL;
+        VkResult captured=ch_vk_target_snapshot_texture(target,1,&copy);
+        size_t bytes=(size_t)surface->width*surface->height*4;
+        void *pixels=captured==VK_SUCCESS?malloc(bytes):NULL;
+        if(captured==VK_SUCCESS && !pixels) captured=VK_ERROR_OUT_OF_HOST_MEMORY;
+        if(captured==VK_SUCCESS) captured=ch_vk_texture_read_rgba(copy,pixels,bytes);
+        if(captured==VK_SUCCESS) captured=capture_pixels(surface,pixels,0);
+        free(pixels);ch_vk_texture_destroy(copy);
+        if(captured!=VK_SUCCESS) return captured;
     }
+    frame_completed(surface);
+    return r;
+}
+
+static VkResult present_pixels(void *unused,const Nv2aSurface *surface,const void *rgba,size_t bytes,int bgra)
+{
+    (void)unused;
+    size_t count=(size_t)surface->width*surface->height;
+    if(bytes!=count*4) return VK_ERROR_INITIALIZATION_FAILED;
+    if(!has_host_config && !bgra) {
+        if(bytes>runtime.capacity) {
+            void *p=realloc(runtime.argb,bytes);
+            if(!p) return VK_ERROR_OUT_OF_HOST_MEMORY;
+            runtime.argb=p;runtime.capacity=bytes;
+        }
+        const unsigned char *src=rgba;
+        for(size_t i=0;i<count;i++)
+            runtime.argb[i]=((uint32_t)src[4*i+3]<<24)|((uint32_t)src[4*i]<<16)
+                |((uint32_t)src[4*i+1]<<8)|src[4*i+2];
+        const void *planes[]={runtime.argb};
+        xbox_FramebufferWindowPresentFrames(planes,1,surface->width,surface->height,surface->width*4,4);
+    } else if(!has_host_config) {
+        const void *planes[]={rgba};
+        xbox_FramebufferWindowPresentFrames(planes,1,surface->width,surface->height,surface->width*4,4);
+    } else if(host_config.present_rgba) {
+        VkResult result=host_config.present_rgba(host_config.render_context,surface,rgba,bytes);
+        if(result!=VK_SUCCESS) return result;
+    }
+    VkResult capture_result=capture_pixels(surface,rgba,bgra);
+    if(capture_result!=VK_SUCCESS) return capture_result;
+    frame_completed(surface);
     return VK_SUCCESS;
 }
 static VkResult present(void *context,const Nv2aSurface *surface,const void *pixels,size_t bytes) {
@@ -262,6 +314,7 @@ static VkResult attach(ChVkBackendConfig config)
     const char *texture_watch=ch_env("VULKAN_TEXTURE_WRITE_WATCH");
     config.strict_texture_checks=texture_watch && !strcmp(texture_watch,"0");
     config.present_rgba=present;
+    if(config.present_target) config.present_target=present_target;
     if(!has_host_config || !host_config.present_rgba) config.present_bgra=present_bgra;
     if(!config.fatal) config.fatal=fatal;
     const char *cache_path=ch_env("VULKAN_PIPELINE_CACHE");

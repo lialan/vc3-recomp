@@ -422,3 +422,45 @@ VkResult ch_vk_texture_upload_encoded32(VkPhysicalDevice gpu,VkDevice device,VkQ
     if(!ch_vk_texture_can_decode32(s)) {if(out)*out=NULL;return VK_ERROR_FEATURE_NOT_PRESENT;}
     return ch_vk_texture_upload_encoded(gpu,device,queue,family,cache,s,raw,bytes,levels,queued,out);
 }
+
+VkResult ch_vk_texture_export_image(ChVkTexture *t,VkDevice device,VkImage destination,
+    uint32_t width,uint32_t height,VkFence *fence) {
+    if(!t || t->failed || device!=t->device || !destination || destination==t->image ||
+       width!=t->width || height!=t->height || t->layers!=1 || !fence) return VK_ERROR_INITIALIZATION_FAILED;
+    *fence=VK_NULL_HANDLE;
+    VkResult result;
+    TRY(wait_transfer(t));
+    TRY(vkResetCommandBuffer(t->command,0));TRY(vkResetFences(t->device,1,&t->fence));
+    VkCommandBufferBeginInfo begin={.sType=VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+        .flags=VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT};
+    TRY(vkBeginCommandBuffer(t->command,&begin));
+    VkImageMemoryBarrier barriers[2]={
+        {.sType=VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,.srcAccessMask=VK_ACCESS_SHADER_READ_BIT,
+         .dstAccessMask=VK_ACCESS_TRANSFER_READ_BIT,.oldLayout=VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+         .newLayout=VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,.srcQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED,
+         .dstQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED,.image=t->image,
+         .subresourceRange={VK_IMAGE_ASPECT_COLOR_BIT,0,1,0,1}},
+        {.sType=VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,.dstAccessMask=VK_ACCESS_TRANSFER_WRITE_BIT,
+         .oldLayout=VK_IMAGE_LAYOUT_UNDEFINED,.newLayout=VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+         .srcQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED,.dstQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED,
+         .image=destination,.subresourceRange={VK_IMAGE_ASPECT_COLOR_BIT,0,1,0,1}}};
+    vkCmdPipelineBarrier(t->command,VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,VK_PIPELINE_STAGE_TRANSFER_BIT,
+        0,0,NULL,0,NULL,2,barriers);
+    VkImageCopy copy={.srcSubresource={VK_IMAGE_ASPECT_COLOR_BIT,0,0,1},
+        .dstSubresource={VK_IMAGE_ASPECT_COLOR_BIT,0,0,1},.extent={width,height,1}};
+    vkCmdCopyImage(t->command,t->image,VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+        destination,VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,1,&copy);
+    barriers[0].srcAccessMask=VK_ACCESS_TRANSFER_READ_BIT;barriers[0].dstAccessMask=VK_ACCESS_SHADER_READ_BIT;
+    barriers[0].oldLayout=VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;barriers[0].newLayout=VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    barriers[1].srcAccessMask=VK_ACCESS_TRANSFER_WRITE_BIT;
+    barriers[1].dstAccessMask=VK_ACCESS_COLOR_ATTACHMENT_READ_BIT|VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+    barriers[1].oldLayout=VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;barriers[1].newLayout=VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    vkCmdPipelineBarrier(t->command,VK_PIPELINE_STAGE_TRANSFER_BIT,VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT,
+        0,0,NULL,0,NULL,2,barriers);
+    TRY(vkEndCommandBuffer(t->command));
+    VkSubmitInfo submit={.sType=VK_STRUCTURE_TYPE_SUBMIT_INFO,.commandBufferCount=1,.pCommandBuffers=&t->command};
+    TRY(vkQueueSubmit(t->queue,1,&submit,t->fence));t->pending=1;
+    TRY(wait_transfer(t));*fence=t->fence;return VK_SUCCESS;
+fail:
+    t->failed=1;return result;
+}

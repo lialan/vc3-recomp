@@ -395,7 +395,10 @@ static void observe_guest_color_before_clear(struct Surface *f,int overwrite) {
             active->clear_color_imports_avoided++;
             active->clear_color_bytes_avoided+=f->bytes;
         } else if(f->resident) {
-            if(!f->observed_valid) memcpy(f->rgba,cpu,f->bytes);
+            /* A clean resident image equals the published baseline. CPU
+             * pixels already contain both edits and unchanged pixels; reading
+             * the same GPU baseline back just to merge them is redundant. */
+            if(!f->observed_valid || !f->color_dirty) memcpy(f->rgba,cpu,f->bytes);
             else {
                 r=ch_vk_target_read_color(f->target,f->rgba,f->bytes);
                 if(r!=VK_SUCCESS) fatal(r,"resident CPU edit merge read");
@@ -757,12 +760,17 @@ static void flip(void) {
             (unsigned long long)active->cpu_color_pixels,active->cpu_color_us/1000.);
     }
     uint32_t presented=nv2a_backend_presented_va();
-    if((active->host.present_rgba || active->host.present_bgra) && presented) {
+    if((active->host.present_target || active->host.present_rgba || active->host.present_bgra) && presented) {
         struct Surface *f=NULL;
         for(unsigned i=0;i<active->count;i++) if(active->surfaces[i].guest.color_va==presented) { f=&active->surfaces[i]; break; }
         if(!f) fatal(VK_ERROR_FEATURE_NOT_PRESENT,"unknown presented surface");
         VkResult r;
-        if(f->color_bgra==1 && active->host.present_bgra) {
+        if(active->host.present_target) {
+            observe_guest_color(f);
+            import_color(f);
+            r=active->host.present_target(active->host.render_context,&f->guest,f->target);
+            if(r==VK_NOT_READY) r=VK_SUCCESS;
+        } else if(f->color_bgra==1 && active->host.present_bgra) {
             r=load_surface_color(f,f->rgba);
             if(r==VK_SUCCESS) r=active->host.present_bgra(active->host.render_context,&f->guest,f->rgba,f->bytes);
         } else {

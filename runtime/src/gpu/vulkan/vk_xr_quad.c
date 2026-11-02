@@ -46,3 +46,14 @@ XrResult ch_vk_xr_quad_destroy(ChVkXrQuad *q) {
     XrResult r=ch_vk_xr_swapchain_destroy(q->swapchain);
     if(r==XR_SUCCESS) free(q); return r;
 }
+
+XrResult ch_vk_xr_quad_update_texture(ChVkXrQuad *q,ChVkTexture *texture,XrDuration timeout,VkResult *vk_result) {
+    if(!q || !texture || !vk_result || timeout<0) return XR_ERROR_VALIDATION_FAILURE;
+    q->pending=1;q->ready=0;
+    uint32_t index;VkImage image;
+    XrResult r=ch_vk_xr_swapchain_wait(q->swapchain,timeout,&index,&image);
+    if(r!=XR_SUCCESS) return r;
+    r=ch_vk_xr_swapchain_texture_release(q->swapchain,texture,vk_result);
+    if(r==XR_SUCCESS) {q->pending=0;q->ready=1;}
+    return r;
+}

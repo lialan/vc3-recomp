@@ -25,4 +25,5 @@ XrSwapchain ch_vk_xr_swapchain_handle(const ChVkXrSwapchain *swapchain);
  * usage. Diagnose copies on ordinary Vulkan images via target export. */
 XrResult ch_vk_xr_swapchain_copy_release(ChVkXrSwapchain *swapchain,
     ChVkTarget *target, void *verification, VkDeviceSize bytes, VkResult *vk_result);
+XrResult ch_vk_xr_swapchain_texture_release(ChVkXrSwapchain *,ChVkTexture *,VkResult *);
 #endif

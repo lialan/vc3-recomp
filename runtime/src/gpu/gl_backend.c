@@ -2902,6 +2902,7 @@ static void surf_readback_async(Surf *f)
     r->gh = f->h;
     r->gpitch = f->pitch;
     r->gbpp = f->bpp;
+    r->executor_flip = nv2a_backend_flip_count();
     r->group = 0;
     f->dirty = 0;
 
@@ -2920,6 +2921,13 @@ static void surf_readback_async(Surf *f)
         src = glMapBufferRange(GL_PIXEL_PACK_BUFFER, 0, prev->bytes, GL_MAP_READ_BIT);
         if (src) {
             Surf *pf = surf_find(prev->va);
+#if !defined(VC3_GLES)
+            if (!prev->group && genv("FPS_DUMP")) {
+                const void *planes[] = {src};
+                interp_dump(planes, 1, prev->gpitch, prev->gbpp,
+                            prev->gw, prev->gh, 0, prev->executor_flip);
+            }
+#endif
 #if defined(VC3_GLES)
             es_to_guest((uint8_t *)xbox_GetMemoryOffset() + prev->va, prev->gpitch,
                         prev->gbpp, (const uint8_t *)src, prev->gw, prev->gh);
@@ -6001,9 +6009,12 @@ static void interp_dump(const void *const *px, int n, uint32_t pitch,
      * not the later flip that publishes this asynchronous PBO. Legacy dumps
      * retain their existing filenames unless this range is requested. */
     const char *first=genv("FPS_DUMP_FIRST"),*count=genv("FPS_DUMP_COUNT");
+    const char *step=genv("FPS_DUMP_EVERY");
     uint64_t start=first?strtoull(first,NULL,10):0;
+    uint64_t every=step?strtoull(step,NULL,10):0;
     if((first || count) && (executor_flip<start ||
-       (count && executor_flip-start>=strtoull(count,NULL,10)))) return;
+       (count && executor_flip-start>=strtoull(count,NULL,10) &&
+        !(every && (executor_flip-start)%every==0)))) return;
     if (flag && !strcmp(flag, "cuts")) {
         if (!cut)
             return;
@@ -6470,6 +6481,22 @@ static void gl_flip(void)
         }
     }
     texstat_flip(s_frame);
+    if (genv("GL_FRAME_PROFILE")) {
+        static uint64_t previous;
+        uint64_t now = tm_now();
+        if (previous)
+            fprintf(stderr, "[OpenGL frame costs] frame=%llu interval_ms=%.3f\n",
+                    (unsigned long long)nv2a_backend_flip_count(), (now - previous) / 1e6);
+        previous = now;
+    }
+    const char *limit = genv("GL_FRAME_LIMIT");
+    if (limit && strtoull(limit, NULL, 10) &&
+        nv2a_backend_flip_count() >= strtoull(limit, NULL, 10)) {
+        fprintf(stderr, "[OpenGL] diagnostic frame limit reached: %llu\n",
+                (unsigned long long)nv2a_backend_flip_count());
+        fflush(NULL);
+        exit(EXIT_SUCCESS);
+    }
     if (s_st.on && s_frame % 300 == 0) {
         fprintf(stderr, "[GL] %u flips: %u draws (%u tris), %u textured, %u "
                 "no texture, %u from surfaces, %u uploads (%u mipmapped), %u binds "
