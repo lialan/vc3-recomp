@@ -53,6 +53,7 @@ struct ChVkTarget {
     const ChVkFixedParams *fixed;
     VkDeviceSize vertex_offset;
     PipelineResources pipelines[PIPELINE_SLOTS], *active_pipeline;
+    unsigned pipeline_extent; /* Initialized prefix, including failed creations. */
     VkPipelineCache pipeline_cache;
     int borrowed_pipeline_cache;
     float blend_constants[4];
@@ -339,7 +340,7 @@ void ch_vk_target_destroy(ChVkTarget *t) {
     if(!t->failed) (void)finish_batch_named(t,0,__func__);
     if(t->failed) vkQueueWaitIdle(t->queue);
     retire_samples(t);
-    for(unsigned i=0;i<PIPELINE_SLOTS;i++) destroy_pipeline(t,&t->pipelines[i]);
+    for(unsigned i=0;i<t->pipeline_extent;i++) destroy_pipeline(t,&t->pipelines[i]);
     if(t->pipeline_cache && !t->borrowed_pipeline_cache) vkDestroyPipelineCache(t->device,t->pipeline_cache,NULL);
     destroy_geometry(t);
     if(t->framebuffer) vkDestroyFramebuffer(t->device,t->framebuffer,NULL);
@@ -592,7 +593,7 @@ static VkResult retire_batch(ChVkTarget *t) {
      * proves that upload command and staging reads have completed. */
     t->upload_pending=0;
     t->pending=t->pending_clears=0;t->geometry_used=0;
-    for(unsigned i=0;i<PIPELINE_SLOTS;i++) {t->pipelines[i].set_used=0;t->pipelines[i].pending=0;}
+    for(unsigned i=0;i<t->pipeline_extent;i++) {t->pipelines[i].set_used=0;t->pipelines[i].pending=0;}
     uint64_t retire_start=t->timing?time_ns():0;
     retire_samples(t);
     if(t->timing) {
@@ -975,7 +976,7 @@ static VkResult render_read(ChVkTarget *t, const float rgba[4], uint32_t clear_f
             sizeof(t->samples),VK_QUERY_RESULT_64_BIT|VK_QUERY_RESULT_WAIT_BIT));
     t->layout=VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
     t->initialized=1;
-    for(unsigned i=0;i<PIPELINE_SLOTS;i++) t->pipelines[i].set_used=0;
+    for(unsigned i=0;i<t->pipeline_extent;i++) t->pipelines[i].set_used=0;
     if(t->defer_color_readback) return VK_SUCCESS;
     void *mapped;
     TRY(map_readback(t,0,&mapped));
@@ -1362,7 +1363,9 @@ static VkResult draw_full(ChVkTarget *t, const float rgba[4],
     if(previous && previous->pipeline && !memcmp(&key,&previous->key,sizeof key)) {
         entry=previous;t->resource_stats.pipeline_consecutive_hits++;
     }
-    for(unsigned i=0;!entry && i<capacity;i++) {
+    /* One never-used slot suffices: all remaining slots have used==0. */
+    unsigned search_count=t->pipeline_extent<capacity?t->pipeline_extent+1:capacity;
+    for(unsigned i=0;!entry && i<search_count;i++) {
         PipelineResources *p=&t->pipelines[i];
         t->resource_stats.pipeline_scan_entries++;
         if(p!=previous && p->pipeline && !memcmp(&key,&p->key,sizeof key)) {entry=p;break;}
@@ -1376,6 +1379,8 @@ static VkResult draw_full(ChVkTarget *t, const float rgba[4],
             if(entry->pending) TRY(finish_batch_named(t,0,__func__));
             t->resource_stats.pipeline_evictions++;
         }
+        unsigned slot=(unsigned)(entry-t->pipelines);
+        if(slot>=t->pipeline_extent) t->pipeline_extent=slot+1;
         destroy_pipeline(t,entry);t->active_pipeline=entry;
         const char *pipeline_log=getenv("CHIHIRO_VULKAN_PIPELINE_LOG");
         int log_pipeline=pipeline_log && atoi(pipeline_log);
@@ -1446,7 +1451,7 @@ static VkResult draw_full(ChVkTarget *t, const float rgba[4],
     if(result==VK_SUCCESS && samples) *samples=(uint32_t)t->samples;
 fail:
     if(t->failed) vkQueueWaitIdle(t->queue);
-    if(!t->pending) for(unsigned i=0;i<PIPELINE_SLOTS;i++) t->pipelines[i].set_used=0;
+    if(!t->pending) for(unsigned i=0;i<t->pipeline_extent;i++) t->pipelines[i].set_used=0;
     if(!t->reuse_resources || t->failed) destroy_geometry(t);
     return result;
 }
