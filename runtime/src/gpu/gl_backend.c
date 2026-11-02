@@ -196,6 +196,8 @@ static void sh_glDeleteFramebuffers(GLsizei n, const GLuint *fbs)
     glDeleteFramebuffers(n, fbs);
 }
 
+static uint32_t s_viewport_sent;
+
 static void sh_glViewport(GLint x, GLint y, GLsizei w, GLsizei h)
 {
     if (s_sh.vp[0] == x && s_sh.vp[1] == y && s_sh.vp[2] == w && s_sh.vp[3] == h)
@@ -205,6 +207,7 @@ static void sh_glViewport(GLint x, GLint y, GLsizei w, GLsizei h)
     s_sh.vp[2] = w;
     s_sh.vp[3] = h;
     s_sh.made++;
+    s_viewport_sent++;
     glViewport(x, y, w, h);
 }
 
@@ -408,6 +411,11 @@ typedef struct {
     /* the fixed-function state last sent to this program (raw_uniforms) */
     Nv2aFixedState ff_last;
     int ff_valid;
+    /* Derived projection follows the program's ff_last cache, rather than
+     * whichever other program happened to draw immediately before it. */
+    VrGameProj ff_gp;
+    float ff_aa[2];
+    int ff_gp_ok;
     /* u_ascale as last sent (16 slots: past the uniform cache's size) */
     GLfloat ascale_last[16][4];
     int ascale_valid;
@@ -840,6 +848,7 @@ static const char *VS_VP_HEAD =
     "uniform vec4 u_gp;\n"
     "uniform vec2 u_gw;\n"
     "uniform int u_st2;\n"
+    "uniform int u_vp_imm_clip;\n"
     "uniform vec2 u_eye2[2];\n"
     "uniform mat4 u_immvp2[2];\n"
     "flat out int v_eye;\n"
@@ -908,7 +917,7 @@ static const char *VS_VP_MAIN =
     "  ndc.x = ndc.x * u_xs.x + u_xs.y;\n"
     "  float zn = (s.z - u_depth.x) / (u_depth.y - u_depth.x) * 2.0 - 1.0;\n"
     "  bool bad = abs(w) <= 1e-6 || any(isnan(o_screen)) || any(isinf(o_screen));\n"
-    "  bool imm = u_gw.x != 0.0 && !flat2d && w > 0.0;\n"
+    "  bool imm = u_gw.x != 0.0 && (u_vp_imm_clip != 0 || (!flat2d && w > 0.0));\n"
     "  float iez = w * u_gw.y;\n"
     "  vec4 ipos = ivp * vec4((s.x - u_gp.z) / u_gp.x * iez, (s.y - u_gp.w) / u_gp.y * iez,\n"
     "                             -w * abs(u_gw.y), 1.0);\n"
@@ -917,8 +926,8 @@ static const char *VS_VP_MAIN =
     /* the CPU clips every program batch at w = 1e-3 and the near plane,
      * immersive or not */
     "#if !defined(GL_ES) || defined(GL_EXT_clip_cull_distance)\n"
-    "  gl_ClipDistance[0] = bad ? -1e30 : w - 1e-3;\n"
-    "  gl_ClipDistance[1] = bad ? -1e30 : (u_nearz != 0 ? (s.z - u_vpz) * w : 1.0);\n"
+    "  gl_ClipDistance[0] = bad ? -1e30 : (imm && u_vp_imm_clip != 0 ? 1.0 : w - 1e-3);\n"
+    "  gl_ClipDistance[1] = bad ? -1e30 : (imm && u_vp_imm_clip != 0 ? 1.0 : (u_nearz != 0 ? (s.z - u_vpz) * w : 1.0));\n"
     "#endif\n"
     "  v_eye = seye;\n"
     "  if (u_st2 != 0)\n"
@@ -1301,6 +1310,10 @@ static int prog_link(Prog *p, GLuint vs, GLuint fs, int feedback)
     glUniform1i(glGetUniformLocation(p->prog, "u_nofog"),
                 genv("GL_NOFOG") != NULL);
     glUniform1i(p->rcdbg, genv("GL_RCDBG") ? atoi(genv("GL_RCDBG")) : 0);
+    /* Diagnostic opt-in: one clip space per immersive program draw, and
+     * clipping by the headset frustum as in the fixed-function shader. */
+    glUniform1i(glGetUniformLocation(p->prog, "u_vp_imm_clip"),
+                genv("GL_VP_IMM_CLIP") && genv("GL_VP_IMM_CLIP")[0] == '1');
     return 1;
 }
 
@@ -2932,8 +2945,9 @@ static void gt_flip(void)
         s_zp_frame = s_sw_frame = 0;
         fprintf(stderr, "[GPUTIME]   attribute pointers kept %u, set %u; state calls made %u,"
                 " not repeated %u; uniforms sent %u, not repeated %u; program constants"
-                " sent %u; ring waits %u (%.1f ms)\n", s_va_hit, s_va_miss, s_sh.made, s_sh.skipped,
-                s_uc_sent, s_uc_kept, s_vc_sent, s_ring_waits, s_ring_wait_ns / 1e6);
+                " sent %u; ring waits %u (%.1f ms); viewport changes %u\n", s_va_hit, s_va_miss, s_sh.made, s_sh.skipped,
+                s_uc_sent, s_uc_kept, s_vc_sent, s_ring_waits, s_ring_wait_ns / 1e6, s_viewport_sent);
+        s_viewport_sent = 0;
         s_ring_waits = 0;
         s_ring_wait_ns = 0;
         s_sh.made = s_sh.skipped = 0;
@@ -2964,6 +2978,19 @@ static uint32_t s_bound_va;
 /* The framebuffer for a guest surface, created or grown to fit, and bound.
  * A change of scale or aspect remakes it at the first draw after the flip
  * that took the change; VC3 redraws every surface each frame. */
+/* Keep the viewport selected by the last draw until the next draw needs
+ * another one. Binding/clearing a surface does not consume the viewport.
+ * Opt in while the native intro/control scenes are compared on device. */
+static int viewport_lazy(void)
+{
+    static int on = -1;
+    if (on < 0) {
+        const char *e = genv("GL_VIEWPORT_LAZY");
+        on = e && e[0] == '1';
+    }
+    return on;
+}
+
 static Surf *surf_bind(const Nv2aSurface *s)
 {
     Surf *f = surf_find(s->color_va);
@@ -3010,7 +3037,8 @@ static Surf *surf_bind(const Nv2aSurface *s)
     s_bound_fbo = f->fbo;
     s_bound_va = f->va;
     glBindFramebuffer(GL_FRAMEBUFFER, f->fbo);
-    glViewport(0, 0, f->pw, f->ph);
+    if (!viewport_lazy())
+        glViewport(0, 0, f->pw, f->ph);
     return f;
 }
 
@@ -4700,6 +4728,51 @@ static void raw_uniforms_common(const Nv2aRawGeometry *g)
     cu2f(U->uvs0, g->uv_scale0[0], g->uv_scale0[1]);
 }
 
+/* Uniform and derived projection caches have the same owner. A cached
+ * program must restore its projection after another program used s_bgp. */
+static void raw_projection(const Nv2aRawGeometry *g)
+{
+    const Nv2aFixedState *ff = g->ff;
+    if (!U->ff_valid || memcmp(&U->ff_last, ff, sizeof *ff)
+        || U->ff_aa[0] != g->aa_sx || U->ff_aa[1] != g->aa_sy) {
+        U->ff_aa[0] = g->aa_sx;
+        U->ff_aa[1] = g->aa_sy;
+        U->ff_gp_ok = vr_game_proj_from(ff->composite, ff->mv[0], (int)ff->use_composite,
+                                        ff->proj, g->aa_sx, g->aa_sy, ff->c59, &U->ff_gp);
+        if (U->ff_gp_ok)
+            s_gp_good++;
+        else
+            s_gp_bad++;
+    }
+    s_bgp_ok = U->ff_gp_ok;
+    if (s_bgp_ok)
+        s_bgp = U->ff_gp;
+    if (!s_bgp_ok && s_ftr == 1) {
+        static uint32_t traced_frame;
+        if (traced_frame != s_frame) {
+            float inverse[16];
+            VrGameProj projection_only;
+            const int inverse_ok = vr_inverse(ff->mv[0], inverse);
+            const int projection_ok = vr_game_proj_from(ff->composite, ff->mv[0], 0,
+                                  ff->proj, g->aa_sx, g->aa_sy, ff->c59, &projection_only);
+            const float *matrix[3] = {ff->mv[0], ff->proj, ff->composite};
+            const char *name[3] = {"model-view", "projection", "composite"};
+            int m, k;
+            traced_frame = s_frame;
+            fprintf(stderr, "[GLTR] rejected projection usecomp %u skin %u inverse-mv %d"
+                    " projection-only %d aa %.9g %.9g c59 %.9g %.9g %.9g %.9g\n",
+                    ff->use_composite, ff->skin_mode, inverse_ok, projection_ok,
+                    g->aa_sx, g->aa_sy, ff->c59[0], ff->c59[1], ff->c59[2], ff->c59[3]);
+            for (m = 0; m < 3; m++) {
+                fprintf(stderr, "[GLTR] rejected %s:", name[m]);
+                for (k = 0; k < 16; k++)
+                    fprintf(stderr, " %.9g", matrix[m][k]);
+                fprintf(stderr, "\n");
+            }
+        }
+    }
+}
+
 static void raw_uniforms(const Nv2aRawGeometry *g)
 {
     Nv2aFixedState *lastp = &U->ff_last;
@@ -4710,21 +4783,7 @@ static void raw_uniforms(const Nv2aRawGeometry *g)
     GLuint gen[16];
 
     raw_uniforms_common(g);
-    {   /* the game's projection for this batch, when its matrices changed */
-        static float last_aa[2];
-        if (!(valid && !memcmp(&last, ff, sizeof last)) || last_aa[0] != g->aa_sx
-            || last_aa[1] != g->aa_sy) {
-            last_aa[0] = g->aa_sx;
-            last_aa[1] = g->aa_sy;
-            s_bgp_ok = vr_game_proj_from(ff->composite, ff->mv[0], (int)ff->use_composite,
-                                         ff->proj, g->aa_sx, g->aa_sy, ff->c59, &s_bgp);
-            if (s_bgp_ok) {
-                s_gp_good++;
-            } else {
-                s_gp_bad++;
-            }
-        }
-    }
+    raw_projection(g);
     if (valid && !memcmp(&last, ff, sizeof last))
         return;
     last = *ff;
@@ -4787,6 +4846,8 @@ static void raw_capture(const Nv2aRawGeometry *g)
     if (p) {
         memcpy(g->check_out, p, (size_t)bytes);
         glUnmapBuffer(GL_TRANSFORM_FEEDBACK_BUFFER);
+        if (g->check_valid)
+            *g->check_valid = 1;
     } else {
         memset(g->check_out, 0, (size_t)bytes);
     }
@@ -4981,7 +5042,10 @@ static int lazy_skip(Surf *f, const Nv2aBatch *b)
                   && surf_find(b->texture->offset) != f && batch_fullscreen(b, f));
     if (!copy)
         f->not_copy = 1;
-    if (!lazy_on() || !f->st || f->not_copy || surf_shown(f) || f->cpu_owned
+    /* A checked draw must reach raw_capture; returning "taken" without
+     * capture used to compare the CPU batch against an older GPU batch. */
+    if ((b && b->raw && b->raw->check_out)
+        || !lazy_on() || !f->st || f->not_copy || surf_shown(f) || f->cpu_owned
         || s_frame - f->first_drawn < LAZY_FRAMES || s_frame - f->last_sampled < LAZY_FRAMES)
         return 0;
     if (b)
@@ -5081,6 +5145,18 @@ static int batch_needs_rc(const Surf *f, const Nv2aBatch *b, int raw)
 /* The draw calls of a batch once everything is bound: one instanced draw
  * for both eyes (one-pass stereo), each eye on its own, or one. raw: indexed
  * (mode, count, itype at ioff, base vertex bv); otherwise b's vertices. */
+/* Diagnostic control: an immersive draw can use only the headset's native
+ * frustum. Keep the one-pass eye boundary (different varying for CPU/raw). */
+static void immersive_native_caps(int raw, int one_pass, int enabled)
+{
+    if (!enabled)
+        return;
+    set_cap(0, raw ? 0 : one_pass);
+    set_cap(1, 0);
+    set_cap(2, raw && one_pass);
+    set_cap(3, 0);
+}
+
 static void emit_eyes(Surf *f, const Nv2aBatch *b, int raw, int hud, int imm3d, GLenum mode,
                       GLsizei count, GLenum itype, GLsizeiptr ioff, GLint bv)
 {
@@ -5091,6 +5167,18 @@ static void emit_eyes(Surf *f, const Nv2aBatch *b, int raw, int hud, int imm3d, 
     static int one_pass = -1;
     if (one_pass < 0)
         one_pass = !(genv("STEREO_1PASS") && genv("STEREO_1PASS")[0] == '0');
+    {
+        static int native_clip = -1;
+        if (native_clip < 0) {
+            const char *e = genv("GL_IMM_NATIVE_CLIP");
+            native_clip = e && e[0] == '1';
+            if (native_clip)
+                fprintf(stderr, "[GL] immersive native clip control: guest planes and depth clamp off;"
+                        " one-pass eye boundary retained\n");
+        }
+        immersive_native_caps(raw, f->st && !hud && one_pass && s_has_clip,
+                              imm3d && native_clip);
+    }
     if (f->st && !hud && one_pass && s_has_clip) {
         GLfloat sb[8], e2[4];
         GLenum cd = raw ? GL_CLIP_DISTANCE0 + 2 : GL_CLIP_DISTANCE0;
@@ -5115,7 +5203,8 @@ static void emit_eyes(Surf *f, const Nv2aBatch *b, int raw, int hud, int imm3d, 
         else
             glDrawArraysInstanced(GL_TRIANGLES, 0, (GLsizei)b->count, 2);
         GLCK(raw ? "draw: one-pass stereo (raw)" : "draw: one-pass stereo (cpu)", b, f->va);
-        glViewport(0, 0, f->pw, f->ph);
+        if (!viewport_lazy())
+            glViewport(0, 0, f->pw, f->ph);
     }
     /* Stereo: the same draw for each eye, in its half. */
     int eye, eyes = f->st && !hud ? 2 : 1;
@@ -5140,6 +5229,7 @@ static void emit_eyes(Surf *f, const Nv2aBatch *b, int raw, int hud, int imm3d, 
             cu2f(U->eye, s_imm ? 0.0f : eye ? -0.5f * s_st_sep : 0.5f * s_st_sep,
                         s_st_depth);
         } else {
+            glViewport(0, 0, f->pw, f->ph);
             cu2f(U->eye, 0.0f, s_st_depth);
         }
         if (raw)
@@ -5792,7 +5882,7 @@ static void mg_flush(void)
         s_mgs.singles++;
         emit_eyes(m->f, NULL, 1, 0, m->imm3d, m->mode0, m->count0, GL_UNSIGNED_SHORT,
                   m->ioff0, m->bv0);
-        if (m->f->st)
+        if (m->f->st && !viewport_lazy())
             glViewport(0, 0, m->f->pw, m->f->ph);
         return;
     }
@@ -5861,7 +5951,7 @@ static void mg_flush(void)
             cu1i(U->merge, 0);
         }
     }
-    if (m->f->st)
+    if (m->f->st && !viewport_lazy())
         glViewport(0, 0, m->f->pw, m->f->ph);
     s_mgs.runs++;
     s_mgs.calls_saved += (uint32_t)(n - 1);
@@ -6056,12 +6146,15 @@ static void gl_draw_inner(const Nv2aSurface *s, const Nv2aBatch *b)
     }
     if (s_ftr == 1 && raw) {
         fprintf(stderr, "[GLTR] RAW surf %08X idx %u verts %u..%u prim %u tex %08X s1 %08X"
-                " blend %u %X/%X z %u/%u sprog %05X fin %08X\n", f->va, raw->index_count,
+                " blend %u %X/%X z %u/%u sprog %05X fin %08X"
+                " depth-func %X range %.9g..%.9g near %u vpz %.9g\n", f->va, raw->index_count,
                 raw->min_index, raw->max_index, raw->prim,
                 b->texture ? b->texture->offset : 0, b->stage[1] ? b->stage[1]->offset : 0,
                 b->state->blend_enable, b->state->blend_src, b->state->blend_dst,
                 b->state->depth_test_enable, b->state->depth_write,
-                b->rc ? b->rc->stage_program : 0, b->rc ? b->rc->final0 : 0);
+                b->rc ? b->rc->stage_program : 0, b->rc ? b->rc->final0 : 0,
+                b->state->depth_func, b->state->depth_min, b->state->depth_max,
+                raw->near_z, raw->vp_off_z);
     } else if (s_ftr == 1) {
         float x0 = 1e9f, x1 = -1e9f, y0 = 1e9f, y1 = -1e9f, z0 = 1e30f, z1 = -1e30f;
         uint32_t k;
@@ -6268,6 +6361,7 @@ static void gl_draw_inner(const Nv2aSurface *s, const Nv2aBatch *b)
         GLuint passed = 0;
         if (!q)
             glGenQueries(1, &q);
+        glViewport(0, 0, f->pw, f->ph);
         glBeginQuery(GL_SAMPLES_PASSED, q);
         if (raw)
             glDrawElementsBaseVertex(raw_mode(raw->prim), (GLsizei)raw->index_count,
@@ -6346,6 +6440,16 @@ static void gl_draw_inner(const Nv2aSurface *s, const Nv2aBatch *b)
         } else {
             cu2f(U->gw, 0.0f, 0.0f);
         }
+        if (s_ftr == 1) {
+            const VrGameProj *gp = rawff ? &s_bgp : f->gp_ok ? &f->gp : &s_gp;
+            const int gp_ok = rawff ? s_bgp_ok : f->gp_ok || s_gp_ok;
+            fprintf(stderr, "[GLTR] route %08X %s 3d %d immersive %d hud %d depth-space %s"
+                    " projection %s valid %d: k %.9g %.9g c %.9g %.9g inv-pz %.9g\n",
+                    f->va, rawff ? "FFP" : raw ? "VP" : "CPU", is3d, imm3d, hud,
+                    imm3d ? "headset" : "guest", rawff ? "batch" : f->gp_ok ? "surface" : "global",
+                    gp_ok, gp_ok ? gp->kx : 0.0f, gp_ok ? gp->ky : 0.0f,
+                    gp_ok ? gp->cx : 0.0f, gp_ok ? gp->cy : 0.0f, gp_ok ? gp->inv_pz : 0.0f);
+        }
         GLCK("draw: eye / immersive uniforms", b, f->va);
         if (hud) {
             hud_bind(f, b->state);
@@ -6363,7 +6467,7 @@ static void gl_draw_inner(const Nv2aSurface *s, const Nv2aBatch *b)
                       s_basevertex);
         if (hud)
             glBindFramebuffer(GL_FRAMEBUFFER, f->fbo);
-        if (f->st)
+        if (f->st && !viewport_lazy())
             glViewport(0, 0, f->pw, f->ph);
         TM(5);
     }

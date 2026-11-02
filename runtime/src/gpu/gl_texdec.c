@@ -223,25 +223,24 @@ static const char DECODE_GLSL[] =
     "        }\n"
     "        b += 8u;\n"
     "    }\n"
-    "    uint c0 = rd16(b), c1 = rd16(b + 2u), e0 = rgb565(c0), e1 = rgb565(c1), c = 0u;\n"
+    "    uint c0 = rd16(b), c1 = rd16(b + 2u);\n"
+    /* Keep channel arithmetic unpacked: avoid dynamic packed-channel shifts
+     * while retaining the CPU decoder's exact integer interpolation. */
+    "    uvec3 e0 = uvec3(expand((c0 >> 11) & 31u, 5u), expand((c0 >> 5) & 63u, 6u), expand(c0 & 31u, 5u));\n"
+    "    uvec3 e1 = uvec3(expand((c1 >> 11) & 31u, 5u), expand((c1 >> 5) & 63u, 6u), expand(c1 & 31u, 5u));\n"
+    "    uvec3 c = uvec3(0u);\n"
     "    uint idx = (rd32(b + 4u) >> (2u * texel)) & 3u;\n"
     "    if (idx == 0u) c = e0;\n"
     "    else if (idx == 1u) c = e1;\n"
     "    else if (c0 > c1 || bb == 16u) {\n"
-    "        for (uint i = 0u; i < 3u; i++) {\n"
-    "            uint sh = i * 8u, m0 = (e0 >> sh) & 0xFFu, m1 = (e1 >> sh) & 0xFFu;\n"
-    "            c |= (idx == 2u ? (2u * m0 + m1) / 3u : (m0 + 2u * m1) / 3u) << sh;\n"
-    "        }\n"
+    "        c = idx == 2u ? (2u * e0 + e1) / 3u : (e0 + 2u * e1) / 3u;\n"
     "    } else if (idx == 2u) {\n"
-    "        for (uint i = 0u; i < 3u; i++) {\n"
-    "            uint sh = i * 8u, m0 = (e0 >> sh) & 0xFFu, m1 = (e1 >> sh) & 0xFFu;\n"
-    "            c |= ((m0 + m1) / 2u) << sh;\n"
-    "        }\n"
+    "        c = (e0 + e1) / 2u;\n"
     "    } else {\n"
-    "        c = 0u;\n"
+    "        c = uvec3(0u);\n"
     "        alpha = bb == 8u ? 0u : alpha;\n"
     "    }\n"
-    "    return (alpha << 24) | (c & 0xFFFFFFu);\n"
+    "    return (alpha << 24) | (c.r << 16) | (c.g << 8) | c.b;\n"
     "}\n"
     "int clamp255(int v) { return clamp(v, 0, 255); }\n"
     /* sample_tex's switch, by the linear twin */
@@ -424,7 +423,7 @@ static int has_ext(const char *name)
 
 typedef struct {
     GLint dfbo, prog, vao, vp[4], cwb, unpack;
-    GLboolean blend, scissor, cull, cd0, cd1, dither, cm[4];
+    GLboolean blend, scissor, cull, cd0, cd1, cd2, dither, cm[4];
 } Saved;
 static void save_raster(Saved *s);
 static void restore_raster(const Saved *s);
@@ -658,12 +657,14 @@ static void save_raster(Saved *s)
     s->scissor = glIsEnabled(GL_SCISSOR_TEST);
     s->cull = glIsEnabled(GL_CULL_FACE);
     s->dither = glIsEnabled(GL_DITHER);
-    s->cd0 = s->cd1 = 0;
+    s->cd0 = s->cd1 = s->cd2 = 0;
     if (s_clipext) {           /* our vertex shader writes no clip distance */
         s->cd0 = glIsEnabled(0x3000 /* CLIP_DISTANCE0 */);
         s->cd1 = glIsEnabled(0x3001);
+        s->cd2 = glIsEnabled(0x3002);
         if (s->cd0) glDisable(0x3000);
         if (s->cd1) glDisable(0x3001);
+        if (s->cd2) glDisable(0x3002);
     }
     if (s->blend) glDisable(GL_BLEND);
     if (s->scissor) glDisable(GL_SCISSOR_TEST);
@@ -685,6 +686,7 @@ static void restore_raster(const Saved *s)
     if (s->dither) glEnable(GL_DITHER);
     if (s->cd0) glEnable(0x3000);
     if (s->cd1) glEnable(0x3001);
+    if (s->cd2) glEnable(0x3002);
 }
 
 static void lvl_dims(const Nv2aTexture *t, uint32_t l, uint32_t *w, uint32_t *h)
