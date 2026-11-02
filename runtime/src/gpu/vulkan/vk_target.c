@@ -597,6 +597,9 @@ VkResult ch_vk_target_finish(ChVkTarget *t) {return finish_batch_named(t,0,"exte
 static VkResult quantize_depth(ChVkTarget *,int);
 VkResult ch_vk_target_depth_quantization(ChVkTarget *t,int mode) {
     if(!t || mode<0 || mode>5)return VK_ERROR_INITIALIZATION_FAILED;
+    /* Reasserting disabled quantization is common for non-Z24 surfaces.
+     * It must not turn every draw into a submission and CPU fence wait. */
+    if(!mode && !t->quantized_depth && !t->failed) return VK_SUCCESS;
     if(!mode) {VkResult r=finish_batch_named(t,0,__func__);if(r==VK_SUCCESS)t->quantized_depth=0;return r;}
     if((mode==3 || mode==4) && !t->input_depth)return VK_ERROR_FEATURE_NOT_PRESENT;
     if(t->quantized_depth==mode)return VK_SUCCESS;
@@ -1455,6 +1458,7 @@ VkResult ch_vk_target_color_bgra(ChVkTarget *t,int enabled) {
 }
 VkResult ch_vk_target_color_layout(ChVkTarget *t,int mode) {
     if(!t || t->failed) return VK_ERROR_INITIALIZATION_FAILED;
+    if(t->color_bgra==mode) return VK_SUCCESS;
     VkResult result;TRY(finish_batch_named(t,0,__func__));
     if(mode<0 || mode>2 || (mode==2 && ((t->width&(t->width-1)) || (t->height&(t->height-1))))) return VK_ERROR_FEATURE_NOT_PRESENT;
     if(mode && !t->color_pack) {

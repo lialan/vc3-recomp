@@ -102,6 +102,17 @@ static int snapshots(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,uint32_t
         for(unsigned i=0;i<3;i++) {vertices[i].rgba[0]=epoch?0:1;vertices[i].rgba[2]=epoch?1:0;}
         REQUIRE(ch_vk_target_draw_state_read(source,NULL,vertices,3,tri,3,&color,got,sizeof got)==VK_SUCCESS);
         REQUIRE(ch_vk_target_pending(source));
+        /* Idempotent state updates must preserve a pending draw, allowing the
+         * following snapshot copy to share its one submission. */
+        ChVkTargetResourceStats state_before,state_after;
+        ch_vk_target_resource_stats(source,&state_before);
+        for(unsigned repeat=0;repeat<3;repeat++) {
+            REQUIRE(ch_vk_target_depth_quantization(source,0)==VK_SUCCESS);
+            REQUIRE(ch_vk_target_color_layout(source,0)==VK_SUCCESS);
+            REQUIRE(ch_vk_target_pending(source));
+        }
+        ch_vk_target_resource_stats(source,&state_after);
+        REQUIRE(state_after.batch_submissions==state_before.batch_submissions);
         REQUIRE(ch_vk_target_refresh_texture(source,NULL)==VK_ERROR_INITIALIZATION_FAILED && ch_vk_target_pending(source));
         REQUIRE(ch_vk_target_refresh_texture(source,copy)==VK_SUCCESS && !ch_vk_target_pending(source));
         ChVkTargetResourceStats stats;ch_vk_target_resource_stats(source,&stats);
