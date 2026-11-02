@@ -5,9 +5,15 @@ layout(local_size_x=64) in;
 layout(std430,set=0,binding=0) buffer Storage {uint words[];} data;
 layout(push_constant) uniform Params {uint count;uint upload;uint width;uint height;uint morton;} pc;
 void main() {
-    uint base=gl_GlobalInvocationID.x*4u;
-    for(uint j=0u;j<4u && base+j<pc.count;j++) {
-        uint i=base+j,at=i;
+    // Adjacent lanes access adjacent pixels on each iteration. Keep four
+    // pixels per invocation and 256 pixels per workgroup without stride-4
+    // loads/stores across the wave. Linear conversion is safely in-place;
+    // Morton input/output occupies the separate second region.
+    uint base=gl_WorkGroupID.x*(gl_WorkGroupSize.x*4u)+gl_LocalInvocationID.x;
+    for(uint j=0u;j<4u;j++) {
+        uint i=base+j*gl_WorkGroupSize.x;
+        if(i>=pc.count) break;
+        uint at=i;
         if(pc.morton!=0u) {
             at=ch_morton_index(i%pc.width,i/pc.width,pc.width,pc.height)+pc.count;
         }
