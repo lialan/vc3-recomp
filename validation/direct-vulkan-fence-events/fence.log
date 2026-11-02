@@ -1,0 +1,10 @@
+PASS: actual BlockOnTime strict wait retains a slow GPU fence, preserves wraparound/ABI/kickoff, and fails closed on a stuck semaphore; legacy 250-ms control unchanged
+[D3D] GPU semaphore at 0x00000600
+[D3D] BlockOnTime(0x00000020) timed out: head 0x00000020 sem 0x00000000
+[D3D] BlockOnTime(0x00000020) awaiting actual GPU completion beyond 250 ms: head 0x00000020 sem 0x00000000
+[D3D] BlockOnTime(0xFFFFFFF8) awaiting actual GPU completion beyond 250 ms: head 0x00000010 sem 0xFFFFFFF0
+[D3D] BlockOnTime(0x00000020) awaiting actual GPU completion beyond 250 ms: head 0x00000020 sem 0x00000000
+[D3D] BlockOnTime(0x00000020) awaiting actual GPU completion beyond 250 ms: head 0x00000020 sem 0x00000000
+[D3D] BlockOnTime(0xFFFFFFF8) awaiting actual GPU completion beyond 250 ms: head 0x00000010 sem 0xFFFFFFF0
+[D3D] BlockOnTime(0x00000020) awaiting actual GPU completion beyond 250 ms: head 0x00000020 sem 0x00000000
+[D3D] BlockOnTime(0x00000020) timed out: head 0x00000020 sem 0x00000000

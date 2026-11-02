@@ -1,0 +1,139 @@
+diff --git a/src/kernel/nv2a_pb_defer.c b/src/kernel/nv2a_pb_defer.c
+index 5bd279d8..013ba25a 100644
+--- a/src/kernel/nv2a_pb_defer.c
++++ b/src/kernel/nv2a_pb_defer.c
+@@ -125,7 +125,7 @@ static volatile uint64_t s_tail;  /* consumer: bytes replayed */
+ static volatile uint64_t s_consumer_sleeping;
+ /* Absolute consumer position requested by a blocked producer; zero means no
+  * waiter. Signaling every intermediate record only wakes it to sleep again. */
+-static volatile uint64_t s_producer_until;
++static volatile uint64_t s_producer_until, s_word_waiters;
+ static long s_gl_us;             /* RECOMP_EXEC_GL_DELAY_US */
+ 
+ static struct {
+@@ -135,7 +135,7 @@ static struct {
+ 
+ #ifdef _WIN32
+ static CRITICAL_SECTION s_mu;
+-static CONDITION_VARIABLE s_work_cv, s_done_cv;
++static CONDITION_VARIABLE s_work_cv, s_done_cv, s_word_cv;
+ #define LOCK() EnterCriticalSection(&s_mu)
+ #define UNLOCK() LeaveCriticalSection(&s_mu)
+ #define WAIT_WORK() SleepConditionVariableCS(&s_work_cv, &s_mu, INFINITE)
+@@ -146,6 +146,15 @@ static CONDITION_VARIABLE s_work_cv, s_done_cv;
+ static pthread_mutex_t s_mu = PTHREAD_MUTEX_INITIALIZER;
+ static pthread_cond_t s_work_cv = PTHREAD_COND_INITIALIZER;
+ static pthread_cond_t s_done_cv = PTHREAD_COND_INITIALIZER;
++static pthread_cond_t s_word_cv;
++static pthread_once_t s_word_once = PTHREAD_ONCE_INIT;
++static void init_word_condition(void) {
++    pthread_condattr_t attr;pthread_condattr_init(&attr);
++#ifndef __APPLE__
++    pthread_condattr_setclock(&attr,CLOCK_MONOTONIC);
++#endif
++    pthread_cond_init(&s_word_cv,&attr);pthread_condattr_destroy(&attr);
++}
+ #define LOCK() pthread_mutex_lock(&s_mu)
+ #define UNLOCK() pthread_mutex_unlock(&s_mu)
+ /* Both sides publish their waiter predicate before the seq-cst fence and
+@@ -162,11 +171,13 @@ static pthread_cond_t s_done_cv = PTHREAD_COND_INITIALIZER;
+ static uint64_t load_acq(volatile uint64_t *p) { return *p; }
+ static void store_rel(volatile uint64_t *p, uint64_t v) { *p = v; }
+ static void store_rel32(volatile uint32_t *p, uint32_t v) { *p = v; }
++static uint32_t load_acq32(volatile uint32_t *p) { return *p; }
+ #define FENCE() MemoryBarrier()
+ #else
+ static uint64_t load_acq(volatile uint64_t *p) { return __atomic_load_n(p, __ATOMIC_ACQUIRE); }
+ static void store_rel(volatile uint64_t *p, uint64_t v) { __atomic_store_n(p, v, __ATOMIC_RELEASE); }
+ static void store_rel32(volatile uint32_t *p, uint32_t v) { __atomic_store_n(p, v, __ATOMIC_RELEASE); }
++static uint32_t load_acq32(volatile uint32_t *p) { return __atomic_load_n(p, __ATOMIC_ACQUIRE); }
+ #define FENCE() __atomic_thread_fence(__ATOMIC_SEQ_CST)
+ #endif
+ 
+@@ -175,6 +186,51 @@ int nv2a_defer_active(void)
+     return s_mode > 0 && s_real;
+ }
+ 
++/* Called only after the backend flush and release-store of a queued word. */
++static void notify_word(void) {
++    FENCE();
++    if(load_acq(&s_word_waiters)) {
++        LOCK();
++        if(load_acq(&s_word_waiters)) {
++#ifdef _WIN32
++            WakeAllConditionVariable(&s_word_cv);
++#else
++            pthread_cond_broadcast(&s_word_cv);
++#endif
++        }
++        UNLOCK();
++    }
++}
++int nv2a_defer_wait_word(volatile uint32_t *at,uint32_t observed,uint64_t ns) {
++    if(!nv2a_defer_active()) return 0;
++    if(!at || !ns || load_acq32(at)!=observed) return 1;
++    /* Serialized with registration and notification, but never hold this
++     * mutex while GPU work executes. A racing completion is caught by either
++     * the paired fence/recheck or the condition notification. */
++    LOCK();
++    store_rel(&s_word_waiters,load_acq(&s_word_waiters)+1);
++    FENCE();
++    if(load_acq32(at)==observed) {
++#ifdef _WIN32
++        uint64_t ms=ns/1000000+(ns%1000000!=0);
++        SleepConditionVariableCS(&s_word_cv,&s_mu,(DWORD)(ms>=INFINITE?INFINITE-1:ms));
++#else
++        struct timespec until;
++#ifdef __APPLE__
++        until.tv_sec=(time_t)(ns/1000000000);until.tv_nsec=(long)(ns%1000000000);
++        pthread_cond_timedwait_relative_np(&s_word_cv,&s_mu,&until);
++#else
++        clock_gettime(CLOCK_MONOTONIC,&until);
++        until.tv_sec+=(time_t)(ns/1000000000);until.tv_nsec+=(long)(ns%1000000000);
++        if(until.tv_nsec>=1000000000){until.tv_nsec-=1000000000;until.tv_sec++;}
++        pthread_cond_timedwait(&s_word_cv,&s_mu,&until);
++#endif
++#endif
++    }
++    store_rel(&s_word_waiters,load_acq(&s_word_waiters)-1);
++    UNLOCK();return 1;
++}
++
+ /* ── the submission thread ──────────────────────────────────── */
+ 
+ static void delay_stand_in(long us)
+@@ -227,6 +283,7 @@ static void replay(RecHdr *h)
+         WriteRec *w = (WriteRec *)h;
+         if (s_real->flush) s_real->flush();
+         store_rel32(w->at, w->value);
++        notify_word();
+         s_st.writes++;
+         break;
+     }
+@@ -707,9 +764,11 @@ const Nv2aBackend *nv2a_defer_wrap(const Nv2aBackend *real)
+         InitializeCriticalSection(&s_mu);
+         InitializeConditionVariable(&s_work_cv);
+         InitializeConditionVariable(&s_done_cv);
++        InitializeConditionVariable(&s_word_cv);
+         CloseHandle(CreateThread(NULL, 0, submit_thread, NULL, 0, NULL));
+ #else
+         {
++            pthread_once(&s_word_once,init_word_condition);
+             pthread_t th;
+             pthread_create(&th, NULL, submit_thread, NULL);
+             pthread_detach(th);
+diff --git a/src/kernel/nv2a_pb_defer.h b/src/kernel/nv2a_pb_defer.h
+index ef0b1fd2..41cd22c8 100644
+--- a/src/kernel/nv2a_pb_defer.h
++++ b/src/kernel/nv2a_pb_defer.h
+@@ -32,4 +32,10 @@ void nv2a_defer_sync(int why);
+  * writes it. */
+ int nv2a_defer_write(volatile uint32_t *at, uint32_t value);
+ 
++/* Wait for progress on a word written by nv2a_defer_write. Returns zero when
++ * deferral is inactive (caller must use its fallback), otherwise one after a
++ * change, notification, spurious wake or timeout. Always recheck the actual
++ * guest fence predicate; notifications never acknowledge GPU completion. */
++int nv2a_defer_wait_word(volatile uint32_t *at,uint32_t observed,uint64_t timeout_ns);
++
+ #endif

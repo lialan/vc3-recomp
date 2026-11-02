@@ -65,6 +65,7 @@ struct ChVkTarget {
     void *geometry_map;
     VkDeviceSize geometry_capacity;
     int geometry_coherent;
+    VkDeviceSize noncoherent_atom;
     ChVkTargetResourceStats resource_stats;
     VkDevice device;
     VkQueue queue;
@@ -344,6 +345,9 @@ static VkResult create_depth(VkPhysicalDevice physical,VkDevice device,VkQueue q
     ChVkTarget *t=calloc(1,sizeof(*t));
     if(!t) return VK_ERROR_OUT_OF_HOST_MEMORY;
     t->batch_limit=BATCH_DRAWS;
+    VkPhysicalDeviceProperties device_properties;
+    vkGetPhysicalDeviceProperties(physical,&device_properties);
+    t->noncoherent_atom=device_properties.limits.nonCoherentAtomSize;
     t->family=family; t->physical=physical; t->device=device; t->queue=queue; t->width=width; t->height=height;
     const char *reuse=getenv("CHIHIRO_VULKAN_REUSE_RESOURCES");
     t->reuse_resources=!reuse || strcmp(reuse,"0");
@@ -1095,21 +1099,41 @@ fail:
     if(result!=VK_SUCCESS) t->failed=1;
     return result;
 }
-static void update_images(ChVkTarget *t,const ChVkTexture *texture)
+/* One driver update per draw; all backing info stays live until the call. */
+static void update_descriptors(ChVkTarget *t,const ChVkTexture *texture,
+    VkBuffer buffer,VkDeviceSize base,VkDeviceSize vertex_bytes)
 {
-    if(!texture && !t->rc) return;
+    VkWriteDescriptorSet writes[5];
     VkDescriptorImageInfo images[4],cubes[4];
-    unsigned count=t->rc?4:1;
-    for(unsigned i=0;i<count;i++) {
-        const ChVkTexture *stage=t->rc?(t->stage_images?t->stage_images[i]:NULL):texture;
-        images[i]=ch_vk_texture_descriptor(stage && !ch_vk_texture_is_cube(stage)?stage:t->dummy);
-        if(t->rc) cubes[i]=ch_vk_texture_descriptor(ch_vk_texture_is_cube(stage)?stage:t->dummy_cube);
+    VkDescriptorBufferInfo buffers[3];
+    unsigned n=0,b=0;
+    if(texture || t->rc) {
+        unsigned count=t->rc?4:1;
+        for(unsigned i=0;i<count;i++) {
+            const ChVkTexture *stage=t->rc?(t->stage_images?t->stage_images[i]:NULL):texture;
+            images[i]=ch_vk_texture_descriptor(stage && !ch_vk_texture_is_cube(stage)?stage:t->dummy);
+            if(t->rc) cubes[i]=ch_vk_texture_descriptor(ch_vk_texture_is_cube(stage)?stage:t->dummy_cube);
+        }
+        writes[n++]=(VkWriteDescriptorSet){.sType=VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+            .dstSet=t->active_pipeline->descriptor_set,.dstBinding=0,.descriptorCount=count,
+            .descriptorType=VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,.pImageInfo=images};
+        if(t->rc) {writes[n]=writes[0];writes[n].dstBinding=2;writes[n++].pImageInfo=cubes;}
     }
-    VkWriteDescriptorSet write={.sType=VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-        .dstSet=t->active_pipeline->descriptor_set,.dstBinding=0,.descriptorCount=count,
-        .descriptorType=VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,.pImageInfo=images};
-    vkUpdateDescriptorSets(t->device,1,&write,0,NULL);
-    if(t->rc) {write.dstBinding=2;write.pImageInfo=cubes;vkUpdateDescriptorSets(t->device,1,&write,0,NULL);}
+    if(t->rc) {
+        buffers[b]=(VkDescriptorBufferInfo){buffer,base,256};
+        writes[n++]=(VkWriteDescriptorSet){.sType=VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+            .dstSet=t->active_pipeline->descriptor_set,.dstBinding=1,.descriptorCount=1,
+            .descriptorType=VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,.pBufferInfo=&buffers[b++]};
+    }
+    if(t->fixed) {
+        buffers[b]=(VkDescriptorBufferInfo){buffer,base+256,ch_vk_raw_params_size(t->fixed)};
+        writes[n++]=(VkWriteDescriptorSet){.sType=VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+            .dstSet=t->active_pipeline->descriptor_set,.dstBinding=3,.descriptorCount=1,
+            .descriptorType=VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,.pBufferInfo=&buffers[b++]};
+        buffers[b]=(VkDescriptorBufferInfo){buffer,t->vertex_offset,vertex_bytes};
+        writes[n]=writes[n-1];writes[n].dstBinding=4;writes[n++].pBufferInfo=&buffers[b];
+    }
+    if(n) vkUpdateDescriptorSets(t->device,n,writes,0,NULL);
 }
 static VkResult draw_full(ChVkTarget *t, const float rgba[4],
     const void *vertices, uint32_t vertex_count,
@@ -1238,7 +1262,6 @@ static VkResult draw_full(ChVkTarget *t, const float rgba[4],
         entry->descriptor_set=entry->sets[entry->set_used++];
     }
     t->vertex_offset=base+header;
-    update_images(t,texture);
     VkDeviceSize offset=t->vertex_offset+vertex_bytes;
     VkDeviceSize size=offset+(VkDeviceSize)index_count*sizeof(*indices);
     if(size>SIZE_MAX) return VK_ERROR_OUT_OF_HOST_MEMORY;
@@ -1253,29 +1276,20 @@ static VkResult draw_full(ChVkTarget *t, const float rgba[4],
         uint32_t *on=(uint32_t *)((char *)mapped+base+240);
         for(unsigned i=0;i<4;i++) on[i]=stage_images && stage_images[i]?
             (ch_vk_texture_is_cube(stage_images[i])?3:1):0;
-        VkDescriptorBufferInfo info={buffer,base,256};
-        VkWriteDescriptorSet write={.sType=VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,.dstSet=t->active_pipeline->descriptor_set,
-            .dstBinding=1,.descriptorCount=1,.descriptorType=VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,.pBufferInfo=&info};
-        vkUpdateDescriptorSets(t->device,1,&write,0,NULL);
     }
-    if(fixed) {
-        memcpy((char *)mapped+base+256,fixed,ch_vk_raw_params_size(fixed));
-        VkDescriptorBufferInfo info={buffer,base+256,ch_vk_raw_params_size(fixed)};
-        VkWriteDescriptorSet write={.sType=VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,.dstSet=t->active_pipeline->descriptor_set,
-            .dstBinding=3,.descriptorCount=1,.descriptorType=VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,.pBufferInfo=&info};
-        vkUpdateDescriptorSets(t->device,1,&write,0,NULL);
-        VkDescriptorBufferInfo stream_info={buffer,t->vertex_offset,vertex_bytes};
-        write.dstBinding=4;write.pBufferInfo=&stream_info;
-        vkUpdateDescriptorSets(t->device,1,&write,0,NULL);
-    }
+    if(fixed) memcpy((char *)mapped+base+256,fixed,ch_vk_raw_params_size(fixed));
+    update_descriptors(t,texture,buffer,base,vertex_bytes);
     memcpy((char *)mapped+t->vertex_offset,vertices,(size_t)vertex_bytes);
     memcpy((char *)mapped+offset,indices,(size_t)(size-offset));
     if(!t->geometry_coherent) {
-        VkPhysicalDeviceProperties properties;vkGetPhysicalDeviceProperties(t->physical,&properties);
-        VkDeviceSize atom=properties.limits.nonCoherentAtomSize;
+        VkDeviceSize atom=t->noncoherent_atom;
+        VkDeviceSize first=base/atom*atom;
         VkDeviceSize flushed=(size+atom-1)/atom*atom;
+        /* Only this draw was written. Earlier batch snapshots were already
+         * flushed; align both ends to the device's cache-maintenance atom. */
         VkMappedMemoryRange flush={.sType=VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE,
-            .memory=t->geometry_memory,.size=flushed<=t->geometry_capacity?flushed:VK_WHOLE_SIZE};
+            .memory=t->geometry_memory,.offset=first,
+            .size=flushed<=t->geometry_capacity?flushed-first:VK_WHOLE_SIZE};
         TRY(vkFlushMappedMemoryRanges(t->device,1,&flush));
     }
     if(batched) {

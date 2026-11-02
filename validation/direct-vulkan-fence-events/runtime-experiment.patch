@@ -1,0 +1,110 @@
+diff --git a/runtime/src/chihiro/d3d_fence.c b/runtime/src/chihiro/d3d_fence.c
+index 199317d..1388b38 100644
+--- a/runtime/src/chihiro/d3d_fence.c
++++ b/runtime/src/chihiro/d3d_fence.c
+@@ -23,6 +23,7 @@
+ #include "chihiro/chihiro_profile.h"
+ 
+ void nv2a_pb_set_semaphore_target(uint32_t guest_va);
++int nv2a_defer_wait_word(volatile uint32_t *,uint32_t,uint64_t);
+ 
+ /* g_pDevice, KickOff and its return address: the profile's d3d block */
+ #define DEV_WRITE_TIME   0x2C          /* newest fence time */
+@@ -101,7 +102,8 @@ void vc3_d3d_block_on_time(void)
+     deadline = start + (strict ? strict_bound : WAIT_BOUND_NS);
+     for (;;) {
+         head = MEM32(dev + DEV_WRITE_TIME);
+-        if (head - time >= head - MEM32(sem))
++        uint32_t progress = MEM32(sem);
++        if (head - time >= head - progress)
+             break;
+         uint64_t now = xbox_HostNowNs();
+         if (strict && !reported_slow && now - start >= WAIT_BOUND_NS) {
+@@ -120,7 +122,12 @@ void vc3_d3d_block_on_time(void)
+             if (strict) abort();
+             break;
+         }
+-        xbox_HostSleepNs(50000);
++        uint64_t wait_ns = deadline - now;
++        if (strict && !reported_slow && now < start + WAIT_BOUND_NS &&
++            wait_ns > start + WAIT_BOUND_NS - now)
++            wait_ns = start + WAIT_BOUND_NS - now;
++        if (!nv2a_defer_wait_word((volatile uint32_t *)XBOX_PTR(sem),progress,wait_ns))
++            xbox_HostSleepNs(50000);
+         slept = 1;
+     }
+     fence_stats(slept, xbox_HostNowNs() - start);
+diff --git a/tools/nv2a-deferred-stream-test.c b/tools/nv2a-deferred-stream-test.c
+index 2635aee..05146ee 100644
+--- a/tools/nv2a-deferred-stream-test.c
++++ b/tools/nv2a-deferred-stream-test.c
+@@ -52,6 +52,9 @@ int main(int argc,char **argv) {
+  Nv2aBatch batch={.raw=&raw};volatile uint32_t sem=0;
+  proxy->clear(&surface,NULL,0,0,0);
+  pthread_mutex_lock(&mutex);while(!entered)pthread_cond_wait(&cv,&mutex);pthread_mutex_unlock(&mutex);
++ /* A notification wait is bounded and cannot invent a semaphore release. */
++ uint64_t start=xbox_HostNowNs();
++ if(!nv2a_defer_wait_word(&sem,0,1000000) || sem || xbox_HostNowNs()-start<1000000)return 3;
+  for(unsigned round=0;round<1000;round++) {
+   for(unsigned i=0;i<256;i++)stream[i]=pattern(round,i);
+   for(unsigned i=0;i<32;i++)separate[i]=(uint8_t)(round+i);
+@@ -60,6 +63,10 @@ int main(int argc,char **argv) {
+   memset(stream,0xee,sizeof stream);memset(separate,0xdd,sizeof separate);
+   if(!round) {pthread_mutex_lock(&mutex);release_consumer=1;pthread_cond_signal(&cv);pthread_mutex_unlock(&mutex);}
+   if(!nv2a_defer_write(&sem,round+1))return 1;
++  uint64_t deadline=xbox_HostNowNs()+1000000000;
++  while(__atomic_load_n(&sem,__ATOMIC_ACQUIRE)==round) {
++   if(xbox_HostNowNs()>=deadline || !nv2a_defer_wait_word(&sem,round,10000000))return 4;
++  }
+   nv2a_defer_drain();
+   if(sem!=round+1 || draws!=(round+1)*batch_size || flushes!=round+1 || failed)return 1;
+  }
+diff --git a/tools/vulkan-fence-wait-test.c b/tools/vulkan-fence-wait-test.c
+index 52a24f0..108eea7 100644
+--- a/tools/vulkan-fence-wait-test.c
++++ b/tools/vulkan-fence-wait-test.c
+@@ -11,7 +11,7 @@ RECOMP_TLS struct RecompRegs g_regs;
+ static uint32_t memory[4096];ptrdiff_t g_xbox_mem_offset;
+ static uint64_t clock_ns,release_at;
+ static uint32_t completion;
+-static unsigned kicks;static const char *strict;
++static unsigned kicks,event_waits;static int notifications;static const char *strict;
+ static void kickoff(void) {kicks++;g_esp+=8;}
+ static const ChihiroProfile profile={.d3d={.device_ptr=0x100,.kickoff_ret=0x1234,.kickoff=kickoff}};
+ const ChihiroProfile *chihiro_profile(void) {return &profile;}
+@@ -22,11 +22,21 @@ void xbox_HostSleepNs(uint64_t ns) {
+     clock_ns+=ns;
+     if(clock_ns>=release_at) ST32(0x600,completion);
+ }
++int nv2a_defer_wait_word(volatile uint32_t *at,uint32_t observed,uint64_t ns) {
++    if(!notifications)return 0;
++    event_waits++;
++    if(*at==observed) {
++        uint64_t remaining=release_at>clock_ns?release_at-clock_ns:0;
++        clock_ns+=remaining<ns?remaining:ns;
++        if(clock_ns>=release_at)*at=completion;
++    }
++    return 1;
++}
+ void vc3_d3d_block_on_time(void);
+ static void setup(uint32_t head,uint32_t requested,uint32_t sem) {
+     memset(memory,0,sizeof memory);g_xbox_mem_offset=(ptrdiff_t)memory;g_esp=0x1000;g_eax=0xdead;
+     ST32(0x100,0x200);ST32(0x200+0x2c,head);ST32(0x200+0x30,0x600);ST32(0x600,sem);
+-    ST32(g_esp+4,requested);clock_ns=1000;release_at=400000000;completion=requested;kicks=0;
++    ST32(g_esp+4,requested);clock_ns=1000;release_at=400000000;completion=requested;kicks=0;event_waits=0;
+ }
+ int main(void) {
+     setup(0x20,0x20,0);strict="0";vc3_d3d_block_on_time();
+@@ -42,7 +52,11 @@ int main(void) {
+ #else
+     if(clock_ns>=release_at || MEM32(0x600)!=0) return 7;
+ #endif
+-    strict="1";
++    notifications=1;strict="1";
++    setup(0x20,0x20,0);vc3_d3d_block_on_time();
++    if(clock_ns!=release_at || event_waits!=2 || MEM32(0x600)!=0x20 || kicks!=1)return 8;
++    setup(0x10,0xfffffff8,0xfffffff0);completion=8;vc3_d3d_block_on_time();
++    if(clock_ns!=release_at || MEM32(0x600)!=8 || event_waits!=2)return 9;
+     pid_t child=fork();if(child<0) return 5;
+     if(!child) {
+         struct rlimit limit={0,0};setrlimit(RLIMIT_CORE,&limit);
