@@ -1298,9 +1298,17 @@ static VkResult draw_full(ChVkTarget *t, const float rgba[4],
     if(key.specialized) ch_vk_combiner_program(rc,&key.program);
     PipelineResources *entry=NULL,*oldest=NULL;
     unsigned capacity=t->reuse_resources?(t->specialize_rc?PIPELINE_SLOTS:BASE_PIPELINE_SLOTS):1;
-    for(unsigned i=0;i<capacity;i++) {
+    /* Consecutive draws commonly reuse the selected pipeline. Validate the
+     * entire key before bypassing the bounded cache scan; eviction and state
+     * changes still follow the normal path. */
+    PipelineResources *previous=t->active_pipeline;
+    if(previous && previous->pipeline && !memcmp(&key,&previous->key,sizeof key)) {
+        entry=previous;t->resource_stats.pipeline_consecutive_hits++;
+    }
+    for(unsigned i=0;!entry && i<capacity;i++) {
         PipelineResources *p=&t->pipelines[i];
-        if(p->pipeline && !memcmp(&key,&p->key,sizeof key)) {entry=p;break;}
+        t->resource_stats.pipeline_scan_entries++;
+        if(p!=previous && p->pipeline && !memcmp(&key,&p->key,sizeof key)) {entry=p;break;}
         if(!oldest || p->used<oldest->used) oldest=p;
     }
     if(entry) {t->resource_stats.pipeline_hits++;if(!key.alpha_shader) t->resource_stats.no_alpha_pipeline_hits++;
