@@ -1,0 +1,148 @@
+diff --git a/runtime/src/gpu/vulkan/vk_backend.c b/runtime/src/gpu/vulkan/vk_backend.c
+index c3f31b3..2b6092a 100644
+--- a/runtime/src/gpu/vulkan/vk_backend.c
++++ b/runtime/src/gpu/vulkan/vk_backend.c
+@@ -679,9 +679,11 @@ static void flip(void) {
+         fprintf(stderr,"[Vulkan raw snapshots] compact_batches=%llu snapshot_bytes=%llu expanded_bytes=%llu\n",
+             (unsigned long long)active->raw_compact_batches,(unsigned long long)active->raw_snapshot_bytes,(unsigned long long)active->raw_expanded_bytes);
+         uint64_t draws=0,submits=0,depth_reads=0,color_reads=0,queued_uploads=0,queued_colors=0;
++        uint64_t sequential_draws=0,index_bytes=0;
+         uint64_t depth_ops[8]={0},staging_skips=0,staging_bytes=0,pipeline_consecutive=0,pipeline_scans=0;
+-        for(unsigned i=0;i<active->count;i++) {ChVkTargetResourceStats stats;ch_vk_target_resource_stats(active->surfaces[i].target,&stats);for(unsigned op=0;op<8;op++) depth_ops[op]+=stats.depth_roundtrips_by_compare[op];draws+=stats.batch_draws;submits+=stats.batch_submissions;depth_reads+=stats.combined_depth_readbacks;color_reads+=stats.combined_color_readbacks;queued_uploads+=stats.queued_depth_uploads;queued_colors+=stats.queued_color_readbacks;staging_skips+=stats.coherent_staging_skips;staging_bytes+=stats.staging_maintenance_bytes;pipeline_consecutive+=stats.pipeline_consecutive_hits;pipeline_scans+=stats.pipeline_scan_entries;}
++        for(unsigned i=0;i<active->count;i++) {ChVkTargetResourceStats stats;ch_vk_target_resource_stats(active->surfaces[i].target,&stats);for(unsigned op=0;op<8;op++) depth_ops[op]+=stats.depth_roundtrips_by_compare[op];sequential_draws+=stats.sequential_draws;index_bytes+=stats.index_bytes_avoided;draws+=stats.batch_draws;submits+=stats.batch_submissions;depth_reads+=stats.combined_depth_readbacks;color_reads+=stats.combined_color_readbacks;queued_uploads+=stats.queued_depth_uploads;queued_colors+=stats.queued_color_readbacks;staging_skips+=stats.coherent_staging_skips;staging_bytes+=stats.staging_maintenance_bytes;pipeline_consecutive+=stats.pipeline_consecutive_hits;pipeline_scans+=stats.pipeline_scan_entries;}
+         fprintf(stderr,"[Vulkan command batches] live targets: draws=%llu submissions=%llu combined_depth_reads=%llu combined_color_reads=%llu queued_depth_uploads=%llu queued_color_reads=%llu\n",(unsigned long long)draws,(unsigned long long)submits,(unsigned long long)depth_reads,(unsigned long long)color_reads,(unsigned long long)queued_uploads,(unsigned long long)queued_colors);
++        fprintf(stderr,"[Vulkan sequential draws] live targets: draws=%llu index_bytes_avoided=%llu\n",(unsigned long long)sequential_draws,(unsigned long long)index_bytes);
+         fprintf(stderr,"[Vulkan pipeline lookup] live targets: consecutive_hits=%llu scanned_entries=%llu\n",
+             (unsigned long long)pipeline_consecutive,(unsigned long long)pipeline_scans);
+         fprintf(stderr,"[Vulkan clear imports avoided] count=%llu bytes=%llu\n",
+diff --git a/runtime/src/gpu/vulkan/vk_target.c b/runtime/src/gpu/vulkan/vk_target.c
+index a1b55eb..cd47bee 100644
+--- a/runtime/src/gpu/vulkan/vk_target.c
++++ b/runtime/src/gpu/vulkan/vk_target.c
+@@ -113,6 +113,7 @@ struct ChVkTarget {
+     uint32_t stencil_reference,recorded_stencil_reference;
+     int effect;
+     int defer_color_readback;
++    int sequential_indices;
+     int submitted,readback_active,readback_batched;
+     uint64_t submitted_finish_start;
+     struct {void *depth,*stencil,*rgba;size_t pixels,color_bytes;int packed;} readback_request;
+@@ -773,8 +774,11 @@ static VkResult record_batch(ChVkTarget *t,VkBuffer geometry,VkDeviceSize index_
+     }
+     VkDeviceSize vertex_offset=t->vertex_offset;
+     vkCmdBindVertexBuffers(t->command,0,1,&geometry,&vertex_offset);
+-    vkCmdBindIndexBuffer(t->command,geometry,index_offset,VK_INDEX_TYPE_UINT16);
+-    vkCmdDrawIndexed(t->command,index_count,1,0,0,0);
++    if(t->sequential_indices) vkCmdDraw(t->command,index_count,1,0,0);
++    else {
++        vkCmdBindIndexBuffer(t->command,geometry,index_offset,VK_INDEX_TYPE_UINT16);
++        vkCmdDrawIndexed(t->command,index_count,1,0,0,0);
++    }
+     if(t->quantized_depth && t->quantized_depth!=5 && t->active_pipeline->key.depth.depthTestEnable &&
+        t->active_pipeline->key.depth.depthWriteEnable) {
+         /* Quantization helpers bind their own graphics state/push layout. */
+@@ -882,9 +886,10 @@ static VkResult render_read(ChVkTarget *t, const float rgba[4], uint32_t clear_f
+         vkCmdPushConstants(t->command,t->active_pipeline->pipeline_layout,VK_SHADER_STAGE_FRAGMENT_BIT,0,sizeof(t->push),t->push.alpha);
+         VkDeviceSize offset=t->vertex_offset;
+         vkCmdBindVertexBuffers(t->command,0,1,&geometry,&offset);
+-        vkCmdBindIndexBuffer(t->command,geometry,index_offset,VK_INDEX_TYPE_UINT16);
++        if(!t->sequential_indices) vkCmdBindIndexBuffer(t->command,geometry,index_offset,VK_INDEX_TYPE_UINT16);
+         if(t->count_requested) vkCmdBeginQuery(t->command,t->queries,0,VK_QUERY_CONTROL_PRECISE_BIT);
+-        vkCmdDrawIndexed(t->command,index_count,1,0,0,0);
++        if(t->sequential_indices) vkCmdDraw(t->command,index_count,1,0,0);
++        else vkCmdDrawIndexed(t->command,index_count,1,0,0,0);
+         if(t->count_requested) vkCmdEndQuery(t->command,t->queries,0);
+         if(t->quantized_depth==4 && ((clear_flags&2) ||
+            (t->active_pipeline->key.depth.depthTestEnable && t->active_pipeline->key.depth.depthWriteEnable)))
+@@ -1233,8 +1238,15 @@ static VkResult draw_full(ChVkTarget *t, const float rgba[4],
+     if(!t || t->failed || !vertices || !indices || !vertex_count || !index_count ||
+        index_count%3 || !pixels || bytes<t->bytes)
+         return VK_ERROR_INITIALIZATION_FAILED;
+-    for(uint32_t i=0;i<index_count;i++) if(indices[i]>=vertex_count)
+-        return VK_ERROR_INITIALIZATION_FAILED;
++    /* Identity indices preserve gl_VertexIndex and primitive order with
++     * vkCmdDraw. Detect them during mandatory bounds validation so expanded
++     * triangle lists need no index upload or GPU index fetch. */
++    int sequential=1;
++    for(uint32_t i=0;i<index_count;i++) {
++        if(indices[i]>=vertex_count) return VK_ERROR_INITIALIZATION_FAILED;
++        sequential &= indices[i]==i;
++    }
++    t->sequential_indices=sequential;
+     if(samples && !t->queries) return VK_ERROR_FEATURE_NOT_PRESENT;
+     if(rc && texture) return VK_ERROR_FEATURE_NOT_PRESENT;
+     if(effect && (effect->kind<1 || effect->kind>2 || rc || texture)) return VK_ERROR_FEATURE_NOT_PRESENT;
+@@ -1351,7 +1363,8 @@ static VkResult draw_full(ChVkTarget *t, const float rgba[4],
+     memcpy(t->blend_constants,constants,sizeof constants);
+     t->active_pipeline=entry;entry->used=++t->pipeline_clock;
+     VkDeviceSize header=t->fixed?(256+ch_vk_raw_params_size(t->fixed)+255)/256*256:t->rc?256:0;
+-    VkDeviceSize payload=header+vertex_bytes+(VkDeviceSize)index_count*sizeof(*indices);
++    VkDeviceSize index_bytes=sequential?0:(VkDeviceSize)index_count*sizeof(*indices);
++    VkDeviceSize payload=header+vertex_bytes+index_bytes;
+     VkDeviceSize base=t->pending?(t->geometry_used+255)/256*256:0;
+     if(base>UINT64_MAX-payload) {result=VK_ERROR_OUT_OF_HOST_MEMORY;goto fail;}
+     if(t->pending && base+payload>t->geometry_capacity) {TRY(finish_batch_named(t,0,__func__));base=0;}
+@@ -1365,7 +1378,7 @@ static VkResult draw_full(ChVkTarget *t, const float rgba[4],
+     }
+     t->vertex_offset=base+header;
+     VkDeviceSize offset=t->vertex_offset+vertex_bytes;
+-    VkDeviceSize size=offset+(VkDeviceSize)index_count*sizeof(*indices);
++    VkDeviceSize size=offset+index_bytes;
+     if(size>SIZE_MAX) return VK_ERROR_OUT_OF_HOST_MEMORY;
+     TRY(reserve_geometry(t,size));
+     VkBuffer buffer=t->geometry;
+@@ -1397,6 +1410,10 @@ static VkResult draw_full(ChVkTarget *t, const float rgba[4],
+     if(batched) {
+         result=record_batch(t,buffer,offset,index_count);t->geometry_used=size;
+     } else result=render_read(t,rgba,rgba?7:0,1.0f,0,buffer,offset,index_count,pixels,bytes);
++    if(result==VK_SUCCESS && sequential) {
++        t->resource_stats.sequential_draws++;
++        t->resource_stats.index_bytes_avoided+=(uint64_t)index_count*sizeof(*indices);
++    }
+     if(result==VK_SUCCESS && samples) *samples=(uint32_t)t->samples;
+ fail:
+     if(t->failed) vkQueueWaitIdle(t->queue);
+diff --git a/runtime/src/gpu/vulkan/vk_target.h b/runtime/src/gpu/vulkan/vk_target.h
+index cd9c06d..0b1f519 100644
+--- a/runtime/src/gpu/vulkan/vk_target.h
++++ b/runtime/src/gpu/vulkan/vk_target.h
+@@ -31,6 +31,7 @@ typedef struct {
+     uint64_t batch_draws,batch_clears,batch_submissions,combined_depth_copies,combined_texture_copies,combined_depth_readbacks,combined_color_readbacks,queued_depth_uploads,queued_color_readbacks;
+     uint64_t coherent_staging_skips,staging_maintenance_bytes;
+     uint64_t pipeline_consecutive_hits,pipeline_scan_entries;
++    uint64_t sequential_draws,index_bytes_avoided;
+     uint64_t batch_pipeline_binds,batch_blend_updates,batch_push_updates;
+     uint64_t depth_roundtrips_by_compare[8]; /* Batched full-surface conversions, VkCompareOp order. */
+     uint64_t no_alpha_pipeline_builds,no_alpha_pipeline_hits;
+diff --git a/tools/vulkan-render-texture-test.c b/tools/vulkan-render-texture-test.c
+index 0c148c4..4fcccc8 100644
+--- a/tools/vulkan-render-texture-test.c
++++ b/tools/vulkan-render-texture-test.c
+@@ -320,6 +320,27 @@ static int paired_readbacks(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,u
+         if(packed && r==VK_ERROR_FORMAT_NOT_SUPPORTED) continue;
+         CHECK(r==VK_SUCCESS);
+         CHECK(ch_vk_target_batching(t,1)==VK_SUCCESS);
++        /* Identity indices use non-indexed draws; cyclic indices retain the
++         * indexed path with identical raster output and depth/stencil bytes. */
++        const uint16_t cyclic[]={1,2,0},invalid[]={0,1,3};
++        for(unsigned deferred=0;deferred<2;deferred++) {
++            ch_vk_target_defer_color_readback(t,deferred);
++            ChVkTargetResourceStats before_seq,after_seq;
++            ch_vk_target_resource_stats(t,&before_seq);
++            CHECK(ch_vk_target_clear_aspects_read(t,7,black,1,7,rgba,sizeof rgba)==VK_SUCCESS);
++            CHECK(ch_vk_target_draw_state_read(t,NULL,v,3,idx,3,&state,rgba,sizeof rgba)==VK_SUCCESS);
++            CHECK(ch_vk_target_read_color(t,reference,sizeof reference)==VK_SUCCESS);
++            CHECK(ch_vk_target_read_z24s8(t,words_ref,16)==VK_SUCCESS);
++            CHECK(ch_vk_target_clear_aspects_read(t,7,black,1,7,rgba,sizeof rgba)==VK_SUCCESS);
++            CHECK(ch_vk_target_draw_state_read(t,NULL,v,3,cyclic,3,&state,rgba,sizeof rgba)==VK_SUCCESS);
++            CHECK(ch_vk_target_read_color(t,rgba,sizeof rgba)==VK_SUCCESS && !memcmp(reference,rgba,sizeof rgba));
++            CHECK(ch_vk_target_read_z24s8(t,words,16)==VK_SUCCESS && !memcmp(words,words_ref,sizeof words));
++            CHECK(ch_vk_target_draw_state_read(t,NULL,v,3,invalid,3,&state,rgba,sizeof rgba)==VK_ERROR_INITIALIZATION_FAILED);
++            ch_vk_target_resource_stats(t,&after_seq);
++            CHECK(after_seq.sequential_draws==before_seq.sequential_draws+1);
++            CHECK(after_seq.index_bytes_avoided==before_seq.index_bytes_avoided+sizeof idx);
++        }
++        ch_vk_target_defer_color_readback(t,0);
+         /* Compare predicted non-writes with actual rasterization. Keep draws
+          * executing: this predicate only controls guest publication. */
+         for(unsigned test=0;test<7;test++) {
