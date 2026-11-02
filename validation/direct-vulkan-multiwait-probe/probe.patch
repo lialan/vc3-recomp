@@ -1,0 +1,74 @@
+diff --git a/src/platform/win32_compat.c b/src/platform/win32_compat.c
+index be219f5e..9ce71020 100644
+--- a/src/platform/win32_compat.c
++++ b/src/platform/win32_compat.c
+@@ -587,26 +587,45 @@ DWORD WaitForMultipleObjects(DWORD count, const HANDLE *handles, BOOL waitAll, D
+     return WaitForMultipleObjectsEx(count, handles, waitAll, ms, FALSE);
+ }
+ 
++/* Temporary local performance probe; archived and removed after diagnosis. */
++static _Thread_local struct {uint64_t wall,cpu,polls,checks,calls,done;} mw_probe;
++static uint64_t mw_clock(clockid_t id) {
++    struct timespec t;clock_gettime(id,&t);return (uint64_t)t.tv_sec*1000000000ull+t.tv_nsec;
++}
++static void mw_report(uint64_t *anchor) {
++    uint64_t cpu=mw_clock(CLOCK_THREAD_CPUTIME_ID),wall=mw_clock(CLOCK_MONOTONIC);
++    mw_probe.cpu+=cpu-*anchor;*anchor=cpu;
++    if(!mw_probe.wall) mw_probe.wall=wall;
++    if(wall-mw_probe.wall<1000000000ull) return;
++    fprintf(stderr,"[multiwait probe] thread=%lu wall_ms=%.3f cpu_ms=%.3f polls=%llu checks=%llu calls=%llu returns=%llu\n",
++        (unsigned long)pthread_self(),(wall-mw_probe.wall)/1e6,mw_probe.cpu/1e6,
++        (unsigned long long)mw_probe.polls,(unsigned long long)mw_probe.checks,
++        (unsigned long long)mw_probe.calls,(unsigned long long)mw_probe.done);
++    memset(&mw_probe,0,sizeof mw_probe);mw_probe.wall=wall;*anchor=mw_clock(CLOCK_THREAD_CPUTIME_ID);
++}
+ DWORD WaitForMultipleObjectsEx(DWORD count, const HANDLE *handles, BOOL waitAll,
+                                DWORD ms, BOOL alertable)
+ {
++    uint64_t probe_cpu=mw_clock(CLOCK_THREAD_CPUTIME_ID);mw_probe.calls++;
++#define MW_RETURN(v) do {mw_probe.done++;mw_report(&probe_cpu);return (v);}while(0)
+     struct timespec ts;
+     int timed = (ms != INFINITE);
+     if (timed) deadline_from_ms(ms, &ts);
+ 
+     for (;;) {
++        mw_probe.checks+=count;
+         if (alertable && drain_apcs() > 0)
+-            return WAIT_IO_COMPLETION;
++            MW_RETURN(WAIT_IO_COMPLETION);
+ 
+         if (waitAll) {
+             DWORD got = 0;
+             for (DWORD i = 0; i < count; i++)
+                 if (WaitForSingleObject(handles[i], 0) == WAIT_OBJECT_0) got++;
+-            if (got == count) return WAIT_OBJECT_0;
++            if (got == count) MW_RETURN(WAIT_OBJECT_0);
+         } else {
+             for (DWORD i = 0; i < count; i++)
+                 if (WaitForSingleObject(handles[i], 0) == WAIT_OBJECT_0)
+-                    return WAIT_OBJECT_0 + i;
++                    MW_RETURN(WAIT_OBJECT_0 + i);
+         }
+ 
+         if (timed) {
+@@ -614,9 +633,10 @@ DWORD WaitForMultipleObjectsEx(DWORD count, const HANDLE *handles, BOOL waitAll,
+             clock_gettime(CLOCK_REALTIME, &now);
+             if (now.tv_sec > ts.tv_sec ||
+                 (now.tv_sec == ts.tv_sec && now.tv_nsec >= ts.tv_nsec))
+-                return WAIT_TIMEOUT;
++                MW_RETURN(WAIT_TIMEOUT);
+         }
+         {
++            mw_probe.polls++;if((mw_probe.polls&255)==0) mw_report(&probe_cpu);
+             XBOX_ACCT_BEGIN();
+             usleep(1000);
+             XBOX_ACCT_END(XBOX_ACCT_OBJECT);
+@@ -624,6 +644,8 @@ DWORD WaitForMultipleObjectsEx(DWORD count, const HANDLE *handles, BOOL waitAll,
+     }
+ }
+ 
++#undef MW_RETURN
++
+ /* ===================================================================== */
+ /* Events                                                                */
+ /* ===================================================================== */

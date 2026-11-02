@@ -1,0 +1,9 @@
+# Multi-object wait cost probe
+
+Temporary instrumentation in shared POSIX WaitForMultipleObjectsEx records per-thread wait-loop CPU time, polling iterations, object checks and call/return counts. CPU clock is sampled at call entry, return and each256polls; report at roughly1s intervals. It excludes guest work between calls and reporting output, but includes timer-probe overhead. No wait policy/timing/state semantics changed. Native instrumented build passed;2100-frame local game run exit0 using lightweight interval-only profiling. No headset.
+
+35 reported windows35186.343ms wall,90.690ms wait-loopCPU=0.257742% of one core.786.640polls/s,120.047calls/s. Highest windowCPU2.894ms. Sleeping stacks from old sample were not CPU utilization; actual cost is small. This does not measure signal-to-wakeup latency or rule out ~1ms scheduling effects, but does not justify broad notification machinery as a major CPU optimization.
+
+Probe source removed; original nested repository restored and verified clean. Native VC3 and Android kernel/Vulkan targets rebuilt with production platform code. /tmp/vc3-multiwait-probe-vc3 is experimental and must not be packaged. Patch retained here for reproducibility; production renderer remains a3d870b implementation. Run /tmp/vc3-multiwait-probe, seed copied from /tmp/vc3-profile-cost-intervals.cache. Local binary includes unrelated existing host_input.c edits. Report records effective runtime options. Some late GPU-completion warnings occurred; no per-frame cost/GPU timestamp diagnostics were enabled, so this run cannot attribute them or prove fully warm-cache steady60. Pipeline cache grew86772668->87746484 bytes.
+
+No push/APK/headset changes. Goal remains active. Prioritize actual GPU transfer/submission or guest main-thread costs over this background wait-loop CPU cost.

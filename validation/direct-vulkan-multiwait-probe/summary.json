@@ -1,0 +1,9 @@
+{
+  "windows": 35,
+  "wall_ms": 35186.343,
+  "wait_cpu_ms": 90.69,
+  "one_core_percent": 0.2577420449746653,
+  "polls_per_second": 786.6404303510598,
+  "calls_per_second": 120.04657602524934,
+  "max_window_cpu_ms": 2.894
+}
