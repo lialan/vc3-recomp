@@ -1,0 +1,58 @@
+diff --git a/runtime/src/gpu/guest_write_watch.c b/runtime/src/gpu/guest_write_watch.c
+index 75b54b1..1af3be1 100644
+--- a/runtime/src/gpu/guest_write_watch.c
++++ b/runtime/src/gpu/guest_write_watch.c
+@@ -259,8 +259,17 @@ static void visit_write(ChGuestWriteWatch *w,void *memory,size_t bytes,int actio
+             if(atomic_load_explicit(&w->page[i].state,memory_order_relaxed)!=1) {i++;continue;}
+             size_t end=i+1;
+             while(end<=last && atomic_load_explicit(&w->page[end].state,memory_order_relaxed)==1) end++;
+-            if(!protect_pages(w,i,end-i,PROT_READ|PROT_WRITE)) abort();
+-            for(size_t k=i;k<end;k++) atomic_store_explicit(&w->page[k].writable,1,memory_order_release);
++            /* A previous lease/fault may already have opened every alias.
++             * All page locks are held, so no observer can rearm this run.
++             * Keep generation/lease updates even when protection is unchanged.
++             * Invalidation still restores permissions unconditionally. */
++            int needs_write=action==2;
++            for(size_t k=i;k<end;k++)
++                needs_write|=!atomic_load_explicit(&w->page[k].writable,memory_order_relaxed);
++            if(needs_write) {
++                if(!protect_pages(w,i,end-i,PROT_READ|PROT_WRITE)) abort();
++                for(size_t k=i;k<end;k++) atomic_store_explicit(&w->page[k].writable,1,memory_order_release);
++            }
+             i=end;
+         }
+         for(size_t i=first;i<=last;i++) {
+diff --git a/tools/guest-write-watch-test.c b/tools/guest-write-watch-test.c
+index d54abde..e663823 100644
+--- a/tools/guest-write-watch-test.c
++++ b/tools/guest-write-watch-test.c
+@@ -106,6 +106,29 @@ int main(void) {
+     CHECK(write(pipefd[1],"z",1)==1);CHECK(!pthread_join(thread,NULL));
+     CHECK(r.result==1 && a[139]=='z');close(pipefd[0]);close(pipefd[1]);
+     CHECK(ch_guest_write_range_changed(x) && !ch_guest_write_range_changed(x));
++    /* Repeated and nested write leases must not issue protection syscalls
++     * for already writable aliases, but every observer still sees edits. */
++    ChGuestWriteStats before,opened,after;
++    ch_guest_write_watch_stats(watch,&before);
++    ch_guest_write_watch_begin(watch,a+31,page+64);
++    ch_guest_write_watch_stats(watch,&opened);
++    CHECK(opened.protect_calls==before.protect_calls+2);
++    for(unsigned i=0;i<128;i++) {
++        ch_guest_write_watch_begin(watch,b+page+17,1);
++        b[page+17]=(unsigned char)i;
++        CHECK(ch_guest_write_range_changed(x) && ch_guest_write_range_changed(y));
++        ch_guest_write_watch_end(watch,b+page+17,1);
++    }
++    ch_guest_write_watch_end(watch,a+31,page+64);
++    /* No observer has rearmed either page yet: a new lease also needs no
++     * syscall, even though it is no longer nested inside the first lease. */
++    ch_guest_write_watch_begin(watch,b+31,page+64);a[137]=91;
++    ch_guest_write_watch_end(watch,b+31,page+64);
++    ch_guest_write_watch_stats(watch,&after);
++    CHECK(after.protect_calls==opened.protect_calls && a[page+17]==127);
++    CHECK(ch_guest_write_range_changed(x) && ch_guest_write_range_changed(y));
++    CHECK(!ch_guest_write_range_changed(x) && !ch_guest_write_range_changed(y));
++    b[137]=92;CHECK(ch_guest_write_range_changed(x) && a[137]==92);
+     /* Protection changes invalidate tracking in all aliases and must not be
+      * undone on destruction. Other pages still retain their fast path. */
+     ch_guest_write_watch_invalidate(watch,b+page,1);
