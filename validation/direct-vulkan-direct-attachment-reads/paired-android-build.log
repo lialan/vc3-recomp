@@ -1,0 +1,66 @@
+[0/2] Re-checking globbed directories...
+[1/2] Re-running CMake...
+CMake Deprecation Warning at /Users/lialan/Library/Android/sdk/ndk/27.3.13750724/build/cmake/android.toolchain.cmake:35 (cmake_minimum_required):
+  Compatibility with CMake < 3.10 will be removed from a future version of
+  CMake.
+
+  Update the VERSION argument <min> value.  Or, use the <min>...<max> syntax
+  to tell CMake that the project requires at least <min> but has been updated
+  to work with policies introduced by <max> or earlier.
+Call Stack (most recent call first):
+  build-quest-clean-20261101-210558/CMakeFiles/4.0.2/CMakeSystem.cmake:6 (include)
+  CMakeLists.txt:15 (project)
+
+
+CMake Deprecation Warning at /Users/lialan/Library/Android/sdk/ndk/27.3.13750724/build/cmake/android-legacy.toolchain.cmake:35 (cmake_minimum_required):
+  Compatibility with CMake < 3.10 will be removed from a future version of
+  CMake.
+
+  Update the VERSION argument <min> value.  Or, use the <min>...<max> syntax
+  to tell CMake that the project requires at least <min> but has been updated
+  to work with policies introduced by <max> or earlier.
+Call Stack (most recent call first):
+  /Users/lialan/Library/Android/sdk/ndk/27.3.13750724/build/cmake/android.toolchain.cmake:55 (include)
+  build-quest-clean-20261101-210558/CMakeFiles/4.0.2/CMakeSystem.cmake:6 (include)
+  CMakeLists.txt:15 (project)
+
+
+CMake Deprecation Warning at /Users/lialan/Library/Android/sdk/ndk/27.3.13750724/build/cmake/flags.cmake:18 (cmake_minimum_required):
+  Compatibility with CMake < 3.10 will be removed from a future version of
+  CMake.
+
+  Update the VERSION argument <min> value.  Or, use the <min>...<max> syntax
+  to tell CMake that the project requires at least <min> but has been updated
+  to work with policies introduced by <max> or earlier.
+Call Stack (most recent call first):
+  /opt/homebrew/share/cmake/Modules/Platform/Android-Clang.cmake:23 (include)
+  /opt/homebrew/share/cmake/Modules/Platform/Android-Clang-C.cmake:1 (include)
+  /opt/homebrew/share/cmake/Modules/CMakeCInformation.cmake:48 (include)
+  CMakeLists.txt:15 (project)
+
+
+-- vc3: building against lifted code in /Users/lialan/Downloads/VR/vc3-vulkan/games/vc3/generated
+-- Configuring done (0.1s)
+-- Generating done (0.0s)
+-- Build files have been written to: /Users/lialan/Downloads/VR/vc3-vulkan/build-quest-clean-20261101-210558
+[0/4] Re-checking globbed directories...
+[1/23] Generating depth_color_read.spv
+[2/23] Generating depth_color_read_spv.h
+[3/23] Building C object runtime/src/gpu/vulkan/CMakeFiles/chihiro_vulkan.dir/vk_texture_cache.c.o
+[4/23] Building C object runtime/src/gpu/vulkan/CMakeFiles/chihiro_vulkan.dir/vk_depth_guest.c.o
+[5/23] Building C object runtime/src/gpu/vulkan/CMakeFiles/chihiro_vulkan.dir/vk_nv2a.c.o
+[6/23] Building C object runtime/src/gpu/vulkan/CMakeFiles/chihiro_vulkan.dir/vk_backend.c.o
+[7/23] Building C object runtime/src/gpu/vulkan/CMakeFiles/chihiro_vulkan.dir/vk_menu.c.o
+[8/23] Building C object runtime/src/gpu/vulkan/CMakeFiles/chihiro_vulkan.dir/vk_frame_mailbox.c.o
+[9/23] Building C object runtime/src/gpu/vulkan/CMakeFiles/chihiro_vulkan.dir/vk_overlay.c.o
+[10/23] Building C object runtime/src/gpu/vulkan/CMakeFiles/chihiro_vulkan.dir/vk_depth_resident.c.o
+[11/23] Building C object runtime/src/gpu/vulkan/CMakeFiles/chihiro_vulkan.dir/vk_gpu_mailbox.c.o
+[12/23] Building C object runtime/src/gpu/vulkan/CMakeFiles/chihiro_vulkan.dir/vk_submission.c.o
+[13/23] Building C object runtime/src/gpu/vulkan/CMakeFiles/chihiro_vulkan.dir/vk_scene.c.o
+[14/23] Building C object runtime/src/gpu/vulkan/CMakeFiles/chihiro_vulkan.dir/vk_xr_swapchain.c.o
+[15/23] Building C object runtime/src/gpu/vulkan/CMakeFiles/chihiro_vulkan.dir/vk_xr_frame.c.o
+[16/23] Building C object runtime/src/gpu/vulkan/CMakeFiles/chihiro_vulkan.dir/vk_xr_quad.c.o
+[17/23] Building C object runtime/src/gpu/vulkan/CMakeFiles/chihiro_vulkan.dir/vk_xr_screen.c.o
+[18/23] Building C object runtime/src/gpu/vulkan/CMakeFiles/chihiro_vulkan.dir/vk_image_read.c.o
+[19/23] Building C object runtime/src/gpu/vulkan/CMakeFiles/chihiro_vulkan.dir/vk_target.c.o
+[20/23] Linking C static library runtime/src/gpu/vulkan/libchihiro_vulkan.a

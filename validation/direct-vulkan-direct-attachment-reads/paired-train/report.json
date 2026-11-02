@@ -1,0 +1,30 @@
+{
+  "binary": "/tmp/vc3-warm-p95/paired-vc3",
+  "sha256": "ff16573f9b252cee9d793e80501cafb2ff29912eee2057a629b42de013ef8d9d",
+  "seed_sha256": "e3c824ad1993807b4628dcddf57eb9d5fe515938e1585a5a60cda9bedc34e0dd",
+  "environment": {
+    "CHIHIRO_AUTOKEYS": "12:coin,13:start,15:fire,20:start,22:start,25:start,26:pedal,26.5:pedal,27:pedal,27.5:pedal,28:pedal,28.5:pedal,29:pedal,29.5:pedal,30:pedal,30.5:pedal,31:pedal,31.5:pedal,32:pedal,26.5:fire,27.5:fire,28.5:fire,29.5:fire,30.5:fire,30:reload,31:reload",
+    "CHIHIRO_AUTOKEYS_CLOCK": "flips",
+    "RECOMP_HEADLESS": "1",
+    "RECOMP_FB_WINDOW": "0",
+    "VC3_SOUND": "0",
+    "VC3_SCALE": "1",
+    "VC3_ASPECT": "4:3",
+    "VC3_STEREO": "0",
+    "VC3_FPS": "60",
+    "VC3_SAVE_DIR": "/tmp/vc3-warm-p95/paired-train/save",
+    "VC3_CONFIG_DIR": "/tmp/vc3-warm-p95/paired-train/config",
+    "VK_ICD_FILENAMES": "/opt/homebrew/Cellar/mesa/26.2.6/share/vulkan/icd.d/kosmickrisp_mesa_icd.aarch64.json",
+    "CHIHIRO_VULKAN_PIPELINE_CACHE": "/tmp/vc3-warm-p95/paired-train/pipelines.cache",
+    "VC3_VULKAN_INTERVAL_LOG": "1",
+    "VC3_VULKAN_FRAME_LIMIT": "2100",
+    "CHIHIRO_VULKAN_PIPELINE_LOG": "1",
+    "CHIHIRO_VULKAN_DIRECT_DEPTH_READ": "1",
+    "CHIHIRO_VULKAN_DIRECT_COLOR_READ": "1",
+    "CHIHIRO_VULKAN_PROFILE": "1",
+    "CHIHIRO_VULKAN_FRAME_COSTS": "1",
+    "CHIHIRO_VULKAN_GPU_TIMESTAMPS": "1"
+  },
+  "exit_code": 0,
+  "elapsed": 38.93037708301563
+}

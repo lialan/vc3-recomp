@@ -1,0 +1,98 @@
+{
+  "paired-train": {
+    "combat": {
+      "frames": 239,
+      "fps": 59.937649797102274,
+      "p95_ms": 21.363,
+      "max_ms": 22.807,
+      "over_33ms": 0,
+      "pipeline_ms": 3.943,
+      "zero_pipeline_frames": 233,
+      "zero_pipeline_p95_ms": 21.363
+    },
+    "activation": {
+      "frames": 119,
+      "fps": 59.83967994319756,
+      "p95_ms": 20.956,
+      "max_ms": 27.644,
+      "over_33ms": 0,
+      "pipeline_ms": 11.898,
+      "zero_pipeline_frames": 114,
+      "zero_pipeline_p95_ms": 20.4
+    },
+    "held": {
+      "frames": 239,
+      "fps": 59.94267072939195,
+      "p95_ms": 20.871,
+      "max_ms": 22.769,
+      "over_33ms": 0,
+      "pipeline_ms": 1.654,
+      "zero_pipeline_frames": 238,
+      "zero_pipeline_p95_ms": 20.871
+    }
+  },
+  "paired-off": {
+    "combat": {
+      "frames": 239,
+      "fps": 57.06658643916439,
+      "p95_ms": 20.478,
+      "max_ms": 193.422,
+      "over_33ms": 2,
+      "pipeline_ms": 255.48599999999996,
+      "zero_pipeline_frames": 230,
+      "zero_pipeline_p95_ms": 20.02
+    },
+    "activation": {
+      "frames": 119,
+      "fps": 58.88284886108694,
+      "p95_ms": 20.399,
+      "max_ms": 77.775,
+      "over_33ms": 1,
+      "pipeline_ms": 72.213,
+      "zero_pipeline_frames": 112,
+      "zero_pipeline_p95_ms": 20.188
+    },
+    "held": {
+      "frames": 239,
+      "fps": 59.980580345995094,
+      "p95_ms": 20.411,
+      "max_ms": 21.581,
+      "over_33ms": 0,
+      "pipeline_ms": 1.741,
+      "zero_pipeline_frames": 238,
+      "zero_pipeline_p95_ms": 20.411
+    }
+  },
+  "paired-on": {
+    "combat": {
+      "frames": 239,
+      "fps": 59.96622320933707,
+      "p95_ms": 20.99,
+      "max_ms": 23.295,
+      "over_33ms": 0,
+      "pipeline_ms": 4.122,
+      "zero_pipeline_frames": 233,
+      "zero_pipeline_p95_ms": 20.955
+    },
+    "activation": {
+      "frames": 119,
+      "fps": 59.95687135976138,
+      "p95_ms": 20.58,
+      "max_ms": 24.867,
+      "over_33ms": 0,
+      "pipeline_ms": 11.84,
+      "zero_pipeline_frames": 114,
+      "zero_pipeline_p95_ms": 20.398
+    },
+    "held": {
+      "frames": 239,
+      "fps": 59.9347789234209,
+      "p95_ms": 20.044,
+      "max_ms": 25.197,
+      "over_33ms": 0,
+      "pipeline_ms": 1.651,
+      "zero_pipeline_frames": 238,
+      "zero_pipeline_p95_ms": 20.044
+    }
+  }
+}

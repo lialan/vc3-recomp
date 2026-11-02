@@ -349,3 +349,30 @@ add_custom_command(OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/color_pack_spv.h"
         "${CMAKE_CURRENT_BINARY_DIR}/color_pack.spv" "${CMAKE_CURRENT_BINARY_DIR}/color_pack_spv.h" color_pack_spv
     DEPENDS "${CMAKE_CURRENT_BINARY_DIR}/color_pack.spv" embed_binary_spirv.py VERBATIM)
 target_sources(chihiro_vulkan PRIVATE vk_color_pack.c "${CMAKE_CURRENT_BINARY_DIR}/color_pack_spv.h")
+
+add_custom_command(OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/depth_read.spv"
+    COMMAND "${CHIHIRO_GLSLC}" --target-env=vulkan1.0 -O "${CMAKE_CURRENT_SOURCE_DIR}/depth_read.comp" -o "${CMAKE_CURRENT_BINARY_DIR}/depth_read.spv"
+    DEPENDS depth_read.comp depth_quant.glsl morton.glsl VERBATIM)
+add_custom_command(OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/depth_read_spv.h"
+    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/embed_binary_spirv.py"
+        "${CMAKE_CURRENT_BINARY_DIR}/depth_read.spv" "${CMAKE_CURRENT_BINARY_DIR}/depth_read_spv.h" depth_read_spv
+    DEPENDS "${CMAKE_CURRENT_BINARY_DIR}/depth_read.spv" embed_binary_spirv.py VERBATIM)
+target_sources(chihiro_vulkan PRIVATE vk_image_read.c "${CMAKE_CURRENT_BINARY_DIR}/depth_read_spv.h")
+
+add_custom_command(OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/color_read.spv"
+    COMMAND "${CHIHIRO_GLSLC}" --target-env=vulkan1.0 -O "${CMAKE_CURRENT_SOURCE_DIR}/color_read.comp" -o "${CMAKE_CURRENT_BINARY_DIR}/color_read.spv"
+    DEPENDS color_read.comp depth_quant.glsl morton.glsl VERBATIM)
+add_custom_command(OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/color_read_spv.h"
+    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/embed_binary_spirv.py"
+        "${CMAKE_CURRENT_BINARY_DIR}/color_read.spv" "${CMAKE_CURRENT_BINARY_DIR}/color_read_spv.h" color_read_spv
+    DEPENDS "${CMAKE_CURRENT_BINARY_DIR}/color_read.spv" embed_binary_spirv.py VERBATIM)
+target_sources(chihiro_vulkan PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/color_read_spv.h")
+
+add_custom_command(OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/depth_color_read.spv"
+    COMMAND "${CHIHIRO_GLSLC}" --target-env=vulkan1.0 -O "${CMAKE_CURRENT_SOURCE_DIR}/depth_color_read.comp" -o "${CMAKE_CURRENT_BINARY_DIR}/depth_color_read.spv"
+    DEPENDS depth_color_read.comp depth_quant.glsl morton.glsl VERBATIM)
+add_custom_command(OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/depth_color_read_spv.h"
+    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/embed_binary_spirv.py"
+        "${CMAKE_CURRENT_BINARY_DIR}/depth_color_read.spv" "${CMAKE_CURRENT_BINARY_DIR}/depth_color_read_spv.h" depth_color_read_spv
+    DEPENDS "${CMAKE_CURRENT_BINARY_DIR}/depth_color_read.spv" embed_binary_spirv.py VERBATIM)
+target_sources(chihiro_vulkan PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/depth_color_read_spv.h")

@@ -88,6 +88,35 @@ int ch_test_depth_fragment(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,ui
         REQUIRE(ch_vk_target_write_z24s8(target,input,n)==VK_SUCCESS);
         ch_vk_target_destroy(target);target=NULL;free(input);input=NULL;free(output);output=NULL;free(depth);depth=NULL;free(stencil);stencil=NULL;free(rgba);rgba=NULL;
     }
+    /* Combined reads retain independent depth/color addressing and defer all
+     * caller writes until end, including layout changes on a reused target. */
+    {
+        enum {W=16,H=4,N=W*H};
+        uint32_t z[N],z_expected[N],z_result[N],c[N],c_expected[N],c_result[N];
+        const float black[]={0,0,0,1};
+        REQUIRE(ch_vk_target_create(gpu,device,queue,family,W,H,&target)==VK_SUCCESS);
+        REQUIRE(ch_vk_target_clear_read(target,black,c_result,sizeof c_result)==VK_SUCCESS);
+        for(unsigned j=0;j<N;j++) {z[j]=j*0x04010203u;c[j]=j*0x01030711u;}
+        REQUIRE(ch_vk_target_import_color(target,c,sizeof c)==VK_SUCCESS);
+        for(unsigned j=0;j<N;j++) {uint32_t v=c[j];c[j]=(v&0xff00ff00u)|((v&255u)<<16)|((v>>16)&255u);}
+        for(unsigned cm=1;cm<=2;cm++) for(unsigned dm=0;dm<=1;dm++) {
+            if(cm==2) xbox_swizzle_rect(c_expected,c,W,H,4);else memcpy(c_expected,c,sizeof c);
+            if(dm) xbox_swizzle_rect(z_expected,z,W,H,4);else memcpy(z_expected,z,sizeof z);
+            REQUIRE(ch_vk_target_color_layout(target,cm)==VK_SUCCESS);
+            REQUIRE(ch_vk_target_depth_morton(target,dm)==VK_SUCCESS);
+            REQUIRE(ch_vk_target_write_z24s8(target,z_expected,N)==VK_SUCCESS);
+            memset(z_result,0x55,sizeof z_result);memset(c_result,0x55,sizeof c_result);
+            REQUIRE(ch_vk_target_read_depth_begin(target,z_result,NULL,N,1,c_result,sizeof c_result)==VK_SUCCESS);
+            for(unsigned j=0;j<N;j++) REQUIRE(z_result[j]==0x55555555 && c_result[j]==0x55555555);
+            REQUIRE(ch_vk_target_read_depth_end(target)==VK_SUCCESS);
+            REQUIRE(!memcmp(z_expected,z_result,sizeof z_result) && !memcmp(c_expected,c_result,sizeof c_result));
+        }
+        ChVkTargetResourceStats stats;ch_vk_target_resource_stats(target,&stats);
+        if(getenv("CHIHIRO_TEST_REQUIRE_DIRECT_READS")) REQUIRE(stats.direct_paired_readbacks==4);
+        fprintf(stderr,"PASS: independent depth/color linear-Morton paired reads, direct dispatches=%llu\n",
+            (unsigned long long)stats.direct_paired_readbacks);
+        ch_vk_target_destroy(target);target=NULL;
+    }
     const unsigned morton_sizes[][2]={{1,1},{1,8},{8,1},{4,16},{16,4},{128,128},{256,256}};
     for(unsigned test=0;test<14;test++) {
         unsigned w=morton_sizes[test%7][0],h=morton_sizes[test%7][1],n=w*h;

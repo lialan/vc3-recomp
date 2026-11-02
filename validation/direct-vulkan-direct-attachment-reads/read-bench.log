@@ -1,0 +1,7 @@
+device=Apple M4 Pro vendor=106b deviceID=0064 api=1.4.354
+run=0 direct=0 mean_ms=0.326896 p50_ms=0.325000 p95_ms=0.342000
+run=1 direct=1 mean_ms=0.261792 p50_ms=0.257000 p95_ms=0.300000
+run=2 direct=0 mean_ms=0.324483 p50_ms=0.323000 p95_ms=0.344000
+run=3 direct=1 mean_ms=0.252571 p50_ms=0.252000 p95_ms=0.267000
+run=4 direct=0 mean_ms=0.343842 p50_ms=0.343000 p95_ms=0.364000
+run=5 direct=1 mean_ms=0.258629 p50_ms=0.264000 p95_ms=0.287000

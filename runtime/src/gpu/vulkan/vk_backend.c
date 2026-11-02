@@ -704,7 +704,8 @@ static void flip(void) {
         uint64_t draws=0,submits=0,depth_reads=0,color_reads=0,queued_uploads=0,queued_colors=0;
         uint64_t new_texture_copies=0,read_only_barriers=0,queued_depth_copies=0;
         uint64_t depth_ops[8]={0},staging_skips=0,staging_bytes=0,pipeline_consecutive=0,pipeline_scans=0;
-        for(unsigned i=0;i<active->count;i++) {ChVkTargetResourceStats stats;ch_vk_target_resource_stats(active->surfaces[i].target,&stats);for(unsigned op=0;op<8;op++) depth_ops[op]+=stats.depth_roundtrips_by_compare[op];queued_depth_copies+=stats.queued_depth_copies;read_only_barriers+=stats.read_only_color_barriers_avoided;new_texture_copies+=stats.combined_new_texture_copies;draws+=stats.batch_draws;submits+=stats.batch_submissions;depth_reads+=stats.combined_depth_readbacks;color_reads+=stats.combined_color_readbacks;queued_uploads+=stats.queued_depth_uploads;queued_colors+=stats.queued_color_readbacks;staging_skips+=stats.coherent_staging_skips;staging_bytes+=stats.staging_maintenance_bytes;pipeline_consecutive+=stats.pipeline_consecutive_hits;pipeline_scans+=stats.pipeline_scan_entries;}
+        uint64_t direct_depth_reads=0,direct_color_reads=0,direct_paired_reads=0;
+        for(unsigned i=0;i<active->count;i++) {ChVkTargetResourceStats stats;ch_vk_target_resource_stats(active->surfaces[i].target,&stats);for(unsigned op=0;op<8;op++) depth_ops[op]+=stats.depth_roundtrips_by_compare[op];direct_depth_reads+=stats.direct_depth_readbacks;direct_color_reads+=stats.direct_color_readbacks;direct_paired_reads+=stats.direct_paired_readbacks;queued_depth_copies+=stats.queued_depth_copies;read_only_barriers+=stats.read_only_color_barriers_avoided;new_texture_copies+=stats.combined_new_texture_copies;draws+=stats.batch_draws;submits+=stats.batch_submissions;depth_reads+=stats.combined_depth_readbacks;color_reads+=stats.combined_color_readbacks;queued_uploads+=stats.queued_depth_uploads;queued_colors+=stats.queued_color_readbacks;staging_skips+=stats.coherent_staging_skips;staging_bytes+=stats.staging_maintenance_bytes;pipeline_consecutive+=stats.pipeline_consecutive_hits;pipeline_scans+=stats.pipeline_scan_entries;}
         fprintf(stderr,"[Vulkan command batches] live targets: draws=%llu submissions=%llu combined_depth_reads=%llu combined_color_reads=%llu queued_depth_uploads=%llu queued_color_reads=%llu\n",(unsigned long long)draws,(unsigned long long)submits,(unsigned long long)depth_reads,(unsigned long long)color_reads,(unsigned long long)queued_uploads,(unsigned long long)queued_colors);
         fprintf(stderr,"[Vulkan queued depth copies] live targets: copies=%llu\n",(unsigned long long)queued_depth_copies);
         fprintf(stderr,"[Vulkan read-only color] live targets: barriers_avoided=%llu\n",(unsigned long long)read_only_barriers);
@@ -713,6 +714,9 @@ static void flip(void) {
             (unsigned long long)pipeline_consecutive,(unsigned long long)pipeline_scans);
         fprintf(stderr,"[Vulkan clear imports avoided] count=%llu bytes=%llu\n",
             (unsigned long long)active->clear_color_imports_avoided,(unsigned long long)active->clear_color_bytes_avoided);
+        fprintf(stderr,"[Vulkan direct paired reads] total=%llu\n",(unsigned long long)direct_paired_reads);
+        fprintf(stderr,"[Vulkan direct color reads] total=%llu\n",(unsigned long long)direct_color_reads);
+        fprintf(stderr,"[Vulkan direct depth reads] total=%llu\n",(unsigned long long)direct_depth_reads);
         fprintf(stderr,"[Vulkan completion overlap] early_color_reads=%llu\n",(unsigned long long)active->early_color_reads);
         fprintf(stderr,"[Vulkan staging maintenance] live targets: coherent_skips=%llu explicit_bytes=%llu\n",
             (unsigned long long)staging_skips,(unsigned long long)staging_bytes);

@@ -1,0 +1,58 @@
+[0/2] Re-checking globbed directories...
+[1/2] Re-running CMake...
+-- vc3: building against lifted code in /Users/lialan/Downloads/VR/vc3-vulkan/games/vc3/generated
+-- Configuring done (0.2s)
+-- Generating done (0.0s)
+-- Build files have been written to: /Users/lialan/Downloads/VR/vc3-vulkan/build-vulkan-direct
+[0/4] Re-checking globbed directories...
+[1/23] Generating depth_color_read.spv
+[2/23] Generating depth_color_read_spv.h
+[3/23] Building C object runtime/src/gpu/vulkan/CMakeFiles/chihiro_vulkan.dir/vk_depth_guest.c.o
+[4/23] Building C object runtime/src/gpu/vulkan/CMakeFiles/chihiro_vulkan.dir/vk_texture_cache.c.o
+[5/23] Building C object runtime/src/gpu/vulkan/CMakeFiles/chihiro_vulkan.dir/vk_depth_resident.c.o
+[6/23] Building C object runtime/src/gpu/vulkan/CMakeFiles/chihiro_vulkan.dir/vk_menu.c.o
+[7/23] Building C object runtime/src/gpu/vulkan/CMakeFiles/chihiro_vulkan.dir/vk_nv2a.c.o
+[8/23] Building C object runtime/src/gpu/vulkan/CMakeFiles/chihiro_vulkan.dir/vk_backend.c.o
+[9/23] Building C object runtime/src/gpu/vulkan/CMakeFiles/chihiro_vulkan.dir/vk_overlay.c.o
+[10/23] Building C object runtime/src/gpu/vulkan/CMakeFiles/chihiro_vulkan.dir/vk_gpu_mailbox.c.o
+[11/23] Building C object runtime/src/gpu/vulkan/CMakeFiles/chihiro_vulkan.dir/vk_frame_mailbox.c.o
+[12/23] Building C object runtime/src/gpu/vulkan/CMakeFiles/chihiro_vulkan.dir/vk_submission.c.o
+[13/23] Building C object runtime/src/gpu/vulkan/CMakeFiles/chihiro_vulkan.dir/vk_scene.c.o
+[14/23] Building C object runtime/src/gpu/vulkan/CMakeFiles/chihiro_vulkan.dir/vk_image_read.c.o
+[15/23] Building C object CMakeFiles/vc3.dir/runtime/src/host/main.c.o
+In file included from /Users/lialan/Downloads/VR/vc3-vulkan/runtime/src/host/main.c:32:
+In file included from /Users/lialan/Downloads/VR/vc3-vulkan/external/xboxrecomp/include/xbox/xboxrecomp.h:46:
+/Users/lialan/Downloads/VR/vc3-vulkan/external/xboxrecomp/src/kernel/kernel.h:505:63: warning: '/*' within block comment [-Wcomment]
+  505 |  * Set during memory layout init from the XBE header. *xbox_va/*count are
+      |                                                               ^
+1 warning generated.
+[16/23] Building C object runtime/CMakeFiles/chihiro_rt.dir/src/gpu/vulkan/vk_runtime.c.o
+[17/23] Building C object runtime/src/gpu/vulkan/CMakeFiles/chihiro_vulkan.dir/vk_target.c.o
+[18/23] Linking C static library runtime/src/gpu/vulkan/libchihiro_vulkan.a
+[19/23] Linking C static library runtime/libchihiro_rt.a
+[20/23] Linking C executable vc3
+[0/1] Re-running CMake...
+-- Configuring done (0.2s)
+-- Generating done (0.0s)
+-- Build files have been written to: /tmp/vc3-mac-shader-checks
+[1/22] Generating depth_color_read.spv
+[2/22] Generating depth_color_read_spv.h
+[3/22] Building C object CMakeFiles/chihiro_vulkan.dir/vk_depth_guest.c.o
+[4/22] Building C object CMakeFiles/chihiro_vulkan.dir/vk_texture_cache.c.o
+[5/22] Building C object CMakeFiles/chihiro_vulkan.dir/vk_menu.c.o
+[6/22] Building C object CMakeFiles/chihiro_vulkan.dir/vk_depth_resident.c.o
+[7/22] Building C object CMakeFiles/chihiro_vulkan.dir/vk_nv2a.c.o
+[8/22] Building C object CMakeFiles/chihiro_vulkan.dir/vk_backend.c.o
+[9/22] Building C object CMakeFiles/chihiro_vulkan.dir/vk_overlay.c.o
+[10/22] Building C object CMakeFiles/chihiro_vulkan.dir/vk_frame_mailbox.c.o
+[11/22] Building C object CMakeFiles/chihiro_vulkan.dir/vk_gpu_mailbox.c.o
+[12/22] Building C object CMakeFiles/chihiro_vulkan.dir/vk_image_read.c.o
+[13/22] Building C object CMakeFiles/chihiro_vulkan.dir/vk_submission.c.o
+[14/22] Building C object CMakeFiles/chihiro_vulkan.dir/vk_scene.c.o
+[15/22] Building C object CMakeFiles/vulkan_render_texture_check.dir/Users/lialan/Downloads/VR/vc3-vulkan/tools/vulkan-texture-watch-test.c.o
+[16/22] Building C object CMakeFiles/vulkan_depth_pack_check.dir/Users/lialan/Downloads/VR/vc3-vulkan/tools/vulkan-depth-pack-test.c.o
+[17/22] Building C object CMakeFiles/vulkan_render_texture_check.dir/Users/lialan/Downloads/VR/vc3-vulkan/tools/vulkan-render-texture-test.c.o
+[18/22] Building C object CMakeFiles/chihiro_vulkan.dir/vk_target.c.o
+[19/22] Linking C static library libchihiro_vulkan.a
+[20/22] Linking C executable vulkan_render_texture_check
+[21/22] Linking C executable vulkan_depth_pack_check
