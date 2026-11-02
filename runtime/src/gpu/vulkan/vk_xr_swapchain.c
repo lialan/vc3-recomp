@@ -1,4 +1,5 @@
 #include "vk_xr_swapchain.h"
+#include <stdio.h>
 #include <stdlib.h>
 struct ChVkXrSwapchain {
     XrSwapchain handle;
@@ -53,12 +54,28 @@ XrResult ch_vk_xr_swapchain_create(XrInstance instance,XrSession session,
     formats=calloc(count,sizeof(*formats));
     if(!formats) { result=XR_ERROR_OUT_OF_MEMORY; goto fail; }
     TRY(enumerate_formats(session,count,&count,formats));
-    int supported=0;
-    for(uint32_t i=0;i<count;i++) if(formats[i]==VK_FORMAT_R8G8B8A8_UNORM) supported=1;
-    if(!supported) { result=XR_ERROR_SWAPCHAIN_FORMAT_UNSUPPORTED; goto fail; }
+    /* R8G8B8A8_UNORM (the Quest); else R8G8B8A8_SRGB (SteamVR offers no
+     * 8-bit UNORM). Images only ever reach a swapchain by copy, which keeps
+     * the bytes in either: already sRGB-encoded colours, which an SRGB
+     * swapchain tells the compositor they are. */
+    int has_unorm=0,has_srgb=0;
+    for(uint32_t i=0;i<count;i++) {
+        if(formats[i]==VK_FORMAT_R8G8B8A8_UNORM) has_unorm=1;
+        if(formats[i]==VK_FORMAT_R8G8B8A8_SRGB) has_srgb=1;
+    }
+    if(!has_unorm && !has_srgb) {
+        fprintf(stderr,"[Vulkan XR] no R8G8B8A8 UNORM/SRGB swapchains; the runtime offers:");
+        for(uint32_t i=0;i<count;i++) fprintf(stderr," %lld",(long long)formats[i]);
+        fputc('\n',stderr);
+        result=XR_ERROR_SWAPCHAIN_FORMAT_UNSUPPORTED; goto fail;
+    }
+    {
+        static int logged;
+        if(!has_unorm && !logged++) fprintf(stderr,"[Vulkan XR] swapchains R8G8B8A8_SRGB (no UNORM offered)\n");
+    }
     XrSwapchainCreateInfo info={.type=XR_TYPE_SWAPCHAIN_CREATE_INFO,
         .usageFlags=XR_SWAPCHAIN_USAGE_COLOR_ATTACHMENT_BIT|XR_SWAPCHAIN_USAGE_TRANSFER_DST_BIT,
-        .format=VK_FORMAT_R8G8B8A8_UNORM,.sampleCount=1,.width=width,.height=height,
+        .format=has_unorm?VK_FORMAT_R8G8B8A8_UNORM:VK_FORMAT_R8G8B8A8_SRGB,.sampleCount=1,.width=width,.height=height,
         .faceCount=1,.arraySize=1,.mipCount=1};
     TRY(create(session,&info,&s->handle));
     TRY(enumerate_images(s->handle,0,&s->count,NULL));

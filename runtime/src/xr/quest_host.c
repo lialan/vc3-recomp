@@ -41,8 +41,15 @@
  * Without an OpenXR runtime (a phone, the Android emulator) the frames go
  * to the SDL window instead, letterboxed, and the touch screen or mouse is
  * the gun -- how this is tested without a headset.
+ *
+ * Desktop Linux (CHIHIRO_XR_DESKTOP, Vulkan only; the Steam Frame under
+ * SteamVR): the same host, as a process of its own -- no activity, no SDL
+ * window, the OpenXR loader found the desktop way, and Restart is an exec.
  */
-#if defined(__ANDROID__)
+#if defined(__ANDROID__) || defined(CHIHIRO_XR_DESKTOP)
+#if defined(CHIHIRO_XR_DESKTOP) && !defined(CHIHIRO_RENDERER_VULKAN)
+#error "the desktop OpenXR host is Vulkan only"
+#endif
 
 #define _GNU_SOURCE                     /* cpu_set_t, sched_setaffinity */
 #include <math.h>
@@ -62,11 +69,15 @@
 #include <GLES3/gl32.h>
 #include <GLES2/gl2ext.h>
 #endif
+#if defined(__ANDROID__)
 #include <jni.h>
 #include <sys/system_properties.h>
+#endif
 #include <SDL.h>
 
+#if defined(__ANDROID__)
 #define XR_USE_PLATFORM_ANDROID
+#endif
 #ifdef CHIHIRO_RENDERER_VULKAN
 #include "gpu/vulkan/vk_runtime.h"
 #include "gpu/vulkan/vk_gpu_mailbox.h"
@@ -565,7 +576,9 @@ static int s_running;
 static PFN_xrRequestDisplayRefreshRateFB s_request_rate;
 static PFN_xrEnumerateDisplayRefreshRatesFB s_enum_rates;
 static PFN_xrPerfSettingsSetPerformanceLevelEXT s_perf_level;
+#if defined(__ANDROID__)
 static PFN_xrSetAndroidApplicationThreadKHR s_set_thread;
+#endif
 static float s_rates[8];
 static int s_nrates;
 
@@ -683,7 +696,11 @@ static void native_init(void)
     XrSystemProperties sp = { XR_TYPE_SYSTEM_PROPERTIES };
     XrViewConfigurationView vcv[2] = { { XR_TYPE_VIEW_CONFIGURATION_VIEW },
                                        { XR_TYPE_VIEW_CONFIGURATION_VIEW } };
+#if defined(__ANDROID__)
     char model[PROP_VALUE_MAX] = "";
+#else
+    char model[XR_MAX_SYSTEM_NAME_SIZE] = "";
+#endif
     const char *e = ch_env("NATIVE_EYE");
     uint32_t nv = 0, mw, mh, i;
     unsigned ew, eh;
@@ -695,7 +712,11 @@ static void native_init(void)
         fprintf(stderr, "[xr] no view configuration: native unknown\n");
         return;
     }
+#if defined(__ANDROID__)
     __system_property_get("ro.product.model", model);
+#else
+    snprintf(model, sizeof model, "%s", sp.systemName);   /* no Quest panel here */
+#endif
     s_native_w = vcv[0].recommendedImageRectWidth;
     s_native_h = vcv[0].recommendedImageRectHeight;
     for (i = 0; i < sizeof panel / sizeof panel[0]; i++)
@@ -733,6 +754,7 @@ static void native_init(void)
 
 static int xr_init(void)
 {
+#if defined(__ANDROID__)
     JNIEnv *env = (JNIEnv *)SDL_AndroidGetJNIEnv();
     JavaVM *vm = NULL;
     jobject activity = (jobject)SDL_AndroidGetActivity();
@@ -744,11 +766,16 @@ static int xr_init(void)
 #else
                            XR_KHR_OPENGL_ES_ENABLE_EXTENSION_NAME };
 #endif
+    uint32_t next = 2;
+    XrInstanceCreateInfoAndroidKHR ai = { XR_TYPE_INSTANCE_CREATE_INFO_ANDROID_KHR };
+#else
+    const char *ext[8] = { XR_KHR_VULKAN_ENABLE2_EXTENSION_NAME };
+    uint32_t next = 1;
+#endif
     int have_perf = 0, have_threads = 0;
-    uint32_t next = 2, n = 0, i;
+    uint32_t n = 0, i;
     XrExtensionProperties *props;
     int have_rate = 0;
-    XrInstanceCreateInfoAndroidKHR ai = { XR_TYPE_INSTANCE_CREATE_INFO_ANDROID_KHR };
     XrInstanceCreateInfo ic = { XR_TYPE_INSTANCE_CREATE_INFO };
     XrSystemGetInfo sgi = { XR_TYPE_SYSTEM_GET_INFO };
 #ifndef CHIHIRO_RENDERER_VULKAN
@@ -763,6 +790,7 @@ static int xr_init(void)
     const char *exts;
 #endif
 
+#if defined(__ANDROID__)
     if (!env || !activity)
         return 0;
     (*env)->GetJavaVM(env, &vm);
@@ -771,6 +799,7 @@ static int xr_init(void)
     li.applicationVM = vm;
     li.applicationContext = activity;
     XRCHECK(init((XrLoaderInitInfoBaseHeaderKHR *)&li));
+#endif
 
     xrEnumerateInstanceExtensionProperties(NULL, 0, &n, NULL);
     props = (XrExtensionProperties *)calloc(n ? n : 1, sizeof *props);
@@ -785,20 +814,24 @@ static int xr_init(void)
             have_rate = 1;
         if (!strcmp(props[i].extensionName, XR_EXT_PERFORMANCE_SETTINGS_EXTENSION_NAME))
             have_perf = 1;
+#if defined(__ANDROID__)
         if (!strcmp(props[i].extensionName, XR_KHR_ANDROID_THREAD_SETTINGS_EXTENSION_NAME))
             have_threads = 1;
+#endif
     }
     free(props);
     if (have_rate)
         ext[next++] = XR_FB_DISPLAY_REFRESH_RATE_EXTENSION_NAME;
     if (have_perf)
         ext[next++] = XR_EXT_PERFORMANCE_SETTINGS_EXTENSION_NAME;
+#if defined(__ANDROID__)
     if (have_threads)
         ext[next++] = XR_KHR_ANDROID_THREAD_SETTINGS_EXTENSION_NAME;
 
     ai.applicationVM = vm;
     ai.applicationActivity = activity;
     ic.next = &ai;
+#endif
     ic.enabledExtensionCount = next;
     ic.enabledExtensionNames = ext;
     snprintf(ic.applicationInfo.applicationName, sizeof ic.applicationInfo.applicationName,
@@ -816,9 +849,11 @@ static int xr_init(void)
     if (have_perf)
         xrGetInstanceProcAddr(s_inst, "xrPerfSettingsSetPerformanceLevelEXT",
                               (PFN_xrVoidFunction *)&s_perf_level);
+#if defined(__ANDROID__)
     if (have_threads)
         xrGetInstanceProcAddr(s_inst, "xrSetAndroidApplicationThreadKHR",
                               (PFN_xrVoidFunction *)&s_set_thread);
+#endif
     fprintf(stderr, "[xr] extensions: refresh rate %s, performance levels %s, thread hints %s\n",
             have_rate ? "yes" : "no", have_perf ? "yes" : "no", have_threads ? "yes" : "no");
 
@@ -1158,6 +1193,7 @@ static unsigned long big_cores(void)
  * application-worker one, then, if the runtime takes neither, the thread's
  * niceness raised (setpriority, -10: Android's urgent-display level is -8,
  * display -4). Each attempt logged. */
+#if defined(__ANDROID__)
 static void hint_worker(pid_t tid, const char *what)
 {
     static const struct { XrAndroidThreadTypeKHR type; const char *name; } ty[2] = {
@@ -1185,6 +1221,7 @@ static void hint_worker(pid_t tid, const char *what)
                 errno);
     }
 }
+#endif
 
 /* Each headset frame until done: tell the runtime which thread is which
  * once each exists -- the loop (it submits the frames) the renderer's main,
@@ -1193,7 +1230,9 @@ static void hint_worker(pid_t tid, const char *what)
  * back end on the fastest cores. */
 static void perf_frame(void)
 {
-    static int told_host, told_exec, told_decode, told_guest, pinned;
+    static int pinned;
+#if defined(__ANDROID__)
+    static int told_host, told_exec, told_decode, told_guest;
     if (s_set_thread) {
         /* each when its thread exists; logged as the runtime answers */
         if (!told_host && s_tid_host) {
@@ -1219,6 +1258,7 @@ static void perf_frame(void)
             fprintf(stderr, "[xr] thread hint: game as application main: %d\n", (int)r);
         }
     }
+#endif
     if (!pinned && s_tid_exec && s_tid_guest) {
         const char *e = ch_env("BIGCORES");
         pinned = 1;
@@ -2699,6 +2739,7 @@ static void *guest_thread(void *arg)
 /* main.c's vc3_relaunch: the activity starts a fresh process (Restart). */
 void vc3_quest_restart(void)
 {
+#if defined(__ANDROID__)
     JNIEnv *env = (JNIEnv *)SDL_AndroidGetJNIEnv();
     jobject activity = (jobject)SDL_AndroidGetActivity();
     if (env && activity) {
@@ -2707,6 +2748,31 @@ void vc3_quest_restart(void)
         if (m)
             (*env)->CallVoidMethod(env, activity, m);
     }
+#else
+    /* desktop: the same program again, with its arguments */
+    {
+        static char buf[8192], *argv[64];
+        char exe[4096];
+        ssize_t len = readlink("/proc/self/exe", exe, sizeof exe - 1);
+        FILE *f = fopen("/proc/self/cmdline", "rb");
+        size_t got = f ? fread(buf, 1, sizeof buf - 1, f) : 0;
+        int argc = 0;
+        size_t o = 0;
+        if (f)
+            fclose(f);
+        while (o < got && argc < 63) {
+            argv[argc++] = buf + o;
+            o += strlen(buf + o) + 1;
+        }
+        argv[argc] = NULL;
+        if (len > 0 && argc) {
+            exe[len] = 0;
+            fflush(stderr);
+            execv(exe, argv);
+        }
+        perror("[quest] restart");
+    }
+#endif
     fflush(stderr);
     _exit(0);                           /* as at close: no handlers under the game */
 }
@@ -2728,8 +2794,12 @@ int vc3_quest_run(int (*guest_main)(void))
         return 1;
     }
 #ifdef CHIHIRO_RENDERER_VULKAN
+#if defined(__ANDROID__)
     s_win=SDL_CreateWindow(chihiro_profile()->title,0,0,1280,720,SDL_WINDOW_FULLSCREEN);
     if(!s_win) {fprintf(stderr,"[quest] SDL window: %s\n",SDL_GetError());return 1;}
+#else
+    (void)s_win;                        /* the headset only: no window */
+#endif
 #else
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_ES);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
@@ -2834,4 +2904,4 @@ int vc3_quest_run(int (*guest_main)(void))
     _exit(s_guest_done ? s_guest_rc : 0);
 }
 
-#endif /* __ANDROID__ */
+#endif /* __ANDROID__ || CHIHIRO_XR_DESKTOP */

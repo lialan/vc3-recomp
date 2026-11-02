@@ -369,7 +369,7 @@ int main(int argc, char **argv)
     /* A window by default, sized for the display mode the DIP switches pick:
      * 640x480 shown at 2x, the larger modes at 1x. On the Quest the headset
      * shows the frames (src/android/quest_host.c), not the toolkit's window. */
-#if !defined(__ANDROID__)
+#if !defined(__ANDROID__) && !defined(CHIHIRO_XR_DESKTOP)
     setenv("RECOMP_FB_WINDOW", "1", 0);
 #endif
     {
@@ -400,7 +400,7 @@ int main(int argc, char **argv)
     xbox_HostWindowOnOpen(vc3_menu_install);
 #endif
 
-#if defined(__ANDROID__)
+#if defined(__ANDROID__) || defined(CHIHIRO_XR_DESKTOP)
 #if defined(CHIHIRO_RENDERER_VULKAN)
     const char *offscreen=ch_env("VULKAN_OFFSCREEN");
     if(offscreen && !strcmp(offscreen,"1")) {

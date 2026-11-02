@@ -23,7 +23,7 @@
  * Everything is in metres in the LOCAL reference space. The layer is
  * transparent: drawn with alpha written alongside, colours premultiplied.
  */
-#if defined(__ANDROID__)
+#if defined(__ANDROID__) || defined(CHIHIRO_XR_DESKTOP)
 
 #include <math.h>
 #include <stdint.h>
@@ -391,4 +391,4 @@ void qo_draw_panel(const float mvp[16])
 }
 
 #endif /* OpenGL renderer */
-#endif /* __ANDROID__ */
+#endif /* __ANDROID__ || CHIHIRO_XR_DESKTOP */
