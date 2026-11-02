@@ -318,7 +318,26 @@ static int paired_readbacks(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,u
         /* Exercise the no-pending path and staging reuse too. */
         CHECK(ch_vk_target_read_depth_color(t,packed?(void *)words:(void *)depth,stencil,16,packed,rgba,sizeof rgba)==VK_SUCCESS);
         CHECK(!memcmp(reference,rgba,sizeof rgba));
+        for(int layout=0;layout<3;layout++) {
+            CHECK(ch_vk_target_color_layout(t,layout)==VK_SUCCESS);
+            CHECK(ch_vk_target_draw_state_read(t,NULL,v,3,idx,3,&state,rgba,sizeof rgba)==VK_SUCCESS);
+            memset(rgba,0x55,sizeof rgba);
+            CHECK(ch_vk_target_read_color_begin(t,rgba,sizeof rgba)==VK_SUCCESS);
+            for(unsigned j=0;j<sizeof rgba;j++) CHECK(rgba[j]==0x55);
+            CHECK(ch_vk_target_read_color_begin(t,rgba,sizeof rgba)==VK_ERROR_INITIALIZATION_FAILED);
+            CHECK(ch_vk_target_read_depth_begin(t,words,NULL,16,1,NULL,0)==VK_ERROR_INITIALIZATION_FAILED);
+            CHECK(ch_vk_target_read_color_end(t)==VK_SUCCESS);
+            CHECK(ch_vk_target_read_color_end(t)==VK_ERROR_INITIALIZATION_FAILED);
+            CHECK(ch_vk_target_read_color(t,reference,sizeof reference)==VK_SUCCESS);
+            CHECK(!memcmp(reference,rgba,sizeof rgba));
+            CHECK(ch_vk_target_read_color_begin(t,rgba,sizeof rgba)==VK_SUCCESS);
+            CHECK(ch_vk_target_read_color_end(t)==VK_SUCCESS);
+        }
+        CHECK(ch_vk_target_draw_state_read(t,NULL,v,3,idx,3,&state,rgba,sizeof rgba)==VK_SUCCESS);
+        memset(rgba,0x55,sizeof rgba);
+        CHECK(ch_vk_target_read_color_begin(t,rgba,sizeof rgba)==VK_SUCCESS);
         ch_vk_target_destroy(t);t=NULL;
+        CHECK(!memcmp(reference,rgba,sizeof rgba));
     }
     failed=0;
 done:

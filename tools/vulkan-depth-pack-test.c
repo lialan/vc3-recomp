@@ -59,10 +59,20 @@ int ch_test_depth_fragment(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,ui
         const uint16_t idx[]={0,1,2};
         /* Queue two uploads to exercise staging reuse, then mutate the caller
          * buffer. LESS must still pass against the queued far-depth snapshot. */
+        VkFence previous_completion=ch_vk_target_completion_fence(target);
+        ChVkTargetResourceStats upload_before,upload_after;
+        ch_vk_target_resource_stats(target,&upload_before);
         memset(input,0,n*4);
         REQUIRE(ch_vk_target_write_z24s8(target,input,n)==VK_SUCCESS);
         for(unsigned i=0;i<n;i++) input[i]=0xffffff80;
         REQUIRE(ch_vk_target_write_z24s8(target,input,n)==VK_SUCCESS);
+        /* The public completion fence must cover a standalone queued upload. */
+        VkFence uploaded=ch_vk_target_completion_fence(target);
+        REQUIRE(uploaded!=VK_NULL_HANDLE);
+        ch_vk_target_resource_stats(target,&upload_after);
+        if(upload_after.queued_depth_uploads>upload_before.queued_depth_uploads)
+            REQUIRE(uploaded!=previous_completion);
+        REQUIRE(vkWaitForFences(device,1,&uploaded,VK_TRUE,5000000000ULL)==VK_SUCCESS);
         memset(input,0,n*4);
         ChVkTargetResourceStats before,after;ch_vk_target_resource_stats(target,&before);
         REQUIRE(ch_vk_target_draw_state_read(target,NULL,v,3,idx,3,&state,rgba,n*4)==VK_SUCCESS);

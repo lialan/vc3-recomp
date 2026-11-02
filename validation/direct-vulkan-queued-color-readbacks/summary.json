@@ -1,0 +1,85 @@
+{
+  "combat": {
+    "n": 232,
+    "completion_ms": 5.356,
+    "completion_cpu_ms": 1.937,
+    "draw_cpu_ms": 1.869,
+    "batch_wait_ms": 4.746
+  },
+  "activation": {
+    "n": 114,
+    "completion_ms": 5.411,
+    "completion_cpu_ms": 2.106,
+    "draw_cpu_ms": 3.237,
+    "batch_wait_ms": 5.918
+  },
+  "held": {
+    "n": 239,
+    "completion_ms": 5.798,
+    "completion_cpu_ms": 2.128,
+    "draw_cpu_ms": 3.059,
+    "batch_wait_ms": 6.137
+  },
+  "windows": [
+    {
+      "first_flip": 1321,
+      "last_flip": 1441,
+      "fps": 58.98,
+      "mean_ms": 16.95,
+      "p95_ms": 21.34,
+      "p99_ms": 23.35,
+      "max_ms": 81.98,
+      "over_20ms": 23,
+      "over_33ms": 1
+    },
+    {
+      "first_flip": 1441,
+      "last_flip": 1561,
+      "fps": 56.29,
+      "mean_ms": 17.77,
+      "p95_ms": 22.6,
+      "p99_ms": 23.52,
+      "max_ms": 184.73,
+      "over_20ms": 29,
+      "over_33ms": 1
+    },
+    {
+      "first_flip": 1561,
+      "last_flip": 1681,
+      "fps": 57.09,
+      "mean_ms": 17.52,
+      "p95_ms": 22.96,
+      "p99_ms": 28.76,
+      "max_ms": 141.92,
+      "over_20ms": 18,
+      "over_33ms": 1
+    },
+    {
+      "first_flip": 1681,
+      "last_flip": 1801,
+      "fps": 60.02,
+      "mean_ms": 16.66,
+      "p95_ms": 22.31,
+      "p99_ms": 22.86,
+      "max_ms": 23.85,
+      "over_20ms": 24,
+      "over_33ms": 0
+    },
+    {
+      "first_flip": 1801,
+      "last_flip": 1921,
+      "fps": 59.91,
+      "mean_ms": 16.69,
+      "p95_ms": 21.97,
+      "p99_ms": 23.54,
+      "max_ms": 23.73,
+      "over_20ms": 16,
+      "over_33ms": 0
+    }
+  ],
+  "counters": [
+    "[Vulkan command batches] live targets: draws=420775 submissions=22806 combined_depth_reads=8588 combined_color_reads=17290 queued_depth_uploads=2036 queued_color_reads=4733",
+    "[Vulkan CPU geometry] batches=0 vertices=0 (includes pretransformed input)",
+    "[Vulkan CPU graphics] texture_pixels=1030144 texture_ms=6.351 color_pixels=0 color_ms=0.000 (cumulative)"
+  ]
+}

@@ -1,0 +1,13 @@
+# Queue color-only completions before CPU retirement
+
+Shared target API now exposes read_color_begin/end. A pending draw batch records its color readback and submits without an immediate CPU wait; end waits, invalidates staging and copies the output. Idle targets retain the synchronous fallback. The output pointer is borrowed until end, and callers must leave that target untouched in between. Duplicate/overlapping depth/color readback requests are rejected; destruction drains an active color readback.
+
+Backend completion still observes guest color edits first and validates serials from paired depth/color snapshots. It then queues remaining dirty color targets before retiring/publishing them. Targets with valid paired snapshots avoid a second read. Guest semaphore publication remains after all target completion. No guest clock changes or skipped CPU-edit checks.
+
+Also corrected the completion-fence accessor for a standalone asynchronous depth upload: it now exposes the upload fence rather than an earlier main-command fence. Existing XR export finishes work before release, but the shared accessor must represent current work for all callers.
+
+Native VC3 and Android shared Vulkan builds passed. Depth and texture-coherence fixtures passed under synchronization validation. Added coverage includes queued color output remaining untouched until end, exact linear/BGRA/Morton bytes, duplicate begin/end and depth/color overlap rejection, idle fallback, destruction with a borrowed output, and waiting on a standalone depth-upload completion fence.
+
+One 2,100-frame local gameplay run uses /tmp/vc3-queued-colors-vc3 and /tmp/vc3-queued-colors, seeded from the previous candidate cache. This is not a matched speedup measurement. No captures requested; exact-output fixtures provide correctness evidence. No headset access or APK changes. Unrelated host_input.c edits remain excluded from the commit.
+
+Local run exited 0 at frame 2,100, reporting 4,733 queued color readbacks and 2,036 queued depth uploads. Held slow-motion windows were 60.02/59.91 FPS; combat/activation windows included pipeline-creation stalls (frames 1412/1539/1646: 64.056/162.807/123.208 ms compilation). Excluding pipeline-creation frames, completion means were 5.356/5.411/5.798 ms for combat/activation/held. These do not establish a gain over the preceding sequential run. The proven change is submission-before-retirement capability and preserved exact output, not a measured overall throughput improvement. CPU geometry/color remained zero; texture fallback stayed at startup 1,030,144 pixels. See summary.json.

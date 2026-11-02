@@ -89,6 +89,8 @@ struct ChVkTarget {
     VkCommandBuffer upload_command;
     VkFence upload_fence;
     int upload_pending,async_depth_uploads;
+    int color_readback_active,color_readback_batched;
+    void *color_readback_pixels;
     uint32_t width, height;
     VkDeviceSize bytes;
     VkImageLayout layout;
@@ -298,6 +300,7 @@ VkResult ch_vk_target_pipeline_cache(ChVkTarget *t,VkPipelineCache cache) {
 }
 void ch_vk_target_destroy(ChVkTarget *t) {
     if(!t) return;
+    if(t->color_readback_active) (void)ch_vk_target_read_color_end(t);
     if(t->readback_active) (void)ch_vk_target_read_depth_end(t);
     /* Finish deferred work before destroying anything it references. */
     if(!t->failed) (void)finish_batch_named(t,0,__func__);
@@ -924,8 +927,39 @@ fail:
 void ch_vk_target_defer_color_readback(ChVkTarget *t,int enabled) {
     if(t) {if(!enabled && t->pending) (void)finish_batch_named(t,0,__func__);t->defer_color_readback=!!enabled;}
 }
+/* The caller keeps the output alive and leaves this target untouched until
+ * end. Independent targets can be submitted before the first CPU wait. */
+VkResult ch_vk_target_read_color_begin(ChVkTarget *t,void *pixels,VkDeviceSize bytes) {
+    if(!t || t->failed || !pixels || bytes<t->bytes || t->color_readback_active || t->readback_active)
+        return VK_ERROR_INITIALIZATION_FAILED;
+    int batched=!!t->pending;
+    VkResult r=batched?finish_batch_with_copy(t,2,__func__,NULL,NULL,1):ch_vk_target_read_color(t,pixels,bytes);
+    if(r!=VK_SUCCESS) return r;
+    t->color_readback_active=1;t->color_readback_batched=batched;t->color_readback_pixels=pixels;
+    if(batched) t->resource_stats.queued_color_readbacks++;
+    return VK_SUCCESS;
+}
+VkResult ch_vk_target_read_color_end(ChVkTarget *t) {
+    if(!t || !t->color_readback_active) return VK_ERROR_INITIALIZATION_FAILED;
+    VkResult r=VK_SUCCESS;
+    if(t->color_readback_batched) {
+        r=retire_batch(t);
+        void *mapped=NULL;
+        if(r==VK_SUCCESS) r=map_readback(t,0,&mapped);
+        if(r==VK_SUCCESS) {
+            VkMappedMemoryRange invalidate={.sType=VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE,
+                .memory=t->read_mem,.size=VK_WHOLE_SIZE};
+            r=vkInvalidateMappedMemoryRanges(t->device,1,&invalidate);
+            if(r==VK_SUCCESS) memcpy(t->color_readback_pixels,
+                (char *)mapped+(t->color_bgra==2?t->bytes:0),(size_t)t->bytes);
+        }
+    }
+    t->color_readback_active=0;t->color_readback_pixels=NULL;
+    if(r!=VK_SUCCESS) t->failed=1;
+    return r;
+}
 VkResult ch_vk_target_read_color(ChVkTarget *t,void *pixels,VkDeviceSize bytes) {
-    if(!t) return VK_ERROR_INITIALIZATION_FAILED;
+    if(!t || t->color_readback_active || t->readback_active) return VK_ERROR_INITIALIZATION_FAILED;
     if(t->pending) {
         if(!pixels || bytes<t->bytes) return VK_ERROR_INITIALIZATION_FAILED;
         VkResult r=finish_batch_named(t,2,__func__);
@@ -1409,7 +1443,7 @@ VkResult ch_vk_target_draw_texture_read(ChVkTarget *t, const float rgba[4],
 }
 
 VkDevice ch_vk_target_device(const ChVkTarget *t) { return t?t->device:VK_NULL_HANDLE; }
-VkFence ch_vk_target_completion_fence(const ChVkTarget *t) { return t && !t->pending?t->fence:VK_NULL_HANDLE; }
+VkFence ch_vk_target_completion_fence(const ChVkTarget *t) { return t && !t->pending?(t->upload_pending?t->upload_fence:t->fence):VK_NULL_HANDLE; }
 VkResult ch_vk_target_export_image(ChVkTarget *t,VkImage destination,void *verify,VkDeviceSize bytes) {
     if(!t || t->failed || !t->initialized || !destination || destination==t->image ||
         (verify && bytes<t->bytes)) return VK_ERROR_INITIALIZATION_FAILED;
@@ -1551,7 +1585,7 @@ static VkResult transfer_depth_stencil(ChVkTarget *t,void *depth,void *stencil,s
     if(!t || t->failed || !t->initialized || !depth || (!packed && !stencil) || pixels<t->bytes/4)
         return VK_ERROR_INITIALIZATION_FAILED;
     if(rgba && (upload || color_bytes<t->bytes)) return VK_ERROR_INITIALIZATION_FAILED;
-    if((phase==2)!=!!t->readback_active) return VK_ERROR_INITIALIZATION_FAILED;
+    if(t->color_readback_active || (phase==2)!=!!t->readback_active) return VK_ERROR_INITIALIZATION_FAILED;
     int gpu_packed=packed;
     if(gpu_packed && !t->depth_pack) {
         uint32_t count=0;vkGetPhysicalDeviceQueueFamilyProperties(t->physical,&count,NULL);
