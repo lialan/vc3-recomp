@@ -12,6 +12,7 @@ struct Entry {
     size_t span,palette,cost;
     uint64_t used,frame;
     unsigned pins;
+    uint32_t lookup_next; /* bucket chain: entry index + 1 */
     ChVkTarget *source;
     uint64_t serial;
     ChGuestWriteRange *raw_watch,*palette_watch;
@@ -23,6 +24,7 @@ struct ChVkTextureCache {
     struct Entry *entries;
     uint64_t clock,frame;
     uint32_t hints[LOOKUP_HINTS]; /* entry index + 1, always validated */
+    uint32_t buckets[LOOKUP_HINTS];
     uint32_t extent; /* Skip the never-populated tail of the bounded table. */
     ChVkTextureCacheStats stats;
     int trace;
@@ -93,9 +95,22 @@ static int unchanged(ChVkTextureCache *c,struct Entry *e,const Nv2aTexture *t) {
         (!e->palette || !memcmp(e->raw+e->span,guest(c,t->palette),e->palette));
     c->stats.cpu_changes+=!same;e->observed_valid=1;e->observed_same=same;return same;
 }
+static uint32_t hint_bucket(const Nv2aTexture *,const ChVkTarget *);
+static void index_entry(ChVkTextureCache *c,struct Entry *e) {
+    uint32_t index=(uint32_t)(e-c->entries)+1;
+    uint32_t *link=&c->buckets[hint_bucket(&e->key,e->source)];
+    /* Preserve the original ascending-slot lookup/reuse order. */
+    while(*link && *link<index) link=&c->entries[*link-1].lookup_next;
+    e->lookup_next=*link;*link=index;
+}
 static void drop(ChVkTextureCache *c,struct Entry *e) {
     if(!e->image) return;
     if(e->pins) abort();
+    uint32_t index=(uint32_t)(e-c->entries)+1;
+    uint32_t *link=&c->buckets[hint_bucket(&e->key,e->source)];
+    while(*link && *link!=index) link=&c->entries[*link-1].lookup_next;
+    if(!*link) abort();
+    *link=e->lookup_next;
     ch_vk_texture_destroy(e->image);free(e->raw);
     ch_guest_write_range_destroy(e->raw_watch);ch_guest_write_range_destroy(e->palette_watch);
     c->stats.bytes-=e->cost;c->stats.evictions++;c->stats.entries--;
@@ -205,8 +220,9 @@ VkResult ch_vk_texture_cache_resolve(void *context,const Nv2aTexture *t,ChVkSamp
         c->stats.hits++;c->stats.lookup_hint_hits++;pin(c,hint,out);return VK_SUCCESS;
     }
     if(hint && c->config.reuse_uploads && !hint->pins) reusable=hint;
-    for(uint32_t i=0;i<c->extent;i++) {
-        struct Entry *e=&c->entries[i];
+    for(uint32_t index=c->buckets[hint_bucket(t,NULL)];index;) {
+        struct Entry *e=&c->entries[index-1];
+        index=e->lookup_next;
         if(e==hint) continue;
         c->stats.lookup_scan_entries++;
         if(e->image && !e->source && !memcmp(&e->key,t,sizeof *t)) {
@@ -263,6 +279,7 @@ VkResult ch_vk_texture_cache_resolve(void *context,const Nv2aTexture *t,ChVkSamp
     slot->raw_watch=ch_guest_write_range_create(c->config.guest_write_watch,guest(c,t->offset),span);
     if(palette) slot->palette_watch=ch_guest_write_range_create(c->config.guest_write_watch,guest(c,t->palette),palette);
     if(slot==c->entries+c->extent) c->extent++;
+    index_entry(c,slot);
     c->stats.entries++;c->stats.bytes+=(size_t)cost;c->stats.uploads++;c->stats.gpu_decodes+=gpu_decode;pin(c,slot,out);
     trace_miss(c,t,start,room,copied,uploaded,0,0);return VK_SUCCESS;
 }
@@ -282,8 +299,9 @@ VkResult ch_vk_texture_cache_resolve_target(ChVkTextureCache *c,const Nv2aTextur
         c->stats.hits++;c->stats.gpu_hits++;c->stats.lookup_hint_hits++;pin(c,hint,out);return VK_SUCCESS;
     }
     if(hint && !hint->pins) reusable=hint;
-    for(uint32_t i=0;i<c->extent;i++) {
-        struct Entry *e=&c->entries[i];
+    for(uint32_t index=c->buckets[hint_bucket(t,source)];index;) {
+        struct Entry *e=&c->entries[index-1];
+        index=e->lookup_next;
         if(e==hint) continue;
         c->stats.lookup_scan_entries++;
         if(e->image && e->source==source && !memcmp(&e->key,t,sizeof *t)) {
@@ -307,6 +325,7 @@ VkResult ch_vk_texture_cache_resolve_target(ChVkTextureCache *c,const Nv2aTextur
     if(r!=VK_SUCCESS) {ch_vk_texture_destroy(image);return r;}
     *slot=(struct Entry){.key=*t,.image=image,.cost=cost,.source=source,.serial=serial};
     if(slot==c->entries+c->extent) c->extent++;
+    index_entry(c,slot);
     c->stats.entries++;c->stats.bytes+=cost;c->stats.gpu_copies++;pin(c,slot,out);
     trace_miss(c,t,start,room,room,c->trace?cache_us():0,1,0);return VK_SUCCESS;
 }

@@ -28,6 +28,31 @@ static void release_image(ChVkSampleImage *image) {
     if(image->release) image->release(image->release_context,image->gpu);
     memset(image,0,sizeof *image);
 }
+/* Sampler variants share the lookup bucket but remain separate images. */
+static int sampler_collisions(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,uint32_t family) {
+    ChVkTextureCache *cache=NULL;ChVkSampleImage a={0},b={0},probe={0};int failed=1;
+#define REQUIRE(x) do {if(!(x)){fprintf(stderr,"sampler collision line%d: %s\n",__LINE__,#x);goto done;}}while(0)
+    ChVkTextureCacheConfig cfg={.physical=gpu,.device=device,.queue=queue,.family=family,
+        .guest_base=memory,.guest_bytes=sizeof memory,.decode=decode,.max_entries=2,.max_bytes=1024};
+    REQUIRE(ch_vk_texture_cache_create(&cfg,&cache)==VK_SUCCESS);
+    Nv2aTexture t={.width=1,.height=1,.pitch=4,.color=0x12,.levels=1,.filter=0x01010000,.addr_u=1,.addr_v=3};
+    REQUIRE(ch_vk_texture_cache_resolve(cache,&t,&a)==VK_SUCCESS);
+    t.addr_u=2;REQUIRE(ch_vk_texture_cache_resolve(cache,&t,&b)==VK_SUCCESS && b.gpu!=a.gpu);
+    for(unsigned i=0;i<8;i++) {
+        t.addr_u=(i&1)?2:1;
+        REQUIRE(ch_vk_texture_cache_resolve(cache,&t,&probe)==VK_SUCCESS && probe.gpu==((i&1)?b.gpu:a.gpu));
+        release_image(&probe);
+    }
+    release_image(&a);t.addr_u=3;
+    REQUIRE(ch_vk_texture_cache_resolve(cache,&t,&probe)==VK_SUCCESS);release_image(&probe);
+    t.addr_u=2;REQUIRE(ch_vk_texture_cache_resolve(cache,&t,&probe)==VK_SUCCESS && probe.gpu==b.gpu);release_image(&probe);
+    t.addr_u=1;REQUIRE(ch_vk_texture_cache_resolve(cache,&t,&probe)==VK_SUCCESS);release_image(&probe);
+    t.addr_u=2;REQUIRE(ch_vk_texture_cache_resolve(cache,&t,&probe)==VK_SUCCESS && probe.gpu==b.gpu);
+    puts("PASS: colliding sampler identities preserve pinned hits across eviction and slot reuse");failed=0;
+done:
+    release_image(&probe);release_image(&a);release_image(&b);ch_vk_texture_cache_destroy(cache);return failed;
+#undef REQUIRE
+}
 static int cold_eviction(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,uint32_t family) {
     ChVkTextureCache *cache=NULL;ChVkSampleImage image={0},pinned={0};int failed=1;
 #define REQUIRE(x) do {if(!(x)){fprintf(stderr,"cold eviction line%d: %s\n",__LINE__,#x);goto done;}}while(0)
@@ -569,6 +594,7 @@ done:
 int ch_test_texture_watch(VkPhysicalDevice,VkDevice,VkQueue,uint32_t);
 int ch_test_render_textures(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,uint32_t family) {
     if(ch_test_texture_watch(gpu,device,queue,family)) return 1;
+    if(sampler_collisions(gpu,device,queue,family)) return 1;
     if(cold_eviction(gpu,device,queue,family)) return 1;
     if(queued_depth_copies(gpu,device,queue,family) || cache_roundtrip(gpu,device,queue,family) || paired_readbacks(gpu,device,queue,family) || queued_uploads(gpu,device,queue,family) || snapshots(gpu,device,queue,family)) return 1;
     unsigned char *reference=malloc(sizeof memory),*candidate=malloc(sizeof memory);
