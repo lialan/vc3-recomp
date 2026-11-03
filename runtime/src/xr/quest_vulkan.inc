@@ -151,10 +151,10 @@ static VkResult vk_publish_imm(void *context,const Nv2aSurface *surface,ChVkTarg
     }
     return ch_vk_gpu_mailbox_publish_immersive(context,surface,eyes,hud,info);
 }
-#if defined(CHIHIRO_XR_DESKTOP)
-/* The game on a VkDevice of its own (desktop OpenXR; VC3_XR_SPLIT_DEVICE=0:
- * off). SteamVR (Steam Frame) puts its per-display-frame waits on the queue
- * the session is given; sharing it, each of the emulated GPU's many waits a
+/* The game on a VkDevice of its own (Steam Frame and Quest;
+ * VC3_XR_SPLIT_DEVICE=0: off), which immersive VR needs. SteamVR (Steam
+ * Frame) puts its per-display-frame waits on the queue the session is
+ * given; sharing it, each of the emulated GPU's many waits a
  * frame lasted until the next display frame -- ~30 fps at 120 Hz, worse at
  * 90. Its own device has a queue of its own; frames cross to the headset's
  * device through shared buffers (vk_xr_bridge.h). Falls back to the one
@@ -255,7 +255,6 @@ static void vk_split_init(VkDevice *device,VkQueue *queue)
     *device=game;vkGetDeviceQueue(game,s_vk.family,0,queue);s_vk_split=1;
     fprintf(stderr,"[quest Vulkan] the game on its own VkDevice; frames to the headset's through shared buffers\n");
 }
-#endif
 uint32_t xbox_VblankCount(void);
 uint64_t xbox_VblankLastNs(void);
 uint64_t xbox_HostNowNs(void);
@@ -291,10 +290,8 @@ static int vk_host_init(void)
     }
     VkDevice game_device=s_vk.device; VkQueue game_queue=s_vk.queue;
     void *game_lock=&s_vk_queue;
-#if defined(CHIHIRO_XR_DESKTOP)
     vk_split_init(&game_device,&game_queue);
     if(s_vk_split) game_lock=&s_vk_game_queue;
-#endif
     ChVkBackendConfig config={.physical=s_vk.physical,.device=game_device,
         .queue=game_queue,.family=s_vk.family,.precise_queries=s_vk.precise_queries,.raw_fixed=s_vk.raw_fixed,
         .lock_queue=vk_queue_lock,.unlock_queue=vk_queue_unlock,.queue_context=game_lock,

@@ -909,14 +909,10 @@ static int xr_init(void)
     XRCHECK(xrGetSystem(s_inst, &sgi, &s_sys));
 #ifdef CHIHIRO_RENDERER_VULKAN
     VkResult vk_result=VK_SUCCESS;
-#if defined(CHIHIRO_XR_DESKTOP)
     /* external memory: the game's own device shares buffers with this one */
     ChVkXrDeviceOptions device_options={.external_memory_fd=1};
     XrResult device_result=ch_vk_xr_device_create_with_options(s_inst,s_sys,xrGetInstanceProcAddr,
         &device_options,&s_vk,&vk_result);
-#else
-    XrResult device_result=ch_vk_xr_device_create(s_inst,s_sys,xrGetInstanceProcAddr,&s_vk,&vk_result);
-#endif
     if(XR_FAILED(device_result) || vk_result!=VK_SUCCESS) {
         fprintf(stderr,"[xr] Vulkan device failed: XrResult=%d VkResult=%d\n",device_result,vk_result);
         return 0;
