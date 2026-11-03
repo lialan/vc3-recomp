@@ -30,4 +30,13 @@ XrResult ch_vk_xr_swapchain_texture_release(ChVkXrSwapchain *,ChVkTexture *,VkRe
  * queue (of family), and release it; complete on return. */
 XrResult ch_vk_xr_swapchain_buffer_release(ChVkXrSwapchain *,VkQueue queue,uint32_t family,
     VkBuffer buffer,uint32_t width,uint32_t height,VkResult *);
+/* Wait for the last buffer copy (before its source buffer is reused). */
+XrResult ch_vk_xr_swapchain_settle(ChVkXrSwapchain *s);
+/* Without waiting (OpenXR needs the writes submitted to the session's queue
+ * before the release, nothing more; SteamVR gates that queue once a display
+ * frame, so each wait cost up to one): record a copy of packed RGBA8 rows
+ * into the waited image (left COLOR_ATTACHMENT_OPTIMAL), and release an
+ * image whose writes the caller has submitted. */
+XrResult ch_vk_xr_swapchain_record_buffer(ChVkXrSwapchain *s,VkCommandBuffer command,VkBuffer buffer);
+XrResult ch_vk_xr_swapchain_release_submitted(ChVkXrSwapchain *s);
 #endif

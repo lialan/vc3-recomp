@@ -31,6 +31,16 @@ VkResult ch_vk_target_depth_quantization(ChVkTarget *,int mode);
 /* Before the first pipeline creation, borrow a same-device driver cache.
  * Caller serializes ALL accesses to it and retains it until targets die. */
 VkResult ch_vk_target_pipeline_cache(ChVkTarget *,VkPipelineCache);
+/* The target's color copied into destination (same size and device; left
+ * COLOR_ATTACHMENT_OPTIMAL), recorded into command, which the caller submits
+ * on the target's queue after this call; pending draws are submitted first
+ * and nothing is waited for. VK_NOT_READY: use ch_vk_target_export_image. */
+VkResult ch_vk_target_record_export(ChVkTarget *t,VkCommandBuffer command,VkImage destination);
+/* Pipeline recipes (vk_target.c): every pipeline built is recorded in path;
+ * start() precompiles the recorded ones into cache on worker threads (0:
+ * record only); stop() joins them (before the device or cache goes). */
+VkResult ch_vk_target_recipes_start(VkDevice device,VkPipelineCache cache,const char *path,unsigned threads);
+void ch_vk_target_recipes_stop(void);
 typedef struct {
     uint64_t pipeline_builds,pipeline_hits,pipeline_evictions,geometry_allocations;
     uint64_t batch_draws,batch_clears,batch_submissions,combined_depth_copies,combined_texture_copies,combined_depth_readbacks,direct_depth_readbacks,direct_color_readbacks,direct_paired_readbacks,combined_color_readbacks,queued_depth_uploads,queued_color_readbacks,ring_submissions;

@@ -68,6 +68,10 @@ VkResult ch_vk_texture_read_rgba(ChVkTexture *texture, void *rgba, VkDeviceSize 
 void ch_vk_texture_destroy(ChVkTexture *texture);
 /* Caller must have completed all previous sampling before replacing sampler. */
 VkResult ch_vk_texture_set_sampler(ChVkTexture *texture, const VkSamplerCreateInfo *info);
+/* A copy of packed RGBA8 rows at buffer+offset into level 0, recorded into
+ * command (submitted by the caller on the texture's queue); the texture
+ * stays SHADER_READ_ONLY_OPTIMAL around it. */
+VkResult ch_vk_texture_record_from_buffer(ChVkTexture *t,VkCommandBuffer command,VkBuffer buffer,VkDeviceSize offset);
 /* Sample alpha as 1 (X8R8G8B8 views of a render-target snapshot). */
 VkResult ch_vk_texture_set_alpha_one(ChVkTexture *texture);
 

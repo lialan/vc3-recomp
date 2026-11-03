@@ -14,6 +14,8 @@
 #include <math.h>
 #include <stdio.h>
 #include <time.h>
+#include <pthread.h>
+#include <stdatomic.h>
 #include "color_spv.h"
 #include "fixed_layout_assert.h"
 #include "vk_combiner_program.h"
@@ -1502,9 +1504,9 @@ static uint64_t diagnostic_hash(uint64_t hash,const void *data,size_t size) {
     for(size_t i=0;i<size;i++) hash=(hash^p[i])*UINT64_C(1099511628211);
     return hash;
 }
-static uint64_t pipeline_identity(const ChVkTarget *t,const PipelineKey *key) {
+static uint64_t key_identity(uint32_t width,uint32_t height,uint32_t depth_format,uint32_t input_pass,const PipelineKey *key) {
     uint64_t h=UINT64_C(14695981039346656037);
-    const uint32_t target[]={t->width,t->height,(uint32_t)t->depth_format,(uint32_t)t->input_pass};
+    const uint32_t target[]={width,height,depth_format,input_pass};
     h=diagnostic_hash(h,target,sizeof target);
     h=diagnostic_hash(h,&key->blend,sizeof key->blend);
     const size_t depth_start=offsetof(VkPipelineDepthStencilStateCreateInfo,depthTestEnable);
@@ -1522,53 +1524,53 @@ static uint64_t pipeline_identity(const ChVkTarget *t,const PipelineKey *key) {
     h=diagnostic_hash(h,key->vertex_formats,sizeof key->vertex_formats);
     return diagnostic_hash(h,key->fixed_fetch,sizeof key->fixed_fetch);
 }
-static VkResult create_pipeline(ChVkTarget *t, const VkPipelineColorBlendAttachmentState *blend, const float constants[4], const VkPipelineDepthStencilStateCreateInfo *depth_state, VkCullModeFlags cull, VkFrontFace front, const ChVkTexture *texture,const PipelineKey *key) {
-    VkResult result;
+static uint64_t pipeline_identity(const ChVkTarget *t,const PipelineKey *key) {
+    return key_identity(t->width,t->height,(uint32_t)t->depth_format,(uint32_t)t->input_pass,key);
+}
+/* The render pass a target's pipelines are built against: R8G8B8A8 color
+ * and depth; with input_pass the depth an input attachment too. */
+static VkResult target_pass(VkDevice device,VkFormat depth_format,int input_pass,VkRenderPass *out) {
+    VkResult result=VK_SUCCESS;
+    VkAttachmentDescription attachment={.format=VK_FORMAT_R8G8B8A8_UNORM,
+        .samples=VK_SAMPLE_COUNT_1_BIT,.loadOp=VK_ATTACHMENT_LOAD_OP_LOAD,
+        .storeOp=VK_ATTACHMENT_STORE_OP_STORE,
+        .stencilLoadOp=VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+        .stencilStoreOp=VK_ATTACHMENT_STORE_OP_DONT_CARE,
+        .initialLayout=VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+        .finalLayout=VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL};
+    VkAttachmentDescription attachments[2]={attachment,{
+        .format=depth_format,.samples=VK_SAMPLE_COUNT_1_BIT,
+        .loadOp=VK_ATTACHMENT_LOAD_OP_LOAD,.storeOp=VK_ATTACHMENT_STORE_OP_STORE,
+        .stencilLoadOp=VK_ATTACHMENT_LOAD_OP_LOAD,.stencilStoreOp=VK_ATTACHMENT_STORE_OP_STORE,
+        .initialLayout=VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,.finalLayout=VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL}};
+    VkAttachmentReference depth_ref={1,input_pass?VK_IMAGE_LAYOUT_GENERAL:VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL};
+    VkAttachmentReference ref={0,VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL};
+    VkSubpassDescription sub={.pipelineBindPoint=VK_PIPELINE_BIND_POINT_GRAPHICS,
+        .colorAttachmentCount=1,.pColorAttachments=&ref,.pDepthStencilAttachment=&depth_ref,
+        .inputAttachmentCount=input_pass?1:0,.pInputAttachments=input_pass?&depth_ref:NULL};
+    const VkPipelineStageFlags stages=VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT|VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT|VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
+    const VkAccessFlags access=VK_ACCESS_INPUT_ATTACHMENT_READ_BIT|VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT|VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+    VkSubpassDependency deps[]={
+        {VK_SUBPASS_EXTERNAL,0,stages,stages,access,access,VK_DEPENDENCY_BY_REGION_BIT},
+        {0,0,stages,stages,access,access,VK_DEPENDENCY_BY_REGION_BIT},
+        {0,VK_SUBPASS_EXTERNAL,stages,stages,access,access,VK_DEPENDENCY_BY_REGION_BIT}};
+    VkRenderPassCreateInfo rp={.sType=VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO,
+        .attachmentCount=2,.pAttachments=attachments,.subpassCount=1,.pSubpasses=&sub,
+        .dependencyCount=input_pass?3:0,.pDependencies=input_pass?deps:NULL};
+    TRY(vkCreateRenderPass(device,&rp,NULL,out));
+fail:
+    return result;
+}
+/* A pipeline from its key alone (and the target's size: the viewport is
+ * static) -- what a target builds, and what the recipes precompile. */
+static VkResult pipeline_build(VkDevice device,VkPipelineCache cache,VkRenderPass pass,VkPipelineLayout layout,
+    const PipelineKey *key,uint32_t width,uint32_t height,VkPipeline *out) {
+    VkResult result=VK_SUCCESS;
     VkShaderModule vert=VK_NULL_HANDLE, frag=VK_NULL_HANDLE;
-    if(!t->pass) {
-        VkAttachmentDescription attachment={.format=VK_FORMAT_R8G8B8A8_UNORM,
-            .samples=VK_SAMPLE_COUNT_1_BIT,.loadOp=VK_ATTACHMENT_LOAD_OP_LOAD,
-            .storeOp=VK_ATTACHMENT_STORE_OP_STORE,
-            .stencilLoadOp=VK_ATTACHMENT_LOAD_OP_DONT_CARE,
-            .stencilStoreOp=VK_ATTACHMENT_STORE_OP_DONT_CARE,
-            .initialLayout=VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-            .finalLayout=VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL};
-        VkAttachmentDescription attachments[2]={attachment,{
-            .format=t->depth_format,.samples=VK_SAMPLE_COUNT_1_BIT,
-            .loadOp=VK_ATTACHMENT_LOAD_OP_LOAD,.storeOp=VK_ATTACHMENT_STORE_OP_STORE,
-            .stencilLoadOp=VK_ATTACHMENT_LOAD_OP_LOAD,.stencilStoreOp=VK_ATTACHMENT_STORE_OP_STORE,
-            .initialLayout=VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,.finalLayout=VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL}};
-        VkAttachmentReference depth_ref={1,t->input_pass?VK_IMAGE_LAYOUT_GENERAL:VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL};
-        VkAttachmentReference ref={0,VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL};
-        VkSubpassDescription sub={.pipelineBindPoint=VK_PIPELINE_BIND_POINT_GRAPHICS,
-            .colorAttachmentCount=1,.pColorAttachments=&ref,.pDepthStencilAttachment=&depth_ref,
-            .inputAttachmentCount=t->input_pass?1:0,.pInputAttachments=t->input_pass?&depth_ref:NULL};
-        const VkPipelineStageFlags stages=VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT|VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT|VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
-        const VkAccessFlags access=VK_ACCESS_INPUT_ATTACHMENT_READ_BIT|VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT|VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
-        VkSubpassDependency deps[]={
-            {VK_SUBPASS_EXTERNAL,0,stages,stages,access,access,VK_DEPENDENCY_BY_REGION_BIT},
-            {0,0,stages,stages,access,access,VK_DEPENDENCY_BY_REGION_BIT},
-            {0,VK_SUBPASS_EXTERNAL,stages,stages,access,access,VK_DEPENDENCY_BY_REGION_BIT}};
-        VkRenderPassCreateInfo rp={.sType=VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO,
-            .attachmentCount=2,.pAttachments=attachments,.subpassCount=1,.pSubpasses=&sub,
-            .dependencyCount=t->input_pass?3:0,.pDependencies=t->input_pass?deps:NULL};
-        TRY(vkCreateRenderPass(t->device,&rp,NULL,&t->pass));
-        VkImageViewCreateInfo view={.sType=VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
-            .image=t->image,.viewType=VK_IMAGE_VIEW_TYPE_2D,.format=VK_FORMAT_R8G8B8A8_UNORM,
-            .subresourceRange={VK_IMAGE_ASPECT_COLOR_BIT,0,1,0,1}};
-        TRY(vkCreateImageView(t->device,&view,NULL,&t->view));
-        VkImageView views[]={t->view,t->depth_view};
-        VkFramebufferCreateInfo fb={.sType=VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
-            .renderPass=t->pass,.attachmentCount=2,.pAttachments=views,
-            .width=t->width,.height=t->height,.layers=1};
-        TRY(vkCreateFramebuffer(t->device,&fb,NULL,&t->framebuffer));
-    }
-    if(t->input_pass && !t->depth_quant_inline)
-        TRY(ch_vk_depth_quant_create_inline(t->device,t->depth,t->depth_view,t->width,t->height,t->pass,&t->depth_quant_inline));
     VkShaderModuleCreateInfo shader={.sType=VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
-        .codeSize=t->fixed?sizeof(color_fixed_spv):sizeof(color_vert_spv),.pCode=t->fixed?color_fixed_spv:color_vert_spv};
+        .codeSize=key->fixed?sizeof(color_fixed_spv):sizeof(color_vert_spv),.pCode=key->fixed?color_fixed_spv:color_vert_spv};
     if(key->vertex_count) {shader.codeSize=sizeof(color_program_spv);shader.pCode=color_program_spv;}
-    TRY(vkCreateShaderModule(t->device,&shader,NULL,&vert));
+    TRY(vkCreateShaderModule(device,&shader,NULL,&vert));
 #define FRAGMENT(name) do { \
     shader.codeSize=key->fragment_depth?sizeof(color_##name##_depth_spv):sizeof(color_##name##_spv); \
     shader.pCode=key->fragment_depth?color_##name##_depth_spv:color_##name##_spv; \
@@ -1585,7 +1587,7 @@ static VkResult create_pipeline(ChVkTarget *t, const VkPipelineColorBlendAttachm
         if(key->alpha_shader) FRAGMENT(frag);else FRAGMENT(frag_noat);
     }
 #undef FRAGMENT
-    TRY(vkCreateShaderModule(t->device,&shader,NULL,&frag));
+    TRY(vkCreateShaderModule(device,&shader,NULL,&frag));
     VkPipelineShaderStageCreateInfo stages[]={
         {.sType=VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,.stage=VK_SHADER_STAGE_VERTEX_BIT,.module=vert,.pName="main"},
         {.sType=VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,.stage=VK_SHADER_STAGE_FRAGMENT_BIT,.module=frag,.pName="main"}};
@@ -1612,7 +1614,7 @@ static VkResult create_pipeline(ChVkTarget *t, const VkPipelineColorBlendAttachm
     for(unsigned i=0;i<25;i++) fixed_entries[i]=(VkSpecializationMapEntry){i,i*4,4};
     VkSpecializationInfo fixed_specialization={25,fixed_entries,sizeof key->fixed_fetch,key->fixed_fetch};
     if(key->fixed && !key->vertex_count) stages[0].pSpecializationInfo=&fixed_specialization;
-    VkVertexInputBindingDescription binding={0,t->fixed?ch_vk_raw_vertex_stride(t->fixed):sizeof(ChVkColorVertex),VK_VERTEX_INPUT_RATE_VERTEX};
+    VkVertexInputBindingDescription binding={0,sizeof(ChVkColorVertex),VK_VERTEX_INPUT_RATE_VERTEX};   /* fixed: no vertex input */
 
     VkVertexInputAttributeDescription attrs[]={
         {0,0,VK_FORMAT_R32G32B32A32_SFLOAT,offsetof(ChVkColorVertex,xy)},
@@ -1625,47 +1627,93 @@ static VkResult create_pipeline(ChVkTarget *t, const VkPipelineColorBlendAttachm
         {7,0,VK_FORMAT_R32G32B32A32_SFLOAT,19*sizeof(float)},
         {8,0,VK_FORMAT_R32G32B32A32_SFLOAT,23*sizeof(float)}};
     VkPipelineVertexInputStateCreateInfo input={.sType=VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
-        .vertexBindingDescriptionCount=t->fixed?0:1,.pVertexBindingDescriptions=t->fixed?NULL:&binding,
-        .vertexAttributeDescriptionCount=t->fixed?0:9,.pVertexAttributeDescriptions=t->fixed?NULL:attrs};
+        .vertexBindingDescriptionCount=key->fixed?0:1,.pVertexBindingDescriptions=key->fixed?NULL:&binding,
+        .vertexAttributeDescriptionCount=key->fixed?0:9,.pVertexAttributeDescriptions=key->fixed?NULL:attrs};
     VkPipelineInputAssemblyStateCreateInfo assembly={.sType=VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
         .topology=VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST};
-    VkViewport viewport={0,0,(float)t->width,(float)t->height,0,1};
-    VkRect2D scissor={{0,0},{t->width,t->height}};
+    VkViewport viewport={0,0,(float)width,(float)height,0,1};
+    VkRect2D scissor={{0,0},{width,height}};
     VkPipelineViewportStateCreateInfo vp={.sType=VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO,
         .viewportCount=1,.pViewports=&viewport,.scissorCount=1,.pScissors=&scissor};
     VkPipelineRasterizationStateCreateInfo raster={.sType=VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
-        .polygonMode=VK_POLYGON_MODE_FILL,.cullMode=cull,.frontFace=front,.lineWidth=1,.depthClampEnable=t->fixed!=NULL};
+        .polygonMode=VK_POLYGON_MODE_FILL,.cullMode=key->cull,.frontFace=key->front,.lineWidth=1,.depthClampEnable=key->fixed!=0};
     VkPipelineMultisampleStateCreateInfo ms={.sType=VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
         .rasterizationSamples=VK_SAMPLE_COUNT_1_BIT};
     VkPipelineColorBlendStateCreateInfo cb={.sType=VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
-        .attachmentCount=1,.pAttachments=blend};
-    memcpy(cb.blendConstants,constants,sizeof(cb.blendConstants));
-    VkPushConstantRange alpha_range={VK_SHADER_STAGE_FRAGMENT_BIT,0,sizeof(t->push)};
+        .attachmentCount=1,.pAttachments=&key->blend};   /* blend constants: dynamic */
+    VkDynamicState dynamic_states[]={VK_DYNAMIC_STATE_BLEND_CONSTANTS,VK_DYNAMIC_STATE_STENCIL_REFERENCE};
+    VkPipelineDynamicStateCreateInfo dynamic={.sType=VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO,
+        .dynamicStateCount=key->depth.stencilTestEnable?2:1,.pDynamicStates=dynamic_states};
+    VkGraphicsPipelineCreateInfo pipeline={.sType=VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
+        .stageCount=2,.pStages=stages,.pVertexInputState=&input,.pInputAssemblyState=&assembly,
+        .pViewportState=&vp,.pRasterizationState=&raster,.pMultisampleState=&ms,
+        .pDynamicState=&dynamic,.pDepthStencilState=&key->depth,.pColorBlendState=&cb,.layout=layout,.renderPass=pass};
+    TRY(vkCreateGraphicsPipelines(device,cache,1,&pipeline,NULL,out));
+fail:
+    if(vert) vkDestroyShaderModule(device,vert,NULL);
+    if(frag) vkDestroyShaderModule(device,frag,NULL);
+    return result;
+}
+/* A pipeline's descriptor set and pipeline layouts, from its key: images
+ * (the combiner's 8, or one texture), the combiner's and the fixed/program
+ * constants (uniform buffers), the vertex streams (storage buffer). */
+typedef struct {uint32_t images,uniforms,buffers;} PipelineDescriptors;
+static PipelineDescriptors pipeline_descriptors(const PipelineKey *key) {
+    int rc=key->shader==2,texture=key->shader==1,fixed=key->fixed!=0;
+    return (PipelineDescriptors){rc?8u:texture?1u:0u,(uint32_t)rc+(uint32_t)fixed,(uint32_t)fixed};
+}
+static VkResult pipeline_layout_create(VkDevice device,const PipelineKey *key,VkDescriptorSetLayout *set_layout,VkPipelineLayout *out) {
+    VkResult result=VK_SUCCESS;
+    int rc=key->shader==2,fixed=key->fixed!=0;
+    PipelineDescriptors d=pipeline_descriptors(key);
+    VkPushConstantRange alpha_range={VK_SHADER_STAGE_FRAGMENT_BIT,0,sizeof(((ChVkTarget *)0)->push)};
     VkPipelineLayoutCreateInfo layout={.sType=VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
         .pushConstantRangeCount=1,.pPushConstantRanges=&alpha_range};
-    t->active_pipeline->has_descriptors=texture!=NULL || t->rc!=NULL || t->fixed!=NULL;
-    if(t->active_pipeline->has_descriptors) {
+    *set_layout=VK_NULL_HANDLE;
+    if(d.images || d.uniforms || d.buffers) {
         VkDescriptorSetLayoutBinding bindings[5];unsigned n=0;
-        /* Per-draw constants (combiner, fixed/program state) are uniform
-         * buffers -- loaded into constant registers once a draw -- and the
-         * vertex streams a storage buffer. */
-        uint32_t images=t->rc?8:texture?1:0,uniforms=(t->rc!=NULL)+(t->fixed!=NULL),buffers=t->fixed!=NULL;
-        if(images) bindings[n++]=(VkDescriptorSetLayoutBinding){.binding=0,
-            .descriptorType=VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,.descriptorCount=t->rc?4:1,.stageFlags=VK_SHADER_STAGE_FRAGMENT_BIT};
-        if(t->rc) {
+        if(d.images) bindings[n++]=(VkDescriptorSetLayoutBinding){.binding=0,
+            .descriptorType=VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,.descriptorCount=rc?4:1,.stageFlags=VK_SHADER_STAGE_FRAGMENT_BIT};
+        if(rc) {
             bindings[n++]=(VkDescriptorSetLayoutBinding){.binding=1,.descriptorType=VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,.descriptorCount=1,.stageFlags=VK_SHADER_STAGE_FRAGMENT_BIT};
             bindings[n++]=(VkDescriptorSetLayoutBinding){.binding=2,.descriptorType=VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,.descriptorCount=4,.stageFlags=VK_SHADER_STAGE_FRAGMENT_BIT};
         }
-        if(t->fixed) bindings[n++]=(VkDescriptorSetLayoutBinding){.binding=3,
+        if(fixed) bindings[n++]=(VkDescriptorSetLayoutBinding){.binding=3,
             .descriptorType=VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,.descriptorCount=1,.stageFlags=VK_SHADER_STAGE_VERTEX_BIT};
-        if(t->fixed) bindings[n++]=(VkDescriptorSetLayoutBinding){.binding=4,
+        if(fixed) bindings[n++]=(VkDescriptorSetLayoutBinding){.binding=4,
             .descriptorType=VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,.descriptorCount=1,.stageFlags=VK_SHADER_STAGE_VERTEX_BIT};
         VkDescriptorSetLayoutCreateInfo dsl={.sType=VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,.bindingCount=n,.pBindings=bindings};
-        TRY(vkCreateDescriptorSetLayout(t->device,&dsl,NULL,&t->active_pipeline->descriptor_layout));
-        VkDescriptorPoolSize sizes[3];n=0;
-        if(images) sizes[n++]=(VkDescriptorPoolSize){VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,images};
-        if(uniforms) sizes[n++]=(VkDescriptorPoolSize){VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,uniforms};
-        if(buffers) sizes[n++]=(VkDescriptorPoolSize){VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,buffers};
+        TRY(vkCreateDescriptorSetLayout(device,&dsl,NULL,set_layout));
+        layout.setLayoutCount=1;layout.pSetLayouts=set_layout;
+    }
+    TRY(vkCreatePipelineLayout(device,&layout,NULL,out));
+fail:
+    return result;
+}
+static VkResult create_pipeline(ChVkTarget *t,const PipelineKey *key) {
+    VkResult result;
+    if(!t->pass) {
+        TRY(target_pass(t->device,t->depth_format,t->input_pass,&t->pass));
+        VkImageViewCreateInfo view={.sType=VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+            .image=t->image,.viewType=VK_IMAGE_VIEW_TYPE_2D,.format=VK_FORMAT_R8G8B8A8_UNORM,
+            .subresourceRange={VK_IMAGE_ASPECT_COLOR_BIT,0,1,0,1}};
+        TRY(vkCreateImageView(t->device,&view,NULL,&t->view));
+        VkImageView views[]={t->view,t->depth_view};
+        VkFramebufferCreateInfo fb={.sType=VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
+            .renderPass=t->pass,.attachmentCount=2,.pAttachments=views,
+            .width=t->width,.height=t->height,.layers=1};
+        TRY(vkCreateFramebuffer(t->device,&fb,NULL,&t->framebuffer));
+    }
+    if(t->input_pass && !t->depth_quant_inline)
+        TRY(ch_vk_depth_quant_create_inline(t->device,t->depth,t->depth_view,t->width,t->height,t->pass,&t->depth_quant_inline));
+    PipelineDescriptors d=pipeline_descriptors(key);
+    t->active_pipeline->has_descriptors=d.images || d.uniforms || d.buffers;
+    TRY(pipeline_layout_create(t->device,key,&t->active_pipeline->descriptor_layout,&t->active_pipeline->pipeline_layout));
+    if(t->active_pipeline->has_descriptors) {
+        VkDescriptorPoolSize sizes[3];unsigned n=0;
+        if(d.images) sizes[n++]=(VkDescriptorPoolSize){VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,d.images};
+        if(d.uniforms) sizes[n++]=(VkDescriptorPoolSize){VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,d.uniforms};
+        if(d.buffers) sizes[n++]=(VkDescriptorPoolSize){VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,d.buffers};
         uint32_t banks=t->ring?RING_SLOTS:1;
         for(unsigned i=0;i<n;i++) sizes[i].descriptorCount*=(t->batch_enabled?t->batch_limit:1)*banks;
         VkDescriptorPoolCreateInfo pool={.sType=VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,.maxSets=(t->batch_enabled?t->batch_limit:1)*banks,.poolSizeCount=n,.pPoolSizes=sizes};
@@ -1676,28 +1724,145 @@ static VkResult create_pipeline(ChVkTarget *t, const VkPipelineColorBlendAttachm
         t->active_pipeline->sets[t->slot][0]=t->active_pipeline->descriptor_set;
         for(unsigned k=0;k<RING_SLOTS;k++) t->active_pipeline->set_count[k]=0;
         t->active_pipeline->set_count[t->slot]=1;
-        layout.setLayoutCount=1;layout.pSetLayouts=&t->active_pipeline->descriptor_layout;
     }
-    TRY(vkCreatePipelineLayout(t->device,&layout,NULL,&t->active_pipeline->pipeline_layout));
-    VkDynamicState dynamic_states[]={VK_DYNAMIC_STATE_BLEND_CONSTANTS,VK_DYNAMIC_STATE_STENCIL_REFERENCE};
-    VkPipelineDynamicStateCreateInfo dynamic={.sType=VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO,
-        .dynamicStateCount=depth_state->stencilTestEnable?2:1,.pDynamicStates=dynamic_states};
-    VkGraphicsPipelineCreateInfo pipeline={.sType=VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
-        .stageCount=2,.pStages=stages,.pVertexInputState=&input,.pInputAssemblyState=&assembly,
-        .pViewportState=&vp,.pRasterizationState=&raster,.pMultisampleState=&ms,
-        .pDynamicState=&dynamic,.pDepthStencilState=depth_state,.pColorBlendState=&cb,.layout=t->active_pipeline->pipeline_layout,.renderPass=t->pass};
     /* Retain driver compilation results across synchronous pipeline changes.
      * This does not reuse a VkPipeline with a different render state. */
     if(!t->pipeline_cache) {
         VkPipelineCacheCreateInfo cache={.sType=VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO};
         TRY(vkCreatePipelineCache(t->device,&cache,NULL,&t->pipeline_cache));
     }
-    TRY(vkCreateGraphicsPipelines(t->device,t->pipeline_cache,1,&pipeline,NULL,&t->active_pipeline->pipeline));
+    TRY(pipeline_build(t->device,t->pipeline_cache,t->pass,t->active_pipeline->pipeline_layout,key,t->width,t->height,&t->active_pipeline->pipeline));
 fail:
-    if(vert) vkDestroyShaderModule(t->device,vert,NULL);
-    if(frag) vkDestroyShaderModule(t->device,frag,NULL);
     if(result!=VK_SUCCESS) t->failed=1;
     return result;
+}
+/* Pipeline recipes. A first build compiles (Turnip: up to ~100 ms each,
+ * ~220 on the combat route): mid-game, a new scene's dozens stalled play
+ * for seconds. Every pipeline a target builds is appended to a file -- its
+ * key and the target properties it depends on -- and at start-up worker
+ * threads build each recorded one into the shared pipeline cache (and the
+ * driver's), so play finds them compiled (~1 ms). */
+typedef struct {
+    uint32_t magic,version,width,height,depth_format,input_pass;
+    PipelineKey key;
+} Recipe;
+#define RECIPE_MAGIC 0x50524b56u   /* "VKRP" */
+#define RECIPE_VERSION ((uint32_t)sizeof(Recipe)*16u+1u)
+#define RECIPE_THREADS 8
+static struct {
+    pthread_mutex_t lock;
+    FILE *file;
+    uint64_t *seen;size_t seen_n,seen_cap;
+    Recipe *list;size_t count;
+    atomic_size_t next;atomic_int stop;atomic_uint built,failed,done;
+    pthread_t threads[RECIPE_THREADS];unsigned threads_n;
+    VkDevice device;VkPipelineCache cache;uint64_t start_ns;
+} s_recipes={.lock=PTHREAD_MUTEX_INITIALIZER};
+/* lock held; 1: new */
+static int recipe_seen(uint64_t h) {
+    if(!h) h=1;
+    if(2*(s_recipes.seen_n+1)>s_recipes.seen_cap) {
+        size_t cap=s_recipes.seen_cap?s_recipes.seen_cap*2:1024;
+        uint64_t *n=calloc(cap,sizeof *n);if(!n) return 0;
+        for(size_t i=0;i<s_recipes.seen_cap;i++) if(s_recipes.seen[i]) {
+            size_t k=s_recipes.seen[i]&(cap-1);while(n[k]) k=(k+1)&(cap-1);n[k]=s_recipes.seen[i];
+        }
+        free(s_recipes.seen);s_recipes.seen=n;s_recipes.seen_cap=cap;
+    }
+    size_t k=h&(s_recipes.seen_cap-1);
+    while(s_recipes.seen[k]) {if(s_recipes.seen[k]==h) return 0;k=(k+1)&(s_recipes.seen_cap-1);}
+    s_recipes.seen[k]=h;s_recipes.seen_n++;return 1;
+}
+static void recipe_note(const ChVkTarget *t,const PipelineKey *key) {
+    Recipe r;memset(&r,0,sizeof r);
+    r.magic=RECIPE_MAGIC;r.version=RECIPE_VERSION;r.width=t->width;r.height=t->height;
+    r.depth_format=(uint32_t)t->depth_format;r.input_pass=(uint32_t)t->input_pass;r.key=*key;
+    uint64_t h=pipeline_identity(t,key);
+    pthread_mutex_lock(&s_recipes.lock);
+    if(s_recipes.file && recipe_seen(h)) {fwrite(&r,sizeof r,1,s_recipes.file);fflush(s_recipes.file);}
+    pthread_mutex_unlock(&s_recipes.lock);
+}
+static int recipe_valid(const Recipe *r) {
+    return r->magic==RECIPE_MAGIC && r->version==RECIPE_VERSION && r->width && r->height &&
+        r->width<=16384 && r->height<=16384 && r->depth_format && r->input_pass<=1 &&
+        r->key.shader<=3 && r->key.vertex_count<=136 && r->key.depth.sType==VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
+}
+static VkResult recipe_build(const Recipe *r) {
+    VkDevice device=s_recipes.device;VkResult result=VK_SUCCESS;
+    VkRenderPass pass=VK_NULL_HANDLE;VkDescriptorSetLayout set_layout=VK_NULL_HANDLE;
+    VkPipelineLayout layout=VK_NULL_HANDLE;VkPipeline pipeline=VK_NULL_HANDLE;
+    PipelineKey key=r->key;key.depth.pNext=NULL;
+    TRY(target_pass(device,(VkFormat)r->depth_format,(int)r->input_pass,&pass));
+    TRY(pipeline_layout_create(device,&key,&set_layout,&layout));
+    TRY(pipeline_build(device,s_recipes.cache,pass,layout,&key,r->width,r->height,&pipeline));
+fail:
+    if(pipeline) vkDestroyPipeline(device,pipeline,NULL);
+    if(layout) vkDestroyPipelineLayout(device,layout,NULL);
+    if(set_layout) vkDestroyDescriptorSetLayout(device,set_layout,NULL);
+    if(pass) vkDestroyRenderPass(device,pass,NULL);
+    return result;
+}
+static void *recipe_worker(void *arg) {
+    (void)arg;
+    for(;;) {
+        if(atomic_load(&s_recipes.stop)) break;
+        size_t i=atomic_fetch_add(&s_recipes.next,1);
+        if(i>=s_recipes.count) break;
+        if(recipe_build(&s_recipes.list[i])==VK_SUCCESS) atomic_fetch_add(&s_recipes.built,1);
+        else atomic_fetch_add(&s_recipes.failed,1);
+    }
+    if(atomic_fetch_add(&s_recipes.done,1)+1==s_recipes.threads_n)
+        fprintf(stderr,"[Vulkan pipelines] precompiled %u of %zu recipes in %.0f ms on %u threads%s\n",
+            atomic_load(&s_recipes.built),s_recipes.count,(time_ns()-s_recipes.start_ns)/1e6,s_recipes.threads_n,
+            atomic_load(&s_recipes.failed)?" (some failed)":"");
+    return NULL;
+}
+VkResult ch_vk_target_recipes_start(VkDevice device,VkPipelineCache cache,const char *path,unsigned threads) {
+    if(!device || !cache || !path || !*path) return VK_ERROR_INITIALIZATION_FAILED;
+    ch_vk_target_recipes_stop();
+    pthread_mutex_lock(&s_recipes.lock);
+    FILE *in=fopen(path,"rb");size_t bad=0;
+    if(in) {
+        Recipe r;
+        while(fread(&r,sizeof r,1,in)==1) {
+            if(!recipe_valid(&r)) {bad++;continue;}
+            if(!recipe_seen(key_identity(r.width,r.height,r.depth_format,r.input_pass,&r.key))) continue;
+            Recipe *grown=realloc(s_recipes.list,(s_recipes.count+1)*sizeof *grown);
+            if(!grown) break;
+            s_recipes.list=grown;s_recipes.list[s_recipes.count++]=r;
+        }
+        fclose(in);
+    }
+    /* A file of another layout (an older build) starts over. */
+    s_recipes.file=fopen(path,bad && !s_recipes.count?"wb":"ab");
+    if(bad && s_recipes.count) {   /* keep the good ones only */
+        fclose(s_recipes.file);s_recipes.file=fopen(path,"wb");
+        if(s_recipes.file) {fwrite(s_recipes.list,sizeof *s_recipes.list,s_recipes.count,s_recipes.file);fflush(s_recipes.file);}
+    }
+    s_recipes.device=device;s_recipes.cache=cache;s_recipes.start_ns=time_ns();
+    atomic_store(&s_recipes.next,0);atomic_store(&s_recipes.stop,0);
+    atomic_store(&s_recipes.built,0);atomic_store(&s_recipes.failed,0);atomic_store(&s_recipes.done,0);
+    if(threads>RECIPE_THREADS) threads=RECIPE_THREADS;
+    if(!s_recipes.count) threads=0;
+    s_recipes.threads_n=0;
+    for(unsigned i=0;i<threads;i++) {
+        if(pthread_create(&s_recipes.threads[i],NULL,recipe_worker,NULL)) break;
+        s_recipes.threads_n++;
+    }
+    fprintf(stderr,"[Vulkan pipelines] %zu recipes from %s%s, precompiling on %u threads\n",s_recipes.count,path,
+        bad?" (some of another layout dropped)":"",s_recipes.threads_n);
+    pthread_mutex_unlock(&s_recipes.lock);
+    return s_recipes.file?VK_SUCCESS:VK_ERROR_INITIALIZATION_FAILED;
+}
+void ch_vk_target_recipes_stop(void) {
+    atomic_store(&s_recipes.stop,1);
+    for(unsigned i=0;i<s_recipes.threads_n;i++) pthread_join(s_recipes.threads[i],NULL);
+    pthread_mutex_lock(&s_recipes.lock);
+    s_recipes.threads_n=0;
+    if(s_recipes.file) fclose(s_recipes.file);
+    s_recipes.file=NULL;free(s_recipes.list);s_recipes.list=NULL;s_recipes.count=0;
+    free(s_recipes.seen);s_recipes.seen=NULL;s_recipes.seen_n=s_recipes.seen_cap=0;
+    pthread_mutex_unlock(&s_recipes.lock);
 }
 /* One driver update per draw; all backing info stays live until the call. */
 static void update_descriptors(ChVkTarget *t,const ChVkTexture *texture,
@@ -1877,12 +2042,13 @@ static VkResult draw_full(ChVkTarget *t, const float rgba[4],
             fflush(stderr);
         }
         uint64_t create_start=time_ns();
-        result=create_pipeline(t,&blend,constants,&depth_state,cull,front,texture,&key);
+        result=create_pipeline(t,&key);
         if(result!=VK_SUCCESS) return result;
         uint64_t create_ns=time_ns()-create_start;t->resource_stats.pipeline_create_ns+=create_ns;
         if(log_pipeline) fprintf(stderr,"[Vulkan pipeline end] %.3fms\n",create_ns/1e6);
         if(create_ns>t->resource_stats.pipeline_create_max_ns) t->resource_stats.pipeline_create_max_ns=create_ns;
         entry->key=key;t->resource_stats.pipeline_builds++;
+        recipe_note(t,&key);
         if(!key.alpha_shader) t->resource_stats.no_alpha_pipeline_builds++;
         if(key.specialized) t->resource_stats.specialized_pipeline_builds++;
     }
@@ -2056,6 +2222,28 @@ static int ring_inflight(const ChVkTarget *t) {
     return 0;
 }
 VkFence ch_vk_target_completion_fence(const ChVkTarget *t) { return t && !t->pending && !t->copy_source && !ring_inflight(t)?(t->upload_pending?t->upload_fence:t->fence):VK_NULL_HANDLE; }
+VkResult ch_vk_target_record_export(ChVkTarget *t,VkCommandBuffer command,VkImage destination) {
+    if(!t || t->failed || !t->initialized || !command || !destination || destination==t->image) return VK_ERROR_INITIALIZATION_FAILED;
+    VkResult r=ch_vk_target_submit(t);   /* pending draws, not waited for */
+    if(r!=VK_SUCCESS) return r;
+    if(t->pending || t->layout!=VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL) return VK_NOT_READY;
+    VkImageMemoryBarrier barrier={.sType=VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+        .dstAccessMask=VK_ACCESS_TRANSFER_WRITE_BIT,.oldLayout=VK_IMAGE_LAYOUT_UNDEFINED,
+        .newLayout=VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+        .srcQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED,.dstQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED,
+        .image=destination,.subresourceRange={VK_IMAGE_ASPECT_COLOR_BIT,0,1,0,1}};
+    vkCmdPipelineBarrier(command,VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,VK_PIPELINE_STAGE_TRANSFER_BIT,0,0,NULL,0,NULL,1,&barrier);
+    VkImageCopy copy={.srcSubresource={VK_IMAGE_ASPECT_COLOR_BIT,0,0,1},
+        .dstSubresource={VK_IMAGE_ASPECT_COLOR_BIT,0,0,1},.extent={t->width,t->height,1}};
+    vkCmdCopyImage(command,t->image,VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,destination,VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,1,&copy);
+    barrier.srcAccessMask=VK_ACCESS_TRANSFER_WRITE_BIT;
+    barrier.oldLayout=VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    barrier.dstAccessMask=VK_ACCESS_COLOR_ATTACHMENT_READ_BIT|VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+    barrier.newLayout=VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    vkCmdPipelineBarrier(command,VK_PIPELINE_STAGE_TRANSFER_BIT,VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT,0,0,NULL,0,NULL,1,&barrier);
+    /* The target's next batch waits for transfer reads (its first barrier). */
+    return VK_SUCCESS;
+}
 VkResult ch_vk_target_export_image(ChVkTarget *t,VkImage destination,void *verify,VkDeviceSize bytes) {
     if(!t || t->failed || !t->initialized || !destination || destination==t->image ||
         (verify && bytes<t->bytes)) return VK_ERROR_INITIALIZATION_FAILED;

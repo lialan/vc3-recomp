@@ -51,19 +51,55 @@ timers) costs a few ms a frame: `bench-light.sh` runs the same route without
 it and scores the frame intervals as a player sees them. Both keep the
 pipeline cache between runs (`/tmp/vc3s/save`).
 
+## The headset loop never waits for the GPU
+
+SteamVR gates the session's queue once a display frame, so every wait for
+the GPU in the headset loop cost up to a display frame: the world copy, the
+HUD import and refresh, the overlay clear and its copies took the loop to
+8-27 ms (budget 8.3 at 120 Hz) and SteamVR throttled it to 120/n Hz, down to
+20 Hz, with the headset on. The loop's own GPU work (world and HUD copies,
+overlay exports) is recorded into a ring of command buffers and submitted
+without a wait; OpenXR needs it submitted before the image's release, no
+more. Fences are waited for only when a command buffer comes round again,
+and the world copy's before take_frame gives its shared buffer back.
+`VC3_XR_LOOP_LOG=1` prints, once a second, the loop's rate, its time in
+xrWaitFrame and its work, split by step.
+
+Measuring with the headset on: SteamVR's `power.pauseCompositorOnStandby`
+set to 0 (`vrcmd --set-settings-bool power.pauseCompositorOnStandby 0`; only
+`1` sets it back -- "true" reads as false) keeps the session rendering
+(state 5) with the headset off. Set it back to 1 after.
+
+## Shaders compiled before play
+
+A pipeline's first build compiles its shaders: up to ~100 ms each on the
+Frame, ~220 on the combat route (18 s cold), so a new scene used to stall
+play for seconds. Every pipeline the game builds is recorded in
+`save/vulkan-pipelines.recipes` (its key and the target properties it
+depends on); at start-up 4 threads (`CHIHIRO_VULKAN_PRECOMPILE_THREADS`, 0:
+record only) build every recorded one into the pipeline cache while the game
+boots (~19 s to attract mode), so play finds them compiled (~1 ms each).
+Measured cold (no driver shader cache): 217 in-game compiles, 17 frames off
+their vblank -> 184 recipes precompiled in 10.6 s, in-game builds 3 ms at
+most, no frame off its vblank. `pipelines.recipes` beside the game (from
+long scripted runs: combat, E.S., death, continue, game over, name entry,
+the attract demos) is added to the save's once per seed by the launchers;
+what play adds on top is precompiled from the next start. The log line
+`[Vulkan pipelines] precompiled N of N recipes in X ms` reports it.
+
 ## Performance defaults and switches (`env.txt`)
 
 ### Immersive VR
 
-The game's 3D is drawn from each eye at 32/27 of the size SteamVR
-recommends: 2048 per eye on the Frame (it recommends 1728; its panels are
-2160; `VC3_IMM_EYE=n` for n x n, up to 2560). Mipmapped textures are
+The game's 3D is drawn from each eye at the size SteamVR recommends (1728 on
+the Frame; `VC3_IMM_EYE=n` for n x n, up to 2560). Mipmapped textures are
 filtered 8x anisotropically (`CHIHIRO_VULKAN_ANISO=n`, 1 off; free on the
-Frame). Uncapped (vblank 120 Hz), per eye size, E.S. activation mean (p99):
-1728 8.6 ms (13.0), 2048 10.4 (13.7), 2160 11.3 (16.1), 2304 12.2 (15.8),
-2560 14.3 (17.9); at 60 fps 2048 kept every combat and E.S. frame on its
-vblank in three runs, 2160 missed about 1 in 450. Combat and E.S. hold 60
-fps, each game frame shown twice at 120 Hz. What gets it there:
+Frame). With the headset on, SteamVR's compositor works at 120 Hz on the
+same GPU: game frames shown exactly twice (scripted route, compositor kept
+running with `power.pauseCompositorOnStandby` 0): 1728 84%, 2048 71%, 1440
+92%; the rest are E.S. frames shown four times. With the compositor idle
+2048 held every frame (uncapped E.S. activation 10.4 ms against 1728's 8.6),
+so measure with it running (below). What gets it there:
 
 - **Per-draw constants in uniform buffers** (constant registers on Adreno);
   devices enable `VK_KHR_uniform_buffer_standard_layout` for the std430
@@ -83,6 +119,13 @@ Headroom: `RECOMP_VBLANK_HZ=120 VC3_XR_CADENCE=0` runs the game faster than
 real time, as fast as the pipeline allows (native 1728/eye: combat ~101 fps,
 E.S. held ~90, E.S. activation ~83). `bench-light.sh` reports the headset
 side too (`/tmp/takestat.py`: display frames per game frame, 2 at 60 fps).
+
+Game zooms (a far enemy, E.S., the death close-up: the lens narrows from
+~45-60 to ~14 degrees) zoom the headset's world as much: vertices are read
+back through VC3's usual 45-degree lens, so a longer one magnifies; never
+zoomed out (`CHIHIRO_VULKAN_IMMERSIVE_ZOOM=0`: no zoom; 1: the OpenGL
+renderer's normalisation to the most used lens). Aim and the HUD panel use
+the same projection.
 
 What the headset gets: VC3 draws its scene off-screen and composites it
 onto the presented surface with one full-screen draw, so a frame whose

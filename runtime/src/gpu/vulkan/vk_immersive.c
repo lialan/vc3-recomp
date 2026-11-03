@@ -6,6 +6,8 @@
 #include <string.h>
 #define IMM_SURFACES 8
 #define ZOOM_SLOTS 8
+/* VC3's usual lens in 640-wide pixels: its 45 x 34.5 degree culling view */
+#define IMM_ZOOM_BASE 772.5f
 /* A screen-shaped guest surface's eyes (2*eye_width x eye_height). */
 struct ImmSurface {
     uint32_t va,width,height;
@@ -30,8 +32,8 @@ struct ChVkImmersive {
     struct {float k;uint32_t n;} zoom[ZOOM_SLOTS]; float kbase;
     /* per-batch projection cache: identical matrices, identical projection */
     Nv2aFixedState last_ff; float last_aa[2]; int last_valid,last_ok; VrGameProj last;
-    int zoom_normalise;
-    int half_effects;     /* CHIHIRO_VULKAN_IMMERSIVE_HALF_EFFECTS=0: every surface's eyes at native size */   /* CHIHIRO_VULKAN_IMMERSIVE_ZOOM=1: the OpenGL renderer's zoom_proj */
+    int zoom_normalise;   /* CHIHIRO_VULKAN_IMMERSIVE_ZOOM: 0 the true projection, 1 the OpenGL renderer's zoom_proj, 2 (default) follow zooms in */
+    int half_effects;     /* CHIHIRO_VULKAN_IMMERSIVE_HALF_EFFECTS=0: every surface's eyes at native size */
     uint64_t guest_eye_samples;
     int log; uint64_t frames,world_batches,hud_batches,flat_batches,skipped_batches;
 };
@@ -147,11 +149,12 @@ VkResult ch_vk_immersive_create(const ChVkImmersiveConfig *config,ChVkImmersive 
      m->config.batch_limit=b && atoi(b)>0 && atoi(b)<=256?(uint32_t)atoi(b):256;}
     const char *e=getenv("CHIHIRO_VULKAN_IMMERSIVE_LOG");
     m->log=e?atoi(e):0;
-    /* Off by default: the game's own projection recovers each vertex where
-     * it is, so a game zoom changes nothing in the headset; normalising it
-     * scaled the world when the game zoomed. */
+    /* 2 (follow) by default: a game zoom in (a far enemy, E.S., the death
+     * close-up) zooms the headset's world as much (zoomed()); 0 recovers
+     * each vertex where it is (no zoom); 1 normalises to the most used
+     * lens, which drifted to the close-up's after a long continue. */
     e=getenv("CHIHIRO_VULKAN_IMMERSIVE_ZOOM");
-    m->zoom_normalise=e && atoi(e)==1;
+    m->zoom_normalise=e?atoi(e):2;
     e=getenv("CHIHIRO_VULKAN_IMMERSIVE_HALF_EFFECTS");
     m->half_effects=!e || atoi(e);
     *out=m; return VK_SUCCESS;
@@ -177,9 +180,17 @@ VkResult ch_vk_immersive_clear(ChVkImmersive *m,const Nv2aSurface *s,const Nv2aR
 /* The game's projection as the eyes use it; with zoom_normalise, the
  * baseline (most used) focal length, this one's centre and aspect (the
  * OpenGL renderer's zoom_proj). */
-static VrGameProj zoomed(const ChVkImmersive *m,const VrGameProj *g) {
+static VrGameProj zoomed(const ChVkImmersive *m,const VrGameProj *g,uint32_t width) {
     VrGameProj o=*g;
-    if(m->zoom_normalise && m->kbase>0 && fabsf(g->kx)>1) {float z=m->kbase/fabsf(g->kx);o.kx*=z;o.ky*=z;}
+    if(m->zoom_normalise==1 && m->kbase>0 && fabsf(g->kx)>1) {float z=m->kbase/fabsf(g->kx);o.kx*=z;o.ky*=z;}
+    /* Follow (the default): read back through VC3's usual 45-degree lens,
+     * so a longer one -- the zoom on a far enemy, E.S., the death close-up
+     * (~14 degrees) -- magnifies the world by as much; never zoomed out.
+     * The host's projection is this one: aim and the HUD panel follow. */
+    if(m->zoom_normalise==2 && width) {
+        float k=IMM_ZOOM_BASE*(float)width/640.0f;
+        if(fabsf(g->kx)>k) {float z=k/fabsf(g->kx);o.kx*=z;o.ky*=z;}
+    }
     return o;
 }
 static void zoom_note(ChVkImmersive *m,float kx) {
@@ -316,7 +327,7 @@ VkResult ch_vk_immersive_draw(ChVkImmersive *m,const Nv2aSurface *s,const Nv2aBa
         if(imm.sbs) f->composite++;
     }
     if(is3d) {
-        VrGameProj z=zoomed(m,&g);
+        VrGameProj z=zoomed(m,&g,s->width);
         imm.gp[0]=z.kx;imm.gp[1]=z.ky;imm.gp[2]=z.cx;imm.gp[3]=z.cy;imm.gp[4]=z.inv_pz;
         m->world_batches++;
     } else {m->flat_batches++;f->flat++;}
@@ -416,7 +427,7 @@ VkResult ch_vk_immersive_flip(ChVkImmersive *m,uint32_t presented,const Vc3VrVie
         else if(scene && scene->eyes && scene->div<2) src=scene;
     }
     if(src) {
-        out->view=m->view;out->projection=zoomed(m,&m->projection);out->projection_ok=1;
+        out->view=m->view;out->projection=zoomed(m,&m->projection,src->width);out->projection_ok=1;
         out->guest_width=src->width;out->guest_height=src->height;
         out->eye_width=m->config.eye_width;out->eye_height=m->config.eye_height;
         out->hud=m->hud_used;

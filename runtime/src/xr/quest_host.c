@@ -1682,11 +1682,12 @@ static int hud_panel(const Frame *f, float c[3], float *w, float *h)
     c[1] = v[1] / u;
     c[2] = v[2] / u;
     /* the HUD is drawn as wide as the picture (16:9: the middle 4:3 is the
-     * game's view). The VR view never zooms, so neither does the HUD: when
-     * the game's lens is longer than its usual one (the death and continue
-     * close-up, ~14 degrees; E.S.), the panel keeps the usual size -- sized
-     * by the lens, "CONTINUE?" shrank to a small patch. A wider lens sizes
-     * it exactly (its marks over what they mark). */
+     * game's view), sized by the frame's projection -- its marks over what
+     * they mark. With the world following game zooms (the Vulkan
+     * renderer's default) that projection's lens is never longer than the
+     * usual 45 degrees; without (CHIHIRO_VULKAN_IMMERSIVE_ZOOM=0) the panel
+     * keeps that size when the game's is longer: sized by the close-up's
+     * ~14 degrees, "CONTINUE?" shrank to a small patch. */
     {
         float kx = fminf(fabsf(g.kx), HUD_K_MAX * vf->gw / 640.0f);
         float ky = fminf(fabsf(g.ky), HUD_K_MAX * vf->gh / 480.0f);
@@ -2636,6 +2637,49 @@ static void xrgt_end(void)
 #include "quest_vulkan.inc"
 #endif
 
+/* VC3_XR_LOOP_LOG=1: once a second, this loop's rate, the time it spent
+ * blocked in xrWaitFrame, and its work from there to xrEndFrame -- the
+ * runtime throttles an app whose frames come late. */
+static void xr_loop_note(uint64_t t0, uint64_t t1, int render)
+{
+    static int on = -1;
+    static uint64_t last, n, rendered, wait_sum, wait_max, work_sum, work_max, gap_max, prev;
+    uint64_t now = pace_now_us();
+    if (on < 0)
+        on = ch_env("XR_LOOP_LOG") && *ch_env("XR_LOOP_LOG") == '1';
+    if (!on)
+        return;
+    n++;
+    rendered += render != 0;
+    wait_sum += t1 - t0;
+    if (t1 - t0 > wait_max)
+        wait_max = t1 - t0;
+    work_sum += now - t1;
+    if (now - t1 > work_max)
+        work_max = now - t1;
+    if (prev && t0 - prev > gap_max)
+        gap_max = t0 - prev;
+    prev = now;
+    if (!last)
+        last = now;
+    if (now - last >= 1000000) {
+        fprintf(stderr, "[xr loop] %llu loops (%llu rendering): wait avg %.2f max %.2f ms, work avg %.2f max %.2f ms, between max %.2f ms\n",
+                (unsigned long long)n, (unsigned long long)rendered, wait_sum / 1000.0 / n, wait_max / 1000.0,
+                work_sum / 1000.0 / n, work_max / 1000.0, gap_max / 1000.0);
+#ifdef CHIHIRO_RENDERER_VULKAN
+        fprintf(stderr, "[xr loop]   ms a loop: world %.2f clear %.2f hud %.2f gun %.2f swapchain %.2f settle %.2f\n",
+                s_vk_seg[0] / 1000.0 / n, s_vk_seg[1] / 1000.0 / n, s_vk_seg[2] / 1000.0 / n,
+                s_vk_seg[3] / 1000.0 / n, s_vk_seg[4] / 1000.0 / n, s_vk_seg[5] / 1000.0 / n);
+        fprintf(stderr, "[xr loop]   world: acquire %.2f copy %.2f HUD %.2f release %.2f; overlay: acquire %.2f copy %.2f\n",
+                s_vk_seg[6] / 1000.0 / n, s_vk_seg[7] / 1000.0 / n, s_vk_seg[8] / 1000.0 / n,
+                s_vk_seg[9] / 1000.0 / n, s_vk_seg[10] / 1000.0 / n, s_vk_seg[11] / 1000.0 / n);
+        memset(s_vk_seg, 0, sizeof s_vk_seg);
+#endif
+        last = now;
+        n = rendered = wait_sum = wait_max = work_sum = work_max = gap_max = 0;
+    }
+}
+
 static void xr_frame(void)
 {
     XrFrameWaitInfo wi = { XR_TYPE_FRAME_WAIT_INFO };
@@ -2653,8 +2697,10 @@ static void xr_frame(void)
     Frame *f;
     int is_new, allow = 1;
 
+    uint64_t loop_t0 = pace_now_us();
     if (XR_FAILED(xrWaitFrame(s_sess, &wi, &fs)))
         return;
+    uint64_t loop_t1 = pace_now_us();
     {
         /* xrWaitFrame paces this loop to the display -- except when the
          * runtime stops blocking (SteamVR with the headset off or asleep:
@@ -2699,6 +2745,10 @@ static void xr_frame(void)
     }
 #ifndef CHIHIRO_RENDERER_VULKAN
     xrgt_begin();
+#endif
+#ifdef CHIHIRO_RENDERER_VULKAN
+    /* the last world copy, done before take_frame can give its source back */
+    SEG(5, vk_host_world_settle());
 #endif
     f = take_frame(&is_new, allow);
     if (s_pace > 0) {   /* how many headset frames each game frame showed for */
@@ -2759,7 +2809,7 @@ static void xr_frame(void)
     rate_watch();
     if (s_overlay_ok < 0) {
 #ifdef CHIHIRO_RENDERER_VULKAN
-        s_overlay_ok = vk_overlay_init();
+        s_overlay_ok = ch_env("XR_NO_OVERLAY") && *ch_env("XR_NO_OVERLAY") == '1' ? 0 : vk_overlay_init();
 #else
         s_overlay_ok = overlay_init();
 #endif
@@ -2925,6 +2975,7 @@ static void xr_frame(void)
 #ifdef CHIHIRO_RENDERER_VULKAN
     vk_profile_host_end();
     pthread_mutex_unlock(&s_vk_queue);
+    xr_loop_note(loop_t0, loop_t1, fs.shouldRender);
 #endif
 }
 

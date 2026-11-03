@@ -18,6 +18,16 @@ export SDL_AUDIODRIVER="${SDL_AUDIODRIVER:-pipewire}"
 export VC3_PACE_LOG="${VC3_PACE_LOG:-1}"        # frame pacing lines in vc3.log
 export VC3_SAVE_DIR="${VC3_SAVE_DIR:-$HERE/save}" VC3_CONFIG_DIR="${VC3_CONFIG_DIR:-$HERE/config}"
 mkdir -p "$VC3_SAVE_DIR" "$VC3_CONFIG_DIR"
+# Pipeline recipes recorded on the Frame (pipelines.recipes beside the
+# game): added to the save's once per seed, so the game precompiles them
+# while it boots instead of compiling mid-play.
+if [ -f "$HERE/pipelines.recipes" ]; then
+    SEED=$(cksum < "$HERE/pipelines.recipes" | cut -d' ' -f1)
+    if [ ! -f "$VC3_SAVE_DIR/.recipes-seed-$SEED" ]; then
+        cat "$HERE/pipelines.recipes" >> "$VC3_SAVE_DIR/vulkan-pipelines.recipes" &&
+            touch "$VC3_SAVE_DIR/.recipes-seed-$SEED"
+    fi
+fi
 if [ -f "$HERE/env.txt" ]; then
     while IFS= read -r line || [ -n "$line" ]; do
         case $line in ''|'#'*) continue ;; *=*) export "$line" ;; esac

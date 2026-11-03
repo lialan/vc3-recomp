@@ -1,5 +1,6 @@
 #include "vk_runtime.h"
 #include "vk_backend.h"
+#include "vk_target.h"
 #include "vk_device_features.h"
 #include "vk_state.h"
 #include "vk_pipeline_cache_file.h"
@@ -402,6 +403,21 @@ static VkResult attach(ChVkBackendConfig config)
         config.pipeline_cache=runtime.pipeline_cache;
         fprintf(stderr,"[Vulkan pipeline cache] packaged_bytes=%zu loaded_bytes=%zu path=%s\n",packaged,loaded,
             runtime.cache_path?runtime.cache_path:"(memory only)");
+        /* Pipeline recipes beside the cache: what earlier runs built,
+         * precompiled while the game boots (CHIHIRO_VULKAN_PRECOMPILE_THREADS,
+         * 4 by default; 0 records only). */
+        if(runtime.cache_path) {
+            size_t n=strlen(runtime.cache_path);char *recipes=malloc(n+16);
+            if(recipes) {
+                memcpy(recipes,runtime.cache_path,n+1);
+                char *dot=strrchr(recipes,'.'),*slash=strrchr(recipes,'/');
+                if(dot && (!slash || dot>slash)) *dot=0;
+                strcat(recipes,".recipes");
+                const char *e=getenv("CHIHIRO_VULKAN_PRECOMPILE_THREADS");
+                ch_vk_target_recipes_start(config.device,runtime.pipeline_cache,recipes,e?(unsigned)atoi(e):4u);
+                free(recipes);
+            }
+        }
     }
     VkResult result=ch_vk_backend_create(&config,&runtime.backend);
     if(result==VK_SUCCESS) result=ch_vk_backend_attach(runtime.backend);
@@ -489,6 +505,7 @@ fail:
 
 void ch_vk_runtime_stop(void)
 {
+    ch_vk_target_recipes_stop();
     ch_vk_backend_destroy(runtime.backend);
     save_pipeline_cache();
     if(runtime.pipeline_cache) vkDestroyPipelineCache(runtime.cache_device,runtime.pipeline_cache,NULL);

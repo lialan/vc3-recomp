@@ -102,18 +102,18 @@ static int vk_imm_view(void *context,Vc3VrView *view)
  * to 1280x960) after them */
 #define VK_EYE_MAX 2560
 #define VK_BRIDGE_CAPACITY ((VkDeviceSize)2*VK_EYE_MAX*VK_EYE_MAX*4+(VkDeviceSize)1280*960*4)
-/* Each eye's picture: 32/27 (~1.19) times the size the headset recommends
- * each way -- 2048 on the Steam Frame (recommends 1728, panels 2160). 2048
- * kept every combat and E.S. frame on its vblank in three runs; 2160
- * missed ~1 in 450 (uncapped E.S. p99 16.1 ms), 2560 does not fit.
- * VC3_IMM_EYE=n draws n x n instead. */
+/* Each eye's picture: the size the headset recommends (1728 on the Steam
+ * Frame). 2048 kept every frame on its vblank with SteamVR's compositor
+ * idle, but with the headset on (the compositor working at 120 Hz) only
+ * 71% of game frames were shown exactly twice against 83% at 1728.
+ * VC3_IMM_EYE=n draws n x n instead (up to VK_EYE_MAX). */
 static void vk_imm_eye_size(uint32_t *w,uint32_t *h)
 {
     const char *e=ch_env("IMM_EYE");
     int n=e?atoi(e):0;
     if(n>=256 && n<=VK_EYE_MAX) {*w=*h=(uint32_t)n;return;}
     uint32_t nw=s_native_w>=256?s_native_w:1440,nh=s_native_h>=256?s_native_h:nw;
-    *w=(nw*32/27+8)/16*16;*h=(nh*32/27+8)/16*16;
+    *w=nw;*h=nh;
     if(*w>VK_EYE_MAX) *w=VK_EYE_MAX;
     if(*h>VK_EYE_MAX) *h=VK_EYE_MAX;
 }
@@ -403,6 +403,65 @@ static ChVkTarget *s_vk_hud_target;
 static ChVkTexture *s_vk_hud_tex;
 static uint32_t s_vk_hud_w,s_vk_hud_h;
 static int s_vk_hud_valid;
+/* VC3_XR_LOOP_LOG: where the headset loop's work goes (summed, us) */
+static uint64_t s_vk_seg[12];   /* world, clear, HUD, gun, swapchain copy, settle; world: acquire, copy, HUD import, HUD refresh; overlay: acquire, copy */
+#define SEG(i,stmt) do {uint64_t seg_t=pace_now_us();stmt;s_vk_seg[i]+=pace_now_us()-seg_t;} while(0)
+/* The headset loop's own GPU work (the world and HUD copies, the overlay
+ * exports): recorded into a ring of command buffers, submitted to the
+ * session's queue and never waited for there -- SteamVR gates that queue
+ * once a display frame, so each wait cost up to one (8-27 ms a loop with
+ * the headset on: SteamVR throttled the loop down to 20 Hz). A fence is
+ * waited for only when its command buffer comes round again (long done),
+ * and the world copy's before its source goes back to the game. */
+#define VK_HOST_CMDS 8
+static struct {
+    VkCommandPool pool;VkCommandBuffer cmd[VK_HOST_CMDS];VkFence fence[VK_HOST_CMDS];
+    int busy[VK_HOST_CMDS];unsigned next;int world;   /* world: the last world copy's slot, -1 none */
+} s_vk_host={.world=-1};
+static void vk_host_wait(unsigned i)
+{
+    if(!s_vk_host.busy[i]) return;
+    vk_check(vkWaitForFences(s_vk.device,1,&s_vk_host.fence[i],VK_TRUE,5000000000ULL),"host command wait");
+    s_vk_host.busy[i]=0;
+}
+static VkCommandBuffer vk_host_begin(void)
+{
+    if(!s_vk_host.pool) {
+        VkCommandPoolCreateInfo pi={.sType=VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
+            .flags=VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT,.queueFamilyIndex=s_vk.family};
+        vk_check(vkCreateCommandPool(s_vk.device,&pi,NULL,&s_vk_host.pool),"host command pool");
+        VkCommandBufferAllocateInfo ai={.sType=VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+            .commandPool=s_vk_host.pool,.level=VK_COMMAND_BUFFER_LEVEL_PRIMARY,.commandBufferCount=VK_HOST_CMDS};
+        vk_check(vkAllocateCommandBuffers(s_vk.device,&ai,s_vk_host.cmd),"host command buffers");
+        for(unsigned i=0;i<VK_HOST_CMDS;i++) {
+            VkFenceCreateInfo fi={.sType=VK_STRUCTURE_TYPE_FENCE_CREATE_INFO};
+            vk_check(vkCreateFence(s_vk.device,&fi,NULL,&s_vk_host.fence[i]),"host command fence");
+        }
+    }
+    unsigned i=s_vk_host.next%VK_HOST_CMDS;
+    vk_host_wait(i);
+    vk_check(vkResetFences(s_vk.device,1,&s_vk_host.fence[i]),"host fence reset");
+    vk_check(vkResetCommandBuffer(s_vk_host.cmd[i],0),"host command reset");
+    VkCommandBufferBeginInfo begin={.sType=VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+        .flags=VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT};
+    vk_check(vkBeginCommandBuffer(s_vk_host.cmd[i],&begin),"host command begin");
+    return s_vk_host.cmd[i];
+}
+static unsigned vk_host_submit(void)
+{
+    unsigned i=s_vk_host.next%VK_HOST_CMDS;
+    vk_check(vkEndCommandBuffer(s_vk_host.cmd[i]),"host command end");
+    VkSubmitInfo submit={.sType=VK_STRUCTURE_TYPE_SUBMIT_INFO,.commandBufferCount=1,.pCommandBuffers=&s_vk_host.cmd[i]};
+    vk_check(vkQueueSubmit(s_vk.queue,1,&submit,s_vk_host.fence[i]),"host command submit");
+    s_vk_host.busy[i]=1;s_vk_host.next++;
+    return i;
+}
+/* Before take_frame can give a shared buffer back to the game. */
+static void vk_host_world_settle(void)
+{
+    if(s_vk_host.world>=0) vk_host_wait((unsigned)s_vk_host.world);
+    s_vk_host.world=-1;
+}
 /* A new immersive frame into the world swapchain and the HUD texture;
  * returns whether anything changed. */
 static int vk_world_update(const Frame *f)
@@ -418,10 +477,10 @@ static int vk_world_update(const Frame *f)
     }
     if(s_vk_world_sequence==f->gpu.sequence) return 0;
     uint32_t index;VkImage image;
-    vk_xr_check(ch_vk_xr_swapchain_wait(s_vk_world,XR_INFINITE_DURATION,&index,&image),"world acquire");
-    vk_xr_check(ch_vk_xr_swapchain_buffer_release(s_vk_world,s_vk.queue,s_vk.family,
-        s_vk_bridge.xr_buffer[f->gpu.slot],w,h,&result),"world copy");
-    vk_check(result,"world copy completion");
+    (void)result;
+    SEG(6,vk_xr_check(ch_vk_xr_swapchain_wait(s_vk_world,XR_INFINITE_DURATION,&index,&image),"world acquire"));
+    VkCommandBuffer cmd=vk_host_begin();
+    SEG(7,vk_xr_check(ch_vk_xr_swapchain_record_buffer(s_vk_world,cmd,s_vk_bridge.xr_buffer[f->gpu.slot]),"world copy"));
     s_vk_hud_valid=f->gpu.imm.hud;
     if(s_vk_hud_valid) {
         const uint32_t hw=f->gpu.surface.width,hh=f->gpu.surface.height;
@@ -437,10 +496,11 @@ static int vk_world_update(const Frame *f)
             vk_check(ch_vk_texture_set_sampler(s_vk_hud_tex,&linear),"HUD sampler");
             s_vk_hud_w=hw;s_vk_hud_h=hh;
         }
-        vk_check(ch_vk_target_import_buffer_at(s_vk_hud_target,s_vk_bridge.xr_buffer[f->gpu.slot],
-            f->gpu.hud_offset,s_vk_bridge.capacity),"HUD import");
-        vk_check(ch_vk_target_refresh_texture(s_vk_hud_target,s_vk_hud_tex),"HUD refresh");
+        SEG(8,vk_check(ch_vk_texture_record_from_buffer(s_vk_hud_tex,cmd,s_vk_bridge.xr_buffer[f->gpu.slot],
+            f->gpu.hud_offset),"HUD copy"));
     }
+    s_vk_host.world=(int)vk_host_submit();
+    SEG(9,vk_xr_check(ch_vk_xr_swapchain_release_submitted(s_vk_world),"world release"));
     s_vk_world_sequence=f->gpu.sequence;
     return 1;
 }
@@ -572,7 +632,7 @@ static unsigned vk_present(const Frame *f,const XrCompositionLayerBaseHeader **l
     int screen_new=0;
     const int imm=f && f->vr.imm;
     if(imm) {
-        screen_new=vk_world_update(f);
+        SEG(0,screen_new=vk_world_update(f));
         const XrCompositionLayerBaseHeader *world=vk_world_layer(f);
         if(world) layers[count++]=world;
     } else if(f && vk_screen_in_eyes()) screen_new=vk_screen_update(f);
@@ -614,6 +674,7 @@ static unsigned vk_present(const Frame *f,const XrCompositionLayerBaseHeader **l
      * red and the right eye's blue; SWAP_EYES draws each eye's overlay from
      * the other view (the image still goes to the same layer slot). */
     if(overlay_want && !overlay_reuse) {
+        VkCommandBuffer ocmd=VK_NULL_HANDLE;int recorded[2]={0,0};
         for(unsigned e=0;e<2;e++) {
             const XrView *v=&s_views[swap_eyes?1-e:e];
             float vp[16],eye[3]={v->pose.position.x,v->pose.position.y,v->pose.position.z};
@@ -621,18 +682,36 @@ static unsigned vk_present(const Frame *f,const XrCompositionLayerBaseHeader **l
             size_t bytes=(size_t)s_vk_eye[e].w*s_vk_eye[e].h*4;
             static const float transparent[4]={0,0,0,0},tint[2][4]={{.35f,0,0,.35f},{0,0,.35f,.35f}};
             eye_viewproj(v,vp);
-            vk_check(ch_vk_target_clear_read(s_vk_eye[e].target,eye_test?tint[e]:transparent,s_vk_eye[e].pixels,bytes),"overlay clear");
+            /* the first clear initialises the target (synchronous); then
+             * clears join the batch, not waited for */
+            static int cleared[2];
+            if(!cleared[e]) {
+                vk_check(ch_vk_target_clear_read(s_vk_eye[e].target,transparent,s_vk_eye[e].pixels,bytes),"overlay first clear");
+                cleared[e]=1;
+            }
+            SEG(1,vk_check(ch_vk_target_clear_aspects_read(s_vk_eye[e].target,1,eye_test?tint[e]:transparent,0,0,s_vk_eye[e].pixels,bytes),"overlay clear"));
             if(screen) vk_screen_draw(s_vk_eye[e].target,vp,s_vk_eye[e].pixels,bytes);
-            if(hud_shown) vk_hud_draw(f,s_vk_eye[e].target,vp,s_vk_eye[e].pixels,bytes);
-            if(s_qo.gun_valid) vk_check(ch_vk_overlay_read(s_vk_eye[e].target,&s_qo,vp,eye,qo_sight_height(s_vr.sight),
-                s_vk_eye[e].pixels,bytes),"overlay draw");
-            vk_xr_check(ch_vk_xr_swapchain_wait(s_vk_eye[e].chain,XR_INFINITE_DURATION,&index,&image),"overlay acquire");
-            vk_xr_check(ch_vk_xr_swapchain_copy_release(s_vk_eye[e].chain,s_vk_eye[e].target,NULL,0,&result),"overlay copy");
-            vk_check(result,"overlay copy completion");
+            if(hud_shown) SEG(2,vk_hud_draw(f,s_vk_eye[e].target,vp,s_vk_eye[e].pixels,bytes));
+            if(s_qo.gun_valid) SEG(3,vk_check(ch_vk_overlay_read(s_vk_eye[e].target,&s_qo,vp,eye,qo_sight_height(s_vr.sight),
+                s_vk_eye[e].pixels,bytes),"overlay draw"));
+            SEG(10,vk_xr_check(ch_vk_xr_swapchain_wait(s_vk_eye[e].chain,XR_INFINITE_DURATION,&index,&image),"overlay acquire"));
+            if(!ocmd) ocmd=vk_host_begin();
+            VkResult exported;
+            SEG(11,exported=ch_vk_target_record_export(s_vk_eye[e].target,ocmd,image));
+            if(exported==VK_SUCCESS) recorded[e]=1;
+            else if(exported==VK_NOT_READY) {   /* the waiting export */
+                vk_xr_check(ch_vk_xr_swapchain_copy_release(s_vk_eye[e].chain,s_vk_eye[e].target,NULL,0,&result),"overlay copy");
+                vk_check(result,"overlay copy completion");
+            } else vk_check(exported,"overlay export");
             s_vk_overlay_views[e]=(XrCompositionLayerProjectionView){
                 .type=XR_TYPE_COMPOSITION_LAYER_PROJECTION_VIEW,.pose=v->pose,.fov=v->fov,
                 .subImage={.swapchain=ch_vk_xr_swapchain_handle(s_vk_eye[e].chain),
                     .imageRect={.extent={(int32_t)s_vk_eye[e].w,(int32_t)s_vk_eye[e].h}}}};
+        }
+        if(ocmd) {
+            vk_host_submit();
+            for(unsigned e=0;e<2;e++) if(recorded[e])
+                vk_xr_check(ch_vk_xr_swapchain_release_submitted(s_vk_eye[e].chain),"overlay release");
         }
         s_vk_overlay_layer=(XrCompositionLayerProjection){.type=XR_TYPE_COMPOSITION_LAYER_PROJECTION,
             .layerFlags=XR_COMPOSITION_LAYER_BLEND_TEXTURE_SOURCE_ALPHA_BIT,.space=s_local,

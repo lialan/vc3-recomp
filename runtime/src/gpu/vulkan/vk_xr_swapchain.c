@@ -13,6 +13,7 @@ struct ChVkXrSwapchain {
     PFN_xrReleaseSwapchainImage release;
     /* buffer copies (ch_vk_xr_swapchain_buffer_release), made on first use */
     VkCommandPool pool; VkCommandBuffer command; VkFence fence;
+    int copy_pending;   /* a buffer copy submitted, not yet waited for */
 };
 XrSwapchain ch_vk_xr_swapchain_handle(const ChVkXrSwapchain *s) {
     return s?s->handle:XR_NULL_HANDLE;
@@ -138,7 +139,20 @@ XrResult ch_vk_xr_swapchain_copy_release(ChVkXrSwapchain *s,ChVkTarget *t,
 }
 
 /* The waited image filled from a buffer of packed RGBA8 rows (the bridge from
- * the game's own device), then released. Complete on return. */
+ * the game's own device), then released -- submitted, not waited for:
+ * OpenXR only needs the work submitted to the session's queue before the
+ * release, and SteamVR gates that queue once a display frame, so waiting
+ * cost up to a display frame each time (the loop ran late; SteamVR
+ * throttled it down to 20 Hz). The previous copy is waited for before its
+ * command buffer is reused (ch_vk_xr_swapchain_settle: before its source
+ * goes back to the game). */
+XrResult ch_vk_xr_swapchain_settle(ChVkXrSwapchain *s) {
+    if(!s || !s->copy_pending) return XR_SUCCESS;
+    VkResult r=vkWaitForFences(s->device,1,&s->fence,VK_TRUE,5000000000ULL);
+    s->copy_pending=0;
+    if(r!=VK_SUCCESS) {s->failed=1;return XR_ERROR_GRAPHICS_DEVICE_INVALID;}
+    return XR_SUCCESS;
+}
 XrResult ch_vk_xr_swapchain_buffer_release(ChVkXrSwapchain *s,VkQueue queue,uint32_t family,
     VkBuffer buffer,uint32_t width,uint32_t height,VkResult *vk_result) {
     if(s && !width && !height) {width=s->width;height=s->height;}   /* 0x0: the swapchain's own */
@@ -156,6 +170,7 @@ XrResult ch_vk_xr_swapchain_buffer_release(ChVkXrSwapchain *s,VkQueue queue,uint
         if(r==VK_SUCCESS) r=vkCreateFence(s->device,&fi,NULL,&s->fence);
         if(r!=VK_SUCCESS) goto fail;
     }
+    if(XR_FAILED(ch_vk_xr_swapchain_settle(s))) {r=VK_ERROR_DEVICE_LOST;goto fail;}
     VkImage image=s->images[s->index].image;
     if((r=vkResetCommandBuffer(s->command,0))!=VK_SUCCESS || (r=vkResetFences(s->device,1,&s->fence))!=VK_SUCCESS) goto fail;
     VkCommandBufferBeginInfo begin={.sType=VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
@@ -175,10 +190,41 @@ XrResult ch_vk_xr_swapchain_buffer_release(ChVkXrSwapchain *s,VkQueue queue,uint
     if((r=vkEndCommandBuffer(s->command))!=VK_SUCCESS) goto fail;
     VkSubmitInfo submit={.sType=VK_STRUCTURE_TYPE_SUBMIT_INFO,.commandBufferCount=1,.pCommandBuffers=&s->command};
     if((r=vkQueueSubmit(queue,1,&submit,s->fence))!=VK_SUCCESS) goto fail;
-    if((r=vkWaitForFences(s->device,1,&s->fence,VK_TRUE,5000000000ULL))!=VK_SUCCESS) goto fail;
-    return ch_vk_xr_swapchain_release(s,s->fence,vk_result);
+    s->copy_pending=1;
+    {
+        XrSwapchainImageReleaseInfo release={.type=XR_TYPE_SWAPCHAIN_IMAGE_RELEASE_INFO};
+        XrResult xr=s->release(s->handle,&release);
+        if(xr==XR_SUCCESS) {s->acquired=0;s->waited=0;}
+        *vk_result=VK_SUCCESS;
+        return xr;
+    }
 fail:
     *vk_result=r;s->failed=1;return XR_ERROR_GRAPHICS_DEVICE_INVALID;
+}
+XrResult ch_vk_xr_swapchain_record_buffer(ChVkXrSwapchain *s,VkCommandBuffer command,VkBuffer buffer) {
+    if(!s || !command || !buffer) return XR_ERROR_VALIDATION_FAILURE;
+    if(!s->waited || s->failed) return XR_ERROR_CALL_ORDER_INVALID;
+    VkImage image=s->images[s->index].image;
+    VkImageMemoryBarrier barrier={.sType=VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+        .dstAccessMask=VK_ACCESS_TRANSFER_WRITE_BIT,.oldLayout=VK_IMAGE_LAYOUT_UNDEFINED,
+        .newLayout=VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,.srcQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED,
+        .dstQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED,.image=image,.subresourceRange={VK_IMAGE_ASPECT_COLOR_BIT,0,1,0,1}};
+    vkCmdPipelineBarrier(command,VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,VK_PIPELINE_STAGE_TRANSFER_BIT,0,0,NULL,0,NULL,1,&barrier);
+    VkBufferImageCopy copy={.imageSubresource={VK_IMAGE_ASPECT_COLOR_BIT,0,0,1},.imageExtent={s->width,s->height,1}};
+    vkCmdCopyBufferToImage(command,buffer,image,VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,1,&copy);
+    barrier.srcAccessMask=VK_ACCESS_TRANSFER_WRITE_BIT;
+    barrier.dstAccessMask=VK_ACCESS_COLOR_ATTACHMENT_READ_BIT|VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+    barrier.oldLayout=VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;barrier.newLayout=VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    vkCmdPipelineBarrier(command,VK_PIPELINE_STAGE_TRANSFER_BIT,VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT,0,0,NULL,0,NULL,1,&barrier);
+    return XR_SUCCESS;
+}
+XrResult ch_vk_xr_swapchain_release_submitted(ChVkXrSwapchain *s) {
+    if(!s) return XR_ERROR_VALIDATION_FAILURE;
+    if(!s->waited || s->failed) return XR_ERROR_CALL_ORDER_INVALID;
+    XrSwapchainImageReleaseInfo release={.type=XR_TYPE_SWAPCHAIN_IMAGE_RELEASE_INFO};
+    XrResult r=s->release(s->handle,&release);
+    if(r==XR_SUCCESS) {s->acquired=0;s->waited=0;}
+    return r;
 }
 XrResult ch_vk_xr_swapchain_texture_release(ChVkXrSwapchain *s,ChVkTexture *texture,VkResult *vk_result) {
     if(!s || !texture || !vk_result) return XR_ERROR_VALIDATION_FAILURE;
