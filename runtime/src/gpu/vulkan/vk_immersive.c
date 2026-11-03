@@ -490,6 +490,31 @@ VkResult ch_vk_immersive_flip(ChVkImmersive *m,uint32_t presented,const Vc3VrVie
         out->scale=k_levels[m->level];
         out->hud=m->hud_used;
         *eyes_out=src->eyes;*hud_out=m->hud_used?m->hud:NULL;
+        if(m->log) {   /* a frame with no HUD drops the HUD layer: where its 2D went */
+            static unsigned with,without,shown_lines;
+            if(m->hud_used) with++; else without++;
+            if(!m->hud_used && shown_lines<40) {
+                shown_lines++;
+                fprintf(stderr,"[immersive no hud] frame %llu (with %u, without %u) presented %08X:",
+                    (unsigned long long)m->frames,with,without,presented);
+                for(unsigned i=0;i<m->count;i++) {
+                    const struct ImmSurface *f=&m->surfaces[i];
+                    fprintf(stderr," %08X%s 3D %u flat %u hud %u full %u comp %u;",f->va,
+                        f->va==presented?"*":shown(m,f->va)?"+":"",f->world,f->flat,f->hud,f->full,f->composite);
+                }
+                fputc('\n',stderr);
+            }
+            if(m->frames%600==0) fprintf(stderr,"[immersive hud frames] with %u without %u\n",with,without);
+            static float pk[4];static unsigned changes,change_lines;
+            const float nk[4]={out->projection.kx,out->projection.ky,out->projection.cx,out->projection.cy};
+            int moved=0;for(int k=0;k<4;k++) if(fabsf(nk[k]-pk[k])>.005f*fmaxf(fabsf(pk[k]),1.f)) moved=1;
+            if(moved) {
+                changes++;
+                if(change_lines++<80) fprintf(stderr,"[immersive proj] frame %llu (%u changes) kx %.1f->%.1f ky %.1f->%.1f cx %.1f->%.1f cy %.1f->%.1f scene %08X src %08X\n",
+                    (unsigned long long)m->frames,changes,pk[0],nk[0],pk[1],nk[1],pk[2],nk[2],pk[3],nk[3],scene?scene->va:0,src->va);
+                memcpy(pk,nk,sizeof pk);
+            }
+        }
     }
     {   /* every switch between the eyes and the screen, and why */
         static int was=-1;
