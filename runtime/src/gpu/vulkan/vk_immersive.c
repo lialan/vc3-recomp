@@ -23,6 +23,7 @@ struct ChVkImmersive {
     struct {float k;uint32_t n;} zoom[ZOOM_SLOTS]; float kbase;
     /* per-batch projection cache: identical matrices, identical projection */
     Nv2aFixedState last_ff; float last_aa[2]; int last_valid,last_ok; VrGameProj last;
+    int zoom_normalise;   /* CHIHIRO_VULKAN_IMMERSIVE_ZOOM=1: the OpenGL renderer's zoom_proj */
     int log; uint64_t frames,world_batches,hud_batches,flat_batches,skipped_batches;
 };
 static int screen_shaped(const Nv2aSurface *s) {
@@ -118,7 +119,12 @@ VkResult ch_vk_immersive_create(const ChVkImmersiveConfig *config,ChVkImmersive 
     m->config=*config;
     if(!m->config.batch_limit) m->config.batch_limit=256;
     const char *e=getenv("CHIHIRO_VULKAN_IMMERSIVE_LOG");
-    m->log=e && atoi(e);
+    m->log=e?atoi(e):0;
+    /* Off by default: the game's own projection recovers each vertex where
+     * it is, so a game zoom changes nothing in the headset; normalising it
+     * scaled the world when the game zoomed. */
+    e=getenv("CHIHIRO_VULKAN_IMMERSIVE_ZOOM");
+    m->zoom_normalise=e && atoi(e)==1;
     *out=m; return VK_SUCCESS;
 }
 void ch_vk_immersive_destroy(ChVkImmersive *m) {
@@ -139,12 +145,12 @@ VkResult ch_vk_immersive_clear(ChVkImmersive *m,const Nv2aSurface *s,const Nv2aR
     f->drawn++;
     return ch_vk_nv2a_clear_read(f->eyes,&extent,flags,argb,zs,f->pixels,(size_t)extent.width*extent.height*4);
 }
-/* The game's projection as the eyes use it: the baseline (most used) focal
- * length, this one's centre and aspect, so a zoom does not shrink the world
- * (the OpenGL renderer's zoom_proj). */
+/* The game's projection as the eyes use it; with zoom_normalise, the
+ * baseline (most used) focal length, this one's centre and aspect (the
+ * OpenGL renderer's zoom_proj). */
 static VrGameProj zoomed(const ChVkImmersive *m,const VrGameProj *g) {
     VrGameProj o=*g;
-    if(m->kbase>0 && fabsf(g->kx)>1) {float z=m->kbase/fabsf(g->kx);o.kx*=z;o.ky*=z;}
+    if(m->zoom_normalise && m->kbase>0 && fabsf(g->kx)>1) {float z=m->kbase/fabsf(g->kx);o.kx*=z;o.ky*=z;}
     return o;
 }
 static void zoom_note(ChVkImmersive *m,float kx) {
@@ -201,6 +207,25 @@ VkResult ch_vk_immersive_draw(ChVkImmersive *m,const Nv2aSurface *s,const Nv2aBa
     if(is3d) {
         if(!f) f=find(m,s);
         if(f) f->world++;
+    }
+    if(is3d && m->log>1 && b->raw && b->raw->kind==NV2A_RAW_FIXED && b->raw->ff && m->frames%60==0) {
+        const float *mv=b->raw->ff->mv[0];
+        static uint64_t lf;static unsigned nl;
+        if(lf!=m->frames) {lf=m->frames;nl=0;}
+        if(nl++<3) {   /* the camera: -R^T t (row-major, column vectors) */
+            float c[3];
+            for(int k=0;k<3;k++) c[k]=-(mv[k]*mv[3]+mv[4+k]*mv[7]+mv[8+k]*mv[11]);
+            fprintf(stderr,"[immersive camera] frame %llu at %.2f %.2f %.2f up-row %.2f %.2f %.2f\n",
+                (unsigned long long)m->frames,c[0],c[1],c[2],mv[4],mv[5],mv[6]);
+        }
+    } else if(is3d && m->log>1 && b->raw && b->raw->kind!=NV2A_RAW_FIXED && m->frames%10==0) {
+        static uint64_t lp;static unsigned np;
+        if(lp!=m->frames) {lp=m->frames;np=0;}
+        Nv2aRawExtent e;
+        if(b->raw->w0>1 && b->raw->extent && b->raw->extent(b->raw,&e) && m->projection_ok)
+            fprintf(stderr,"[immersive height] w %.2f extent %.0f x %.0f px: %.2f x %.2f units\n",b->raw->w0,e.x1-e.x0,e.y1-e.y0,
+                (e.x1-e.x0)*b->raw->w0/fabsf(m->projection.kx),(e.y1-e.y0)*b->raw->w0/fabsf(m->projection.ky));
+        (void)np;
     }
     if(!m->on) return VK_SUCCESS;
     if(!fixed) {m->skipped_batches++;return VK_SUCCESS;}

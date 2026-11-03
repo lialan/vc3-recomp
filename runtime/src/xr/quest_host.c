@@ -1553,6 +1553,20 @@ static void view_publish(void)
     pthread_mutex_unlock(&s_view_lock);
 }
 
+/* The game's CPU culling while immersive (games/vc3/src/vr_cull.c): wide
+ * enough for the head to turn. VC3_IMM_CULL_FOV: the vertical angle, degrees. */
+extern float vc3_vr_cull_half_angle;
+static void imm_cull(int on)
+{
+    static float half = -1;
+    if (half < 0) {
+        const char *e = ch_env("IMM_CULL_FOV");
+        float d = e ? (float)atof(e) : 140.0f;
+        half = d >= 10.0f && d <= 175.0f ? d * 0.5f * 3.14159265f / 180.0f : 0.0f;
+    }
+    vc3_vr_cull_half_angle = on ? half : 0.0f;
+}
+
 int vc3_vr_view_latch(Vc3VrView *v)
 {
     XrView views[2];
@@ -1568,6 +1582,7 @@ int vc3_vr_view_latch(Vc3VrView *v)
         v->id = s_pub_id;
     }
     pthread_mutex_unlock(&s_view_lock);
+    imm_cull(ok);
     if (!ok)
         return v->on = 0;
     qa_inv[0] = 0;

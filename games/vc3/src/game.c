@@ -91,7 +91,7 @@ static const ChihiroProfile k_vc3 = {
         .lazy_rt = 1,                   /* the scene copies into 80C28000, sampled only in E.S. mode */
         .stereo_depth = 8.0f,           /* clip w: about metres */
         .stereo_sep = 0.04f,
-        .units_per_m = 1.0f,
+        .units_per_m = 1.6f,   /* the camera stands 2.44 units up: ~1.6 per metre */
         .buffers = 4,                   /* triple buffered, and one spare */
         .zoom_tolerance = 0.5f,
         /* E.S. mode: 63 distortion layers; on a Quest 3 at native only a

@@ -82,6 +82,12 @@ void sub_0010CAC0(void) { vc3_d3d_block_on_time(); } /* D3D_BlockOnTime */
 extern void vc3_idle_thread(void);
 void sub_000BA050(void) { vc3_idle_thread(); }      /* idle loop thread */
 
+/* The CPU culling frustum's builder, widened while immersive (vr_cull.c);
+ * the generated body runs as sub_000373B0_gen. */
+extern void sub_000373B0_gen(void);
+extern void vc3_cull_frustum_build(void (*generated)(void));
+void sub_000373B0(void) { vc3_cull_frustum_build(sub_000373B0_gen); }
+
 /* ── Manual function overrides ─────────────────────────────── */
 
 /*
