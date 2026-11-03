@@ -2640,6 +2640,7 @@ static void xrgt_end(void)
 /* VC3_XR_LOOP_LOG=1: once a second, this loop's rate, the time it spent
  * blocked in xrWaitFrame, and its work from there to xrEndFrame -- the
  * runtime throttles an app whose frames come late. */
+static uint64_t s_lt_sleep, s_lt_sleeps, s_lt_begin, s_lt_end, s_lt_period, s_lt_step, s_lt_steps, s_lt_step_max;
 static void xr_loop_note(uint64_t t0, uint64_t t1, int render)
 {
     static int on = -1;
@@ -2675,6 +2676,10 @@ static void xr_loop_note(uint64_t t0, uint64_t t1, int render)
                 s_vk_seg[9] / 1000.0 / n, s_vk_seg[10] / 1000.0 / n, s_vk_seg[11] / 1000.0 / n);
         memset(s_vk_seg, 0, sizeof s_vk_seg);
 #endif
+        fprintf(stderr, "[xr loop]   self-pace sleeps %llu (%.2f ms a loop), begin %.2f ms, end %.2f ms a loop; period %.2f ms, display step avg %.2f max %.2f ms\n",
+                (unsigned long long)s_lt_sleeps, s_lt_sleep / 1000.0 / n, s_lt_begin / 1000.0 / n, s_lt_end / 1000.0 / n,
+                s_lt_period / 1e6, s_lt_steps ? s_lt_step / 1e6 / s_lt_steps : 0.0, s_lt_step_max / 1e6);
+        s_lt_sleep = s_lt_sleeps = s_lt_begin = s_lt_end = s_lt_step = s_lt_steps = s_lt_step_max = 0;
         last = now;
         n = rendered = wait_sum = wait_max = work_sum = work_max = gap_max = 0;
     }
@@ -2703,26 +2708,56 @@ static void xr_frame(void)
     uint64_t loop_t1 = pace_now_us();
     {
         /* xrWaitFrame paces this loop to the display -- except when the
-         * runtime stops blocking (SteamVR with the headset off or asleep:
-         * ~400 loops a second), which drew the overlay for nothing, took
-         * CPU and GPU from the game, and broke the two-frames-per-game-frame
-         * cadence below. Then the loop paces itself to the display period. */
+         * runtime stops blocking (seen with SteamVR and the headset off or
+         * asleep: ~400 loops a second), which drew the overlay for nothing
+         * and took CPU and GPU from the game. Then the loop paces itself to
+         * the display period -- but only once the runtime has clearly
+         * stopped pacing (16 loops in a row under half a period), and not a
+         * moment longer than it blocks again. Sleeping whenever one
+         * xrWaitFrame came back early (as SteamVR may) started that frame
+         * late; SteamVR saw a missed frame, throttled the app to 60, then
+         * the sleep (on this loop's clock, not the runtime's) kept every
+         * frame late: 40, 30, 24 Hz, back to 120 and down again every ~20 s
+         * in play, 3/4 of frames reprojected. VC3_XR_SELF_PACE=0: never. */
         static uint64_t last_us;
-        static int logged;
+        static int self_pace = -1, engaged, fast;
         uint64_t period_us = fs.predictedDisplayPeriod > 0 ? (uint64_t)fs.predictedDisplayPeriod / 1000u : 8333u;
         uint64_t now = pace_now_us();
-        if (last_us && now > last_us && now - last_us < period_us * 3 / 4) {
+        if (self_pace < 0)
+            self_pace = !(ch_env("XR_SELF_PACE") && *ch_env("XR_SELF_PACE") == '0');
+        {
+            static XrTime prev_disp;
+            s_lt_period = (uint64_t)fs.predictedDisplayPeriod;
+            if (prev_disp && fs.predictedDisplayTime > prev_disp) {
+                uint64_t st = (uint64_t)(fs.predictedDisplayTime - prev_disp);
+                s_lt_step += st; s_lt_steps++;
+                if (st > s_lt_step_max) s_lt_step_max = st;
+            }
+            prev_disp = fs.predictedDisplayTime;
+        }
+        if (self_pace && !engaged) {
+            fast = last_us && now > last_us && now - last_us < period_us / 2 ? fast + 1 : 0;
+            if (fast >= 16) {
+                engaged = 1;
+                fprintf(stderr, "[xr] the runtime is not pacing frames: paced to %.2f ms here\n", period_us / 1000.0);
+            }
+        } else if (engaged && loop_t1 - loop_t0 > 1000) {
+            engaged = fast = 0;   /* xrWaitFrame blocks again: the runtime paces */
+            fprintf(stderr, "[xr] the runtime paces frames again\n");
+        }
+        if (engaged && last_us && now > last_us && now - last_us < period_us * 3 / 4) {
             uint64_t wait = last_us + period_us - now;
+            s_lt_sleeps++; s_lt_sleep += wait;
             struct timespec ts = { (time_t)(wait / 1000000u), (long)(wait % 1000000u) * 1000L };
             nanosleep(&ts, NULL);
-            if (!logged++)
-                fprintf(stderr, "[xr] the runtime is not pacing frames: paced to %.2f ms here\n", period_us / 1000.0);
             now = pace_now_us();
         }
         last_us = now;
     }
+    uint64_t bt0 = pace_now_us();
     if (XR_FAILED(xrBeginFrame(s_sess, &bi)))
         return;
+    s_lt_begin += pace_now_us() - bt0;
     {
         /* The display's cadence: at 120 Hz a game frame every second
          * display frame, so each is shown exactly twice, and the game's
@@ -2962,7 +2997,9 @@ static void xr_frame(void)
     xrgt_end();
 #endif
 #ifdef CHIHIRO_RENDERER_VULKAN
+    uint64_t et0 = pace_now_us();
     vk_xr_check(xrEndFrame(s_sess, &ei),"end frame");
+    s_lt_end += pace_now_us() - et0;
     static int first_layer;
     if(nl && !first_layer) {
         fprintf(stderr,"[xr] native Vulkan first layer submitted: %u layers, guest sequence %llu\n",

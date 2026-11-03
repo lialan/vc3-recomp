@@ -175,9 +175,34 @@ static void vk_split_init(VkDevice *device,VkQueue *queue)
     const char *ext[4]={VK_KHR_EXTERNAL_MEMORY_FD_EXTENSION_NAME};uint32_t ext_count=1;
     ChVkShaderFeatures shader_features;
     if(!ch_vk_shader_features(s_vk.physical,&shader_features,ext,&ext_count,4)) s_vk.raw_fixed=0;
+    /* VC3_XR_GAME_PRIORITY=low|medium|high: the game queue's system-wide
+     * priority (VK_EXT_global_priority), so the headset's per-display-frame
+     * work can be scheduled ahead of the game's rendering. */
+    VkDeviceQueueGlobalPriorityCreateInfoEXT gp={.sType=VK_STRUCTURE_TYPE_DEVICE_QUEUE_GLOBAL_PRIORITY_CREATE_INFO_EXT};
+    {
+        const char *lv=ch_env("XR_GAME_PRIORITY");
+        if(lv && !strcmp(lv,"low")) gp.globalPriority=VK_QUEUE_GLOBAL_PRIORITY_LOW_EXT;
+        else if(lv && !strcmp(lv,"medium")) gp.globalPriority=VK_QUEUE_GLOBAL_PRIORITY_MEDIUM_EXT;
+        else if(lv && !strcmp(lv,"high")) gp.globalPriority=VK_QUEUE_GLOBAL_PRIORITY_HIGH_EXT;
+        if(gp.globalPriority) {
+            uint32_t n=0;int have=0;vkEnumerateDeviceExtensionProperties(s_vk.physical,NULL,&n,NULL);
+            VkExtensionProperties *p=n?calloc(n,sizeof(*p)):NULL;
+            if(p && vkEnumerateDeviceExtensionProperties(s_vk.physical,NULL,&n,p)==VK_SUCCESS)
+                for(uint32_t i=0;i<n;i++) if(!strcmp(p[i].extensionName,VK_EXT_GLOBAL_PRIORITY_EXTENSION_NAME)) have=1;
+            free(p);
+            if(have) {ext[ext_count++]=VK_EXT_GLOBAL_PRIORITY_EXTENSION_NAME;q.pNext=&gp;}
+            else {fprintf(stderr,"[quest Vulkan] game priority %s: not offered\n",lv);gp.globalPriority=0;}
+        }
+    }
     VkDeviceCreateInfo dc={.sType=VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,.pNext=&shader_features.ubo_layout,.queueCreateInfoCount=1,.pQueueCreateInfos=&q,
         .pEnabledFeatures=&want,.enabledExtensionCount=ext_count,.ppEnabledExtensionNames=ext};
     VkDevice game;VkResult r=vkCreateDevice(s_vk.physical,&dc,NULL,&game);
+    if(r!=VK_SUCCESS && gp.globalPriority) {
+        fprintf(stderr,"[quest Vulkan] game priority refused (%d): the default\n",(int)r);
+        q.pNext=NULL;dc.enabledExtensionCount=--ext_count;gp.globalPriority=0;
+        r=vkCreateDevice(s_vk.physical,&dc,NULL,&game);
+    }
+    if(r==VK_SUCCESS && gp.globalPriority) fprintf(stderr,"[quest Vulkan] game queue priority %s\n",ch_env("XR_GAME_PRIORITY"));
     if(r!=VK_SUCCESS) {fprintf(stderr,"[quest Vulkan] one device: game device %d\n",(int)r);return;}
     r=ch_vk_xr_bridge_create(s_vk.physical,s_vk.device,game,VK_BRIDGE_CAPACITY,&s_vk_bridge);
     if(r!=VK_SUCCESS) {
