@@ -68,13 +68,15 @@ busiest CPU thread ~33% busy. What gets it there:
 - **Only the eyes are drawn** for screen-shaped surfaces in immersive frames
   (`CHIHIRO_VULKAN_IMMERSIVE_SKIP_GUEST=0` draws the guest copy too); effect
   maps made from them sample the eyes.
+- **Eye images sampled in place** (`CHIHIRO_VULKAN_IMMERSIVE_LEND=0`: copied
+  first, up to four 24 MB copies an E.S. frame, ~2.7 ms of GPU).
 - Texture cache sized for eye snapshots; the culling frustum widened to 140
   degrees while immersive (`VC3_IMM_CULL_FOV`); the pipeline cache saved
   every ~10 s when it grew, not only on a clean exit.
 
 Headroom: `RECOMP_VBLANK_HZ=120 VC3_XR_CADENCE=0` runs the game faster than
-real time, as fast as the pipeline allows (native 1728/eye: combat ~98 fps,
-E.S. held ~79, E.S. activation ~70). `bench-light.sh` reports the headset
+real time, as fast as the pipeline allows (native 1728/eye: combat ~101 fps,
+E.S. held ~90, E.S. activation ~83). `bench-light.sh` reports the headset
 side too (`/tmp/takestat.py`: display frames per game frame, 2 at 60 fps).
 
 Diagnostics: `CHIHIRO_VULKAN_IMMERSIVE_LOG=1|2`, `CHIHIRO_VULKAN_IMMERSIVE_DUMP=dir`
