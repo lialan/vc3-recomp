@@ -161,13 +161,13 @@ void ch_vk_vertex_program_loop_init(VkPhysicalDevice physical) {
 #else
     (void)physical;
 #endif
-    if(ch_vk_vertex_program_loop) fprintf(stderr,"[Vulkan] vertex programs interpreted in a loop\n");
+    if(ch_vk_vertex_program_loop) fprintf(stderr,"[Vulkan] vertex programs in compact modules (16/32/64 steps, a loop beyond)\n");
 }
 size_t ch_vk_raw_params_size(const ChVkFixedParams *p) {
     if(!p->program_count) return offsetof(ChVkFixedParams,constants);
-    /* the loop reads the count and the words */
-    return ch_vk_vertex_program_loop?offsetof(ChVkFixedParams,program)+(size_t)p->program_count*16
-                                    :offsetof(ChVkFixedParams,program_count);
+    /* the loop (over 64 instructions) reads the count and the words */
+    return ch_vk_vertex_program_loop && p->program_count>64?offsetof(ChVkFixedParams,program)+(size_t)p->program_count*16
+                                                          :offsetof(ChVkFixedParams,program_count);
 }
 size_t ch_vk_raw_vertex_stride(const ChVkFixedParams *p) {
     return p->program_count?16*4*sizeof(float):sizeof(ChVkFixedVertex);

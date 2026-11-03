@@ -1736,8 +1736,15 @@ static VkResult pipeline_build(VkDevice device,VkPipelineCache cache,VkRenderPas
     VkShaderModuleCreateInfo shader={.sType=VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
         .codeSize=key->fixed?sizeof(color_fixed_spv):sizeof(color_vert_spv),.pCode=key->fixed?color_fixed_spv:color_vert_spv};
     if(key->vertex_count) {
-        shader.codeSize=ch_vk_vertex_program_loop?sizeof(color_program_loop_spv):sizeof(color_program_spv);
-        shader.pCode=ch_vk_vertex_program_loop?color_program_loop_spv:color_program_spv;
+        shader.codeSize=sizeof(color_program_spv);shader.pCode=color_program_spv;
+        if(ch_vk_vertex_program_loop) {
+#define VP_MODULE(name) do {shader.codeSize=sizeof(color_##name##_spv);shader.pCode=color_##name##_spv;} while(0)
+            if(key->vertex_count<=16) VP_MODULE(program_s16);
+            else if(key->vertex_count<=32) VP_MODULE(program_s32);
+            else if(key->vertex_count<=64) VP_MODULE(program_s64);
+            else VP_MODULE(program_loop);
+#undef VP_MODULE
+        }
     }
     TRY(vkCreateShaderModule(device,&shader,NULL,&vert));
 #define FRAGMENT(name) do { \
@@ -2215,8 +2222,8 @@ static VkResult draw_full(ChVkTarget *t, const float rgba[4],
         const char *pipeline_log=getenv("CHIHIRO_VULKAN_PIPELINE_LOG");
         int log_pipeline=pipeline_log && atoi(pipeline_log);
         if(log_pipeline) {
-            fprintf(stderr,"[Vulkan pipeline begin] target=%ux%u shader=%u fixed=%u specialized=%u alpha=%u control=%08x stage_program=%08x cull=%u front=%u key=%016llx\n",
-                t->width,t->height,key.shader,key.fixed,key.specialized,key.alpha_shader,key.program.control,
+            fprintf(stderr,"[Vulkan pipeline begin] target=%ux%u shader=%u fixed=%u vertex_program=%u specialized=%u alpha=%u control=%08x stage_program=%08x cull=%u front=%u key=%016llx\n",
+                t->width,t->height,key.shader,key.fixed,key.vertex_count,key.specialized,key.alpha_shader,key.program.control,
                 rc?rc->stage_program:0,(unsigned)cull,(unsigned)front,(unsigned long long)pipeline_identity(t,&key));
             fflush(stderr);
         }
