@@ -1070,7 +1070,7 @@ static VkResult record_batch(ChVkTarget *t,VkBuffer geometry,VkDeviceSize index_
     VkDeviceSize vertex_offset=t->vertex_offset;
     vkCmdBindVertexBuffers(t->command,0,1,&geometry,&vertex_offset);
     vkCmdBindIndexBuffer(t->command,geometry,index_offset,VK_INDEX_TYPE_UINT16);
-    vkCmdDrawIndexed(t->command,index_count,1,0,0,0);
+    vkCmdDrawIndexed(t->command,index_count,t->fixed && t->fixed->imm_mode?2:1,0,0,0);
     if(t->quantized_depth && t->quantized_depth!=5 && t->active_pipeline->key.depth.depthTestEnable &&
        t->active_pipeline->key.depth.depthWriteEnable) {
         /* Quantization helpers bind their own graphics state/push layout. */
@@ -1185,7 +1185,7 @@ static VkResult render_read(ChVkTarget *t, const float rgba[4], uint32_t clear_f
         vkCmdBindVertexBuffers(t->command,0,1,&geometry,&offset);
         vkCmdBindIndexBuffer(t->command,geometry,index_offset,VK_INDEX_TYPE_UINT16);
         if(t->count_requested) vkCmdBeginQuery(t->command,t->queries,0,VK_QUERY_CONTROL_PRECISE_BIT);
-        vkCmdDrawIndexed(t->command,index_count,1,0,0,0);
+        vkCmdDrawIndexed(t->command,index_count,t->fixed && t->fixed->imm_mode?2:1,0,0,0);
         if(t->count_requested) vkCmdEndQuery(t->command,t->queries,0);
         if(t->quantized_depth==4 && ((clear_flags&2) ||
            (t->active_pipeline->key.depth.depthTestEnable && t->active_pipeline->key.depth.depthWriteEnable)))
@@ -1940,7 +1940,10 @@ fail:
 /* The color image, tightly packed RGBA8, into a buffer of this target's
  * device (a shared bridge buffer another device reads), complete on return. */
 VkResult ch_vk_target_copy_to_buffer(ChVkTarget *t,VkBuffer destination,VkDeviceSize capacity) {
-    if(!t || t->failed || !t->initialized || !destination || capacity<t->bytes) return VK_ERROR_INITIALIZATION_FAILED;
+    return ch_vk_target_copy_to_buffer_at(t,destination,0,capacity);
+}
+VkResult ch_vk_target_copy_to_buffer_at(ChVkTarget *t,VkBuffer destination,VkDeviceSize offset,VkDeviceSize capacity) {
+    if(!t || t->failed || !t->initialized || !destination || (offset&3) || capacity<offset || capacity-offset<t->bytes) return VK_ERROR_INITIALIZATION_FAILED;
     VkResult result;
     TRY(finish_batch_named(t,0,__func__));
     TRY(vkResetCommandBuffer(t->command,0));
@@ -1949,7 +1952,7 @@ VkResult ch_vk_target_copy_to_buffer(ChVkTarget *t,VkBuffer destination,VkDevice
         .flags=VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT};
     TRY(vkBeginCommandBuffer(t->command,&begin));
     color_staging_reuse(t);
-    VkBufferImageCopy copy={.imageSubresource={VK_IMAGE_ASPECT_COLOR_BIT,0,0,1},.imageExtent={t->width,t->height,1}};
+    VkBufferImageCopy copy={.bufferOffset=offset,.imageSubresource={VK_IMAGE_ASPECT_COLOR_BIT,0,0,1},.imageExtent={t->width,t->height,1}};
     vkCmdCopyImageToBuffer(t->command,t->image,VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,destination,1,&copy);
     VkBufferMemoryBarrier done={.sType=VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
         .srcAccessMask=VK_ACCESS_TRANSFER_WRITE_BIT,.dstAccessMask=VK_ACCESS_MEMORY_READ_BIT,
@@ -2033,7 +2036,10 @@ fail:
 }
 
 VkResult ch_vk_target_import_buffer(ChVkTarget *t,VkBuffer source,VkDeviceSize capacity) {
-    if(!t || t->failed || !t->initialized || !source || capacity<t->bytes) return VK_ERROR_INITIALIZATION_FAILED;
+    return ch_vk_target_import_buffer_at(t,source,0,capacity);
+}
+VkResult ch_vk_target_import_buffer_at(ChVkTarget *t,VkBuffer source,VkDeviceSize offset,VkDeviceSize capacity) {
+    if(!t || t->failed || !t->initialized || !source || (offset&3) || capacity<offset || capacity-offset<t->bytes) return VK_ERROR_INITIALIZATION_FAILED;
     VkResult result;
     TRY(finish_batch_named(t,0,__func__));
     if(t->layout!=VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL) return VK_ERROR_INITIALIZATION_FAILED;
@@ -2050,7 +2056,7 @@ VkResult ch_vk_target_import_buffer(ChVkTarget *t,VkBuffer source,VkDeviceSize c
         .srcQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED,.dstQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED,
         .image=t->image,.subresourceRange={VK_IMAGE_ASPECT_COLOR_BIT,0,1,0,1}};
     vkCmdPipelineBarrier(t->command,VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,VK_PIPELINE_STAGE_TRANSFER_BIT,0,0,NULL,1,&ready,1,&barrier);
-    VkBufferImageCopy copy={.imageSubresource={VK_IMAGE_ASPECT_COLOR_BIT,0,0,1},.imageExtent={t->width,t->height,1}};
+    VkBufferImageCopy copy={.bufferOffset=offset,.imageSubresource={VK_IMAGE_ASPECT_COLOR_BIT,0,0,1},.imageExtent={t->width,t->height,1}};
     vkCmdCopyBufferToImage(t->command,source,t->image,VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,1,&copy);
     barrier.srcAccessMask=VK_ACCESS_TRANSFER_WRITE_BIT; barrier.dstAccessMask=VK_ACCESS_TRANSFER_READ_BIT;
     barrier.oldLayout=VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL; barrier.newLayout=VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
@@ -2347,10 +2353,10 @@ VkResult ch_vk_target_draw_panel_read(ChVkTarget *t,const ChVkColorVertex *v,uin
     return draw_full(t,NULL,v,n,indices,count,state,texture,NULL,rc,fog,stages,NULL,coverage_alpha,pixels,bytes,NULL);
 }
 
-VkResult ch_vk_target_draw_fixed_read(ChVkTarget *t,const ChVkFixedParams *fixed,
+static VkResult draw_fixed(ChVkTarget *t,const ChVkFixedParams *fixed,
     const ChVkFixedVertex *v,uint32_t n,const uint16_t *indices,uint32_t count,
     const Nv2aRenderState *state,const ChVkTexture *texture,uint32_t *samples,
-    const Nv2aCombiner *rc,uint32_t fog,const ChVkTexture *const stages[4],void *pixels,VkDeviceSize bytes) {
+    const Nv2aCombiner *rc,uint32_t fog,const ChVkTexture *const stages[4],int coverage_alpha,void *pixels,VkDeviceSize bytes) {
     if(!fixed || fixed->program_count>136 || !fixed->surface[0] || !fixed->surface[1] || !(fixed->depth[1]>fixed->depth[0]))
         return VK_ERROR_INITIALIZATION_FAILED;
     if(fixed->stream_bytes) {
@@ -2363,5 +2369,17 @@ VkResult ch_vk_target_draw_fixed_read(ChVkTarget *t,const ChVkFixedParams *fixed
                 return VK_ERROR_INITIALIZATION_FAILED;
         }
     }
-    return draw_full(t,NULL,v,n,indices,count,state,texture,samples,rc,fog,stages,NULL,0,pixels,bytes,fixed);
+    return draw_full(t,NULL,v,n,indices,count,state,texture,samples,rc,fog,stages,NULL,coverage_alpha,pixels,bytes,fixed);
+}
+VkResult ch_vk_target_draw_fixed_read(ChVkTarget *t,const ChVkFixedParams *fixed,
+    const ChVkFixedVertex *v,uint32_t n,const uint16_t *indices,uint32_t count,
+    const Nv2aRenderState *state,const ChVkTexture *texture,uint32_t *samples,
+    const Nv2aCombiner *rc,uint32_t fog,const ChVkTexture *const stages[4],void *pixels,VkDeviceSize bytes) {
+    return draw_fixed(t,fixed,v,n,indices,count,state,texture,samples,rc,fog,stages,0,pixels,bytes);
+}
+VkResult ch_vk_target_draw_fixed_coverage_read(ChVkTarget *t,const ChVkFixedParams *fixed,
+    const ChVkFixedVertex *v,uint32_t n,const uint16_t *indices,uint32_t count,
+    const Nv2aRenderState *state,const ChVkTexture *texture,
+    const Nv2aCombiner *rc,uint32_t fog,const ChVkTexture *const stages[4],void *pixels,VkDeviceSize bytes) {
+    return draw_fixed(t,fixed,v,n,indices,count,state,texture,NULL,rc,fog,stages,1,pixels,bytes);
 }

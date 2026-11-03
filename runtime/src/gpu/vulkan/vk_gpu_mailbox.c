@@ -86,3 +86,32 @@ VkResult ch_vk_gpu_mailbox_destroy(ChVkGpuMailbox *b) {
     for(unsigned i=0;i<CH_VK_GPU_MAILBOX_SLOTS;i++) ch_vk_texture_destroy(b->slots[i].image);
     pthread_mutex_destroy(&b->lock);free(b);return VK_SUCCESS;
 }
+VkResult ch_vk_gpu_mailbox_publish_immersive(ChVkGpuMailbox *b,const Nv2aSurface *surface,ChVkTarget *eyes,
+    ChVkTarget *hud,const ChVkImmFrame *info) {
+    if(!b || !surface || !eyes || !info) return VK_ERROR_INITIALIZATION_FAILED;
+    if(!b->buffers[0]) return VK_ERROR_FEATURE_NOT_PRESENT;
+    uint32_t w,h;ch_vk_target_size(eyes,&w,&h);
+    if(w!=info->eye_width*2 || h!=info->eye_height) return VK_ERROR_INITIALIZATION_FAILED;
+    VkDeviceSize hud_offset=((VkDeviceSize)w*h*4+255)&~(VkDeviceSize)255;
+    pthread_mutex_lock(&b->lock);
+    unsigned i=0;for(;i<CH_VK_GPU_MAILBOX_SLOTS && b->slots[i].held;i++);
+    if(i==CH_VK_GPU_MAILBOX_SLOTS || b->sequence==UINT64_MAX) {pthread_mutex_unlock(&b->lock);return i==CH_VK_GPU_MAILBOX_SLOTS?VK_NOT_READY:VK_ERROR_TOO_MANY_OBJECTS;}
+    b->slots[i].held=1;
+    pthread_mutex_unlock(&b->lock);
+    VkResult r=ch_vk_target_copy_to_buffer_at(eyes,b->buffers[i],0,b->capacity);
+    if(r==VK_SUCCESS && hud) r=ch_vk_target_copy_to_buffer_at(hud,b->buffers[i],hud_offset,b->capacity);
+    pthread_mutex_lock(&b->lock);
+    if(r==VK_SUCCESS) {
+        if(b->waiting==b->depth) {
+            b->slots[b->pending[0].slot].held=0;
+            for(unsigned k=1;k<b->waiting;k++) b->pending[k-1]=b->pending[k];
+            b->waiting--;
+        }
+        ChVkGpuFrame frame={.surface=*surface,.sequence=++b->sequence,.owner=b,.slot=i,
+            .immersive=1,.imm=*info,.hud_offset=hud_offset};
+        frame.imm.hud=hud!=NULL;
+        b->pending[b->waiting++]=frame;
+    } else b->slots[i].held=0;
+    pthread_mutex_unlock(&b->lock);
+    return r;
+}

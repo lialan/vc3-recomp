@@ -1,6 +1,7 @@
 #ifndef CH_VK_GPU_MAILBOX_H
 #define CH_VK_GPU_MAILBOX_H
 #include "vk_nv2a.h"
+#include "vk_immersive.h"
 typedef struct ChVkGpuMailbox ChVkGpuMailbox;
 typedef struct {
     Nv2aSurface surface;
@@ -8,6 +9,12 @@ typedef struct {
     ChVkTexture *image;
     ChVkGpuMailbox *owner;
     unsigned slot;
+    /* An immersive frame (bridge mode only): the slot's buffer holds the
+     * eyes, side by side (eye_w*2 x eye_h RGBA8), then from hud_offset the
+     * HUD (surface size, premultiplied) when imm.hud. */
+    int immersive;
+    ChVkImmFrame imm;
+    VkDeviceSize hud_offset;
 } ChVkGpuFrame;
 #define CH_VK_GPU_MAILBOX_SLOTS 4
 /* Four immutable GPU snapshots. One producer; any taken frame owns a slot
@@ -29,6 +36,10 @@ void ch_vk_gpu_mailbox_set_queue(ChVkGpuMailbox *,unsigned depth);
 /* Source must contain current pixels, including any guest CPU edits.
  * VK_NOT_READY means all slots are held: keep the previously displayed frame. */
 VkResult ch_vk_gpu_mailbox_publish(void *,const Nv2aSurface *,ChVkTarget *);
+/* An immersive frame: eyes and HUD into a slot's shared buffer (bridge mode;
+ * FEATURE_NOT_PRESENT otherwise). VK_NOT_READY as for publish. */
+VkResult ch_vk_gpu_mailbox_publish_immersive(ChVkGpuMailbox *,const Nv2aSurface *,ChVkTarget *eyes,
+    ChVkTarget *hud,const ChVkImmFrame *);
 VkResult ch_vk_gpu_mailbox_take(ChVkGpuMailbox *,ChVkGpuFrame *);
 /* Finish consumer GPU use before release. Frames are move-only values. */
 void ch_vk_gpu_frame_release(ChVkGpuFrame *);

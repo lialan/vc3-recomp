@@ -465,6 +465,16 @@ static Frame *take_frame(int *is_new,int allow)
         frame.w=frame.lw=(int)next.surface.width;
         frame.h=frame.lh=(int)next.surface.height;
         frame.eyes=1;
+        memset(&frame.vr,0,sizeof frame.vr);
+        if(next.immersive) {   /* the eyes side by side; the game's view as drawn */
+            const VrGameProj *g=&next.imm.projection;
+            frame.w=(int)next.imm.eye_width*2;frame.h=(int)next.imm.eye_height;frame.eyes=2;
+            frame.vr.imm=1;frame.vr.view=next.imm.view;
+            frame.vr.gp[0]=g->kx;frame.vr.gp[1]=g->ky;frame.vr.gp[2]=g->cx;frame.vr.gp[3]=g->cy;frame.vr.gp[4]=g->inv_pz;
+            frame.vr.gp_ok=next.imm.projection_ok;
+            frame.vr.gw=(int)next.imm.guest_width;frame.vr.gh=(int)next.imm.guest_height;
+            frame.vr.hud_w=(int)next.surface.width;frame.vr.hud_h=(int)next.surface.height;
+        }
         s_frames_in=next.sequence;
         *is_new=1;
     }
@@ -1757,10 +1767,10 @@ static int overlay_init(void)
 enum { M_SCREEN, M_DETAIL, M_REFRESH, M_SIGHT, M_LASER, M_GUN, M_HAND, M_STEREO, M_ASPECT, M_RES, M_DIST, M_SIZE,
        M_COINS, M_COIN, M_RECENTRE, M_TEST, M_SERVICE, M_RESET, M_CLOSE, M_STATS, M_COUNT };
 /* The rows shown, in The House of the Dead 4 VR's order. The Vulkan
- * renderer draws the game as it is (no immersive view, stereo, render scale
- * or 16:9 there), so its panel has only the items that act. */
+ * renderer has the immersive view (Screen) but no stereo screen, render
+ * scale or 16:9, so its panel has only the items that act. */
 #ifdef CHIHIRO_RENDERER_VULKAN
-static const int s_rows[] = { M_SIGHT, M_LASER, M_GUN, M_HAND, M_STATS, M_DIST, M_SIZE, M_REFRESH,
+static const int s_rows[] = { M_SCREEN, M_SIGHT, M_LASER, M_GUN, M_HAND, M_STATS, M_DIST, M_SIZE, M_REFRESH,
                               M_COINS, M_COIN, M_RECENTRE, M_TEST, M_SERVICE, M_RESET, M_CLOSE };
 #else
 static const int s_rows[] = { M_SCREEN, M_DETAIL, M_REFRESH, M_SIGHT, M_LASER, M_GUN, M_HAND, M_STEREO,

@@ -96,7 +96,7 @@ foreach(stage program vert frag textured combiner effect fixed frag_noat texture
     add_custom_command(OUTPUT "${output}"
         COMMAND "${CHIHIRO_GLSLC}" --target-env=vulkan1.0 -I "${CMAKE_CURRENT_BINARY_DIR}" ${defines}
                 "${CMAKE_CURRENT_SOURCE_DIR}/${input}" -o "${output}"
-        DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/${input}" "${CMAKE_CURRENT_SOURCE_DIR}/combiner.glsl" "${CMAKE_CURRENT_SOURCE_DIR}/../nv2a_stage_fetch.h" "${CMAKE_CURRENT_SOURCE_DIR}/../nv2a_fixed_shader.h" "${fixed_layout}" "${combiner_program}" "${vertex_program}" program.glsl attribute_decode.glsl attribute_stream.glsl VERBATIM)
+        DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/${input}" "${CMAKE_CURRENT_SOURCE_DIR}/combiner.glsl" "${CMAKE_CURRENT_SOURCE_DIR}/../nv2a_stage_fetch.h" "${CMAKE_CURRENT_SOURCE_DIR}/../nv2a_fixed_shader.h" "${fixed_layout}" "${combiner_program}" "${vertex_program}" program.glsl attribute_decode.glsl attribute_stream.glsl immersive.glsl VERBATIM)
     list(APPEND spirv_outputs "${output}")
     if(input STREQUAL "color.frag")
         set(quant_output "${CMAKE_CURRENT_BINARY_DIR}/color.${stage}_depth.spv")
@@ -135,7 +135,7 @@ add_custom_command(OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/depth_input.spv"
 add_custom_command(OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/depth_input.h"
  COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/embed_binary_spirv.py" "${CMAKE_CURRENT_BINARY_DIR}/depth_input.spv" "${CMAKE_CURRENT_BINARY_DIR}/depth_input.h" "depth_input_spv"
  DEPENDS "${CMAKE_CURRENT_BINARY_DIR}/depth_input.spv" embed_binary_spirv.py VERBATIM)
-add_library(chihiro_vulkan STATIC "${packaged_cache}" "${CMAKE_CURRENT_BINARY_DIR}/depth_input.h" "${CMAKE_CURRENT_BINARY_DIR}/depth_roundtrip_vert.h" "${CMAKE_CURRENT_BINARY_DIR}/depth_roundtrip_frag.h" vk_depth_quant.c "${CMAKE_CURRENT_BINARY_DIR}/depth_roundtrip_spv.h" vk_fixed.c vk_target.c vk_texture.c vk_texture_cache.c vk_state.c vk_nv2a.c vk_backend.c vk_pipeline_cache_file.c vk_depth_guest.c vk_depth_resident.c vk_menu.c vk_overlay.c vk_frame_mailbox.c vk_gpu_mailbox.c vk_scene.c vk_submission.c "${header}" "${fixed_asserts}" "${combiner_asserts}")
+add_library(chihiro_vulkan STATIC "${packaged_cache}" "${CMAKE_CURRENT_BINARY_DIR}/depth_input.h" "${CMAKE_CURRENT_BINARY_DIR}/depth_roundtrip_vert.h" "${CMAKE_CURRENT_BINARY_DIR}/depth_roundtrip_frag.h" vk_depth_quant.c "${CMAKE_CURRENT_BINARY_DIR}/depth_roundtrip_spv.h" vk_fixed.c vk_target.c vk_texture.c vk_texture_cache.c vk_state.c vk_nv2a.c vk_backend.c vk_pipeline_cache_file.c vk_depth_guest.c vk_depth_resident.c vk_menu.c vk_overlay.c vk_frame_mailbox.c vk_gpu_mailbox.c vk_scene.c vk_immersive.c vk_submission.c "${header}" "${fixed_asserts}" "${combiner_asserts}")
 if(CHIHIRO_VULKAN_PIPELINE_CACHE_SEEDS)
     if(ANDROID)
         target_link_libraries(chihiro_vulkan PUBLIC z)

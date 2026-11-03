@@ -2,6 +2,7 @@
 #define CHIHIRO_VK_BACKEND_H
 #include "vk_nv2a.h"
 #include "../guest_write_watch.h"
+#include "vk_immersive.h"
 typedef struct ChVkBackend ChVkBackend;
 typedef struct {
     VkPhysicalDevice physical; VkDevice device; VkQueue queue; uint32_t family;
@@ -93,6 +94,14 @@ typedef struct {
     VkResult (*present_rgba)(void *,const Nv2aSurface *,const void *,size_t);
     /* Optional native guest-order handoff; requires present_rgba as fallback. */
     VkResult (*present_bgra)(void *,const Nv2aSurface *,const void *,size_t);
+    /* Immersive VR (vk_immersive.h), optional; requires raw_fixed. At each
+     * flip, the next frame's head view (0: flat). A frame drawn immersive
+     * goes to present_immersive instead of present_target: eyes, both side
+     * by side (2*immersive_eye_width x immersive_eye_height), and the HUD
+     * (NULL: none), premultiplied. Same borrowing rules as present_target. */
+    int (*immersive_view)(void *,Vc3VrView *);
+    VkResult (*present_immersive)(void *,const Nv2aSurface *,ChVkTarget *eyes,ChVkTarget *hud,const ChVkImmFrame *);
+    uint32_t immersive_eye_width,immersive_eye_height;
     /* Called on fatal rendering errors. Must stop execution; abort follows if
      * it returns. No fallback or continued guest fence progress is allowed. */
     void (*fatal)(VkResult result, const char *operation);

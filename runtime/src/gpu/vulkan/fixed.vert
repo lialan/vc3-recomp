@@ -113,6 +113,7 @@ void load_state() {
     u_fogen=int(params.p.fog_enable);u_fogmode=params.p.fog_mode;u_fogp=vec2(params.p.fog_param[0],params.p.fog_param[1]);
 }
 CH_NV_FIXED_SHADER_FUNCTIONS
+#include "immersive.glsl"
 void main() {
     a_pos=ch_attribute(ch_stream_attribute(0u,32u),CH_ATTRIBUTE_FORMAT(0u));
     a_wt=ch_attribute(ch_stream_attribute(1u,32u),CH_ATTRIBUTE_FORMAT(1u));
@@ -127,11 +128,15 @@ void main() {
     bool bad=abs(w)<=1e-6 || any(isnan(o_screen)) || any(isinf(o_screen));
     vec2 ndc=s.xy/vec2(params.p.surface[0],params.p.surface[1])*2-1;
     float zn=(s.z-params.p.depth[0])/(params.p.depth[1]-params.p.depth[0]);
-    gl_Position=bad?vec4(0,0,0,1):vec4(ndc*w,zn*w,w);
+    vec4 guest_clip=vec4(ndc*w,zn*w,w);float side=1;
+    if(params.p.imm_mode!=0u && !bad) guest_clip=ch_imm_position(s,w,guest_clip,side);
+    gl_Position=bad?vec4(0,0,0,1):guest_clip;
+    gl_ClipDistance[2]=bad?-1e30:side;
     gl_ClipDistance[0]=bad?-1e30:w-1e-3;
     gl_ClipDistance[1]=bad?-1e30:params.p.near_z!=0u?(s.z-params.p.vp_off_z)*w:1;
     v_tc0.xy*=vec2(params.p.stage_scale[0][0],params.p.stage_scale[0][1]);
     v_tc1.xy*=vec2(params.p.stage_scale[1][0],params.p.stage_scale[1][1]);
     v_tc2.xy*=vec2(params.p.stage_scale[2][0],params.p.stage_scale[2][1]);
     v_tc3.xy*=vec2(params.p.stage_scale[3][0],params.p.stage_scale[3][1]);
+    ch_imm_texcoords(v_uv,tc);
 }

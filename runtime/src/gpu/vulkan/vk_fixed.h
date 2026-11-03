@@ -14,6 +14,18 @@ typedef struct {
     float stage_scale[4][2];
     uint32_t near_z,fog_enable,fog_mode;
     float vp_off_z,fog_param[2];
+    /* Immersive VR (vk_immersive.h): 0 the guest surface as drawn; 1 a 3D
+     * draw re-projected through each eye, 2 a flat 2D draw in each eye.
+     * Non-zero draws two instances, one per eye, side by side in one
+     * target. imm_gp: the game's projection kx, ky, cx, cy, 1/pz (surface
+     * pixels); imm_vp: per eye, game camera (GL view space) to the eye's
+     * GL clip space, column-major. Before attribute_format: fixed-function
+     * uploads end at constants. */
+    uint32_t imm_mode;
+    /* Mode 2: textures sampled from another surface's eyes (side by side):
+     * bit i stage i, bit 4 the plain texture; each eye samples its half. */
+    uint32_t imm_sbs;
+    float imm_gp[5],imm_vp[2][16];
     /* Program suffix is omitted from fixed-function uploads. Instruction words
      * specialize the pipeline; only constants are uploaded per draw. */
     uint32_t attribute_format[16];

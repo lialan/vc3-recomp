@@ -89,4 +89,19 @@ VkResult ch_vk_nv2a_draw_resolved_read(ChVkTarget *,const Nv2aSurface *,const Nv
  * decoded draws; only the vertex transformation is performed on the GPU. */
 VkResult ch_vk_nv2a_draw_fixed_resolved_read(ChVkTarget *,const Nv2aSurface *,const Nv2aBatch *,
     const ChVkFixedGeometry *,ChVkDecodeTexture,ChVkSampleResolver,void *,void *,VkDeviceSize);
+/* Immersive VR (vk_fixed.h imm_*): a prepared raw batch into a side-by-side
+ * eye target of any size, both eyes in one draw (two instances). Mode 1
+ * re-projects 3D through imm->gp and each eye's imm->vp; mode 2 draws the
+ * guest's 2D flat into each eye. No visibility queries (zpass_out must be
+ * NULL); the guest surface's own draw is separate. */
+typedef struct { uint32_t mode,sbs; float gp[5]; float vp[2][16]; } ChVkImmDraw;
+VkResult ch_vk_nv2a_draw_immersive_read(ChVkTarget *,const Nv2aSurface *,const Nv2aBatch *,
+    const ChVkFixedGeometry *,const ChVkImmDraw *,ChVkDecodeTexture,ChVkSampleResolver,void *,void *,VkDeviceSize);
+/* The game's projection from fixed-function raw metadata in surface pixels
+ * (anti-aliasing scale included), as the vertex shaders see the screen. */
+/* A prepared raw 2D batch into a HUD target of the surface's size, source
+ * alpha as coverage (the OpenGL renderer's HUD picture). */
+VkResult ch_vk_nv2a_draw_fixed_hud_read(ChVkTarget *,const Nv2aSurface *,const Nv2aBatch *,
+    const ChVkFixedGeometry *,ChVkDecodeTexture,ChVkSampleResolver,void *,void *,VkDeviceSize);
+VkResult ch_vk_nv2a_projection_from_raw_surface(const Nv2aBatch *,VrGameProj *);
 #endif

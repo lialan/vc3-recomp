@@ -158,6 +158,7 @@ VkResult ch_vk_target_draw_count_read(ChVkTarget *target, const float rgba[4],
     const ChVkTexture *texture, uint32_t *samples, void *pixels, VkDeviceSize bytes);
 /* The color image, packed RGBA8, into a buffer of the same device (one a
  * second device shares); complete on return. */
+VkResult ch_vk_target_copy_to_buffer_at(ChVkTarget *,VkBuffer,VkDeviceSize offset,VkDeviceSize capacity);
 VkResult ch_vk_target_copy_to_buffer(ChVkTarget *target, VkBuffer destination, VkDeviceSize capacity);
 /* Copy initialized target to an externally acquired, same-device RGBA8 image
  * of identical extent. Discards destination contents; ends in color-attachment
@@ -187,6 +188,7 @@ VkResult ch_vk_target_color_layout(ChVkTarget *target,int mode);
 VkResult ch_vk_target_import_color(ChVkTarget *target, const void *rgba, VkDeviceSize bytes);
 /* Replace color from a same-device buffer of tightly packed RGBA8 rows (one
  * another device shares); complete on return, ends in transfer-source layout. */
+VkResult ch_vk_target_import_buffer_at(ChVkTarget *,VkBuffer,VkDeviceSize offset,VkDeviceSize capacity);
 VkResult ch_vk_target_import_buffer(ChVkTarget *target, VkBuffer source, VkDeviceSize capacity);
 /* Explicit host representation: normalized float32 depth + uint8 stencil.
  * Transfers preserve color and finish in depth/stencil attachment layout.
@@ -236,6 +238,10 @@ VkResult ch_vk_target_draw_panel_read(ChVkTarget *,const ChVkColorVertex *,uint3
 /* Raw fixed-function GPU transforms. Host must enable shaderClipDistance and
  * depthClamp on the device. Params/vertices are copied before submission;
  * all resources and optional query results remain synchronous. */
+/* Fixed geometry with source alpha accumulated as coverage (the HUD). */
+VkResult ch_vk_target_draw_fixed_coverage_read(ChVkTarget *,const ChVkFixedParams *,
+    const ChVkFixedVertex *,uint32_t,const uint16_t *,uint32_t,const Nv2aRenderState *,const ChVkTexture *,
+    const Nv2aCombiner *,uint32_t,const ChVkTexture *const [4],void *,VkDeviceSize);
 VkResult ch_vk_target_draw_fixed_read(ChVkTarget *,const ChVkFixedParams *,
     const ChVkFixedVertex *,uint32_t,const uint16_t *,uint32_t,
     const Nv2aRenderState *,const ChVkTexture *,uint32_t *,const Nv2aCombiner *,

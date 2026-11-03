@@ -18,7 +18,7 @@ typedef struct {uint64_t pipeline_ns,batch_wait_ns,batch_gpu_ns,upload_wait_ns;
     uint64_t batch_submit_ns,batch_record_ns,batch_retire_ns,batch_submissions,batch_draws;
     uint64_t sync_render_submissions,sync_render_gpu_ns,sync_render_host_ns;
     uint64_t depth_copy_ns,depth_copy_calls;} FrameCosts;
-struct ChVkBackend { ChVkFixedScratch raw_scratch; struct {int enabled;uint64_t completion_us,completion_cpu_ns,completion_calls,prepare_us,prepare_cpu_ns;uint64_t draw_cpu_ns,clear_cpu_ns,flip_cpu_ns,trim_cpu_ns;uint64_t draw_us,clear_us,flip_us,trim_us,surface_us,coherence_us,imports_us,raster_us,store_us,texture_uploads;FrameCosts retired,previous;} costs; VkPipelineCache pipeline_cache; struct {int enabled;uint64_t start,n,surface,coherence,imports,draw,store,no_color,flushes,depth_flushes,paired_flushes;} profile; struct {int enabled;uint64_t previous,us[120];unsigned count;} frame_profile; ChVkBackendConfig host; ChVkTextureCache *textures; ChVkDepthResident *zeta; uint64_t raw_compact_batches,raw_snapshot_bytes,raw_expanded_bytes; uint64_t color_snapshot_copy_bytes_saved,unchanged_color_draws,unchanged_depth_draws,early_color_reads,clear_color_imports_avoided,clear_color_bytes_avoided; uint64_t frames,raw_draws,raw_programs,raw_program_vertices,raw_declined,color_clock,cpu_batches,cpu_vertices,cpu_texels,cpu_texture_us,cpu_color_pixels,cpu_color_us,cpu_depth_pixels; struct Surface surfaces[MAX_SURFACES]; unsigned count; };
+struct ChVkBackend { ChVkFixedScratch raw_scratch; struct {int enabled;uint64_t completion_us,completion_cpu_ns,completion_calls,prepare_us,prepare_cpu_ns;uint64_t draw_cpu_ns,clear_cpu_ns,flip_cpu_ns,trim_cpu_ns;uint64_t draw_us,clear_us,flip_us,trim_us,surface_us,coherence_us,imports_us,raster_us,store_us,texture_uploads;FrameCosts retired,previous;} costs; VkPipelineCache pipeline_cache; struct {int enabled;uint64_t start,n,surface,coherence,imports,draw,store,no_color,flushes,depth_flushes,paired_flushes;} profile; struct {int enabled;uint64_t previous,us[120];unsigned count;} frame_profile; ChVkBackendConfig host; ChVkTextureCache *textures; ChVkDepthResident *zeta; ChVkImmersive *imm; uint64_t raw_compact_batches,raw_snapshot_bytes,raw_expanded_bytes; uint64_t color_snapshot_copy_bytes_saved,unchanged_color_draws,unchanged_depth_draws,early_color_reads,clear_color_imports_avoided,clear_color_bytes_avoided; uint64_t frames,raw_draws,raw_programs,raw_program_vertices,raw_declined,color_clock,cpu_batches,cpu_vertices,cpu_texels,cpu_texture_us,cpu_color_pixels,cpu_color_us,cpu_depth_pixels; struct Surface surfaces[MAX_SURFACES]; unsigned count; };
 static ChVkBackend *active;
 static void flush_color(struct Surface *);
 static void observe_guest_colors(void);
@@ -205,8 +205,22 @@ static VkResult store_surface_color(struct Surface *f,const void *pixels) {
  * wide, the rest clipped; so is it here, for every use of the surface. */
 static const Nv2aSurface *narrow_surface(const Nv2aSurface *s,const Nv2aRenderState *rs,Nv2aSurface *copy) {
     ChVkGuestLayout layout;
-    if(!s || !rs || !s->bytes_per_pixel || s->pitch<s->bytes_per_pixel || s->pitch/s->bytes_per_pixel>=s->width ||
+    if(!s || !rs || !s->bytes_per_pixel ||
        ch_vk_guest_layout(rs->surface_format,s->width,s->height,s->pitch,s->bytes_per_pixel,&layout)==VK_SUCCESS) return s;
+    /* A swizzled surface's size is in its format (log2 width, height); a
+     * stale larger clip (VC3: 640x480 over a 128x128 effect map) is drawn
+     * at that size, as the OpenGL renderer does. */
+    if(((rs->surface_format>>8)&15)==2) {
+        uint32_t w=1u<<((rs->surface_format>>16)&15),h=1u<<((rs->surface_format>>24)&15);
+        if(w>=s->width && h>=s->height) return s;
+        *copy=*s;if(copy->width>w) copy->width=w;if(copy->height>h) copy->height=h;
+        if(ch_vk_guest_layout(rs->surface_format,copy->width,copy->height,copy->pitch,copy->bytes_per_pixel,&layout)!=VK_SUCCESS) return s;
+        static unsigned slogged;
+        if(slogged++<4) fprintf(stderr,"[Vulkan] swizzled surface %08X %ux%u: drawn %ux%u, its format's size\n",
+            s->color_va,s->width,s->height,copy->width,copy->height);
+        return copy;
+    }
+    if(s->pitch<s->bytes_per_pixel || s->pitch/s->bytes_per_pixel>=s->width) return s;
     *copy=*s;copy->width=s->pitch/s->bytes_per_pixel;
     /* The clip's height is stale too: the surface ends where its depth
      * buffer begins (VC3: 256 rows of 1024 bytes, then the depth). */
@@ -637,6 +651,10 @@ static void clear(const Nv2aSurface *s,const Nv2aRenderState *rs,uint32_t flags,
     if(!full_color) import_color(f);
     if(flags & 3) import_depth(f,!active->host.strict_depth_clears && ch_vk_nv2a_clear_depth_full(s,rs,flags));
     store(f,ch_vk_nv2a_clear_state_read(f->target,s,rs,flags,argb,zs,f->rgba,f->bytes),"clear",flags&0xf0,flags&3);
+    if(active->imm) {
+        VkResult r=ch_vk_immersive_clear(active->imm,s,rs,flags,argb,zs);
+        if(r!=VK_SUCCESS) fatal(r,"immersive clear");
+    }
     if(active->host.render_clear) {
         VkResult r=active->host.render_clear(active->host.render_context,s,rs,flags,argb,zs);
         if(r!=VK_SUCCESS) fatal(r,"host clear routing");
@@ -692,6 +710,10 @@ static void draw_batch(const Nv2aSurface *s,const Nv2aBatch *b,const ChVkFixedGe
     active->unchanged_depth_draws+=((b->state->depth_test_enable && b->state->depth_write) ||
         (b->state->stencil_enable && b->state->stencil_write_mask)) && !(writes&2);
     store(f,result,"draw",writes&1,writes&2);
+    if(active->imm) {
+        VkResult r=ch_vk_immersive_draw(active->imm,s,b,fixed,active->textures?resolve_sample:NULL,active);
+        if(r!=VK_SUCCESS) fatal(r,"immersive draw");
+    }
     if(active->costs.enabled) active->costs.draw_cpu_ns+=thread_cpu_ns()-cpu;
     if(active->profile.enabled) {t[5]=now_us();profile_draw(t);}
     if(active->host.render_draw) {
@@ -792,7 +814,30 @@ static void flip(void) {
             (unsigned long long)active->cpu_color_pixels,active->cpu_color_us/1000.);
     }
     uint32_t presented=nv2a_backend_presented_va();
-    if((active->host.present_target || active->host.present_rgba || active->host.present_bgra) && presented) {
+    ChVkTarget *imm_eyes=NULL,*imm_hud=NULL;ChVkImmFrame imm_frame;
+    if(active->host.immersive_view) {
+        Vc3VrView next;memset(&next,0,sizeof next);
+        int on=active->host.immersive_view(active->host.render_context,&next);
+        if(on && !active->imm && active->pipeline_cache) {
+            ChVkImmersiveConfig ic={.physical=active->host.physical,.device=active->host.device,.queue=active->host.queue,
+                .family=active->host.family,.pipeline_cache=active->pipeline_cache,.eye_width=active->host.immersive_eye_width,
+                .eye_height=active->host.immersive_eye_height,.batch_limit=active->host.batch_draw_limit,.decode=decode_cpu_texture,.textures=active->textures};
+            VkResult r=ch_vk_immersive_create(&ic,&active->imm);
+            if(r!=VK_SUCCESS) fatal(r,"immersive creation");
+            fprintf(stderr,"[Vulkan] immersive view: each eye %ux%u\n",ic.eye_width,ic.eye_height);
+        }
+        if(active->imm) {
+            VkResult r=ch_vk_immersive_flip(active->imm,presented,on?&next:NULL,&imm_frame,&imm_eyes,&imm_hud);
+            if(r!=VK_SUCCESS) fatal(r,"immersive flip");
+        }
+    }
+    if(imm_eyes && presented && active->host.present_immersive) {
+        struct Surface *f=NULL;
+        for(unsigned i=0;i<active->count;i++) if(active->surfaces[i].guest.color_va==presented) { f=&active->surfaces[i]; break; }
+        if(!f) fatal(VK_ERROR_FEATURE_NOT_PRESENT,"unknown presented surface");
+        VkResult r=active->host.present_immersive(active->host.render_context,&f->guest,imm_eyes,imm_hud,&imm_frame);
+        if(r!=VK_SUCCESS && r!=VK_NOT_READY) fatal(r,"host immersive frame handoff");
+    } else if((active->host.present_target || active->host.present_rgba || active->host.present_bgra) && presented) {
         struct Surface *f=NULL;
         for(unsigned i=0;i<active->count;i++) if(active->surfaces[i].guest.color_va==presented) { f=&active->surfaces[i]; break; }
         if(!f) fatal(VK_ERROR_FEATURE_NOT_PRESENT,"unknown presented surface");
@@ -898,6 +943,7 @@ VkResult ch_vk_backend_create(const ChVkBackendConfig *config,ChVkBackend **out)
        ((config->depth_quant_draw || config->depth_quant_inline || config->depth_quant_fragment) && !config->quantized_depth) ||
        ((!!config->depth_quant_draw + !!config->depth_quant_inline + !!config->depth_quant_fragment)>1) ||
        (config->sample_render_targets && (!config->resident_color || !config->cache_textures)) ||
+       (config->immersive_view && (!config->present_immersive || !config->raw_fixed || !config->immersive_eye_width || !config->immersive_eye_height)) ||
        ((config->resident_color || config->resident_depth) && (config->render_clear || config->render_draw ||
         config->render_flip || config->guest_color_changed)))
         return VK_ERROR_INITIALIZATION_FAILED;
@@ -938,7 +984,7 @@ VkResult ch_vk_backend_attach(ChVkBackend *b) {
     callbacks.draw_raw=(b->host.observe_raw || b->host.raw_fixed)?locked_draw_raw:NULL;
     /* Native Vulkan transforms/clips on the GPU and never reads CPU extents.
      * Keep legacy metadata for observer/routing configurations. */
-    callbacks.raw_no_extent=b->host.raw_fixed && !b->host.observe_raw && !b->host.render_draw;
+    callbacks.raw_no_extent=b->host.raw_fixed && !b->host.observe_raw && !b->host.render_draw && !b->host.immersive_view;
     callbacks.flush=(b->host.resident_color || b->host.resident_depth)?locked_flush:NULL;
     active=b; nv2a_backend_register(&callbacks); return VK_SUCCESS;
 }
@@ -952,6 +998,7 @@ void ch_vk_backend_destroy(ChVkBackend *b) {
     if(active==b) { nv2a_backend_register(NULL); active=NULL; }
     for(unsigned i=0;i<b->count;i++) release_surface(&b->surfaces[i]);
     if(b->pipeline_cache && !b->host.pipeline_cache) vkDestroyPipelineCache(b->host.device,b->pipeline_cache,NULL);
+    ch_vk_immersive_destroy(b->imm);
     ch_vk_texture_cache_destroy(b->textures);
     ch_vk_fixed_scratch_release(&b->raw_scratch);
     ch_vk_depth_resident_destroy(b->zeta);

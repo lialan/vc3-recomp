@@ -257,6 +257,11 @@ static VkResult attach(ChVkBackendConfig config)
         if(errno || end==budget || *end || value<1 || value>1024)
             return VK_ERROR_INITIALIZATION_FAILED;
         config.texture_cache_bytes=(size_t)value<<20;
+    } else if(config.immersive_view && !config.texture_cache_bytes) {
+        /* Flat draws sample other surfaces' eye images (each snapshot about
+         * 16 MiB at 1024 per eye): pinned under 64 MiB, the rest decoded on
+         * the CPU every draw. */
+        config.texture_cache_bytes=(size_t)256<<20;
     }
     fprintf(stderr,"[Vulkan] texture cache budget: %zuMiB\n",
         config.texture_cache_bytes?config.texture_cache_bytes>>20:(size_t)64);

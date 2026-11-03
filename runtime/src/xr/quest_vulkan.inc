@@ -90,6 +90,53 @@ static VkResult vk_publish(void *context,const Nv2aSurface *surface,ChVkTarget *
     }
     return ch_vk_gpu_mailbox_publish(context,surface,target);
 }
+/* Immersive (vk_immersive.h): the next frame's head view, at each flip. */
+static int vk_imm_view(void *context,Vc3VrView *view)
+{
+    (void)context;
+    return vc3_vr_view_latch(view);
+}
+static uint32_t vk_imm_eye_size(void)
+{
+    const char *e=ch_env("IMM_EYE");   /* each eye's picture, square, pixels */
+    int n=e?atoi(e):0;
+    return n>=256 && n<=2048?(uint32_t)n:1024;
+}
+static void vk_dump_target(const char *name,ChVkTarget *target,int opaque)
+{
+    uint32_t w,h;ch_vk_target_size(target,&w,&h);
+    unsigned char *px=malloc((size_t)w*h*4);
+    if(px && ch_vk_target_read_color(target,px,(VkDeviceSize)w*h*4)==VK_SUCCESS) {
+        if(!opaque) {   /* the alpha too, as grey: name.alpha.ppm */
+            unsigned char *a=malloc((size_t)w*h*4);char an[64];
+            if(a) {
+                for(size_t i=0;i<(size_t)w*h;i++) a[i*4]=a[i*4+1]=a[i*4+2]=px[i*4+3],a[i*4+3]=255;
+                snprintf(an,sizeof an,"%s.alpha.ppm",name);dump_ppm(an,a,(int)w,(int)h);free(a);
+            }
+        }
+        if(opaque) for(size_t i=0;i<(size_t)w*h;i++) px[i*4+3]=255;
+        dump_ppm(name,px,(int)w,(int)h);
+    }
+    free(px);
+}
+static VkResult vk_publish_imm(void *context,const Nv2aSurface *surface,ChVkTarget *eyes,ChVkTarget *hud,
+    const ChVkImmFrame *info)
+{
+    s_tid_exec=(pid_t)syscall(SYS_gettid);
+    pace_game_frame();
+    {   /* VC3_XR_DUMP: the eyes and HUD of the XR_DUMP_FRAME-th immersive frame */
+        static unsigned n,at;
+        if(!at) at=ch_env("XR_DUMP_FRAME")?(unsigned)atoi(ch_env("XR_DUMP_FRAME")):600;
+        if(ch_env("XR_DUMP") && ++n==at) {
+            vk_dump_target("eyes.ppm",eyes,1);
+            if(hud) vk_dump_target("hud.ppm",hud,0);
+            fprintf(stderr,"[xr] immersive dump: projection kx %.2f ky %.2f cx %.2f cy %.2f 1/pz %.5g, guest %ux%u\n",
+                info->projection.kx,info->projection.ky,info->projection.cx,info->projection.cy,
+                info->projection.inv_pz,info->guest_width,info->guest_height);
+        }
+    }
+    return ch_vk_gpu_mailbox_publish_immersive(context,surface,eyes,hud,info);
+}
 #if defined(CHIHIRO_XR_DESKTOP)
 /* The game on a VkDevice of its own (desktop OpenXR; VC3_XR_SPLIT_DEVICE=0:
  * off). SteamVR (Steam Frame) puts its per-display-frame waits on the queue
@@ -147,6 +194,12 @@ static int vk_host_init(void)
         .queue=game_queue,.family=s_vk.family,.precise_queries=s_vk.precise_queries,.raw_fixed=s_vk.raw_fixed,
         .lock_queue=vk_queue_lock,.unlock_queue=vk_queue_unlock,.queue_context=game_lock,
         .render_context=s_vk_frames,.present_target=vk_publish};
+    /* Immersive needs the shared buffers (the eyes cross to the headset's
+     * device in them) and the GPU transforms. */
+    if(s_vk_split && s_vk.raw_fixed) {
+        config.immersive_view=vk_imm_view;config.present_immersive=vk_publish_imm;
+        config.immersive_eye_width=config.immersive_eye_height=vk_imm_eye_size();
+    }
     return ch_vk_runtime_configure(&config);
 }
 static void vk_initialized_target(uint32_t width,uint32_t height,ChVkTarget **target)
@@ -209,7 +262,7 @@ static void vk_test_dump(const Frame *f)
     static unsigned frames;
     if(done || !ch_env("XR_DUMP") || !s_views_ok || s_overlay_ok<=0 || ++frames<(ch_env("XR_DUMP_AFTER")?(unsigned)atoi(ch_env("XR_DUMP_AFTER")):60u)) return;
     /* headless, SteamVR never asks for a frame (shouldRender): the screen from here */
-    if(vk_screen_in_eyes() && f) vk_screen_update(f);
+    if(vk_screen_in_eyes() && f && !f->vr.imm) vk_screen_update(f);
     done=1;
     if(ch_env("XR_FAKE_MENU") && *ch_env("XR_FAKE_MENU")=='1') {s_menu.open=0;menu_toggle("test");menu_paint();}
     if(!ch_env("XR_FAKE_GUN") || (*ch_env("XR_FAKE_GUN")!='1' && *ch_env("XR_FAKE_GUN")!='2')) return;
@@ -288,6 +341,102 @@ static void vk_screen_draw(ChVkTarget *target,const float vp[16],void *pixels,si
     vk_check(ch_vk_target_draw_state_read(target,NULL,v,6,idx,6,&opaque,pixels,bytes),"screen backing");
     for(int i=0;i<6;i++) v[i].rgba[0]=v[i].rgba[1]=v[i].rgba[2]=1;
     vk_check(ch_vk_target_draw_texture_read(target,NULL,v,6,idx,6,&picture,s_vk_scr_tex,pixels,bytes),"screen draw");
+}
+/* ── Immersive frames: the eyes as a projection layer, drawn with the pose
+ * they were drawn from (the compositor turns them to where the head is),
+ * the HUD on its panel in the overlay, under the gun. */
+static ChVkXrSwapchain *s_vk_world;
+static uint32_t s_vk_world_w,s_vk_world_h;
+static uint64_t s_vk_world_sequence;
+static XrCompositionLayerProjection s_vk_world_layer;
+static XrCompositionLayerProjectionView s_vk_world_views[2];
+static ChVkTarget *s_vk_hud_target;
+static ChVkTexture *s_vk_hud_tex;
+static uint32_t s_vk_hud_w,s_vk_hud_h;
+static int s_vk_hud_valid;
+/* A new immersive frame into the world swapchain and the HUD texture;
+ * returns whether anything changed. */
+static int vk_world_update(const Frame *f)
+{
+    VkResult result=VK_SUCCESS;
+    const uint32_t w=(uint32_t)f->w,h=(uint32_t)f->h;
+    if(s_vk_world_w!=w || s_vk_world_h!=h) {
+        if(s_vk_world) vk_xr_check(ch_vk_xr_swapchain_destroy(s_vk_world),"old world swapchain");
+        s_vk_world=NULL;
+        vk_xr_check(ch_vk_xr_swapchain_create(s_inst,s_sess,xrGetInstanceProcAddr,s_vk.device,w,h,&s_vk_world),"world swapchain");
+        s_vk_world_w=w;s_vk_world_h=h;s_vk_world_sequence=0;
+        fprintf(stderr,"[xr] immersive: eyes %ux%u, side by side\n",w/2,h);
+    }
+    if(s_vk_world_sequence==f->gpu.sequence) return 0;
+    uint32_t index;VkImage image;
+    vk_xr_check(ch_vk_xr_swapchain_wait(s_vk_world,XR_INFINITE_DURATION,&index,&image),"world acquire");
+    vk_xr_check(ch_vk_xr_swapchain_buffer_release(s_vk_world,s_vk.queue,s_vk.family,
+        s_vk_bridge.xr_buffer[f->gpu.slot],w,h,&result),"world copy");
+    vk_check(result,"world copy completion");
+    s_vk_hud_valid=f->gpu.imm.hud;
+    if(s_vk_hud_valid) {
+        const uint32_t hw=f->gpu.surface.width,hh=f->gpu.surface.height;
+        if(s_vk_hud_w!=hw || s_vk_hud_h!=hh) {
+            ch_vk_texture_destroy(s_vk_hud_tex);s_vk_hud_tex=NULL;
+            ch_vk_target_destroy(s_vk_hud_target);s_vk_hud_target=NULL;
+            vk_initialized_target(hw,hh,&s_vk_hud_target);
+            vk_check(ch_vk_target_snapshot_texture(s_vk_hud_target,1,&s_vk_hud_tex),"HUD texture");
+            const VkSamplerCreateInfo linear={.sType=VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
+                .magFilter=VK_FILTER_LINEAR,.minFilter=VK_FILTER_LINEAR,.mipmapMode=VK_SAMPLER_MIPMAP_MODE_NEAREST,
+                .addressModeU=VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,.addressModeV=VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+                .addressModeW=VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE};
+            vk_check(ch_vk_texture_set_sampler(s_vk_hud_tex,&linear),"HUD sampler");
+            s_vk_hud_w=hw;s_vk_hud_h=hh;
+        }
+        vk_check(ch_vk_target_import_buffer_at(s_vk_hud_target,s_vk_bridge.xr_buffer[f->gpu.slot],
+            f->gpu.hud_offset,s_vk_bridge.capacity),"HUD import");
+        vk_check(ch_vk_target_refresh_texture(s_vk_hud_target,s_vk_hud_tex),"HUD refresh");
+    }
+    s_vk_world_sequence=f->gpu.sequence;
+    return 1;
+}
+static const XrCompositionLayerBaseHeader *vk_world_layer(const Frame *f)
+{
+    if(!s_vk_world) return NULL;
+    for(int e=0;e<2;e++) {
+        XrCompositionLayerProjectionView *v=&s_vk_world_views[e];
+        memset(v,0,sizeof *v);
+        v->type=XR_TYPE_COMPOSITION_LAYER_PROJECTION_VIEW;
+        view_to_local(&f->vr.view,e,&v->pose);
+        v->fov.angleLeft=f->vr.view.fov[e][0];v->fov.angleRight=f->vr.view.fov[e][1];
+        v->fov.angleUp=f->vr.view.fov[e][2];v->fov.angleDown=f->vr.view.fov[e][3];
+        v->subImage.swapchain=ch_vk_xr_swapchain_handle(s_vk_world);
+        v->subImage.imageRect.offset.x=(int32_t)((uint32_t)e*s_vk_world_w/2);
+        v->subImage.imageRect.extent.width=(int32_t)(s_vk_world_w/2);
+        v->subImage.imageRect.extent.height=(int32_t)s_vk_world_h;
+    }
+    s_vk_world_layer=(XrCompositionLayerProjection){.type=XR_TYPE_COMPOSITION_LAYER_PROJECTION,
+        .space=s_local,.viewCount=2,.views=s_vk_world_views};
+    return (const XrCompositionLayerBaseHeader *)&s_vk_world_layer;
+}
+/* The HUD on its panel -- the game's view at HUD_DIST from
+ * the anchor -- into an overlay eye target. */
+static void vk_hud_draw(const Frame *f,ChVkTarget *target,const float vp[16],void *pixels,size_t bytes)
+{
+    float pc[3],pw,ph,c[3],r[3];
+    const float right[3]={1,0,0};
+    if(!s_vk_hud_valid || !s_vk_hud_tex || !hud_panel(f,pc,&pw,&ph)) return;
+    yaw_rot(s_anchor_yaw,pc,c);yaw_rot(s_anchor_yaw,right,r);
+    for(int k=0;k<3;k++) c[k]+=s_anchor_p[k];
+    static const float corner[6][4]={{-1,1,0,0},{1,1,1,0},{-1,-1,0,1},{1,1,1,0},{1,-1,1,1},{-1,-1,0,1}};
+    static const uint16_t idx[6]={0,1,2,3,4,5};
+    ChVkColorVertex v[6]={0};
+    for(int i=0;i<6;i++) {
+        float p[3],clip[4];
+        for(int k=0;k<3;k++) p[k]=c[k]+r[k]*pw*.5f*corner[i][0]+(k==1?ph*.5f*corner[i][1]:0);
+        for(int k=0;k<4;k++) clip[k]=vp[k]*p[0]+vp[4+k]*p[1]+vp[8+k]*p[2]+vp[12+k];
+        v[i].xy[0]=clip[0];v[i].xy[1]=-clip[1];v[i].xy[2]=(clip[2]+clip[3])*.5f;v[i].xy[3]=clip[3];
+        v[i].xy[4]=corner[i][2];v[i].xy[5]=corner[i][3];
+        v[i].rgba[0]=v[i].rgba[1]=v[i].rgba[2]=v[i].rgba[3]=1;
+    }
+    /* Straight alpha: the HUD's empty pixels hold colour (grey) at alpha 0. */
+    const Nv2aRenderState over={.color_mask=0x01010101,.blend_enable=1,.blend_src=0x302,.blend_dst=0x303,.blend_eq=0x8006};
+    vk_check(ch_vk_target_draw_texture_read(target,NULL,v,6,idx,6,&over,s_vk_hud_tex,pixels,bytes),"HUD draw");
 }
 /* "Show stats": HOTD4's panel - the game's frame rate, CPU (the process,
  * and the game thread per frame), the GPU, memory - painted twice a second
@@ -372,7 +521,12 @@ static unsigned vk_present(const Frame *f,const XrCompositionLayerBaseHeader **l
     pose.orientation.y=sinf(s_anchor_yaw*.5f);pose.orientation.w=cosf(s_anchor_yaw*.5f);
     pose.position=(XrVector3f){center[0]+s_anchor_p[0],center[1]+s_anchor_p[1],center[2]+s_anchor_p[2]};
     int screen_new=0;
-    if(f && vk_screen_in_eyes()) screen_new=vk_screen_update(f);
+    const int imm=f && f->vr.imm;
+    if(imm) {
+        screen_new=vk_world_update(f);
+        const XrCompositionLayerBaseHeader *world=vk_world_layer(f);
+        if(world) layers[count++]=world;
+    } else if(f && vk_screen_in_eyes()) screen_new=vk_screen_update(f);
     else if(f) {
         XrExtent2Df size={s_height*(float)f->lw/f->lh,s_height};
         if(s_vk_screen_w!=(uint32_t)f->w || s_vk_screen_h!=(uint32_t)f->h) {
@@ -402,8 +556,9 @@ static unsigned vk_present(const Frame *f,const XrCompositionLayerBaseHeader **l
     static int eye_test=-1,swap_eyes=-1;
     if(eye_test<0) eye_test=ch_env("XR_EYE_TEST") && *ch_env("XR_EYE_TEST")=='1';
     if(swap_eyes<0) swap_eyes=ch_env("XR_SWAP_EYES") && *ch_env("XR_SWAP_EYES")=='1';
-    const int screen=s_vk_scr_tex && vk_screen_in_eyes();
-    int overlay_want=s_overlay_ok>0 && s_views_ok && (s_qo.gun_valid || eye_test || screen);
+    const int screen=!imm && s_vk_scr_tex && vk_screen_in_eyes();
+    const int hud_shown=imm && s_vk_hud_valid;
+    int overlay_want=s_overlay_ok>0 && s_views_ok && (s_qo.gun_valid || eye_test || screen || hud_shown);
     int overlay_reuse=overlay_want && !screen_new && overlay_reuse_frame(s_vk_overlay_have_last,overlay_full,s_menu.open,s_vk_overlay_frame,display_period);
     if(!overlay_want) s_vk_overlay_have_last=0;
     /* Diagnostics for the eye mapping: EYE_TEST tints the left eye's overlay
@@ -419,6 +574,7 @@ static unsigned vk_present(const Frame *f,const XrCompositionLayerBaseHeader **l
             eye_viewproj(v,vp);
             vk_check(ch_vk_target_clear_read(s_vk_eye[e].target,eye_test?tint[e]:transparent,s_vk_eye[e].pixels,bytes),"overlay clear");
             if(screen) vk_screen_draw(s_vk_eye[e].target,vp,s_vk_eye[e].pixels,bytes);
+            if(hud_shown) vk_hud_draw(f,s_vk_eye[e].target,vp,s_vk_eye[e].pixels,bytes);
             if(s_qo.gun_valid) vk_check(ch_vk_overlay_read(s_vk_eye[e].target,&s_qo,vp,eye,qo_sight_height(s_vr.sight),
                 s_vk_eye[e].pixels,bytes),"overlay draw");
             vk_xr_check(ch_vk_xr_swapchain_wait(s_vk_eye[e].chain,XR_INFINITE_DURATION,&index,&image),"overlay acquire");
