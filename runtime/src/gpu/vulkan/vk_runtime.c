@@ -1,4 +1,7 @@
 #include "vk_runtime.h"
+#ifdef CH_VK_SPIRV_OPT
+#include "vk_spirv_specialize.h"
+#endif
 #include "vk_backend.h"
 #include "vk_target.h"
 #include "vk_fixed.h"
@@ -415,6 +418,13 @@ static VkResult attach(ChVkBackendConfig config)
                 char *dot=strrchr(recipes,'.'),*slash=strrchr(recipes,'/');
                 if(dot && (!slash || dot>slash)) *dot=0;
                 strcat(recipes,".recipes");
+#ifdef CH_VK_SPIRV_OPT
+                {   /* CPU-specialized shaders beside them */
+                    char *spec=malloc(strlen(recipes)+16);
+                    if(spec) {strcpy(spec,recipes);strcpy(strrchr(spec,'.'),".specialized");
+                        ch_vk_spirv_specialize_cache_open(spec);free(spec);}
+                }
+#endif
                 const char *e=getenv("CHIHIRO_VULKAN_PRECOMPILE_THREADS");
                 ch_vk_target_recipes_start(config.device,runtime.pipeline_cache,recipes,e?(unsigned)atoi(e):4u);
                 free(recipes);

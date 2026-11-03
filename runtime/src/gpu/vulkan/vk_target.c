@@ -1734,15 +1734,24 @@ fail:
 /* Shaders specialized on the CPU (vk_spirv_specialize.cpp) where the driver
  * does not fold specialization constants; CHIHIRO_VULKAN_CPU_SPECIALIZE=0
  * leaves it to the driver. */
-static int cpu_specialize_on(void) {
-    static int on=-1;
-    if(on<0) {const char *e=getenv("CHIHIRO_VULKAN_CPU_SPECIALIZE");on=!e || atoi(e)!=0;
-        fprintf(stderr,"[Vulkan] shaders specialized on the CPU: %s\n",on?"yes":"no");}
-    return on;
+/* the stages specialized: bit 0 vertex, bit 1 fragment (=1 or unset: both;
+ * =2 vertex only, =3 fragment only; diagnostics) */
+static int cpu_specialize_on(unsigned stage) {
+    static int mask=-1;
+    if(mask<0) {const char *e=getenv("CHIHIRO_VULKAN_CPU_SPECIALIZE");int v=e?atoi(e):1;
+        mask=v==0?0:v==2?1:v==3?2:v==4?(1|4):v==5?(1|8):3;   /* 4: vertex programs only, 5: fixed only */
+        fprintf(stderr,"[Vulkan] shaders specialized on the CPU: %s\n",mask==3?"yes":mask==1?"vertex only":mask==2?"fragment only":
+            mask==5?"vertex programs only":mask==9?"fixed-function vertex only":"no");}
+    return (mask>>stage)&1;
 }
 static _Atomic unsigned long long s_spec_ns;
 static _Atomic unsigned s_spec_count,s_spec_failed;
+static _Atomic unsigned s_spec_misses;
 static void cpu_specialize_time(uint64_t ns) {s_spec_ns+=ns;}
+static void cpu_specialize_miss(void) {
+    unsigned n=++s_spec_misses;
+    if(n<=4 || n%50==0) fprintf(stderr,"[Vulkan] %u in-game shaders not CPU-specialized yet (specialized at the next boot)\n",n);
+}
 static void cpu_specialize_note(unsigned stage,int ok,size_t in,size_t out) {
     if(!ok) {if(s_spec_failed++<4) fprintf(stderr,"[Vulkan] CPU specialization failed (%s stage): driver specializes\n",stage?"fragment":"vertex");return;}
     unsigned n=++s_spec_count;
@@ -1753,8 +1762,11 @@ static void cpu_specialize_note(unsigned stage,int ok,size_t in,size_t out) {
 /* A pipeline from its key alone (and the target's size: the viewport is
  * static) -- what a target builds, and what the recipes precompile. */
 static VkResult pipeline_build(VkDevice device,VkPipelineCache cache,VkRenderPass pass,VkPipelineLayout layout,
-    const PipelineKey *key,uint32_t width,uint32_t height,VkPipeline *out) {
+    const PipelineKey *key,uint32_t width,uint32_t height,int may_specialize,VkPipeline *out) {
     VkResult result=VK_SUCCESS;
+#ifndef CH_VK_SPIRV_OPT
+    (void)may_specialize;
+#endif
     VkShaderModule vert=VK_NULL_HANDLE, frag=VK_NULL_HANDLE;
     VkShaderModuleCreateInfo shader={.sType=VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
         .codeSize=key->fixed?sizeof(color_fixed_spv):sizeof(color_vert_spv),.pCode=key->fixed?color_fixed_spv:color_vert_spv};
@@ -1820,13 +1832,16 @@ static VkResult pipeline_build(VkDevice device,VkPipelineCache cache,VkRenderPas
     VkSpecializationInfo fixed_specialization={25,fixed_entries,sizeof key->fixed_fetch,key->fixed_fetch};
     if(key->fixed && !key->vertex_count) stages[0].pSpecializationInfo=&fixed_specialization;
 #ifdef CH_VK_SPIRV_OPT
-    if(cpu_specialize_on()) for(unsigned s=0;s<2;s++) {
-        if(!stages[s].pSpecializationInfo) continue;
+    for(unsigned s=0;s<2;s++) {
+        if(!stages[s].pSpecializationInfo || !cpu_specialize_on(s)) continue;
+        if(s==0 && cpu_specialize_on(2) && !key->vertex_count) continue;   /* programs only */
+        if(s==0 && cpu_specialize_on(3) && key->vertex_count) continue;    /* fixed only */
         uint32_t *code=NULL;size_t bytes=0;
         uint64_t t0=time_ns();
-        if(ch_vk_spirv_specialize(s?frag_code:vert_code,s?frag_bytes:vert_bytes,stages[s].pSpecializationInfo,&code,&bytes)) {
-            cpu_specialize_note(s,0,0,0);continue;
-        }
+        int got=ch_vk_spirv_specialize(s?frag_code:vert_code,s?frag_bytes:vert_bytes,stages[s].pSpecializationInfo,
+            may_specialize,&code,&bytes);
+        if(got>0) {cpu_specialize_miss();continue;}
+        if(got<0) {cpu_specialize_note(s,0,0,0);continue;}
         VkShaderModule m=VK_NULL_HANDLE;
         VkShaderModuleCreateInfo info={.sType=VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,.codeSize=bytes,.pCode=code};
         VkResult made=vkCreateShaderModule(device,&info,NULL,&m);
@@ -1966,7 +1981,7 @@ static VkResult create_pipeline(ChVkTarget *t,const PipelineKey *key) {
         VkPipelineCacheCreateInfo cache={.sType=VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO};
         TRY(vkCreatePipelineCache(t->device,&cache,NULL,&t->pipeline_cache));
     }
-    TRY(pipeline_build(t->device,t->pipeline_cache,t->pass,t->active_pipeline->pipeline_layout,key,t->width,t->height,&t->active_pipeline->pipeline));
+    TRY(pipeline_build(t->device,t->pipeline_cache,t->pass,t->active_pipeline->pipeline_layout,key,t->width,t->height,0,&t->active_pipeline->pipeline));
 fail:
     if(result!=VK_SUCCESS) t->failed=1;
     return result;
@@ -2029,7 +2044,7 @@ static VkResult recipe_build(const Recipe *r) {
     PipelineKey key=r->key;key.depth.pNext=NULL;
     TRY(target_pass(device,(VkFormat)r->depth_format,(int)r->input_pass,r->width,&pass));
     TRY(pipeline_layout_create(device,&key,&set_layout,&layout));
-    TRY(pipeline_build(device,s_recipes.cache,pass,layout,&key,r->width,r->height,&pipeline));
+    TRY(pipeline_build(device,s_recipes.cache,pass,layout,&key,r->width,r->height,1,&pipeline));
 fail:
     if(pipeline) vkDestroyPipeline(device,pipeline,NULL);
     if(layout) vkDestroyPipelineLayout(device,layout,NULL);

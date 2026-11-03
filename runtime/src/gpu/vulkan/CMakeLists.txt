@@ -162,7 +162,7 @@ if(CHIHIRO_VULKAN_SPIRV_OPT_DIR)
     enable_language(CXX)
     target_sources(chihiro_vulkan PRIVATE vk_spirv_specialize.cpp)
     set_source_files_properties(vk_spirv_specialize.cpp PROPERTIES COMPILE_OPTIONS "-std=c++17")
-    target_compile_definitions(chihiro_vulkan PRIVATE CH_VK_SPIRV_OPT=1)
+    target_compile_definitions(chihiro_vulkan PUBLIC CH_VK_SPIRV_OPT=1)
     target_include_directories(chihiro_vulkan PRIVATE "${CHIHIRO_VULKAN_SPIRV_OPT_DIR}/include")
     target_link_libraries(chihiro_vulkan PUBLIC "${CHIHIRO_VULKAN_SPIRV_OPT_DIR}/lib/libSPIRV-Tools-opt.a"
         "${CHIHIRO_VULKAN_SPIRV_OPT_DIR}/lib/libSPIRV-Tools.a")
