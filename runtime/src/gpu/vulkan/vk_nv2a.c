@@ -239,6 +239,7 @@ static VkResult draw_decoded(ChVkTarget *t, const Nv2aSurface *s,
         params->depth[0]=low;params->depth[1]=high;
         params->texture[0]=plain?plain->width:1;params->texture[1]=plain?plain->height:1;
         params->imm_mode=imm?imm->mode:0;params->imm_sbs=imm?imm->sbs:0;
+        params->imm_scale=imm && imm->scale>0?imm->scale:1.f;
         if(imm && imm->mode==1) {memcpy(params->imm_gp,imm->gp,sizeof params->imm_gp);memcpy(params->imm_vp,imm->vp,sizeof params->imm_vp);}
     }
     if(rc) for(unsigned st=0;st<4;st++) {

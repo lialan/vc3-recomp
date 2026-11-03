@@ -468,6 +468,7 @@ static void vk_screen_draw(ChVkTarget *target,const float vp[16],void *pixels,si
  * the HUD on its panel in the overlay, under the gun. */
 static ChVkXrSwapchain *s_vk_world;
 static uint32_t s_vk_world_w,s_vk_world_h;
+static float s_vk_world_scale=1;   /* the copied frame's dynamic resolution (ChVkImmFrame.scale) */
 static uint64_t s_vk_world_sequence;
 static XrCompositionLayerProjection s_vk_world_layer;
 static XrCompositionLayerProjectionView s_vk_world_views[2];
@@ -563,6 +564,7 @@ static int vk_world_update(const Frame *f)
     SEG(6,vk_xr_check(ch_vk_xr_swapchain_wait(s_vk_world,XR_INFINITE_DURATION,&index,&image),"world acquire"));
     VkCommandBuffer cmd=vk_host_begin();
     SEG(7,vk_xr_check(ch_vk_xr_swapchain_record_buffer(s_vk_world,cmd,s_vk_bridge.xr_buffer[f->gpu.slot],0),"world copy"));
+    s_vk_world_scale=f->gpu.imm.scale>0 && f->gpu.imm.scale<=1?f->gpu.imm.scale:1;
     /* The HUD: a quad layer of its own at the game's 640x480, between the
      * world and the overlay (SteamVR blends it only where it is; drawn into
      * the full-view overlay it made that layer full size, and SteamVR
@@ -616,9 +618,12 @@ static const XrCompositionLayerBaseHeader *vk_world_layer(const Frame *f)
         v->fov.angleLeft=f->vr.view.fov[e][0];v->fov.angleRight=f->vr.view.fov[e][1];
         v->fov.angleUp=f->vr.view.fov[e][2];v->fov.angleDown=f->vr.view.fov[e][3];
         v->subImage.swapchain=ch_vk_xr_swapchain_handle(s_vk_world);
-        v->subImage.imageRect.offset.x=(int32_t)((uint32_t)e*s_vk_world_w/2);
-        v->subImage.imageRect.extent.width=(int32_t)(s_vk_world_w/2);
-        v->subImage.imageRect.extent.height=(int32_t)s_vk_world_h;
+        /* dynamic resolution: each eye's picture fills scale of its half,
+         * the left eye's from the top-left, the right eye's from the top-right */
+        uint32_t ew=(uint32_t)(s_vk_world_w/2*s_vk_world_scale+.5f),eh=(uint32_t)(s_vk_world_h*s_vk_world_scale+.5f);
+        v->subImage.imageRect.offset.x=(int32_t)(e?s_vk_world_w-ew:0);
+        v->subImage.imageRect.extent.width=(int32_t)ew;
+        v->subImage.imageRect.extent.height=(int32_t)eh;
     }
     s_vk_world_layer=(XrCompositionLayerProjection){.type=XR_TYPE_COMPOSITION_LAYER_PROJECTION,
         .space=s_local,.viewCount=2,.views=s_vk_world_views};

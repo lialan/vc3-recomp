@@ -112,7 +112,18 @@ to 60, 4x4 beyond -- 12%, 25%, 52% and 9% of the image
 (`VC3_XR_FOVEATION=inner,outer,far`; `0` off). Coverage stays per pixel, so
 edges stay sharp; textures soften toward the lens edge. Screens-on route at
 2160: E.S. held 70 of 239 game frames late without it, 0 with it; combat
-and E.S. activation 0-2. Mipmapped textures are
+and E.S. activation 0-2.
+
+Dynamic resolution keeps later, heavier areas at 60 (area 3 at a fixed 2160
+ran at 40 fps in play): after half a second with 2+ late game frames the
+eyes drop a level -- 90, 80, 70% of each eye's width and height, the picture
+in a corner of each eye's half, the rest clipped (no cost) and outside the
+headset's `imageRect` -- and come back after 3 calm seconds (longer after a
+failed try). Each level has its own foveation pattern, kept on each eye's
+view axis. `CHIHIRO_VULKAN_IMMERSIVE_SCALE=1`: native always (or 0.9/0.8/0.7
+fixed); level changes are logged as `[immersive] render scale`. At 2560 per
+eye (an overload): late frames combat/E.S. activation/held 5/8/0 against
+4/15/13 with the fixed pattern. Mipmapped textures are
 filtered 8x anisotropically (`CHIHIRO_VULKAN_ANISO=n`, 1 off; free on the
 Frame). With the headset on, SteamVR's compositor works at 120 Hz on the
 same GPU, and every full-view layer it blends costs: the HUD is a quad layer

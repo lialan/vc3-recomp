@@ -27,6 +27,8 @@ typedef struct {
     uint32_t guest_width,guest_height;   /* the surface the scene went into */
     int hud;                   /* the HUD target holds this frame's HUD */
     uint32_t eye_width,eye_height;       /* each eye; the target is 2x wide */
+    float scale;    /* dynamic resolution: the fraction of each eye's half drawn
+                       (left eye from the top-left, right eye from the top-right) */
 } ChVkImmFrame;
 typedef struct {
     VkPhysicalDevice physical; VkDevice device; VkQueue queue; uint32_t family;

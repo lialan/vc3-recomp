@@ -94,7 +94,7 @@ VkResult ch_vk_nv2a_draw_fixed_resolved_read(ChVkTarget *,const Nv2aSurface *,co
  * re-projects 3D through imm->gp and each eye's imm->vp; mode 2 draws the
  * guest's 2D flat into each eye. No visibility queries (zpass_out must be
  * NULL); the guest surface's own draw is separate. */
-typedef struct { uint32_t mode,sbs; float gp[5]; float vp[2][16]; } ChVkImmDraw;
+typedef struct { uint32_t mode,sbs; float gp[5]; float vp[2][16]; float scale; } ChVkImmDraw;   /* scale: 0 = 1 */
 VkResult ch_vk_nv2a_draw_immersive_read(ChVkTarget *,const Nv2aSurface *,const Nv2aBatch *,
     const ChVkFixedGeometry *,const ChVkImmDraw *,ChVkDecodeTexture,ChVkSampleResolver,void *,void *,VkDeviceSize);
 /* The game's projection from fixed-function raw metadata in surface pixels

@@ -38,10 +38,11 @@ void main() {
     bool bad=abs(w)<=1e-6 || any(isnan(pos)) || any(isinf(pos));
     vec2 ndc=s.xy/vec2(params.p.surface[0],params.p.surface[1])*2-1;
     float zn=(s.z-params.p.depth[0])/(params.p.depth[1]-params.p.depth[0]);
-    vec4 guest_clip=vec4(ndc*w,zn*w,w);float side=1;
-    if(params.p.imm_mode!=0u && !bad) guest_clip=ch_imm_position(s,w,guest_clip,side);
+    vec4 guest_clip=vec4(ndc*w,zn*w,w);float side=1,low=1;
+    if(params.p.imm_mode!=0u && !bad) guest_clip=ch_imm_position(s,w,guest_clip,side,low);
     gl_Position=bad?vec4(0,0,0,1):guest_clip;
     gl_ClipDistance[2]=bad?-1e30:side;
+    gl_ClipDistance[3]=bad?-1e30:low;
     gl_ClipDistance[0]=bad?-1e30:w-1e-3;
     gl_ClipDistance[1]=bad?-1e30:params.p.near_z!=0u?(s.z-params.p.vp_off_z)*w:1;
     v_col=vp_color(O[3]);v_spec=vp_color(O[4]);v_fog=fog_factor(O[5].x);

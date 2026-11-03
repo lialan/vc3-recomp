@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 #define IMM_SURFACES 8
 #define ZOOM_SLOTS 8
 /* VC3's usual lens in 640-wide pixels: its 45 x 34.5 degree culling view */
@@ -36,7 +37,47 @@ struct ChVkImmersive {
     int half_effects;     /* CHIHIRO_VULKAN_IMMERSIVE_HALF_EFFECTS=0: every surface's eyes at native size */
     uint64_t guest_eye_samples;
     int log; uint64_t frames,world_batches,hud_batches,flat_batches,skipped_batches;
+    /* Dynamic resolution: the eyes drawn at k_levels[level] of their size. */
+    int dynamic,level,went_finer; unsigned window,late,calm,calm_need;
+    uint32_t last_vblank; uint64_t level_since_ns;
 };
+/* Dynamic resolution levels (fraction of each eye's width and height). A
+ * scene heavier than the GPU's 16.7 ms (VC3's later areas at native 2160 on
+ * the Steam Frame: 40 fps) steps down a level after half a second with 2+
+ * late frames, two with 8+ (a late frame: 2-4 emulated vblanks since the
+ * previous; more is a load; this thread runs pipelined behind the game, so
+ * its own clock hides them); a level up after calm_need quiet half-seconds
+ * (3 s), doubled (to 32 s) when a step up is undone within 10 s.
+ * CHIHIRO_VULKAN_IMMERSIVE_SCALE=k: fixed at the nearest level; =1: native
+ * always. */
+static const float k_levels[4]={1.f,.9f,.8f,.7f};
+void ch_vk_target_set_foveation_level(int level);
+uint32_t xbox_VblankCount(void) __attribute__((weak));   /* the kernel's; absent in tools */
+static uint64_t mono_ns(void) {struct timespec ts;clock_gettime(CLOCK_MONOTONIC,&ts);return (uint64_t)ts.tv_sec*1000000000ull+(uint64_t)ts.tv_nsec;}
+static void scale_control(ChVkImmersive *m) {
+    if(!m->dynamic || !m->on || !xbox_VblankCount) {m->last_vblank=0;return;}
+    uint64_t now=mono_ns();
+    uint32_t vb=xbox_VblankCount();
+    if(m->last_vblank) {
+        uint32_t d=vb-m->last_vblank;
+        if(d>=2 && d<=4) m->late++;   /* a missed vblank, not a load */
+    }
+    m->last_vblank=vb;
+    if(++m->window<30) return;
+    int prev=m->level;
+    if(m->late>=2 && m->level<3) {
+        if(m->went_finer && now-m->level_since_ns<10000000000ull) m->calm_need=m->calm_need*2>64?64:m->calm_need*2;
+        m->level+=m->late>=8 && m->level<2?2:1;m->calm=0;m->went_finer=0;
+    } else if(m->late==0) {
+        if(++m->calm>=m->calm_need && m->level>0) {m->level--;m->calm=0;m->went_finer=1;}
+    } else m->calm=0;
+    if(m->level!=prev) {
+        m->level_since_ns=now;
+        ch_vk_target_set_foveation_level(m->level);
+        fprintf(stderr,"[immersive] render scale %.0f%% (%u late frames in %u)\n",k_levels[m->level]*100,m->late,m->window);
+    } else if(now-m->level_since_ns>20000000000ull) m->calm_need=6;
+    m->window=m->late=0;
+}
 static int screen_shaped(const Nv2aSurface *s) {
     return s && s->width && s->height && (uint64_t)s->width*3==(uint64_t)s->height*4;
 }
@@ -163,6 +204,13 @@ VkResult ch_vk_immersive_create(const ChVkImmersiveConfig *config,ChVkImmersive 
     m->zoom_max=e?(float)atof(e):1.75f;
     e=getenv("CHIHIRO_VULKAN_IMMERSIVE_HALF_EFFECTS");
     m->half_effects=!e || atoi(e);
+    m->dynamic=1;m->calm_need=6;
+    e=getenv("CHIHIRO_VULKAN_IMMERSIVE_SCALE");
+    if(e && atof(e)>0) {
+        float k=(float)atof(e);m->dynamic=0;
+        for(int i=0;i<4;i++) if(fabsf(k_levels[i]-k)<fabsf(k_levels[m->level]-k)) m->level=i;
+        ch_vk_target_set_foveation_level(m->level);
+    }
     *out=m; return VK_SUCCESS;
 }
 void ch_vk_immersive_destroy(ChVkImmersive *m) {
@@ -327,7 +375,7 @@ VkResult ch_vk_immersive_draw(ChVkImmersive *m,const Nv2aSurface *s,const Nv2aBa
     if(!f) f=find(m,s);
     if(!f) {m->skipped_batches++;return VK_SUCCESS;}
     VkResult r=eyes(m,f); if(r!=VK_SUCCESS) return r;
-    ChVkImmDraw imm={.mode=is3d?1u:2u};
+    ChVkImmDraw imm={.mode=is3d?1u:2u,.scale=k_levels[m->level]};
     if(!is3d && m->config.textures) {
         if(b->texture && eye_source(m,b->texture)) imm.sbs|=16;
         for(unsigned i=0;i<4;i++) if(b->stage[i] && eye_source(m,b->stage[i])) imm.sbs|=1u<<i;
@@ -394,7 +442,7 @@ static void dump_scene(ChVkImmersive *m,struct ImmSurface *scene) {
 int ch_vk_immersive_guest_draw(ChVkImmersive *m,ChVkTarget *t,const Nv2aSurface *s,const Nv2aBatch *b,
     const ChVkFixedGeometry *fixed,ChVkSampleResolver resolve,void *context,void *pixels,VkDeviceSize bytes,VkResult *result) {
     if(!m || !m->on || !fixed || !b || !b->raw || !m->config.textures) return 0;
-    ChVkImmDraw imm={.mode=0};
+    ChVkImmDraw imm={.mode=0,.scale=k_levels[m->level]};
     if(b->texture && eye_source(m,b->texture)) imm.sbs|=16;
     for(unsigned i=0;i<4;i++) if(b->stage[i] && eye_source(m,b->stage[i])) imm.sbs|=1u<<i;
     if(!imm.sbs) return 0;
@@ -437,6 +485,7 @@ VkResult ch_vk_immersive_flip(ChVkImmersive *m,uint32_t presented,const Vc3VrVie
         out->view=m->view;out->projection=zoomed(m,&m->projection,src->width);out->projection_ok=1;
         out->guest_width=src->width;out->guest_height=src->height;
         out->eye_width=m->config.eye_width;out->eye_height=m->config.eye_height;
+        out->scale=k_levels[m->level];
         out->hud=m->hud_used;
         *eyes_out=src->eyes;*hud_out=m->hud_used?m->hud:NULL;
     }
@@ -497,5 +546,6 @@ VkResult ch_vk_immersive_flip(ChVkImmersive *m,uint32_t presented,const Vc3VrVie
     if(m->on) m->view=*next;
     m->hud_used=0;
     for(unsigned i=0;i<m->count;i++) {struct ImmSurface *f=&m->surfaces[i];f->world=f->drawn=f->flat=f->hud=f->full=f->composite=0;}
+    scale_control(m);   /* after this frame's eye work is submitted: the next frame's level */
     return VK_SUCCESS;
 }

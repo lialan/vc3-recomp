@@ -26,6 +26,10 @@ typedef struct {
      * bit i stage i, bit 4 the plain texture; each eye samples its half. */
     uint32_t imm_sbs;
     float imm_gp[5],imm_vp[2][16];
+    /* Dynamic resolution (vk_immersive.c): each eye's picture fills this
+     * fraction of its half (left eye from the top-left corner, right eye
+     * from the top-right), and eye images are sampled likewise. 1: all. */
+    float imm_scale;
     /* Program suffix is omitted from fixed-function uploads. Instruction words
      * specialize the pipeline; only constants are uploaded per draw. */
     uint32_t attribute_format[16];

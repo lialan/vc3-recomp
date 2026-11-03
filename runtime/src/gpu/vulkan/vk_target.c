@@ -61,7 +61,8 @@ struct ChVkTarget {
     VkRenderPass pass;
     VkImageView view;
     VkFramebuffer framebuffer;
-    VkImage rate_image; VkDeviceMemory rate_memory; VkImageView rate_view;   /* foveation */
+    /* foveation: a rate image and framebuffer per dynamic-resolution level */
+    VkImage rate_image[4]; VkDeviceMemory rate_memory[4]; VkImageView rate_view[4]; VkFramebuffer fov_fb[4];
     const ChVkTexture *const *stage_images;
     ChVkTexture *dummy,*dummy_cube;
     const Nv2aCombiner *rc;
@@ -178,6 +179,7 @@ struct ChVkTarget {
 };
 static VkResult finish_batch_named(ChVkTarget *,int,const char *);
 static void live_release(ChVkTarget *);
+static VkFramebuffer target_framebuffer(const ChVkTarget *);   /* foveation level's */
 static VkResult drain_ring(ChVkTarget *);
 static VkResult wait_copy_source(ChVkTarget *);
 static VkResult retire_copy_out(ChVkTarget *);
@@ -412,9 +414,12 @@ void ch_vk_target_destroy(ChVkTarget *t) {
     if(t->framebuffer) vkDestroyFramebuffer(t->device,t->framebuffer,NULL);
     if(t->view) vkDestroyImageView(t->device,t->view,NULL);
     if(t->pass) vkDestroyRenderPass(t->device,t->pass,NULL);
-    if(t->rate_view) vkDestroyImageView(t->device,t->rate_view,NULL);
-    if(t->rate_image) vkDestroyImage(t->device,t->rate_image,NULL);
-    if(t->rate_memory) vkFreeMemory(t->device,t->rate_memory,NULL);
+    for(int i=0;i<4;i++) {
+        if(i && t->fov_fb[i]) vkDestroyFramebuffer(t->device,t->fov_fb[i],NULL);   /* [0] is t->framebuffer */
+        if(t->rate_view[i]) vkDestroyImageView(t->device,t->rate_view[i],NULL);
+        if(t->rate_image[i]) vkDestroyImage(t->device,t->rate_image[i],NULL);
+        if(t->rate_memory[i]) vkFreeMemory(t->device,t->rate_memory[i],NULL);
+    }
     ch_vk_texture_destroy(t->dummy);
     ch_vk_texture_destroy(t->dummy_cube);
     if(t->queries) vkDestroyQueryPool(t->device,t->queries,NULL);
@@ -1156,7 +1161,7 @@ static VkResult begin_batch(ChVkTarget *t) {
             VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT|VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT|VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
             0,0,NULL,0,NULL,2,barriers);
         VkRenderPassBeginInfo pass={.sType=VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,.renderPass=t->pass,
-            .framebuffer=t->framebuffer,.renderArea={{0,0},{t->width,t->height}}};
+            .framebuffer=target_framebuffer(t),.renderArea={{0,0},{t->width,t->height}}};
         vkCmdBeginRenderPass(t->command,&pass,VK_SUBPASS_CONTENTS_INLINE);
     }
     return VK_SUCCESS;
@@ -1212,7 +1217,7 @@ static VkResult record_batch(ChVkTarget *t,VkBuffer geometry,VkDeviceSize index_
                 .dstAccessMask=VK_ACCESS_COLOR_ATTACHMENT_READ_BIT|VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT};
             vkCmdPipelineBarrier(t->command,VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,0,1,&color,0,NULL,0,NULL);
             VkRenderPassBeginInfo pass={.sType=VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,.renderPass=t->pass,
-                .framebuffer=t->framebuffer,.renderArea={{0,0},{t->width,t->height}}};
+                .framebuffer=target_framebuffer(t),.renderArea={{0,0},{t->width,t->height}}};
             vkCmdBeginRenderPass(t->command,&pass,VK_SUBPASS_CONTENTS_INLINE);
         }
     }
@@ -1297,7 +1302,7 @@ static VkResult render_read(ChVkTarget *t, const float rgba[4], uint32_t clear_f
         vkCmdPipelineBarrier(t->command,VK_PIPELINE_STAGE_TRANSFER_BIT,
             VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,0,0,NULL,0,NULL,1,&barrier);
         VkRenderPassBeginInfo rp={.sType=VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
-            .renderPass=t->pass,.framebuffer=t->framebuffer,
+            .renderPass=t->pass,.framebuffer=target_framebuffer(t),
             .renderArea={{0,0},{t->width,t->height}}};
         if(t->count_requested) vkCmdResetQueryPool(t->command,t->queries,0,1);
         vkCmdBeginRenderPass(t->command,&rp,VK_SUBPASS_CONTENTS_INLINE);
@@ -1544,7 +1549,15 @@ static struct {
     VkDevice device; PFN_vkCreateRenderPass2KHR create_pass2;
     uint32_t texel_w,texel_h; float inner,outer,far;
     int have_view; float tan[2][4];
+    int level;   /* dynamic resolution (vk_immersive.c): eyes drawn at scales[level] */
 } s_fov;
+static const float s_fov_scales[4]={1.f,.9f,.8f,.7f};
+void ch_vk_target_set_foveation_level(int level) {
+    if(level>=0 && level<4) __atomic_store_n(&s_fov.level,level,__ATOMIC_RELEASE);
+}
+static VkFramebuffer target_framebuffer(const ChVkTarget *t) {
+    return t->fov_fb[0]?t->fov_fb[__atomic_load_n(&s_fov.level,__ATOMIC_ACQUIRE)]:t->framebuffer;
+}
 void ch_vk_target_set_foveation(VkDevice device,PFN_vkCreateRenderPass2KHR create_pass2,
     uint32_t texel_w,uint32_t texel_h,float inner_deg,float outer_deg,float far_deg) {
     s_fov.create_pass2=create_pass2;s_fov.texel_w=texel_w;s_fov.texel_h=texel_h;
@@ -1570,7 +1583,7 @@ static uint8_t fov_rate(int e,float u,float v) {
 }
 /* The target's shading-rate image: filled once, then kept in the
  * attachment layout. */
-static VkResult rate_image_create(ChVkTarget *t) {
+static VkResult rate_image_create(ChVkTarget *t,int lv) {
     VkResult result=VK_SUCCESS;
     uint32_t w=(t->width+s_fov.texel_w-1)/s_fov.texel_w,h=(t->height+s_fov.texel_h-1)/s_fov.texel_h;
     VkBuffer staging=VK_NULL_HANDLE;VkDeviceMemory staging_memory=VK_NULL_HANDLE;
@@ -1578,15 +1591,15 @@ static VkResult rate_image_create(ChVkTarget *t) {
     VkImageCreateInfo ic={.sType=VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,.imageType=VK_IMAGE_TYPE_2D,.format=VK_FORMAT_R8_UINT,
         .extent={w,h,1},.mipLevels=1,.arrayLayers=1,.samples=VK_SAMPLE_COUNT_1_BIT,.tiling=VK_IMAGE_TILING_OPTIMAL,
         .usage=VK_IMAGE_USAGE_FRAGMENT_SHADING_RATE_ATTACHMENT_BIT_KHR|VK_IMAGE_USAGE_TRANSFER_DST_BIT};
-    TRY(vkCreateImage(t->device,&ic,NULL,&t->rate_image));
-    VkMemoryRequirements req;vkGetImageMemoryRequirements(t->device,t->rate_image,&req);
+    TRY(vkCreateImage(t->device,&ic,NULL,&t->rate_image[lv]));
+    VkMemoryRequirements req;vkGetImageMemoryRequirements(t->device,t->rate_image[lv],&req);
     VkMemoryAllocateInfo alloc={.sType=VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,.allocationSize=req.size};
     if(!memory_type(t->physical,req.memoryTypeBits,VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,&alloc.memoryTypeIndex)) {result=VK_ERROR_OUT_OF_DEVICE_MEMORY;goto fail;}
-    TRY(vkAllocateMemory(t->device,&alloc,NULL,&t->rate_memory));
-    TRY(vkBindImageMemory(t->device,t->rate_image,t->rate_memory,0));
-    VkImageViewCreateInfo vc={.sType=VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,.image=t->rate_image,
+    TRY(vkAllocateMemory(t->device,&alloc,NULL,&t->rate_memory[lv]));
+    TRY(vkBindImageMemory(t->device,t->rate_image[lv],t->rate_memory[lv],0));
+    VkImageViewCreateInfo vc={.sType=VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,.image=t->rate_image[lv],
         .viewType=VK_IMAGE_VIEW_TYPE_2D,.format=VK_FORMAT_R8_UINT,.subresourceRange={VK_IMAGE_ASPECT_COLOR_BIT,0,1,0,1}};
-    TRY(vkCreateImageView(t->device,&vc,NULL,&t->rate_view));
+    TRY(vkCreateImageView(t->device,&vc,NULL,&t->rate_view[lv]));
     VkBufferCreateInfo bc={.sType=VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,.size=(VkDeviceSize)w*h,.usage=VK_BUFFER_USAGE_TRANSFER_SRC_BIT};
     TRY(vkCreateBuffer(t->device,&bc,NULL,&staging));
     vkGetBufferMemoryRequirements(t->device,staging,&req);
@@ -1596,12 +1609,16 @@ static VkResult rate_image_create(ChVkTarget *t) {
     TRY(vkBindBufferMemory(t->device,staging,staging_memory,0));
     uint8_t *rates;TRY(vkMapMemory(t->device,staging_memory,0,VK_WHOLE_SIZE,0,(void **)&rates));
     unsigned counts[11]={0};
+    /* each eye's picture fills k of its half: the left eye's from the
+     * top-left corner, the right eye's from the top-right (immersive.glsl) */
+    float k=s_fov_scales[lv];
     for(uint32_t y=0;y<h;y++) for(uint32_t x=0;x<w;x++) {
-        float px=(x+.5f)*s_fov.texel_w/(float)t->width*2,py=(y+.5f)*s_fov.texel_h/(float)t->height;
-        int e=px>=1;uint8_t r=fov_rate(e,px-e,py);rates[y*w+x]=r;counts[r]++;
+        float px=(x+.5f)*s_fov.texel_w/(float)t->width*2,py=(y+.5f)*s_fov.texel_h/(float)t->height/k;
+        int e=px>=1;float u=e?(px-(2-k))/k:px/k;
+        uint8_t r=u<0 || u>1 || py>1?10:fov_rate(e,u,py);rates[y*w+x]=r;counts[r]++;
     }
     vkUnmapMemory(t->device,staging_memory);
-    fprintf(stderr,"[Vulkan] foveated %ux%u: %u%% full rate, %u%% 2x1, %u%% 2x2, %u%% 4x4 (%ux%u texels of %ux%u)\n",t->width,t->height,
+    if(!lv) fprintf(stderr,"[Vulkan] foveated %ux%u: %u%% full rate, %u%% 2x1, %u%% 2x2, %u%% 4x4 (%ux%u texels of %ux%u)\n",t->width,t->height,
         counts[0]*100/(w*h),counts[4]*100/(w*h),counts[5]*100/(w*h),counts[10]*100/(w*h),w,h,s_fov.texel_w,s_fov.texel_h);
     VkCommandPoolCreateInfo pc={.sType=VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,.queueFamilyIndex=t->family};
     TRY(vkCreateCommandPool(t->device,&pc,NULL,&pool));
@@ -1613,10 +1630,10 @@ static VkResult rate_image_create(ChVkTarget *t) {
     VkImageMemoryBarrier b={.sType=VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,.dstAccessMask=VK_ACCESS_TRANSFER_WRITE_BIT,
         .oldLayout=VK_IMAGE_LAYOUT_UNDEFINED,.newLayout=VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
         .srcQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED,.dstQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED,
-        .image=t->rate_image,.subresourceRange={VK_IMAGE_ASPECT_COLOR_BIT,0,1,0,1}};
+        .image=t->rate_image[lv],.subresourceRange={VK_IMAGE_ASPECT_COLOR_BIT,0,1,0,1}};
     vkCmdPipelineBarrier(cmd,VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,VK_PIPELINE_STAGE_TRANSFER_BIT,0,0,NULL,0,NULL,1,&b);
     VkBufferImageCopy copy={.imageSubresource={VK_IMAGE_ASPECT_COLOR_BIT,0,0,1},.imageExtent={w,h,1}};
-    vkCmdCopyBufferToImage(cmd,staging,t->rate_image,VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,1,&copy);
+    vkCmdCopyBufferToImage(cmd,staging,t->rate_image[lv],VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,1,&copy);
     b.srcAccessMask=VK_ACCESS_TRANSFER_WRITE_BIT;b.dstAccessMask=VK_ACCESS_FRAGMENT_SHADING_RATE_ATTACHMENT_READ_BIT_KHR;
     b.oldLayout=VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;b.newLayout=VK_IMAGE_LAYOUT_FRAGMENT_SHADING_RATE_ATTACHMENT_OPTIMAL_KHR;
     vkCmdPipelineBarrier(cmd,VK_PIPELINE_STAGE_TRANSFER_BIT,VK_PIPELINE_STAGE_FRAGMENT_SHADING_RATE_ATTACHMENT_BIT_KHR,0,0,NULL,0,NULL,1,&b);
@@ -1846,17 +1863,21 @@ static VkResult create_pipeline(ChVkTarget *t,const PipelineKey *key) {
     VkResult result;
     if(!t->pass) {
         int foveated=target_foveated(t->device,t->width);
-        if(foveated) TRY(rate_image_create(t));
+        if(foveated) for(int lv=0;lv<4;lv++) TRY(rate_image_create(t,lv));
         TRY(target_pass(t->device,t->depth_format,t->input_pass,t->width,&t->pass));
         VkImageViewCreateInfo view={.sType=VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
             .image=t->image,.viewType=VK_IMAGE_VIEW_TYPE_2D,.format=VK_FORMAT_R8G8B8A8_UNORM,
             .subresourceRange={VK_IMAGE_ASPECT_COLOR_BIT,0,1,0,1}};
         TRY(vkCreateImageView(t->device,&view,NULL,&t->view));
-        VkImageView views[]={t->view,t->depth_view,t->rate_view};
+        VkImageView views[]={t->view,t->depth_view,t->rate_view[0]};
         VkFramebufferCreateInfo fb={.sType=VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
             .renderPass=t->pass,.attachmentCount=foveated?3:2,.pAttachments=views,
             .width=t->width,.height=t->height,.layers=1};
         TRY(vkCreateFramebuffer(t->device,&fb,NULL,&t->framebuffer));
+        if(foveated) {
+            t->fov_fb[0]=t->framebuffer;
+            for(int lv=1;lv<4;lv++) {views[2]=t->rate_view[lv];TRY(vkCreateFramebuffer(t->device,&fb,NULL,&t->fov_fb[lv]));}
+        }
     }
     if(t->input_pass && !t->depth_quant_inline)
         TRY(ch_vk_depth_quant_create_inline(t->device,t->depth,t->depth_view,t->width,t->height,t->pass,&t->depth_quant_inline));
