@@ -465,7 +465,13 @@ static Frame *take_frame(int *is_new,int allow)
         s_frames_in=next.sequence;
         *is_new=1;
     }
-    return frame.gpu.image?&frame:NULL;
+    /* A frame from the bridge (the game on its own device) has no image,
+     * only its slot's shared buffer: held is what counts. */
+    if(frame.gpu.owner) {
+        static int logged;
+        if(!logged) {logged=1;fprintf(stderr,"[xr] first game frame for the screen: %dx%d, slot %u\n",frame.w,frame.h,frame.gpu.slot);}
+    }
+    return frame.gpu.owner?&frame:NULL;
 }
 #endif
 

@@ -69,6 +69,19 @@ static VkResult vk_publish(void *context,const Nv2aSurface *surface,ChVkTarget *
 {
     s_tid_exec=(pid_t)syscall(SYS_gettid);
     pace_game_frame();
+    {   /* VC3_XR_DUMP: the 600th frame handed to the headset, as published */
+        static unsigned n,at;
+        if(!at) at=ch_env("XR_DUMP_FRAME")?(unsigned)atoi(ch_env("XR_DUMP_FRAME")):600;
+        if(ch_env("XR_DUMP") && ++n==at) {
+            uint32_t w,h;ch_vk_target_size(target,&w,&h);
+            unsigned char *px=malloc((size_t)w*h*4);
+            if(px && ch_vk_target_read_color(target,px,(VkDeviceSize)w*h*4)==VK_SUCCESS) {
+                for(size_t i=0;i<(size_t)w*h;i++) px[i*4+3]=255;
+                dump_ppm("published.ppm",px,(int)w,(int)h);
+            }
+            free(px);
+        }
+    }
     return ch_vk_gpu_mailbox_publish(context,surface,target);
 }
 #if defined(CHIHIRO_XR_DESKTOP)
