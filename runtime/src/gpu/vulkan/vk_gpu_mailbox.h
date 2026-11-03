@@ -9,7 +9,8 @@ typedef struct {
     ChVkGpuMailbox *owner;
     unsigned slot;
 } ChVkGpuFrame;
-/* Three immutable GPU snapshots. One producer; any taken frame owns a slot
+#define CH_VK_GPU_MAILBOX_SLOTS 4
+/* Four immutable GPU snapshots. One producer; any taken frame owns a slot
  * until release. No CPU pixels, readback, or upload. Vulkan calls (publish,
  * consumer image use, destroy) require the host's shared queue lock. Take and
  * release only use the mailbox mutex. Never hold that mutex while calling GPU
@@ -19,7 +20,12 @@ VkResult ch_vk_gpu_mailbox_create(ChVkGpuMailbox **);
  * packed RGBA8, into its slot's buffer -- buffers[slot], of the target's
  * device, capacity bytes each -- and complete; a taken frame then has no
  * image, only its slot, whose shared buffer the consumer reads. */
-void ch_vk_gpu_mailbox_set_buffers(ChVkGpuMailbox *,const VkBuffer buffers[3],VkDeviceSize capacity);
+void ch_vk_gpu_mailbox_set_buffers(ChVkGpuMailbox *,const VkBuffer buffers[CH_VK_GPU_MAILBOX_SLOTS],VkDeviceSize capacity);
+/* How many finished frames may wait, taken oldest first (1, the default: only
+ * the newest waits). 2 lets a frame that finishes a little late still be
+ * shown, in order, instead of being replaced by the next one. A full queue
+ * drops its oldest frame, which bounds the added latency. */
+void ch_vk_gpu_mailbox_set_queue(ChVkGpuMailbox *,unsigned depth);
 /* Source must contain current pixels, including any guest CPU edits.
  * VK_NOT_READY means all slots are held: keep the previously displayed frame. */
 VkResult ch_vk_gpu_mailbox_publish(void *,const Nv2aSurface *,ChVkTarget *);

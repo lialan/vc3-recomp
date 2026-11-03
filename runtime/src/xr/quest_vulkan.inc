@@ -112,6 +112,12 @@ static int vk_host_init(void)
     s_vk_profile.enabled=profile && atoi(profile)!=0;
     VkResult result=ch_vk_gpu_mailbox_create(&s_vk_frames);
     if(result!=VK_SUCCESS) return 0;
+    /* The display takes a game frame every second 120 Hz frame. With only
+     * the newest waiting, one finished a little after its display frame
+     * was replaced by the next and the old one held for four: judder. Two
+     * waiting, taken in order, keep every frame on screen twice; a full
+     * queue drops its oldest. VC3_XR_FRAME_QUEUE=1: newest only. */
+    {const char *q=ch_env("XR_FRAME_QUEUE");ch_vk_gpu_mailbox_set_queue(s_vk_frames,q && atoi(q)==1?1:2);}
     VkDevice game_device=s_vk.device; VkQueue game_queue=s_vk.queue;
     void *game_lock=&s_vk_queue;
 #if defined(CHIHIRO_XR_DESKTOP)
@@ -204,15 +210,15 @@ static unsigned vk_present(const Frame *f,const XrCompositionLayerBaseHeader **l
     static int overlay_full=-1;
     if(overlay_full<0) overlay_full=ch_env("OVERLAY_FULLRATE") && *ch_env("OVERLAY_FULLRATE")=='1';
     s_vk_overlay_frame++;
-    int overlay_want=s_overlay_ok>0 && s_views_ok && s_qo.gun_valid;
+    static int eye_test=-1,swap_eyes=-1;
+    if(eye_test<0) eye_test=ch_env("XR_EYE_TEST") && *ch_env("XR_EYE_TEST")=='1';
+    if(swap_eyes<0) swap_eyes=ch_env("XR_SWAP_EYES") && *ch_env("XR_SWAP_EYES")=='1';
+    int overlay_want=s_overlay_ok>0 && s_views_ok && (s_qo.gun_valid || eye_test);
     int overlay_reuse=overlay_want && overlay_reuse_frame(s_vk_overlay_have_last,overlay_full,s_menu.open,s_vk_overlay_frame,display_period);
     if(!overlay_want) s_vk_overlay_have_last=0;
     /* Diagnostics for the eye mapping: EYE_TEST tints the left eye's overlay
      * red and the right eye's blue; SWAP_EYES draws each eye's overlay from
      * the other view (the image still goes to the same layer slot). */
-    static int eye_test=-1,swap_eyes=-1;
-    if(eye_test<0) eye_test=ch_env("XR_EYE_TEST") && *ch_env("XR_EYE_TEST")=='1';
-    if(swap_eyes<0) swap_eyes=ch_env("XR_SWAP_EYES") && *ch_env("XR_SWAP_EYES")=='1';
     if(overlay_want && !overlay_reuse) {
         for(unsigned e=0;e<2;e++) {
             const XrView *v=&s_views[swap_eyes?1-e:e];
@@ -222,7 +228,7 @@ static unsigned vk_present(const Frame *f,const XrCompositionLayerBaseHeader **l
             static const float transparent[4]={0,0,0,0},tint[2][4]={{.35f,0,0,.35f},{0,0,.35f,.35f}};
             eye_viewproj(v,vp);
             vk_check(ch_vk_target_clear_read(s_vk_eye[e].target,eye_test?tint[e]:transparent,s_vk_eye[e].pixels,bytes),"overlay clear");
-            vk_check(ch_vk_overlay_read(s_vk_eye[e].target,&s_qo,vp,eye,qo_sight_height(s_vr.sight),
+            if(s_qo.gun_valid) vk_check(ch_vk_overlay_read(s_vk_eye[e].target,&s_qo,vp,eye,qo_sight_height(s_vr.sight),
                 s_vk_eye[e].pixels,bytes),"overlay draw");
             vk_xr_check(ch_vk_xr_swapchain_wait(s_vk_eye[e].chain,XR_INFINITE_DURATION,&index,&image),"overlay acquire");
             vk_xr_check(ch_vk_xr_swapchain_copy_release(s_vk_eye[e].chain,s_vk_eye[e].target,NULL,0,&result),"overlay copy");

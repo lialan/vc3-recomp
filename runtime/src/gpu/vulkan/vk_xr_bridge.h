@@ -9,7 +9,7 @@
  * display frame, and the emulated GPU's many small waits each frame cost a
  * display period apiece (30 fps at 120 Hz, worse at 90). Both devices need
  * VK_KHR_external_memory_fd. */
-#define CH_VK_XR_BRIDGE_SLOTS 3
+#define CH_VK_XR_BRIDGE_SLOTS 4 /* one per GPU mailbox slot */
 typedef struct {
     VkDevice xr, game;
     VkDeviceSize capacity;
