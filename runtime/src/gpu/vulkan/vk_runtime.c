@@ -1,6 +1,7 @@
 #include "vk_runtime.h"
 #include "vk_backend.h"
 #include "vk_target.h"
+#include "vk_fixed.h"
 #include "vk_device_features.h"
 #include "vk_state.h"
 #include "vk_pipeline_cache_file.h"
@@ -406,6 +407,7 @@ static VkResult attach(ChVkBackendConfig config)
         /* Pipeline recipes beside the cache: what earlier runs built,
          * precompiled while the game boots (CHIHIRO_VULKAN_PRECOMPILE_THREADS,
          * 4 by default; 0 records only). */
+        ch_vk_vertex_program_loop_init(config.physical);
         if(runtime.cache_path) {
             size_t n=strlen(runtime.cache_path);char *recipes=malloc(n+16);
             if(recipes) {

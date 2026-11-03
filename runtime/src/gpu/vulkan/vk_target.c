@@ -486,6 +486,7 @@ static VkResult create_depth(VkPhysicalDevice physical,VkDevice device,VkQueue q
     vkGetPhysicalDeviceProperties(physical,&device_properties);
     t->noncoherent_atom=device_properties.limits.nonCoherentAtomSize;
     t->family=family; t->physical=physical; t->device=device; t->queue=queue; t->width=width; t->height=height;
+    ch_vk_vertex_program_loop_init(physical);
     const char *reuse=getenv("CHIHIRO_VULKAN_REUSE_RESOURCES");
     t->reuse_resources=!reuse || strcmp(reuse,"0");
     const char *split=getenv("CHIHIRO_VULKAN_NOAT");
@@ -1734,7 +1735,10 @@ static VkResult pipeline_build(VkDevice device,VkPipelineCache cache,VkRenderPas
     VkShaderModule vert=VK_NULL_HANDLE, frag=VK_NULL_HANDLE;
     VkShaderModuleCreateInfo shader={.sType=VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
         .codeSize=key->fixed?sizeof(color_fixed_spv):sizeof(color_vert_spv),.pCode=key->fixed?color_fixed_spv:color_vert_spv};
-    if(key->vertex_count) {shader.codeSize=sizeof(color_program_spv);shader.pCode=color_program_spv;}
+    if(key->vertex_count) {
+        shader.codeSize=ch_vk_vertex_program_loop?sizeof(color_program_loop_spv):sizeof(color_program_spv);
+        shader.pCode=ch_vk_vertex_program_loop?color_program_loop_spv:color_program_spv;
+    }
     TRY(vkCreateShaderModule(device,&shader,NULL,&vert));
 #define FRAGMENT(name) do { \
     shader.codeSize=key->fragment_depth?sizeof(color_##name##_depth_spv):sizeof(color_##name##_spv); \

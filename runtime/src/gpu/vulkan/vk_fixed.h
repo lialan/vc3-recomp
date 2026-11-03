@@ -61,6 +61,12 @@ VkResult ch_vk_fixed_prepare(const Nv2aRawGeometry *,ChVkFixedGeometry *);
  * have no ordered cross-vertex constant side effects. */
 VkResult ch_vk_program_prepare(const Nv2aRawGeometry *,ChVkFixedGeometry *);
 size_t ch_vk_raw_params_size(const ChVkFixedParams *);
+/* Vertex programs interpreted in a loop over the uploaded words instead of
+ * 136 specialized steps: on Qualcomm's proprietary driver (the Quest), whose
+ * compiler did not finish the specialized module. CHIHIRO_VULKAN_VP_LOOP=0|1
+ * overrides. Set once, before any pipeline is built. */
+extern int ch_vk_vertex_program_loop;
+void ch_vk_vertex_program_loop_init(VkPhysicalDevice physical);
 size_t ch_vk_raw_vertex_stride(const ChVkFixedParams *);
 void ch_vk_fixed_release(ChVkFixedGeometry *);
 #endif

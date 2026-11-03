@@ -1,5 +1,6 @@
 #include "vk_fixed.h"
 #include "../nv2a_fixed_roles.h"
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 static int snapshot_attribute(const Nv2aAttrib *a,uint32_t count,void *vertices,size_t stride,unsigned slot,uint32_t *format) {
@@ -143,8 +144,30 @@ unsupported:
 }
 /* Same borrowed attribute/topology contract as fixed geometry, but all sixteen
  * registers are passed through to the vertex program on the GPU. */
+int ch_vk_vertex_program_loop;
+void ch_vk_vertex_program_loop_init(VkPhysicalDevice physical) {
+    static int done;
+    if(done) return;
+    done=1;
+    const char *e=getenv("CHIHIRO_VULKAN_VP_LOOP");
+    if(e && *e) ch_vk_vertex_program_loop=atoi(e)!=0;
+#ifdef __ANDROID__
+    else if(physical) {
+        VkPhysicalDeviceDriverProperties driver={.sType=VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DRIVER_PROPERTIES};
+        VkPhysicalDeviceProperties2 props={.sType=VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2,.pNext=&driver};
+        vkGetPhysicalDeviceProperties2(physical,&props);
+        ch_vk_vertex_program_loop=driver.driverID==VK_DRIVER_ID_QUALCOMM_PROPRIETARY;
+    }
+#else
+    (void)physical;
+#endif
+    if(ch_vk_vertex_program_loop) fprintf(stderr,"[Vulkan] vertex programs interpreted in a loop\n");
+}
 size_t ch_vk_raw_params_size(const ChVkFixedParams *p) {
-    return p->program_count?offsetof(ChVkFixedParams,program_count):offsetof(ChVkFixedParams,constants);
+    if(!p->program_count) return offsetof(ChVkFixedParams,constants);
+    /* the loop reads the count and the words */
+    return ch_vk_vertex_program_loop?offsetof(ChVkFixedParams,program)+(size_t)p->program_count*16
+                                    :offsetof(ChVkFixedParams,program_count);
 }
 size_t ch_vk_raw_vertex_stride(const ChVkFixedParams *p) {
     return p->program_count?16*4*sizeof(float):sizeof(ChVkFixedVertex);

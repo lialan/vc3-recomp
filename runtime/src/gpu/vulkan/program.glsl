@@ -82,7 +82,14 @@ void vp_run(vec4 v[16],out vec4 pos,out vec4 O[13]) {
     vec4 R[13];for(int i=0;i<13;i++) {R[i]=vec4(0);O[i]=vec4(0);}
     O[3].w=O[4].w=O[9].w=O[10].w=O[11].w=O[12].w=1;
     int a0=0;
+#ifdef CH_VP_LOOP
+    // The words from the parameters, one vp_step in the module (Qualcomm's
+    // proprietary compiler did not finish the 136 specialized steps).
+    [[dont_unroll]] for(uint i=0u;i<params.p.program_count && i<136u;i++)
+        vp_step(uvec4(params.p.program[i][0],params.p.program[i][1],params.p.program[i][2],params.p.program[i][3]),v,R,O,a0);
+#else
 #include "vertex_steps.glsl"
+#endif
     pos=R[12];
 }
 vec4 vp_color(vec4 c) {

@@ -1,4 +1,5 @@
 #include "vk_xr_bridge.h"
+#include <stdio.h>
 #include <string.h>
 #include <unistd.h>
 
@@ -30,7 +31,23 @@ VkResult ch_vk_xr_bridge_create(VkPhysicalDevice physical, VkDevice xr, VkDevice
     out->xr = xr; out->game = game; out->capacity = capacity;
     PFN_vkGetMemoryFdKHR get_fd = (PFN_vkGetMemoryFdKHR)vkGetDeviceProcAddr(xr, "vkGetMemoryFdKHR");
     if (!get_fd) return VK_ERROR_EXTENSION_NOT_PRESENT;
+    /* Some drivers (the Quest's) export opaque-fd memory only as a dedicated
+     * allocation, bound to the one buffer on each side. */
+    VkPhysicalDeviceExternalBufferInfo query = {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTERNAL_BUFFER_INFO,
+        .usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+        .handleType = VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT};
+    VkExternalBufferProperties props = {.sType = VK_STRUCTURE_TYPE_EXTERNAL_BUFFER_PROPERTIES};
+    vkGetPhysicalDeviceExternalBufferProperties(physical, &query, &props);
+    VkExternalMemoryFeatureFlags features = props.externalMemoryProperties.externalMemoryFeatures;
+    if (!(features & VK_EXTERNAL_MEMORY_FEATURE_EXPORTABLE_BIT)
+        || !(features & VK_EXTERNAL_MEMORY_FEATURE_IMPORTABLE_BIT)) {
+        fprintf(stderr, "[xr bridge] opaque-fd buffers not exportable and importable (features 0x%x)\n",
+                (unsigned)features);
+        return VK_ERROR_FEATURE_NOT_PRESENT;
+    }
+    int dedicated = (features & VK_EXTERNAL_MEMORY_FEATURE_DEDICATED_ONLY_BIT) != 0;
     VkResult r = VK_SUCCESS;
+    const char *step = "buffers";
     for (unsigned i = 0; i < CH_VK_XR_BRIDGE_SLOTS && r == VK_SUCCESS; i++) {
         VkMemoryRequirements req, game_req;
         r = make_buffer(xr, capacity, &out->xr_buffer[i]);
@@ -42,10 +59,13 @@ VkResult ch_vk_xr_bridge_create(VkPhysicalDevice physical, VkDevice xr, VkDevice
         uint32_t type = memory_type(physical, req.memoryTypeBits & game_req.memoryTypeBits);
         if (type == UINT32_MAX) { r = VK_ERROR_FEATURE_NOT_PRESENT; break; }
         VkDeviceSize size = req.size > game_req.size ? req.size : game_req.size;
+        VkMemoryDedicatedAllocateInfo xr_dedicated = {.sType = VK_STRUCTURE_TYPE_MEMORY_DEDICATED_ALLOCATE_INFO,
+            .buffer = out->xr_buffer[i]};
         VkExportMemoryAllocateInfo export = {.sType = VK_STRUCTURE_TYPE_EXPORT_MEMORY_ALLOCATE_INFO,
-            .handleTypes = VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT};
+            .pNext = dedicated ? &xr_dedicated : NULL, .handleTypes = VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT};
         VkMemoryAllocateInfo alloc = {.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO, .pNext = &export,
             .allocationSize = size, .memoryTypeIndex = type};
+        step = "export allocation";
         r = vkAllocateMemory(xr, &alloc, NULL, &out->xr_memory[i]);
         if (r != VK_SUCCESS) break;
         r = vkBindBufferMemory(xr, out->xr_buffer[i], out->xr_memory[i], 0);
@@ -53,17 +73,27 @@ VkResult ch_vk_xr_bridge_create(VkPhysicalDevice physical, VkDevice xr, VkDevice
         int fd = -1;
         VkMemoryGetFdInfoKHR fd_info = {.sType = VK_STRUCTURE_TYPE_MEMORY_GET_FD_INFO_KHR,
             .memory = out->xr_memory[i], .handleType = VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT};
+        step = "fd export";
         r = get_fd(xr, &fd_info, &fd);
         if (r != VK_SUCCESS) break;
         /* the import owns the fd from here, whether or not it succeeds */
+        VkMemoryDedicatedAllocateInfo game_dedicated = {.sType = VK_STRUCTURE_TYPE_MEMORY_DEDICATED_ALLOCATE_INFO,
+            .buffer = out->game_buffer[i]};
         VkImportMemoryFdInfoKHR import = {.sType = VK_STRUCTURE_TYPE_IMPORT_MEMORY_FD_INFO_KHR,
+            .pNext = dedicated ? &game_dedicated : NULL,
             .handleType = VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT, .fd = fd};
         alloc.pNext = &import;
+        step = "import";
         r = vkAllocateMemory(game, &alloc, NULL, &out->game_memory[i]);
         if (r != VK_SUCCESS) { close(fd); break; }
+        step = "import bind";
         r = vkBindBufferMemory(game, out->game_buffer[i], out->game_memory[i], 0);
     }
-    if (r != VK_SUCCESS) ch_vk_xr_bridge_destroy(out);
+    if (r != VK_SUCCESS) {
+        fprintf(stderr, "[xr bridge] %s failed: %d (features 0x%x%s)\n", step, (int)r, (unsigned)features,
+                dedicated ? ", dedicated only" : "");
+        ch_vk_xr_bridge_destroy(out);
+    }
     return r;
 }
 
