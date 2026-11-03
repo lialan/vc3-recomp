@@ -47,3 +47,27 @@ game. The game folder (`vc3.xbe`, `media/`) is `~/work/vc3-game` unless
 `bench.sh <label> [binary]` runs the scripted combat route (2100 frames) and
 prints frame times and costs for the combat, E.S. activation and E.S. held
 windows; extra options come from the environment.
+
+## Performance defaults and switches (`env.txt`)
+
+E.S. mode runs at 60 fps on the Frame (about 13 ms of work per frame).
+What gets it there, and how to turn each part off:
+
+- **Guest completions don't wait for the GPU** (`CHIHIRO_VULKAN_LAZY_COMPLETION=0`
+  restores waiting and writing rendered color back at each kickoff/semaphore)
+  and **depth stays on the GPU** (`CHIHIRO_VULKAN_COMPLETION_DEPTH=1` publishes
+  it again). The OpenGL renderer has no completion hook at all; VC3 never
+  reads rendered pixels or depth from the CPU.
+- **Batch ring**: four command buffers per target, a batch submitted every 64
+  draws (`CHIHIRO_VULKAN_BATCH_RING=0`, `CHIHIRO_VULKAN_BATCH_LIMIT=n`).
+- **Frame queue**: two finished frames may wait for the display and are shown
+  in order, each for two 120 Hz frames (`VC3_XR_FRAME_QUEUE=1`: newest only).
+- Eye-mapping diagnostics: `VC3_XR_EYE_TEST=1` tints the left eye's overlay
+  red and the right eye's blue; `VC3_XR_SWAP_EYES=1` draws each eye's overlay
+  from the other view. The log's `[xr] eyes:` line shows the runtime's layout.
+
+Benchmarking: the Frame's speed varies by a few ms with SteamVR's state, so
+compare builds back to back; a cold pipeline cache adds ~1 s shader-compile
+stalls; the forced exit at `VC3_VULKAN_FRAME_LIMIT` often crashes at shutdown
+(an existing shutdown-order bug, not seen in play). `CHIHIRO_VULKAN_WAIT_STACKS=1`
+prints where the host waits for the GPU.
