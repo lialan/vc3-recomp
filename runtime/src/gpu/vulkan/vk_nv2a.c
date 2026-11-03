@@ -515,9 +515,17 @@ VkResult ch_vk_nv2a_projection_from_raw_surface(const Nv2aBatch *batch,VrGamePro
     if(raw->kind!=NV2A_RAW_FIXED || !raw->ff) return VK_ERROR_FEATURE_NOT_PRESENT;
     const Nv2aFixedState *ff=raw->ff;
     VrGameProj projection;
-    if(!vr_game_proj_from(ff->composite,ff->mv[0],ff->use_composite,ff->proj,
-        raw->aa_sx,raw->aa_sy,ff->c59,&projection) || projection.kx==0 || projection.ky==0 ||
-        !isfinite(projection.inv_pz) || projection.inv_pz==0)
+    int ok=vr_game_proj_from(ff->composite,ff->mv[0],ff->use_composite,ff->proj,
+        raw->aa_sx,raw->aa_sy,ff->c59,&projection);
+    /* The composite path divides by the model-view, which some objects make
+     * singular (a squashed or degenerate model matrix): their batches were
+     * taken for 2D and drawn flat across the eyes -- depth-only passes then
+     * covered the world with screen-shaped depth. The camera's projection
+     * matrix itself still says where they are; an orthographic one (real
+     * 2D) fails this test too. */
+    if(!ok && ff->use_composite)
+        ok=vr_game_proj_from(ff->composite,ff->mv[0],0,ff->proj,raw->aa_sx,raw->aa_sy,ff->c59,&projection);
+    if(!ok || projection.kx==0 || projection.ky==0 || !isfinite(projection.inv_pz) || projection.inv_pz==0)
         return VK_ERROR_INITIALIZATION_FAILED;
     *out=projection; return VK_SUCCESS;
 }

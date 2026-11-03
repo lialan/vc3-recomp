@@ -17,6 +17,9 @@ struct Entry {
     uint64_t serial;
     ChGuestWriteRange *raw_watch,*palette_watch;
     int observed_valid,observed_same;
+    /* Forgotten while pinned (its source target went away): out of every
+     * lookup, destroyed when the last pin is released. */
+    struct ChVkTextureCache *owner;int detached;
 };
 #define LOOKUP_HINTS 1024u
 struct ChVkTextureCache {
@@ -170,7 +173,7 @@ static struct Entry *lookup_hint(ChVkTextureCache *c,const Nv2aTexture *t,ChVkTa
     uint32_t index=c->hints[hint_bucket(t,source)];
     if(!index || index>c->extent) return NULL;
     struct Entry *e=&c->entries[index-1];
-    if(!e->image || e->source!=source || memcmp(&e->key,t,sizeof *t)) return NULL;
+    if(!e->image || e->detached || e->source!=source || memcmp(&e->key,t,sizeof *t)) return NULL;
     return e;
 }
 static void release(void *context,ChVkTexture *image) {
@@ -178,8 +181,16 @@ static void release(void *context,ChVkTexture *image) {
     struct Entry *e=context;
     if(e->image!=image || !e->pins) abort();
     e->pins--;
+    if(!e->pins && e->detached) {
+        struct ChVkTextureCache *c=e->owner;
+        ch_vk_texture_destroy(e->image);free(e->raw);
+        ch_guest_write_range_destroy(e->raw_watch);ch_guest_write_range_destroy(e->palette_watch);
+        c->stats.bytes-=e->cost;c->stats.evictions++;c->stats.entries--;
+        memset(e,0,sizeof *e);
+    }
 }
 static void pin(ChVkTextureCache *c,struct Entry *e,ChVkSampleImage *out) {
+    e->owner=c;
     e->pins++;e->used=++c->clock;e->frame=c->frame;
     c->hints[hint_bucket(&e->key,e->source)]=(uint32_t)(e-c->entries)+1;
     *out=(ChVkSampleImage){.width=e->key.width,.height=e->key.height,.gpu=e->image,
@@ -330,6 +341,18 @@ VkResult ch_vk_texture_cache_resolve_target(ChVkTextureCache *c,const Nv2aTextur
     index_entry(c,slot);
     c->stats.entries++;c->stats.bytes+=cost;c->stats.gpu_copies++;pin(c,slot,out);
     trace_miss(c,t,start,room,room,c->trace?cache_us():0,1,0);return VK_SUCCESS;
+}
+void ch_vk_texture_cache_forget_source(ChVkTextureCache *c,const ChVkTarget *source) {
+    if(!c || !source) return;
+    for(uint32_t i=0;i<c->extent;i++) {
+        struct Entry *e=&c->entries[i];
+        if(!e->image || e->source!=source || e->detached) continue;
+        if(!e->pins) {drop(c,e);continue;}
+        uint32_t index=i+1,*link=&c->buckets[hint_bucket(&e->key,e->source)];
+        while(*link && *link!=index) link=&c->entries[*link-1].lookup_next;
+        if(*link) *link=e->lookup_next;
+        e->lookup_next=0;e->source=NULL;e->detached=1;e->owner=c;
+    }
 }
 void ch_vk_texture_cache_advance_frame(ChVkTextureCache *c) {
     if(!c) return;

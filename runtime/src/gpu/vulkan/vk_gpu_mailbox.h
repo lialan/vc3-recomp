@@ -19,7 +19,13 @@ typedef struct {
      * this fence (of ready_device) before reading the buffer. */
     VkDevice ready_device;
     VkFence ready;
+    /* Shown from this time on (ch_vk_gpu_mailbox_set_pacing's clock; 0: at
+     * once): the vblank its flip completes at, as a console shows it. */
+    uint64_t due_ns;
 } ChVkGpuFrame;
+/* Present pacing: due() gives a frame published now the time it is due
+ * (0: at once), now() the same clock; take_ready waits for it. */
+void ch_vk_gpu_mailbox_set_pacing(ChVkGpuMailbox *,uint64_t (*due)(void),uint64_t (*now)(void));
 /* Wait for a taken frame's copy (bridge mode); no-op otherwise. */
 VkResult ch_vk_gpu_frame_wait(const ChVkGpuFrame *);
 #define CH_VK_GPU_MAILBOX_SLOTS 4

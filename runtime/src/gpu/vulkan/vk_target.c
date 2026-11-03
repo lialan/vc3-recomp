@@ -782,7 +782,7 @@ static void wait_stack_note(uint64_t ns) {(void)ns;}
 #endif
 /* Per-draw GPU time by bucket: vertex path (fixed/program/CPU) x fragment
  * shader (plain/textured/combiner/effect) x eye target or guest. */
-static struct {uint64_t ns,draws,indices,instances;} draw_stats[3][4][2];
+static struct {uint64_t ns,draws,indices,instances;} draw_stats[3][4][3];
 static uint64_t draw_stats_start;
 static const char *const draw_vertex_name[3]={"fixed","program","cpu"};
 static const char *const draw_fragment_name[4]={"plain","textured","combiner","effect"};
@@ -793,7 +793,7 @@ static void draw_timing_collect(ChVkTarget *t,unsigned k) {
     if(vkGetQueryPoolResults(t->device,t->draw_pool[k],0,n+1,sizeof stamps,stamps,sizeof(uint64_t),VK_QUERY_RESULT_64_BIT)!=VK_SUCCESS) {t->draw_n[k]=0;return;}
     uint64_t mask=t->timestamp_bits==64?UINT64_MAX:((UINT64_C(1)<<t->timestamp_bits)-1);
     for(uint32_t i=1;i<=n;i++) {
-        unsigned b=t->draw_meta[k][i].bucket,v=b>>3,f=(b>>1)&3,e=b&1;
+        unsigned b=t->draw_meta[k][i].bucket,v=b>>4,f=(b>>2)&3,e=b&3;
         uint64_t ns=(uint64_t)(((stamps[i]-stamps[i-1])&mask)*t->timestamp_period);
         draw_stats[v][f][e].ns+=ns;draw_stats[v][f][e].draws++;draw_stats[v][f][e].indices+=t->draw_meta[k][i].indices;
     }
@@ -802,8 +802,8 @@ static void draw_timing_collect(ChVkTarget *t,unsigned k) {
     if(!draw_stats_start) draw_stats_start=now;
     if(now-draw_stats_start<2000000000ull) return;
     fprintf(stderr,"[Vulkan draw GPU] %.1fs:",(now-draw_stats_start)/1e9);
-    for(unsigned v=0;v<3;v++) for(unsigned f=0;f<4;f++) for(unsigned e=0;e<2;e++) if(draw_stats[v][f][e].draws)
-        fprintf(stderr," %s/%s/%s=%llu draws %.1fms (%.1fus, %llu idx/draw)",draw_vertex_name[v],draw_fragment_name[f],e?"eyes":"guest",
+    for(unsigned v=0;v<3;v++) for(unsigned f=0;f<4;f++) for(unsigned e=0;e<3;e++) if(draw_stats[v][f][e].draws)
+        fprintf(stderr," %s/%s/%s=%llu draws %.1fms (%.1fus, %llu idx/draw)",draw_vertex_name[v],draw_fragment_name[f],e==1?"eyes3d":e==2?"eyesflat":"guest",
             (unsigned long long)draw_stats[v][f][e].draws,draw_stats[v][f][e].ns/1e6,
             draw_stats[v][f][e].ns/1e3/draw_stats[v][f][e].draws,
             (unsigned long long)(draw_stats[v][f][e].indices/draw_stats[v][f][e].draws));
@@ -1122,8 +1122,8 @@ static VkResult record_batch(ChVkTarget *t,VkBuffer geometry,VkDeviceSize index_
     if(t->draw_pool[t->slot] && t->draw_n[t->slot]<BATCH_DRAWS) {
         uint32_t i=++t->draw_n[t->slot];
         const PipelineKey *key=&t->active_pipeline->key;
-        unsigned v=!key->fixed?2:key->vertex_count?1:0,f=key->shader&3,e=t->fixed && t->fixed->imm_mode;
-        t->draw_meta[t->slot][i].bucket=(uint8_t)(v<<3|f<<1|e);t->draw_meta[t->slot][i].indices=index_count;
+        unsigned v=!key->fixed?2:key->vertex_count?1:0,f=key->shader&3,e=t->fixed?t->fixed->imm_mode&3:0;
+        t->draw_meta[t->slot][i].bucket=(uint8_t)(v<<4|f<<2|e);t->draw_meta[t->slot][i].indices=index_count;
         vkCmdWriteTimestamp(t->command,VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,t->draw_pool[t->slot],i);
     }
     if(t->quantized_depth && t->quantized_depth!=5 && t->active_pipeline->key.depth.depthTestEnable &&

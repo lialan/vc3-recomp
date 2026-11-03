@@ -12,8 +12,13 @@ struct ChVkGpuMailbox {
      * of a frame waited for the GPU to finish it: ~2.4 ms of the game's
      * frame on the Steam Frame). Game device and queue. */
     VkDevice device; VkCommandPool pool;
+    uint64_t (*due)(void),(*now)(void);
     struct {VkCommandBuffer command;VkFence fence;int pending;} copy[CH_VK_GPU_MAILBOX_SLOTS];
 };
+void ch_vk_gpu_mailbox_set_pacing(ChVkGpuMailbox *b,uint64_t (*due)(void),uint64_t (*now)(void)) {
+    if(!b) return;
+    pthread_mutex_lock(&b->lock);b->due=due;b->now=now;pthread_mutex_unlock(&b->lock);
+}
 VkResult ch_vk_gpu_frame_wait(const ChVkGpuFrame *f) {
     if(!f || !f->ready) return VK_SUCCESS;
     return vkWaitForFences(f->ready_device,1,&f->ready,VK_TRUE,5000000000ULL);
@@ -100,7 +105,8 @@ VkResult ch_vk_gpu_mailbox_publish(void *context,const Nv2aSurface *surface,ChVk
         }
         b->pending[b->waiting++]=(ChVkGpuFrame){.surface=*surface,.sequence=++b->sequence,
             .image=b->slots[i].image,.owner=b,.slot=i,
-            .ready_device=b->buffers[i]?b->device:VK_NULL_HANDLE,.ready=b->buffers[i]?b->copy[i].fence:VK_NULL_HANDLE};
+            .ready_device=b->buffers[i]?b->device:VK_NULL_HANDLE,.ready=b->buffers[i]?b->copy[i].fence:VK_NULL_HANDLE,
+            .due_ns=b->due?b->due():0};
     } else b->slots[i].held=0;
     pthread_mutex_unlock(&b->lock);
     return r;
@@ -120,7 +126,8 @@ VkResult ch_vk_gpu_mailbox_take_ready(ChVkGpuMailbox *b,ChVkGpuFrame *out) {
     if(!b || !out || out->owner || out->image) return VK_ERROR_INITIALIZATION_FAILED;
     pthread_mutex_lock(&b->lock);
     VkResult r=VK_NOT_READY;
-    if(b->waiting && (!b->pending[0].ready || vkGetFenceStatus(b->pending[0].ready_device,b->pending[0].ready)==VK_SUCCESS)) {
+    if(b->waiting && (!b->pending[0].due_ns || !b->now || b->now()>=b->pending[0].due_ns) &&
+       (!b->pending[0].ready || vkGetFenceStatus(b->pending[0].ready_device,b->pending[0].ready)==VK_SUCCESS)) {
         *out=b->pending[0];
         for(unsigned k=1;k<b->waiting;k++) b->pending[k-1]=b->pending[k];
         memset(&b->pending[--b->waiting],0,sizeof b->pending[0]);r=VK_SUCCESS;
@@ -171,7 +178,8 @@ VkResult ch_vk_gpu_mailbox_publish_immersive(ChVkGpuMailbox *b,const Nv2aSurface
             b->waiting--;
         }
         ChVkGpuFrame frame={.surface=*surface,.sequence=++b->sequence,.owner=b,.slot=i,
-            .immersive=1,.imm=*info,.hud_offset=hud_offset,.ready_device=b->device,.ready=b->copy[i].fence};
+            .immersive=1,.imm=*info,.hud_offset=hud_offset,.ready_device=b->device,.ready=b->copy[i].fence,
+            .due_ns=b->due?b->due():0};
         frame.imm.hud=hud!=NULL;
         b->pending[b->waiting++]=frame;
     } else b->slots[i].held=0;

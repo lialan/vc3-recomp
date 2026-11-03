@@ -41,6 +41,9 @@ VkResult ch_vk_texture_cache_resolve_target(ChVkTextureCache *,const Nv2aTexture
     ChVkTarget *,uint64_t serial,ChVkSampleImage *);
 /* Call once per completed guest frame; optional cold trimming may retire one
  * unpinned image. Without this hook eviction stays LRU. */
+/* Before destroying a target: its snapshots leave the cache (pinned ones
+ * when their draws complete). */
+void ch_vk_texture_cache_forget_source(ChVkTextureCache *,const ChVkTarget *);
 void ch_vk_texture_cache_advance_frame(ChVkTextureCache *);
 void ch_vk_texture_cache_stats(const ChVkTextureCache *,ChVkTextureCacheStats *);
 /* Stop sampling first. All returned pins must have been released. */

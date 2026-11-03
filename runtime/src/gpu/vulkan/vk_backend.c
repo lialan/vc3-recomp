@@ -26,6 +26,7 @@ static int skip_guest(void) {
     return imm_skip_guest;
 }
 static ChVkTarget *guest_target_of(void *,uint32_t);
+static void submit_pending(void);
 static void flush_color(struct Surface *);
 static void observe_guest_colors(void);
 static void observe_guest_color(struct Surface *);
@@ -271,7 +272,14 @@ static struct Surface *surface(const Nv2aSurface *s,const Nv2aRenderState *rs) {
     if(f && f->guest.width==s->width && f->guest.height==s->height &&
        f->guest.pitch==s->pitch && f->guest.bytes_per_pixel==s->bytes_per_pixel) {
         if(f->resident && f->state.surface_format!=rs->surface_format) {
-            observe_guest_color(f);flush_color(f);f->observed_valid=0;
+            /* Lazy completion (the guest never reads rendered pixels): a
+             * switch between linear and swizzled storage of the same image
+             * (VC3's effect maps, every frame) keeps the GPU image as it is --
+             * guest RAM is not its copy anyway. Its write-back waited for the
+             * whole queue, eye rendering included (~2.5 ms each). */
+            int layout_only=active->host.lazy_completion && active->host.present_target &&
+                ((f->state.surface_format^rs->surface_format)&~0xf00u)==0;
+            if(!layout_only) {observe_guest_color(f);flush_color(f);f->observed_valid=0;}
         }
         if(f->resident && f->raw_span!=span) {
             void *raw=realloc(f->raw,(size_t)span);
@@ -782,7 +790,17 @@ static void flip(void) {
     if(!active) fatal(VK_ERROR_INITIALIZATION_FAILED,"flip without backend");
     uint64_t cpu=active->costs.enabled?thread_cpu_ns():0;
     uint64_t start=active->costs.enabled?now_us():0;
-    flush();
+    /* Lazy completion with a GPU presenter: the flip presents GPU targets
+     * and the guest never reads rendered pixels, so it publishes nothing and
+     * waits for nothing -- pending work is submitted. (A full flush read back
+     * every dirty target and waited for the whole queue every frame.) CPU
+     * decoding of a target still publishes it first. Opt-in
+     * (CHIHIRO_VULKAN_LAZY_FLIP=1): on the Steam Frame frames then alternated
+     * long/short (the flush's wait had been pacing the submission thread). */
+    static int lazy_flip=-1;
+    if(lazy_flip<0) {const char *e=getenv("CHIHIRO_VULKAN_LAZY_FLIP");lazy_flip=e && atoi(e);}
+    if(lazy_flip && active->host.lazy_completion && active->host.present_target) submit_pending();
+    else flush();
     if(active->costs.enabled) {active->costs.flip_us+=now_us()-start;active->costs.flip_cpu_ns+=thread_cpu_ns()-cpu;}
     active->frames++;
     cpu=active->costs.enabled?thread_cpu_ns():0;

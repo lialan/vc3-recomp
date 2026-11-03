@@ -11,6 +11,11 @@ struct ImmSurface {
     ChVkTarget *eyes; unsigned char *pixels;
     VrGameProj projection; int projection_ok;
     uint64_t serial;         /* the eyes' contents, for snapshots */
+    /* Effect-only surfaces (never shown, no 3D: E.S.'s feedback buffer) get
+     * eyes at half the size each way -- their full-screen passes were ~0.6 ms
+     * each at native size; a blurred trail does not need native detail.
+     * div: the eyes' current divisor; last_3d/last_shown: frames. */
+    uint32_t div;uint64_t last_3d,last_shown;size_t pixels_bytes;
     uint32_t world,drawn,flat,hud,full;    /* this frame: 3D batches; any eye work; 2D flat/HUD/full-screen */
 };
 struct ChVkImmersive {
@@ -23,7 +28,8 @@ struct ChVkImmersive {
     struct {float k;uint32_t n;} zoom[ZOOM_SLOTS]; float kbase;
     /* per-batch projection cache: identical matrices, identical projection */
     Nv2aFixedState last_ff; float last_aa[2]; int last_valid,last_ok; VrGameProj last;
-    int zoom_normalise;   /* CHIHIRO_VULKAN_IMMERSIVE_ZOOM=1: the OpenGL renderer's zoom_proj */
+    int zoom_normalise;
+    int half_effects;     /* CHIHIRO_VULKAN_IMMERSIVE_HALF_EFFECTS=0: every surface's eyes at native size */   /* CHIHIRO_VULKAN_IMMERSIVE_ZOOM=1: the OpenGL renderer's zoom_proj */
     uint64_t guest_eye_samples;
     int log; uint64_t frames,world_batches,hud_batches,flat_batches,skipped_batches;
 };
@@ -50,7 +56,7 @@ static VkResult imm_resolve(void *context,const Nv2aTexture *tx,ChVkSampleImage 
     struct ImmResolve *c=context;
     struct ImmSurface *f=c->m->config.textures?eye_source(c->m,tx):NULL;
     if(f) {
-        Nv2aTexture key=*tx;key.width=c->m->config.eye_width*2;key.height=c->m->config.eye_height;
+        Nv2aTexture key=*tx;ch_vk_target_size(f->eyes,&key.width,&key.height);
         key.pitch=key.width*4;
         VkResult r=ch_vk_texture_cache_resolve_target(c->m->config.textures,&key,f->eyes,f->serial,out);
         if(r!=VK_NOT_READY) return r;
@@ -79,7 +85,8 @@ static VkResult configure(ChVkImmersive *m,ChVkTarget *t,unsigned char *pixels,s
 }
 static VkResult eyes(ChVkImmersive *m,struct ImmSurface *f) {
     if(f->eyes) return VK_SUCCESS;
-    uint32_t w=m->config.eye_width*2,h=m->config.eye_height;
+    if(!f->div) f->div=1;
+    uint32_t w=m->config.eye_width*2/f->div,h=m->config.eye_height/f->div;
     size_t bytes=(size_t)w*h*4;
     f->pixels=malloc(bytes); if(!f->pixels) return VK_ERROR_OUT_OF_HOST_MEMORY;
     VkResult r=ch_vk_target_create_depth(m->config.physical,m->config.device,m->config.queue,m->config.family,
@@ -88,6 +95,7 @@ static VkResult eyes(ChVkImmersive *m,struct ImmSurface *f) {
         m->config.queue,m->config.family,w,h,&f->eyes);
     if(r==VK_SUCCESS) r=configure(m,f->eyes,f->pixels,bytes);
     if(r==VK_SUCCESS && m->log) fprintf(stderr,"[immersive] eyes for surface %08X %ux%u: %ux%u\n",f->va,f->width,f->height,w,h);
+    f->pixels_bytes=bytes;
     return r;
 }
 static VkResult hud(ChVkImmersive *m,const Nv2aSurface *s) {
@@ -130,6 +138,8 @@ VkResult ch_vk_immersive_create(const ChVkImmersiveConfig *config,ChVkImmersive 
      * scaled the world when the game zoomed. */
     e=getenv("CHIHIRO_VULKAN_IMMERSIVE_ZOOM");
     m->zoom_normalise=e && atoi(e)==1;
+    e=getenv("CHIHIRO_VULKAN_IMMERSIVE_HALF_EFFECTS");
+    m->half_effects=!e || atoi(e);
     *out=m; return VK_SUCCESS;
 }
 void ch_vk_immersive_destroy(ChVkImmersive *m) {
@@ -184,6 +194,13 @@ static int batch_projection(ChVkImmersive *m,const Nv2aBatch *b,VrGameProj *out)
     return m->last_ok;
 }
 static struct ImmSurface *eye_source(ChVkImmersive *,const Nv2aTexture *);
+/* Clip w depends on the position (a perspective transform), not the
+ * orthographic 0,0,0,1 of real 2D. */
+static int perspective_w(const Nv2aFixedState *ff) {
+    const float *m=ff->use_composite?ff->composite:ff->proj;
+    float s=fabsf(m[12])+fabsf(m[13])+fabsf(m[14]);
+    return isfinite(s) && s>1e-4f*(fabsf(m[15])+1e-6f);
+}
 static int full_screen(ChVkImmersive *m,const Nv2aBatch *b,const Nv2aSurface *s) {
     Nv2aRawExtent e;
     if(!b->raw->extent || !b->raw->extent(b->raw,&e)) {
@@ -208,6 +225,15 @@ VkResult ch_vk_immersive_draw(ChVkImmersive *m,const Nv2aSurface *s,const Nv2aBa
             if(is3d) {
                 f=find(m,s);
                 if(f) {f->projection=g;f->projection_ok=1;}
+            } else if(b->raw->ff && perspective_w(b->raw->ff)) {
+                /* World-space vertices under a combined view-projection (the
+                 * model-view the identity): no camera projection of their
+                 * own, but on screen through the camera's, as program
+                 * batches are -- not 2D. Flat, their depth-only passes put
+                 * screen-shaped depth in front of the world. */
+                f=find(m,s);
+                if(f && f->projection_ok) {g=f->projection;is3d=1;}
+                else if(m->projection_ok) {g=m->projection;is3d=1;}
             }
         } else if(b->raw->w0!=1.0f && b->raw->w0==b->raw->w0) {
             /* A program batch: its surface's newest fixed projection, else
@@ -270,6 +296,21 @@ VkResult ch_vk_immersive_draw(ChVkImmersive *m,const Nv2aSurface *s,const Nv2aBa
         m->world_batches++;
     } else {m->flat_batches++;f->flat++;}
     memcpy(imm.vp,m->view.vp,sizeof imm.vp);
+    if(!is3d && m->log>2 && m->frames%30==0) {
+        Nv2aRawExtent e;int ok=b->raw->extent && b->raw->extent(b->raw,&e);
+        const Nv2aRenderState *st=b->state;
+        if(b->raw->kind==NV2A_RAW_FIXED && b->raw->ff) {
+            const Nv2aFixedState *ff=b->raw->ff;
+            fprintf(stderr,"[immersive flat ff] usecomp %u skin %u proj row3 %g %g %g %g col2 %g %g %g %g comp row3 %g %g %g %g\n",
+                ff->use_composite,ff->skin_mode,ff->proj[12],ff->proj[13],ff->proj[14],ff->proj[15],
+                ff->proj[2],ff->proj[6],ff->proj[10],ff->proj[14],ff->composite[12],ff->composite[13],ff->composite[14],ff->composite[15]);
+        } else fprintf(stderr,"[immersive flat prog] w0 %g\n",b->raw->w0);
+        fprintf(stderr,"[immersive flat] frame %llu into %08X idx %u extent %s %.0f..%.0f x %.0f..%.0f blend %u %04X/%04X mask %08X depth %u alpha %u tex %08X/%02X st0 %08X/%02X st1 %08X st2 %08X st3 %08X sbs %x\n",
+            (unsigned long long)m->frames,s->color_va,b->raw->index_count,ok?"":"(none)",ok?e.x0:0,ok?e.x1:0,ok?e.y0:0,ok?e.y1:0,
+            st->blend_enable,st->blend_src,st->blend_dst,st->color_mask,st->depth_test_enable,st->alpha_test_enable,
+            b->texture?b->texture->offset:0,b->texture?b->texture->color:0,b->stage[0]?b->stage[0]->offset:0,b->stage[0]?b->stage[0]->color:0,
+            b->stage[1]?b->stage[1]->offset:0,b->stage[2]?b->stage[2]->offset:0,b->stage[3]?b->stage[3]->offset:0,imm.sbs);
+    }
     if(imm.sbs && m->log>1 && m->frames%30==0) {
         Nv2aRawExtent e;int ok=b->raw->extent && b->raw->extent(b->raw,&e);
         const Nv2aTexture *tx=(imm.sbs&16)?b->texture:b->stage[__builtin_ctz(imm.sbs)];
@@ -280,7 +321,7 @@ VkResult ch_vk_immersive_draw(ChVkImmersive *m,const Nv2aSurface *s,const Nv2aBa
     f->drawn++;f->serial++;
     struct ImmResolve chain={m,resolve,context};
     return ch_vk_nv2a_draw_immersive_read(f->eyes,s,&copy,fixed,&imm,m->config.decode,imm_resolve,&chain,
-        f->pixels,(size_t)m->config.eye_width*2*m->config.eye_height*4);
+        f->pixels,f->pixels_bytes);
 }
 static void dump_ppm_target(ChVkTarget *t,const char *path) {
     uint32_t w,h;ch_vk_target_size(t,&w,&h);
@@ -366,7 +407,19 @@ VkResult ch_vk_immersive_flip(ChVkImmersive *m,uint32_t presented,const Vc3VrVie
      * long done), so no pins pile up across frames. */
     for(unsigned i=0;i<m->count;i++) {
         struct ImmSurface *f=&m->surfaces[i];
+        if(f->world) f->last_3d=m->frames;
+        if(f->va==presented || shown(m,f->va)) f->last_shown=m->frames;
         if(!f->eyes) continue;
+        /* Resize: effect-only for ~2 s -> half size; 3D or shown -> full. */
+        uint32_t want=m->half_effects && m->frames-f->last_3d>120 && m->frames-f->last_shown>120?2:1;
+        if(want!=f->div) {
+            VkResult r=ch_vk_target_finish(f->eyes);if(r!=VK_SUCCESS) return r;
+            if(m->config.textures) ch_vk_texture_cache_forget_source(m->config.textures,f->eyes);
+            ch_vk_target_destroy(f->eyes);f->eyes=NULL;free(f->pixels);f->pixels=NULL;
+            f->div=want;f->serial=0;
+            if(m->log) fprintf(stderr,"[immersive] surface %08X eyes now 1/%u size\n",f->va,want);
+            continue;
+        }
         VkResult r=f->drawn?ch_vk_target_submit(f->eyes):ch_vk_target_finish(f->eyes);
         if(r!=VK_SUCCESS) return r;
     }

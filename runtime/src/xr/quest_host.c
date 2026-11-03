@@ -462,6 +462,16 @@ static Frame *take_frame(int *is_new,int allow)
     if(allow && ch_vk_gpu_mailbox_take_ready(s_vk_frames,&next)==VK_SUCCESS) {
         ch_vk_gpu_frame_release(&frame.gpu);
         frame.gpu=next;
+        if(s_pace>0) {   /* when the headset gets each new frame */
+            static uint64_t last;
+            uint64_t now=pace_now_us();
+            uint64_t due_us=next.due_ns/1000;
+            extern uint64_t xbox_HostNowNs(void);
+            if(last) fprintf(stderr,"[xr take] seq=%llu interval_ms=%.3f after_due_ms=%.3f\n",
+                (unsigned long long)next.sequence,(now-last)/1000.0,
+                next.due_ns?(xbox_HostNowNs()/1000.0-due_us)/1000.0:-1.0);
+            last=now;
+        }
         frame.w=frame.lw=(int)next.surface.width;
         frame.h=frame.lh=(int)next.surface.height;
         frame.eyes=1;
@@ -2634,6 +2644,26 @@ static void xr_frame(void)
 
     if (XR_FAILED(xrWaitFrame(s_sess, &wi, &fs)))
         return;
+    {
+        /* xrWaitFrame paces this loop to the display -- except when the
+         * runtime stops blocking (SteamVR with the headset off or asleep:
+         * ~400 loops a second), which drew the overlay for nothing, took
+         * CPU and GPU from the game, and broke the two-frames-per-game-frame
+         * cadence below. Then the loop paces itself to the display period. */
+        static uint64_t last_us;
+        static int logged;
+        uint64_t period_us = fs.predictedDisplayPeriod > 0 ? (uint64_t)fs.predictedDisplayPeriod / 1000u : 8333u;
+        uint64_t now = pace_now_us();
+        if (last_us && now > last_us && now - last_us < period_us * 3 / 4) {
+            uint64_t wait = last_us + period_us - now;
+            struct timespec ts = { (time_t)(wait / 1000000u), (long)(wait % 1000000u) * 1000L };
+            nanosleep(&ts, NULL);
+            if (!logged++)
+                fprintf(stderr, "[xr] the runtime is not pacing frames: paced to %.2f ms here\n", period_us / 1000.0);
+            now = pace_now_us();
+        }
+        last_us = now;
+    }
     if (XR_FAILED(xrBeginFrame(s_sess, &bi)))
         return;
     {

@@ -179,6 +179,17 @@ static void vk_split_init(VkDevice *device,VkQueue *queue)
     fprintf(stderr,"[quest Vulkan] the game on its own VkDevice; frames to the headset's through shared buffers\n");
 }
 #endif
+uint32_t xbox_VblankCount(void);
+uint64_t xbox_VblankLastNs(void);
+uint64_t xbox_HostNowNs(void);
+/* The next emulated vblank after the latest one (60 Hz), 0 when the vblank
+ * clock is not running. */
+static uint64_t vk_frame_due(void)
+{
+    uint64_t last=xbox_VblankLastNs(),now=xbox_HostNowNs();
+    if(!last || now<last || now-last>40000000ull) return 0;
+    return last+16666667ull;
+}
 static int vk_host_init(void)
 {
     const char *profile=ch_env("VULKAN_PROFILE");
@@ -191,6 +202,16 @@ static int vk_host_init(void)
      * waiting, taken in order, keep every frame on screen twice; a full
      * queue drops its oldest. VC3_XR_FRAME_QUEUE=1: newest only. */
     {const char *q=ch_env("XR_FRAME_QUEUE");ch_vk_gpu_mailbox_set_queue(s_vk_frames,q && atoi(q)==1?1:2);}
+    /* VC3_XR_PRESENT_PACING=1 (with flips paced to the vblank): a frame is
+     * shown from the vblank its flip completes at, as the console shows it.
+     * Opt-in: against the headset's own 120 Hz loop it delayed frames by a
+     * whole display frame (E.S. activation: 22-25 late frames a window,
+     * 4-13 without). */
+    {
+        const char *f=getenv("RECOMP_FLIP_PACING"),*p=ch_env("XR_PRESENT_PACING");
+        if(f && *f && strcmp(f,"0") && p && *p=='1')
+            ch_vk_gpu_mailbox_set_pacing(s_vk_frames,vk_frame_due,xbox_HostNowNs);
+    }
     VkDevice game_device=s_vk.device; VkQueue game_queue=s_vk.queue;
     void *game_lock=&s_vk_queue;
 #if defined(CHIHIRO_XR_DESKTOP)
