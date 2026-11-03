@@ -282,6 +282,73 @@ static int guest_main(void)
 
 /* ── main ──────────────────────────────────────────────────── */
 
+#if defined(__linux__) && !defined(__ANDROID__)
+#include <sched.h>
+#include <errno.h>
+#include <sys/syscall.h>
+/* Big.LITTLE (the Steam Frame: two Cortex-A520 at a fifth of an A720's
+ * capacity): the game's frame passes from the guest thread to the executor
+ * to the submission thread, and a stage the scheduler put on a little core
+ * finished late -- 34 of 600 frames were handed over a vblank late, 4 kept
+ * off them. Before any thread starts (they inherit it), the process runs on
+ * the cores with at least half the biggest one's capacity. Nothing to do on
+ * symmetric machines; CHIHIRO_BIG_CORES=0 leaves the affinity alone. */
+static void big_cores(void)
+{
+    const char *e = getenv("CHIHIRO_BIG_CORES");
+    unsigned cap[CPU_SETSIZE] = {0}, max = 0, n = 0, i, kept = 0;
+    cpu_set_t set;
+    if (e && *e == '0')
+        return;
+    for (i = 0; i < CPU_SETSIZE && i < 256; i++) {
+        char path[96];
+        FILE *f;
+        snprintf(path, sizeof path, "/sys/devices/system/cpu/cpu%u/cpu_capacity", i);
+        if (!(f = fopen(path, "r")))
+            break;
+        if (fscanf(f, "%u", &cap[i]) != 1)
+            cap[i] = 0;
+        fclose(f);
+        if (cap[i] > max)
+            max = cap[i];
+        n = i + 1;
+    }
+    if (!max || n < 2)
+        return;
+    CPU_ZERO(&set);
+    for (i = 0; i < n; i++)
+        if (cap[i] * 2 >= max) {
+            CPU_SET(i, &set);
+            kept++;
+        }
+    if (kept == n || !kept)
+        return;
+    if (sched_setaffinity(0, sizeof set, &set) == 0)
+        fprintf(stderr, "[host] %u of %u cores (the big ones: capacity >= %u of %u)\n", kept, n, max / 2, max);
+    {   /* A utilization floor for the clock governor (inherited by every
+         * thread): at ~1/3 load schedutil kept the big cores at 1-2 of 3.1
+         * GHz, and the frame's chain of threads finished later and less
+         * evenly (p95 19-20 -> 18.5 ms, frames a vblank late 10 -> ~2 of
+         * 600). CHIHIRO_UCLAMP_MIN=n (0..1024, 0: none). */
+        const char *u = getenv("CHIHIRO_UCLAMP_MIN");
+        if (!u || atoi(u) > 0) {
+            struct { uint32_t size, policy; uint64_t flags; int32_t nice; uint32_t prio;
+                     uint64_t runtime, deadline, period; uint32_t util_min, util_max; } a;
+            memset(&a, 0, sizeof a);
+            a.size = sizeof a;
+            a.flags = 0x08 | 0x10 | 0x20;   /* KEEP_POLICY | KEEP_PARAMS | UTIL_CLAMP_MIN */
+            a.util_min = u ? (uint32_t)atoi(u) : 512u;
+            if (a.util_min > 1024u)
+                a.util_min = 1024u;
+            long r = syscall(SYS_sched_setattr, 0, &a, 0);
+            fprintf(stderr, "[host] uclamp_min %u: %s\n", a.util_min, r == 0 ? "set" : strerror(errno));
+        }
+    }
+}
+#else
+static void big_cores(void) {}
+#endif
+
 int main(int argc, char **argv)
 {
     char *game_dir = s_game_dir, *save_dir = s_save_dir, xbe_path[PATH_MAX];
@@ -289,6 +356,7 @@ int main(int argc, char **argv)
     const char *dir, *save;
     int rc;
 
+    big_cores();
     chihiro_profile_apply(chihiro_game());
     gp = chihiro_profile();
     dir = argc > 1 ? argv[1] : ch_env("GAME_DIR");
@@ -332,6 +400,14 @@ int main(int argc, char **argv)
     /* D3D is linked into the XBE, so frames exist only as NV2A pushbuffer:
      * the toolkit's executor runs it and answers D3D's fences. */
     setenv("RECOMP_PB_EXEC", "1", 0);
+#if defined(CHIHIRO_RENDERER_VULKAN) && defined(__linux__) && !defined(__ANDROID__)
+    /* Flips complete at their vblank, as on the console: the frame leaves
+     * the executor at the edge instead of whenever its commands ran out, so
+     * frames reach the presenter evenly (Steam Frame, immersive: p95 frame
+     * interval ~19.5 -> 18.4 ms, none over 20 ms in combat and E.S.).
+     * RECOMP_FLIP_PACING=0: as soon as they are done. */
+    setenv("RECOMP_FLIP_PACING", "1", 0);
+#endif
     /* Fixed-function batches -- nearly all of VC3's geometry -- and the 3D
      * vertex-program batches (E.S. mode's meshes: millions of triangles)
      * transform on the GPU; the screen-space program batches (HUD and

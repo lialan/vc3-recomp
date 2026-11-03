@@ -18,7 +18,7 @@ typedef struct {uint64_t pipeline_ns,batch_wait_ns,batch_gpu_ns,upload_wait_ns;
     uint64_t batch_submit_ns,batch_record_ns,batch_retire_ns,batch_submissions,batch_draws;
     uint64_t sync_render_submissions,sync_render_gpu_ns,sync_render_host_ns;
     uint64_t depth_copy_ns,depth_copy_calls;} FrameCosts;
-struct ChVkBackend { ChVkFixedScratch raw_scratch; struct {int enabled;uint64_t completion_us,completion_cpu_ns,completion_calls,prepare_us,prepare_cpu_ns;uint64_t draw_cpu_ns,clear_cpu_ns,flip_cpu_ns,trim_cpu_ns;uint64_t draw_us,clear_us,flip_us,trim_us,surface_us,coherence_us,imports_us,raster_us,store_us,texture_uploads;FrameCosts retired,previous;} costs; VkPipelineCache pipeline_cache; struct {int enabled;uint64_t start,n,surface,coherence,imports,draw,store,no_color,flushes,depth_flushes,paired_flushes;} profile; struct {int enabled;uint64_t previous,us[120];unsigned count;} frame_profile; ChVkBackendConfig host; ChVkTextureCache *textures; ChVkDepthResident *zeta; ChVkImmersive *imm; uint64_t raw_compact_batches,raw_snapshot_bytes,raw_expanded_bytes; uint64_t color_snapshot_copy_bytes_saved,unchanged_color_draws,unchanged_depth_draws,early_color_reads,clear_color_imports_avoided,clear_color_bytes_avoided; uint64_t frames,raw_draws,raw_programs,raw_program_vertices,raw_declined,color_clock,cpu_batches,cpu_vertices,cpu_texels,cpu_texture_us,cpu_color_pixels,cpu_color_us,cpu_depth_pixels; struct Surface surfaces[MAX_SURFACES]; unsigned count; };
+struct ChVkBackend { ChVkFixedScratch raw_scratch; struct {int enabled;uint64_t completion_us,completion_cpu_ns,completion_calls,prepare_us,prepare_cpu_ns;uint64_t draw_cpu_ns,clear_cpu_ns,flip_cpu_ns,trim_cpu_ns,eye_us,eye_cpu_ns,surface_flushes;uint64_t draw_us,clear_us,flip_us,trim_us,surface_us,coherence_us,imports_us,raster_us,store_us,texture_uploads;FrameCosts retired,previous;} costs; VkPipelineCache pipeline_cache; struct {int enabled;uint64_t start,n,surface,coherence,imports,draw,store,no_color,flushes,depth_flushes,paired_flushes;} profile; struct {int enabled;uint64_t previous,us[120];unsigned count;} frame_profile; ChVkBackendConfig host; ChVkTextureCache *textures; ChVkDepthResident *zeta; ChVkImmersive *imm; uint64_t raw_compact_batches,raw_snapshot_bytes,raw_expanded_bytes; uint64_t color_snapshot_copy_bytes_saved,unchanged_color_draws,unchanged_depth_draws,early_color_reads,clear_color_imports_avoided,clear_color_bytes_avoided; uint64_t frames,raw_draws,raw_programs,raw_program_vertices,raw_declined,color_clock,cpu_batches,cpu_vertices,cpu_texels,cpu_texture_us,cpu_color_pixels,cpu_color_us,cpu_depth_pixels; struct Surface surfaces[MAX_SURFACES]; unsigned count; };
 static ChVkBackend *active;
 static int imm_skip_guest=-1;
 static int skip_guest(void) {
@@ -119,14 +119,15 @@ static void profile_frame(void) {
         FrameCosts total=active->costs.retired,*old=&active->costs.previous;int timed=0;
         for(unsigned i=0;i<active->count;i++) timed|=add_target_costs(&total,active->surfaces[i].target);
         ChVkTextureCacheStats textures={0};if(active->textures) ch_vk_texture_cache_stats(active->textures,&textures);
-        if(previous) fprintf(stderr,"[Vulkan frame costs] frame=%llu interval_ms=%.3f draw_ms=%.3f clear_ms=%.3f flip_flush_ms=%.3f cache_trim_ms=%.3f completion_ms=%.3f prepare_ms=%.3f other_ms=%.3f pipeline_ms=%.3f batch_wait_ms=%.3f batch_gpu_ms=%.3f depth_upload_wait_ms=%.3f gpu_timing=%d surface_ms=%.3f coherence_ms=%.3f imports_ms=%.3f raster_ms=%.3f store_ms=%.3f texture_uploads=%llu draw_cpu_ms=%.3f clear_cpu_ms=%.3f flip_cpu_ms=%.3f cache_trim_cpu_ms=%.3f completion_cpu_ms=%.3f prepare_cpu_ms=%.3f completion_calls=%llu thread_cpu_timing=%d\n",
+        if(previous) fprintf(stderr,"[Vulkan frame costs] frame=%llu interval_ms=%.3f draw_ms=%.3f clear_ms=%.3f flip_flush_ms=%.3f cache_trim_ms=%.3f completion_ms=%.3f prepare_ms=%.3f other_ms=%.3f pipeline_ms=%.3f batch_wait_ms=%.3f batch_gpu_ms=%.3f depth_upload_wait_ms=%.3f gpu_timing=%d surface_ms=%.3f coherence_ms=%.3f imports_ms=%.3f raster_ms=%.3f store_ms=%.3f texture_uploads=%llu draw_cpu_ms=%.3f clear_cpu_ms=%.3f flip_cpu_ms=%.3f cache_trim_cpu_ms=%.3f completion_cpu_ms=%.3f prepare_cpu_ms=%.3f completion_calls=%llu thread_cpu_timing=%d eye_ms=%.3f eye_cpu_ms=%.3f\n",
             (unsigned long long)active->frames,(now-previous)/1000.,active->costs.draw_us/1000.,active->costs.clear_us/1000.,active->costs.flip_us/1000.,active->costs.trim_us/1000.,active->costs.completion_us/1000.,active->costs.prepare_us/1000.,
-            ((double)(now-previous)-active->costs.draw_us-active->costs.clear_us-active->costs.flip_us-active->costs.trim_us-active->costs.completion_us-active->costs.prepare_us)/1000.,
+            ((double)(now-previous)-active->costs.draw_us-active->costs.clear_us-active->costs.flip_us-active->costs.trim_us-active->costs.completion_us-active->costs.prepare_us-active->costs.eye_us)/1000.,
             (total.pipeline_ns-old->pipeline_ns)/1e6,(total.batch_wait_ns-old->batch_wait_ns)/1e6,
             (total.batch_gpu_ns-old->batch_gpu_ns)/1e6,(total.upload_wait_ns-old->upload_wait_ns)/1e6,timed,active->costs.surface_us/1000.,active->costs.coherence_us/1000.,
             active->costs.imports_us/1000.,active->costs.raster_us/1000.,active->costs.store_us/1000.,
             (unsigned long long)(textures.uploads-active->costs.texture_uploads),active->costs.draw_cpu_ns/1e6,
-            active->costs.clear_cpu_ns/1e6,active->costs.flip_cpu_ns/1e6,active->costs.trim_cpu_ns/1e6,active->costs.completion_cpu_ns/1e6,active->costs.prepare_cpu_ns/1e6,(unsigned long long)active->costs.completion_calls,thread_cpu_ns()!=0);
+            active->costs.clear_cpu_ns/1e6,active->costs.flip_cpu_ns/1e6,active->costs.trim_cpu_ns/1e6,active->costs.completion_cpu_ns/1e6,active->costs.prepare_cpu_ns/1e6,(unsigned long long)active->costs.completion_calls,thread_cpu_ns()!=0,
+            active->costs.eye_us/1000.,active->costs.eye_cpu_ns/1e6);
         /* These are nested phase totals, not additive frame durations. All
          * timestamps already exist; reporting introduces no queries or waits. */
         if(previous) fprintf(stderr,"[Vulkan frame submissions] frame=%llu batch_submit_ms=%.3f batch_record_ms=%.3f batch_retire_ms=%.3f batch_submissions=%llu batch_draws=%llu sync_render_submissions=%llu sync_render_gpu_ms=%.3f sync_render_host_ms=%.3f depth_copy_ms=%.3f depth_copy_calls=%llu\n",
@@ -142,6 +143,7 @@ static void profile_frame(void) {
         active->costs.surface_us=active->costs.coherence_us=active->costs.imports_us=active->costs.raster_us=active->costs.store_us=0;
         active->costs.draw_cpu_ns=active->costs.clear_cpu_ns=active->costs.flip_cpu_ns=active->costs.trim_cpu_ns=0;
         *old=total;active->costs.draw_us=active->costs.clear_us=active->costs.flip_us=active->costs.trim_us=0;
+        active->costs.eye_us=active->costs.eye_cpu_ns=0;
     }
     if(!previous) return;
     active->frame_profile.us[active->frame_profile.count++]=now-previous;
@@ -649,8 +651,10 @@ static void clear(const Nv2aSurface *s,const Nv2aRenderState *rs,uint32_t flags,
     /* Skipped guest draws (immersive): the eyes take the clear alone. */
     if(skip_guest() && active->imm && ch_vk_immersive_on(active->imm) && s->width &&
        (uint64_t)s->width*3==(uint64_t)s->height*4) {
+        uint64_t start=active->costs.enabled?now_us():0,cpu0=active->costs.enabled?thread_cpu_ns():0;
         VkResult r=ch_vk_immersive_clear(active->imm,s,rs,flags,argb,zs);
         if(r!=VK_SUCCESS) fatal(r,"immersive clear");
+        if(active->costs.enabled) {active->costs.eye_us+=now_us()-start;active->costs.eye_cpu_ns+=thread_cpu_ns()-cpu0;}
         return;
     }
     uint64_t cpu=active->costs.enabled?thread_cpu_ns():0;
@@ -691,8 +695,10 @@ static void draw_batch(const Nv2aSurface *s,const Nv2aBatch *b,const ChVkFixedGe
     {
         if(skip_guest() && fixed && active->imm && ch_vk_immersive_on(active->imm) && !b->zpass_out &&
            (uint64_t)s->width*3==(uint64_t)s->height*4) {
+            uint64_t start=active->costs.enabled?now_us():0,cpu0=active->costs.enabled?thread_cpu_ns():0;
             VkResult r=ch_vk_immersive_draw(active->imm,s,b,fixed,active->textures?resolve_sample:NULL,active);
             if(r!=VK_SUCCESS) fatal(r,"immersive draw");
+            if(active->costs.enabled) {active->costs.eye_us+=now_us()-start;active->costs.eye_cpu_ns+=thread_cpu_ns()-cpu0;}
             return;
         }
     }

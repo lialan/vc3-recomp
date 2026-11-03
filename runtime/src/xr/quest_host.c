@@ -459,7 +459,7 @@ static Frame *take_frame(int *is_new,int allow)
     static Frame frame;
     ChVkGpuFrame next={0};
     *is_new=0;
-    if(allow && ch_vk_gpu_mailbox_take(s_vk_frames,&next)==VK_SUCCESS) {
+    if(allow && ch_vk_gpu_mailbox_take_ready(s_vk_frames,&next)==VK_SUCCESS) {
         ch_vk_gpu_frame_release(&frame.gpu);
         frame.gpu=next;
         frame.w=frame.lw=(int)next.surface.width;

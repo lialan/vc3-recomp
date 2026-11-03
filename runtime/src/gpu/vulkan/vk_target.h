@@ -158,6 +158,12 @@ VkResult ch_vk_target_draw_count_read(ChVkTarget *target, const float rgba[4],
     const ChVkTexture *texture, uint32_t *samples, void *pixels, VkDeviceSize bytes);
 /* The color image, packed RGBA8, into a buffer of the same device (one a
  * second device shares); complete on return. */
+VkQueue ch_vk_target_queue(const ChVkTarget *);
+uint32_t ch_vk_target_family(const ChVkTarget *);
+/* Asynchronous copy-out: submits the target's pending work (no wait) and
+ * records the color copy into command, a buffer of the caller's for the same
+ * queue, submitted after this call and before the target's next work. */
+VkResult ch_vk_target_record_copy_to_buffer(ChVkTarget *,VkCommandBuffer command,VkBuffer,VkDeviceSize offset,VkDeviceSize capacity);
 VkResult ch_vk_target_copy_to_buffer_at(ChVkTarget *,VkBuffer,VkDeviceSize offset,VkDeviceSize capacity);
 VkResult ch_vk_target_copy_to_buffer(ChVkTarget *target, VkBuffer destination, VkDeviceSize capacity);
 /* Copy initialized target to an externally acquired, same-device RGBA8 image

@@ -15,7 +15,13 @@ typedef struct {
     int immersive;
     ChVkImmFrame imm;
     VkDeviceSize hud_offset;
+    /* Bridge mode: the copy into the slot's buffer is asynchronous; wait on
+     * this fence (of ready_device) before reading the buffer. */
+    VkDevice ready_device;
+    VkFence ready;
 } ChVkGpuFrame;
+/* Wait for a taken frame's copy (bridge mode); no-op otherwise. */
+VkResult ch_vk_gpu_frame_wait(const ChVkGpuFrame *);
 #define CH_VK_GPU_MAILBOX_SLOTS 4
 /* Four immutable GPU snapshots. One producer; any taken frame owns a slot
  * until release. No CPU pixels, readback, or upload. Vulkan calls (publish,
@@ -41,6 +47,9 @@ VkResult ch_vk_gpu_mailbox_publish(void *,const Nv2aSurface *,ChVkTarget *);
 VkResult ch_vk_gpu_mailbox_publish_immersive(ChVkGpuMailbox *,const Nv2aSurface *,ChVkTarget *eyes,
     ChVkTarget *hud,const ChVkImmFrame *);
 VkResult ch_vk_gpu_mailbox_take(ChVkGpuMailbox *,ChVkGpuFrame *);
+/* As take, but only a frame whose copy has finished (bridge mode); VK_NOT_READY
+ * leaves it waiting. Never blocks on the GPU. */
+VkResult ch_vk_gpu_mailbox_take_ready(ChVkGpuMailbox *,ChVkGpuFrame *);
 /* Finish consumer GPU use before release. Frames are move-only values. */
 void ch_vk_gpu_frame_release(ChVkGpuFrame *);
 /* Stop/join users first. Returns VK_NOT_READY while taken frames remain;

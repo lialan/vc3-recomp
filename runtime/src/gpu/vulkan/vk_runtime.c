@@ -8,6 +8,7 @@
 #include <errno.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 #include <stdatomic.h>
 #include <time.h>
 
@@ -21,6 +22,7 @@ static struct {
     VkPipelineCache pipeline_cache;
     VkDevice cache_device;
     char *cache_path;
+    uint64_t publish_ns;
     ChGuestWriteWatch *write_watch;
     uint32_t *argb;
     size_t capacity;
@@ -41,6 +43,9 @@ int ch_vk_runtime_write_fault(uintptr_t address,void *context)
     return watch && ch_guest_write_watch_fault(watch,address,ch_guest_write_fault_is_write(context));
 }
 
+uint32_t xbox_VblankCount(void);
+uint64_t xbox_VblankLastNs(void);
+uint64_t xbox_HostNowNs(void);
 static void fatal(VkResult result,const char *operation)
 {
     fprintf(stderr,"[Vulkan] fatal %s: VkResult=%d, frame=%llu\n",operation,result,
@@ -63,9 +68,14 @@ static void frame_completed(const Nv2aSurface *surface)
         static uint64_t previous;
         struct timespec t;clock_gettime(CLOCK_MONOTONIC,&t);
         uint64_t now=(uint64_t)t.tv_sec*1000000000u+t.tv_nsec;
-        if(previous) fprintf(stderr,"[Vulkan present intervals] frame=%llu interval_ms=%.3f\n",
-            (unsigned long long)runtime.frames,(now-previous)/1e6);
-        previous=now;
+        /* vblanks since the last frame (1: none missed) and how long after
+         * its vblank this frame was handed over (latency, not rate). */
+        static uint32_t last_vblank;
+        uint32_t vblank=xbox_VblankCount();uint64_t vblank_ns=xbox_VblankLastNs(),host=xbox_HostNowNs();
+        if(previous) fprintf(stderr,"[Vulkan present intervals] frame=%llu interval_ms=%.3f vblanks=%u after_vblank_ms=%.3f publish_ms=%.3f\n",
+            (unsigned long long)runtime.frames,(now-previous)/1e6,vblank-last_vblank,
+            vblank_ns && host>vblank_ns?(host-vblank_ns)/1e6:-1.0,runtime.publish_ns/1e6);
+        previous=now;last_vblank=vblank;
     }
     /* The cache was saved only on a clean exit, and a game closed from its
      * launcher (Steam) never has one: every session compiled every pipeline
@@ -85,7 +95,9 @@ static void frame_completed(const Nv2aSurface *surface)
         fprintf(stderr,"[Vulkan] diagnostic frame limit reached: %llu\n",(unsigned long long)runtime.frames);
         save_pipeline_cache();
         fflush(NULL);
-        exit(EXIT_SUCCESS);
+        /* Not exit(): its teardown unmapped guest memory under the guest
+         * threads still running, and the run often ended in a segfault. */
+        _exit(EXIT_SUCCESS);
     }
 }
 
@@ -162,7 +174,10 @@ static VkResult present_target(void *unused,const Nv2aSurface *surface,ChVkTarge
 static VkResult present_immersive(void *unused,const Nv2aSurface *surface,ChVkTarget *eyes,ChVkTarget *hud,const ChVkImmFrame *frame)
 {
     (void)unused;
+    struct timespec a,b;clock_gettime(CLOCK_MONOTONIC,&a);
     VkResult r=host_config.present_immersive(host_config.render_context,surface,eyes,hud,frame);
+    clock_gettime(CLOCK_MONOTONIC,&b);
+    runtime.publish_ns=(uint64_t)(b.tv_sec-a.tv_sec)*1000000000u+(uint64_t)(b.tv_nsec-a.tv_nsec);
     if(r!=VK_SUCCESS && r!=VK_NOT_READY) return r;
     frame_completed(surface);
     return r;

@@ -1932,6 +1932,30 @@ VkResult ch_vk_target_draw_texture_read(ChVkTarget *t, const float rgba[4],
 }
 
 VkDevice ch_vk_target_device(const ChVkTarget *t) { return t?t->device:VK_NULL_HANDLE; }
+VkQueue ch_vk_target_queue(const ChVkTarget *t) { return t?t->queue:VK_NULL_HANDLE; }
+uint32_t ch_vk_target_family(const ChVkTarget *t) { return t?t->family:0; }
+VkResult ch_vk_target_record_copy_to_buffer(ChVkTarget *t,VkCommandBuffer command,VkBuffer destination,
+    VkDeviceSize offset,VkDeviceSize capacity) {
+    if(!t || t->failed || !t->initialized || !command || !destination || (offset&3) || capacity<offset || capacity-offset<t->bytes)
+        return VK_ERROR_INITIALIZATION_FAILED;
+    /* This target's recorded work goes to the queue first, without a wait;
+     * the copy is ordered after it on the same queue by the barrier. */
+    VkResult r=ch_vk_target_submit(t);
+    if(r!=VK_SUCCESS) return r;
+    if(t->layout!=VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL) return VK_ERROR_FEATURE_NOT_PRESENT;
+    VkMemoryBarrier ready={.sType=VK_STRUCTURE_TYPE_MEMORY_BARRIER,
+        .srcAccessMask=VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT|VK_ACCESS_TRANSFER_WRITE_BIT,
+        .dstAccessMask=VK_ACCESS_TRANSFER_READ_BIT};
+    vkCmdPipelineBarrier(command,VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,VK_PIPELINE_STAGE_TRANSFER_BIT,0,1,&ready,0,NULL,0,NULL);
+    VkBufferImageCopy copy={.bufferOffset=offset,.imageSubresource={VK_IMAGE_ASPECT_COLOR_BIT,0,0,1},.imageExtent={t->width,t->height,1}};
+    vkCmdCopyImageToBuffer(command,t->image,VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,destination,1,&copy);
+    VkBufferMemoryBarrier done={.sType=VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
+        .srcAccessMask=VK_ACCESS_TRANSFER_WRITE_BIT,.dstAccessMask=VK_ACCESS_MEMORY_READ_BIT,
+        .srcQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED,.dstQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED,
+        .buffer=destination,.offset=offset,.size=t->bytes};
+    vkCmdPipelineBarrier(command,VK_PIPELINE_STAGE_TRANSFER_BIT,VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,0,0,NULL,1,&done,0,NULL);
+    return VK_SUCCESS;
+}
 static int ring_inflight(const ChVkTarget *t) {
     if(t->ring) for(unsigned k=0;k<RING_SLOTS;k++) if(t->slots[k].inflight) return 1;
     return 0;
