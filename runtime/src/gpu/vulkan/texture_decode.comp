@@ -39,16 +39,19 @@ uint dxt(uint x, uint y) {
     uint idx = (rd32(b + 4u) >> (2u * texel)) & 3u;
     if (idx == 0u) c = e0;
     else if (idx == 1u) c = e1;
+    // The channels one by one, constant shifts: Qualcomm's compiler (the
+    // Quest's) turned the red of a loop over the channels into 0xff.
     else if (c0 > c1 || bb == 16u) {
-        for (uint i = 0u; i < 3u; i++) {
-            uint sh = i * 8u, m0 = (e0 >> sh) & 0xFFu, m1 = (e1 >> sh) & 0xFFu;
-            c |= (idx == 2u ? (2u * m0 + m1) / 3u : (m0 + 2u * m1) / 3u) << sh;
-        }
+        uint w0 = idx == 2u ? 2u : 1u, w1 = 3u - w0;
+        uint r = (w0 * ((e0 >> 16) & 0xFFu) + w1 * ((e1 >> 16) & 0xFFu)) / 3u;
+        uint g = (w0 * ((e0 >> 8) & 0xFFu) + w1 * ((e1 >> 8) & 0xFFu)) / 3u;
+        uint bl = (w0 * (e0 & 0xFFu) + w1 * (e1 & 0xFFu)) / 3u;
+        c = (r << 16) | (g << 8) | bl;
     } else if (idx == 2u) {
-        for (uint i = 0u; i < 3u; i++) {
-            uint sh = i * 8u, m0 = (e0 >> sh) & 0xFFu, m1 = (e1 >> sh) & 0xFFu;
-            c |= ((m0 + m1) / 2u) << sh;
-        }
+        uint r = (((e0 >> 16) & 0xFFu) + ((e1 >> 16) & 0xFFu)) / 2u;
+        uint g = (((e0 >> 8) & 0xFFu) + ((e1 >> 8) & 0xFFu)) / 2u;
+        uint bl = ((e0 & 0xFFu) + (e1 & 0xFFu)) / 2u;
+        c = (r << 16) | (g << 8) | bl;
     } else {
         c = 0u;
         alpha = bb == 8u ? 0u : alpha;

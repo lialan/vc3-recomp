@@ -212,6 +212,7 @@ VkResult ch_vk_texture_cache_create(const ChVkTextureCacheConfig *config,ChVkTex
     if(!c->entries) {free(c);return VK_ERROR_OUT_OF_HOST_MEMORY;}
     *out=c;return VK_SUCCESS;
 }
+static void decode_check(ChVkTextureCache *,const Nv2aTexture *,ChVkTexture *,const unsigned char *);
 VkResult ch_vk_texture_cache_resolve(void *context,const Nv2aTexture *t,ChVkSampleImage *out) {
     ChVkTextureCache *c=context;
     if(!out) return VK_ERROR_INITIALIZATION_FAILED;
@@ -285,6 +286,7 @@ VkResult ch_vk_texture_cache_resolve(void *context,const Nv2aTexture *t,ChVkSamp
     free(argb);
     if(r==VK_SUCCESS) r=ch_vk_texture_set_sampler(image,&sampler);
     if(r!=VK_SUCCESS) {ch_vk_texture_destroy(image);free(raw);return r;}
+    if(gpu_decode && !t->cube) decode_check(c,t,image,raw);
     uint64_t uploaded=c->trace?cache_us():0;
     *slot=(struct Entry){.key=*t,.image=image,.raw=raw,.span=span,.palette=palette,.cost=(size_t)cost};
     slot->raw_watch=ch_guest_write_range_create(c->config.guest_write_watch,guest(c,t->offset),span);
@@ -293,6 +295,40 @@ VkResult ch_vk_texture_cache_resolve(void *context,const Nv2aTexture *t,ChVkSamp
     index_entry(c,slot);
     c->stats.entries++;c->stats.bytes+=(size_t)cost;c->stats.uploads++;c->stats.gpu_decodes+=gpu_decode;pin(c,slot,out);
     trace_miss(c,t,start,room,copied,uploaded,0,0);return VK_SUCCESS;
+}
+/* CHIHIRO_VULKAN_DECODE_CHECK=1: each GPU-decoded texture also decoded on
+ * the CPU and compared (the first textures that differ are logged with
+ * their first differing texels): for drivers whose compiler mistranslates
+ * the decoder (the Quest's tinted some DXT textures red). */
+static void decode_check(ChVkTextureCache *c,const Nv2aTexture *t,ChVkTexture *image,const unsigned char *raw) {
+    static int on=-1,logged;
+    if(on<0) {const char *e=getenv("CHIHIRO_VULKAN_DECODE_CHECK");on=e && atoi(e);}
+    if(!on || logged>=12) return;
+    size_t n=(size_t)t->width*t->height;
+    uint32_t *cpu=malloc(n*4);unsigned char *gpu=malloc(n*4);
+    if(cpu && gpu && ch_vk_decode_texture_faces(t,c->config.decode,cpu) &&
+       ch_vk_texture_read_rgba(image,gpu,n*4)==VK_SUCCESS) {
+        size_t bad=0,first=n;
+        for(size_t i=0;i<n;i++) {
+            uint32_t a=cpu[i],g=(uint32_t)gpu[i*4+3]<<24|(uint32_t)gpu[i*4]<<16|(uint32_t)gpu[i*4+1]<<8|gpu[i*4+2];
+            if(a!=g) {if(first==n) first=i;bad++;}
+        }
+        if(bad) {
+            logged++;
+            fprintf(stderr,"[decode check] %ux%u format 0x%02x: %zu of %zu texels differ\n",t->width,t->height,
+                (unsigned)t->color,bad,n);
+            for(size_t i=first,shown=0;i<n && shown<6;i++) {
+                uint32_t a=cpu[i],g=(uint32_t)gpu[i*4+3]<<24|(uint32_t)gpu[i*4]<<16|(uint32_t)gpu[i*4+1]<<8|gpu[i*4+2];
+                if(a==g) continue;
+                unsigned x=(unsigned)(i%t->width),y=(unsigned)(i/t->width);
+                size_t bb=t->color==0x0C?8:16,blk=((size_t)(y/4)*((t->width+3)/4)+x/4)*bb;
+                fprintf(stderr,"[decode check]   (%u,%u) cpu %08x gpu %08x block",x,y,a,g);
+                for(size_t k=0;k<bb;k++) fprintf(stderr," %02x",raw[blk+k]);
+                fprintf(stderr,"\n");shown++;
+            }
+        }
+    }
+    free(cpu);free(gpu);
 }
 VkResult ch_vk_texture_cache_resolve_target(ChVkTextureCache *c,const Nv2aTexture *t,
     ChVkTarget *source,uint64_t serial,ChVkSampleImage *out) {
