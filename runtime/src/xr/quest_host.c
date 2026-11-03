@@ -92,6 +92,7 @@
 #include <openxr/openxr_platform.h>
 
 #include "display_settings.h"
+#include "host_stats.h"
 #include "host_input.h"
 #include "quest_menu.h"
 #include "quest_overlay.h"
@@ -209,6 +210,8 @@ static pthread_mutex_t s_vk_queue = PTHREAD_MUTEX_INITIALIZER;
 static int vk_host_init(void);
 static void vk_menu_upload(const void *);
 #endif
+static clockid_t s_guest_clock;  /* the game thread's CPU time, for the stats panel */
+static int s_guest_clock_ok;
 static uint64_t s_frames_in;   /* display thread's consumed sequence */
 
 /* VC3_PACE_LOG=1: once a second, the spread of the times between game
@@ -501,7 +504,8 @@ static struct {
     int imm_scale;      /* immersive detail: 0 native (default), else 1x or 2x */
     int screen_native;  /* the virtual screen drawn at its size on the display
                            (default), else at the Resolution setting's scale */
-} s_vr = { QO_SIGHT_RED_DOT, LASER_DOT, 1, 0, 1, 1, 120, 0, 1 };
+    int show_stats;     /* the stats panel, head-locked top right (default on) */
+} s_vr = { QO_SIGHT_RED_DOT, LASER_DOT, 1, 0, 1, 1, 120, 0, 1, 1 };
 /* The display's own pixels per eye (native_init): what "Native" draws. */
 static uint32_t s_native_w, s_native_h;
 
@@ -543,6 +547,8 @@ static void screen_load(void)
         s_vr.imm_scale = !strcmp(v, "1x") ? 1 : !strcmp(v, "2x") ? 2 : 0;
     if ((v = vc3_setting_get("vr_screen_res=")))
         s_vr.screen_native = strcmp(v, "scale") != 0;
+    if ((v = vc3_setting_get("vr_stats=")))
+        s_vr.show_stats = strcmp(v, "off") != 0;
 }
 
 static void screen_save(void)
@@ -565,6 +571,7 @@ static void vr_save(void)
     vc3_setting_put("vr_hand=", s_vr.left_handed ? "left" : "right");
     vc3_setting_put("vr_coins=", s_vr.auto_coins ? "auto" : "manual");
     vc3_setting_put("vr_screen=", s_vr.immersive ? "immersive" : "screen");
+    vc3_setting_put("vr_stats=", s_vr.show_stats ? "on" : "off");
     {
         char b[16];
         snprintf(b, sizeof b, "%d", s_vr.refresh);
@@ -1748,12 +1755,12 @@ static int overlay_init(void)
  * input meanwhile. Holding the other hand's upper button (B / Y) for a
  * second opens and closes it too. */
 enum { M_SCREEN, M_DETAIL, M_REFRESH, M_SIGHT, M_LASER, M_GUN, M_HAND, M_STEREO, M_ASPECT, M_RES, M_DIST, M_SIZE,
-       M_COINS, M_COIN, M_RECENTRE, M_TEST, M_SERVICE, M_RESET, M_CLOSE, M_COUNT };
+       M_COINS, M_COIN, M_RECENTRE, M_TEST, M_SERVICE, M_RESET, M_CLOSE, M_STATS, M_COUNT };
 /* The rows shown, in The House of the Dead 4 VR's order. The Vulkan
  * renderer draws the game as it is (no immersive view, stereo, render scale
  * or 16:9 there), so its panel has only the items that act. */
 #ifdef CHIHIRO_RENDERER_VULKAN
-static const int s_rows[] = { M_SIGHT, M_LASER, M_GUN, M_HAND, M_DIST, M_SIZE, M_REFRESH,
+static const int s_rows[] = { M_SIGHT, M_LASER, M_GUN, M_HAND, M_STATS, M_DIST, M_SIZE, M_REFRESH,
                               M_COINS, M_COIN, M_RECENTRE, M_TEST, M_SERVICE, M_RESET, M_CLOSE };
 #else
 static const int s_rows[] = { M_SCREEN, M_DETAIL, M_REFRESH, M_SIGHT, M_LASER, M_GUN, M_HAND, M_STEREO,
@@ -1775,7 +1782,7 @@ static void menu_items(XmItem *it)
     static const char *const labels[M_COUNT] = {
         "Screen", "Immersive detail", "Display rate", "Sight", "Laser", "Gun model", "Gun hand", "Stereo 3D", "Aspect", "Resolution",
         "Screen distance", "Screen size", "Coins", "Insert a coin", "Recentre view",
-        "Arcade Test button (select)", "Arcade Service button (next)", "Reset game", "Close" };
+        "Arcade Test button (select)", "Arcade Service button (next)", "Reset game", "Close", "Show stats" };
     int i;
     for (i = 0; i < M_COUNT; i++) {
         it[i].label = labels[i];
@@ -1797,6 +1804,7 @@ static void menu_items(XmItem *it)
     snprintf(it[M_LASER].value, 40, "%s", laser[s_vr.laser]);
     snprintf(it[M_GUN].value, 40, "%s", s_vr.show_gun ? "Shown" : "Hidden");
     snprintf(it[M_HAND].value, 40, "%s", s_gun == HAND_L ? "Left" : "Right");
+    snprintf(it[M_STATS].value, 40, "%s", s_vr.show_stats ? "On" : "Off");
     snprintf(it[M_STEREO].value, 40, "%s", s_vr.immersive ? "On (immersive)"
              : vc3_stereo_get() ? "On" : "Off");
     snprintf(it[M_ASPECT].value, 40, "%s", vc3_wide_get() ? "16:9" : "4:3");
@@ -1939,6 +1947,7 @@ static void menu_choose(int item)
     case M_SIGHT: s_vr.sight = (s_vr.sight + 1) % QO_SIGHT_COUNT; break;
     case M_LASER: s_vr.laser = (s_vr.laser + 1) % 3; break;
     case M_GUN: s_vr.show_gun = !s_vr.show_gun; break;
+    case M_STATS: s_vr.show_stats = !s_vr.show_stats; break;
     case M_HAND:
         s_gun = 1 - s_gun;
         s_vr.left_handed = s_gun == HAND_L;
@@ -2704,6 +2713,7 @@ static void xr_frame(void)
 #ifdef CHIHIRO_RENDERER_VULKAN
     pthread_mutex_lock(&s_vk_queue);
     if(s_vk_profile.enabled) s_vk_profile.host_begin=pace_now_us();
+    vk_stats_sample();
     if(fs.shouldRender) nl=vk_present(f,layers,fs.predictedDisplayPeriod);
     else vk_overlay_skip_frame();
 #else
@@ -3030,6 +3040,7 @@ int vc3_quest_run(int (*guest_main)(void))
         fprintf(stderr, "[quest] cannot start the guest thread\n");
         return 1;
     }
+    s_guest_clock_ok = pthread_getcpuclockid(th, &s_guest_clock) == 0;
     pthread_attr_destroy(&attr);
     pthread_detach(th);
 

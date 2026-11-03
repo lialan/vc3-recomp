@@ -289,6 +289,79 @@ static void vk_screen_draw(ChVkTarget *target,const float vp[16],void *pixels,si
     for(int i=0;i<6;i++) v[i].rgba[0]=v[i].rgba[1]=v[i].rgba[2]=1;
     vk_check(ch_vk_target_draw_texture_read(target,NULL,v,6,idx,6,&picture,s_vk_scr_tex,pixels,bytes),"screen draw");
 }
+/* "Show stats": HOTD4's panel - the game's frame rate, CPU (the process,
+ * and the game thread per frame), the GPU, memory - painted twice a second
+ * and shown head-locked in the top right, about 1 m out (its outer corner
+ * about 22 and 14 degrees off centre). */
+static ChVkTarget *s_vk_stats_target;
+static ChVkXrQuad *s_vk_stats;
+static int s_vk_stats_dirty,s_vk_stats_shown;
+static void vk_stats_sample(void)
+{
+    static uint64_t since,frames0,samples;
+    static double cpu0=-1;
+    static char shown[LG_STATS_LINES][LG_STATS_LINE];
+    static unsigned char pixels[XM_STATS_W*XM_STATS_H*4];
+    uint64_t now=pace_now_us();
+    if(!s_vr.show_stats) {since=0;s_vk_stats_shown=0;return;}
+    if(!since) {since=now;frames0=s_frames_in;return;}
+    if(now-since<500000) return;
+    double elapsed=(double)(now-since);
+    uint64_t frames=s_frames_in-frames0;
+    LgStats stats={0};
+    stats.fps=(int)(frames*1e6/elapsed+.5);
+    stats.frame_ms=frames?(float)(elapsed/1000.0/frames):-1;
+    stats.eye_w=(int)s_vk_eye[0].w;stats.eye_h=(int)s_vk_eye[0].h;
+    struct timespec ts;
+    if(s_guest_clock_ok && clock_gettime(s_guest_clock,&ts)==0) {   /* the game thread's CPU time per frame */
+        double cpu=ts.tv_sec*1e3+ts.tv_nsec/1e6;
+        if(cpu0>=0 && frames) lg_stats_set_game_ms((float)((cpu-cpu0)/frames));
+        cpu0=cpu;
+    }
+    lg_stats_sample(&stats);
+    since=now;frames0=s_frames_in;
+    char lines[LG_STATS_LINES][LG_STATS_LINE];
+    lg_stats_format(&stats,lines);
+    if(memcmp(lines,shown,sizeof lines)) {
+        const char *rows[LG_STATS_LINES];
+        for(int i=0;i<LG_STATS_LINES;i++) rows[i]=lines[i];
+        xm_paint_lines(pixels,rows,LG_STATS_LINES);
+        if(!s_vk_stats_target) vk_initialized_target(XM_STATS_W,XM_STATS_H,&s_vk_stats_target);
+        vk_check(ch_vk_target_import_color(s_vk_stats_target,pixels,sizeof pixels),"stats upload");
+        memcpy(shown,lines,sizeof lines);s_vk_stats_dirty=1;
+        static int dumped;
+        if(!dumped && samples>=4 && ch_env("XR_DUMP")) {dumped=1;dump_ppm("stats.ppm",pixels,XM_STATS_W,XM_STATS_H);}
+    }
+    if(samples++%10==0)     /* every 5 s: the same numbers in the log */
+        fprintf(stderr,"[stats] %s | %s | %s | %s\n",lines[0],lines[1],lines[2],lines[3]);
+    s_vk_stats_shown=1;
+}
+static const XrCompositionLayerBaseHeader *vk_stats_layer(void)
+{
+    VkResult result=VK_SUCCESS;
+    if(!s_vr.show_stats || !s_vk_stats_shown || !s_vk_stats_target || !s_views_ok) return NULL;
+    const float hw=.143f,hh=hw*XM_STATS_H/XM_STATS_W,at[3]={.41f-hw,.2567f-hh,-1};
+    const XrQuaternionf q=s_views[0].pose.orientation;
+    float off[3];
+    qrot(q,at,off);
+    XrPosef pose={.orientation=q,.position={
+        .5f*(s_views[0].pose.position.x+s_views[1].pose.position.x)+off[0],
+        .5f*(s_views[0].pose.position.y+s_views[1].pose.position.y)+off[1],
+        .5f*(s_views[0].pose.position.z+s_views[1].pose.position.z)+off[2]}};
+    XrExtent2Df size={hw*2,hh*2};
+    if(!s_vk_stats) {
+        vk_xr_check(ch_vk_xr_quad_create(s_inst,s_sess,xrGetInstanceProcAddr,s_vk.device,
+            XM_STATS_W,XM_STATS_H,s_local,&pose,size,XR_COMPOSITION_LAYER_BLEND_TEXTURE_SOURCE_ALPHA_BIT|
+            XR_COMPOSITION_LAYER_UNPREMULTIPLIED_ALPHA_BIT,&s_vk_stats),"stats swapchain");
+        s_vk_stats_dirty=1;
+    }
+    vk_xr_check(ch_vk_xr_quad_pose(s_vk_stats,&pose,size),"stats pose");
+    if(s_vk_stats_dirty) {
+        vk_xr_check(ch_vk_xr_quad_update(s_vk_stats,s_vk_stats_target,XR_INFINITE_DURATION,&result),"stats copy");
+        vk_check(result,"stats copy completion");s_vk_stats_dirty=0;
+    }
+    return ch_vk_xr_quad_layer(s_vk_stats);
+}
 static unsigned vk_present(const Frame *f,const XrCompositionLayerBaseHeader **layers,XrDuration display_period)
 {
     unsigned count=0;
@@ -362,6 +435,10 @@ static unsigned vk_present(const Frame *f,const XrCompositionLayerBaseHeader **l
         s_vk_overlay_have_last=1;
     }
     if(overlay_want) layers[count++]=(const XrCompositionLayerBaseHeader *)&s_vk_overlay_layer;
+    {
+        const XrCompositionLayerBaseHeader *stats=vk_stats_layer();
+        if(stats) layers[count++]=stats;
+    }
     if(s_menu.open && s_vk_menu_target) {
         float yaw=atan2f(s_menu.n[0],s_menu.n[2]);
         pose=(XrPosef){.orientation={0,sinf(yaw*.5f),0,cosf(yaw*.5f)},
