@@ -49,4 +49,5 @@ void main() {
     v_uv=O[9].xy*vec2(params.p.uv_scale0[0],params.p.uv_scale0[1])/vec2(params.p.texture[0],params.p.texture[1]);
     for(int i=0;i<4;i++) {tc[i]=O[9+i];tc[i].xy*=vec2(params.p.stage_scale[i][0],params.p.stage_scale[i][1]);}
     ch_imm_texcoords(v_uv,tc);
+    if(!bad) ch_imm_screen_texcoords(s,guest_clip,v_uv,tc);
 }

@@ -143,4 +143,5 @@ void main() {
     v_tc2.xy*=vec2(params.p.stage_scale[2][0],params.p.stage_scale[2][1]);
     v_tc3.xy*=vec2(params.p.stage_scale[3][0],params.p.stage_scale[3][1]);
     ch_imm_texcoords(v_uv,tc);
+    if(!bad) ch_imm_screen_texcoords(s,guest_clip,v_uv,tc);
 }

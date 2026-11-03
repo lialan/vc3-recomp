@@ -383,6 +383,24 @@ VkResult ch_vk_immersive_draw(ChVkImmersive *m,const Nv2aSurface *s,const Nv2aBa
         for(unsigned i=0;i<4;i++) if(b->stage[i] && eye_source(m,b->stage[i])) imm.sbs|=1u<<i;
         if(imm.sbs) f->composite++;
     }
+    static int screen_tex=-1;   /* CHIHIRO_VULKAN_IMMERSIVE_SCREEN_TEX=0: the game's coordinates, as before */
+    if(screen_tex<0) {const char *e=getenv("CHIHIRO_VULKAN_IMMERSIVE_SCREEN_TEX");screen_tex=!e || atoi(e)!=0;}
+    if(is3d && screen_tex && m->config.textures) {   /* 3D sampling a surface with eyes: per eye (immersive.glsl) */
+        static unsigned n3;
+        for(unsigned i=0;i<5;i++) {
+            const Nv2aTexture *tx=i<4?b->stage[i]:b->texture;
+            struct ImmSurface *src=tx?eye_source(m,tx):NULL;
+            if(src) imm.sbs|=1u<<(8+i);
+            if(!src || !m->log || n3>=200) continue;
+            if(n3++<200) {
+                Nv2aRawExtent e;int ok=b->raw->extent && b->raw->extent(b->raw,&e);
+                fprintf(stderr,"[immersive 3D eyes-sampled] frame %llu into %08X stage %u from %08X %ux%u fmt %02X div %u: xy %.0f..%.0f %.0f..%.0f uv %.2f..%.2f %.2f..%.2f %s idx %u blend %u %04X/%04X\n",
+                    (unsigned long long)m->frames,s->color_va,i,tx->offset,tx->width,tx->height,tx->color,src->div,
+                    ok?e.x0:-1,ok?e.x1:-1,ok?e.y0:-1,ok?e.y1:-1,ok?e.u0:-1,ok?e.u1:-1,ok?e.v0:-1,ok?e.v1:-1,
+                    b->raw->kind==NV2A_RAW_FIXED?"fixed":"prog",b->raw->index_count,b->state->blend_enable,b->state->blend_src,b->state->blend_dst);
+            }
+        }
+    }
     if(is3d) {
         VrGameProj z=zoomed(m,&g,s->width);
         imm.gp[0]=z.kx;imm.gp[1]=z.ky;imm.gp[2]=z.cx;imm.gp[3]=z.cy;imm.gp[4]=z.inv_pz;
@@ -404,9 +422,9 @@ VkResult ch_vk_immersive_draw(ChVkImmersive *m,const Nv2aSurface *s,const Nv2aBa
             b->texture?b->texture->offset:0,b->texture?b->texture->color:0,b->stage[0]?b->stage[0]->offset:0,b->stage[0]?b->stage[0]->color:0,
             b->stage[1]?b->stage[1]->offset:0,b->stage[2]?b->stage[2]->offset:0,b->stage[3]?b->stage[3]->offset:0,imm.sbs);
     }
-    if(imm.sbs && m->log>1 && m->frames%30==0) {
+    if((imm.sbs&31u) && m->log>1 && m->frames%30==0) {
         Nv2aRawExtent e;int ok=b->raw->extent && b->raw->extent(b->raw,&e);
-        const Nv2aTexture *tx=(imm.sbs&16)?b->texture:b->stage[__builtin_ctz(imm.sbs)];
+        const Nv2aTexture *tx=(imm.sbs&16)?b->texture:b->stage[__builtin_ctz(imm.sbs&15u)];
         fprintf(stderr,"[immersive eyes-sampled] frame %llu into %08X from %08X %ux%u fmt %02X: xy %.0f..%.0f %.0f..%.0f uv %.1f..%.1f %.1f..%.1f mask %x\n",
             (unsigned long long)m->frames,s->color_va,tx?tx->offset:0,tx?tx->width:0,tx?tx->height:0,tx?tx->color:0,
             ok?e.x0:-1,ok?e.x1:-1,ok?e.y0:-1,ok?e.y1:-1,ok?e.u0:-1,ok?e.u1:-1,ok?e.v0:-1,ok?e.v1:-1,imm.sbs);
@@ -428,13 +446,15 @@ static void dump_ppm_target(ChVkTarget *t,const char *path) {
     free(px);
 }
 /* CHIHIRO_VULKAN_IMMERSIVE_DUMP=dir (every CHIHIRO_VULKAN_IMMERSIVE_DUMP_EVERY
- * immersive frames, 300 by default): the scene surface's eyes and the guest's
- * own picture of it, the same frame. */
+ * immersive frames, 300 by default, from immersive frame
+ * CHIHIRO_VULKAN_IMMERSIVE_DUMP_FROM on): the scene surface's eyes and the
+ * guest's own picture of it, the same frame. */
 static void dump_scene(ChVkImmersive *m,struct ImmSurface *scene) {
-    static const char *dir;static unsigned every,n;
+    static const char *dir;static unsigned every,n;static unsigned long long from;
     if(!dir) {dir=getenv("CHIHIRO_VULKAN_IMMERSIVE_DUMP");if(!dir) dir="";
-        const char *e=getenv("CHIHIRO_VULKAN_IMMERSIVE_DUMP_EVERY");every=e && atoi(e)>0?(unsigned)atoi(e):300;}
-    if(!*dir || !scene || !scene->eyes || !m->config.guest_target || ++n%every) return;
+        const char *e=getenv("CHIHIRO_VULKAN_IMMERSIVE_DUMP_EVERY");every=e && atoi(e)>0?(unsigned)atoi(e):300;
+        e=getenv("CHIHIRO_VULKAN_IMMERSIVE_DUMP_FROM");from=e?strtoull(e,NULL,10):0;}   /* immersive frame */
+    if(!*dir || !scene || !scene->eyes || !m->config.guest_target || m->frames<from || ++n%every) return;
     ChVkTarget *guest=m->config.guest_target(m->config.guest_context,scene->va);
     char path[512];
     snprintf(path,sizeof path,"%s/scene-%05llu-eyes.ppm",dir,(unsigned long long)m->frames);dump_ppm_target(scene->eyes,path);
