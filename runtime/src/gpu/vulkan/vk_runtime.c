@@ -232,8 +232,17 @@ static VkResult attach(ChVkBackendConfig config)
     const char *gpu_render_textures=ch_env("VULKAN_GPU_RENDER_TEXTURES");
     config.sample_render_targets=gpu_render_textures?atoi(gpu_render_textures)!=0:
         config.resident_color && config.cache_textures;
+    const char *completion_depth=ch_env("VULKAN_COMPLETION_DEPTH");
+    /* Default: as the OpenGL renderer, nothing writes VC3's depth back at
+     * completions (no title code reads it); =1 publishes it there again. */
+    config.completion_keep_depth=!completion_depth || atoi(completion_depth)==0;
+    if(config.completion_keep_depth) fprintf(stderr,"[Vulkan] guest completions keep resident depth on the GPU\n");
     const char *lazy=ch_env("VULKAN_LAZY_COMPLETION");
-    config.lazy_completion=lazy && atoi(lazy)!=0;
+    /* Default on, as the OpenGL renderer (which has no completion hook at
+     * all): VC3 never reads rendered pixels back from the CPU, and waiting
+     * for the GPU at each kickoff kept E.S. mode under 60 fps on the Frame.
+     * =0 waits and publishes at every completion again. */
+    config.lazy_completion=!lazy || atoi(lazy)!=0;
     if(config.lazy_completion) fprintf(stderr,"[Vulkan] lazy guest completion: enabled\n");
     const char *entries=ch_env("VULKAN_TEXTURE_CACHE_ENTRIES");
     if(entries) {

@@ -438,7 +438,8 @@ static void flush(void) {
     if(active->profile.enabled) active->profile.flushes++;
     /* Pair every retained owner, not just the most recently bound target.
      * Reading other owners first would force a second color submission. */
-    for(unsigned i=0;active->zeta && i<active->count;i++) {
+    const int publish_depth=!active->host.completion_keep_depth;
+    for(unsigned i=0;active->zeta && publish_depth && i<active->count;i++) {
         struct Surface *f=&active->surfaces[i];
         if(!ch_vk_depth_resident_target_dirty(active->zeta,f->target)) continue;
         if(active->profile.enabled) active->profile.depth_flushes++;
@@ -455,7 +456,7 @@ static void flush(void) {
         for(unsigned i=0;i<active->count;i++) {
             struct Surface *f=&active->surfaces[i];
             if(!f->resident || !f->color_dirty || !ch_vk_target_pending(f->target) ||
-                ch_vk_depth_resident_target_dirty(active->zeta,f->target) ||
+                (publish_depth && ch_vk_depth_resident_target_dirty(active->zeta,f->target)) ||
                 ch_vk_depth_resident_check_color(active->zeta,f->guest.color_va,f->raw_span)!=VK_SUCCESS) continue;
             observe_guest_color(f);
             /* A CPU edit merge may already have retired the batch. */
@@ -465,7 +466,7 @@ static void flush(void) {
             queued_colors|=1u<<i;active->early_color_reads++;
         }
     }
-    if(active->zeta) {
+    if(active->zeta && publish_depth) {
         VkResult r=ch_vk_depth_resident_flush_many(active->zeta,colors,color_count);
         if(r!=VK_SUCCESS) fatal(r,"resident depth completion");
     }

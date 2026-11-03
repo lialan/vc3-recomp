@@ -56,6 +56,11 @@ typedef struct {
      * already complete. Flips, CPU-decoded sampling and surface switches still
      * publish. Ignored with render routing hooks. */
     int lazy_completion;
+    /* Guest completions and flips publish resident color but leave dirty
+     * resident depth on the GPU, as the OpenGL renderer always does. Depth
+     * still reaches guest RAM before CPU-decoded sampling and on owner
+     * switches. Only for titles that never read depth from the CPU. */
+    int completion_keep_depth;
     uint32_t texture_cache_entries; /* zero: default capacity */
     size_t texture_cache_bytes; /* zero: default byte budget */
     /* Synchronous host rendering hooks, after guest-visible completion.
