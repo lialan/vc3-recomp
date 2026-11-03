@@ -65,10 +65,23 @@ and the world copy's before take_frame gives its shared buffer back.
 `VC3_XR_LOOP_LOG=1` prints, once a second, the loop's rate, its time in
 xrWaitFrame and its work, split by step.
 
-Measuring with the headset on: SteamVR's `power.pauseCompositorOnStandby`
-set to 0 (`vrcmd --set-settings-bool power.pauseCompositorOnStandby 0`; only
-`1` sets it back -- "true" reads as false) keeps the session rendering
-(state 5) with the headset off. Set it back to 1 after.
+The loop paces itself only when SteamVR has clearly stopped pacing it (16
+loops in a row under half a display period; `VC3_XR_SELF_PACE=0`: never),
+and stops as soon as xrWaitFrame blocks again. Sleeping whenever a single
+xrWaitFrame came back early started that frame late; SteamVR throttled the
+app to 60 and the sleep, on its own clock, kept every later frame late: 40,
+30, 24 Hz, back to 120 and down again every ~20 s, 59% of frames
+reprojected in play (SteamVR's own count, `Cumulative stats for pid` in
+`~/.local/share/Steam/logs/vrcompositor.txt` when the app exits).
+
+Measuring as when worn: SteamVR's `power.pauseCompositorOnStandby` 0 keeps
+the session rendering (state 5) with the headset off, but the display stays
+in standby and SteamVR *drops* every frame -- it never judges whether frames
+were on time. Also set `power.turnOffScreensTimeout` high
+(`vrcmd --set-settings-float power.turnOffScreensTimeout 100000`): frames are
+then displayed (`0 dropped`), reprojected and throttled exactly as in play.
+Set both back after (`--set-settings-bool ... 1`; "true" reads as false;
+timeout 5.0). `~/work/lit.sh` on the Frame does this around a scripted run.
 
 ## Shaders compiled before play
 
@@ -91,8 +104,15 @@ what play adds on top is precompiled from the next start. The log line
 
 ### Immersive VR
 
-The game's 3D is drawn from each eye at the size SteamVR recommends (1728 on
-the Frame; `VC3_IMM_EYE=n` for n x n, up to 2560). Mipmapped textures are
+The game's 3D is drawn from each eye at the panel's native 2160x2160
+(SteamVR recommends 1728; `VC3_IMM_EYE=n` for n x n, up to 2560), with
+foveated shading (`VK_KHR_fragment_shading_rate` attachments on the eye
+images): full rate within 30 degrees of each eye's view axis, 2x1 to 45, 2x2
+to 60, 4x4 beyond -- 12%, 25%, 52% and 9% of the image
+(`VC3_XR_FOVEATION=inner,outer,far`; `0` off). Coverage stays per pixel, so
+edges stay sharp; textures soften toward the lens edge. Screens-on route at
+2160: E.S. held 70 of 239 game frames late without it, 0 with it; combat
+and E.S. activation 0-2. Mipmapped textures are
 filtered 8x anisotropically (`CHIHIRO_VULKAN_ANISO=n`, 1 off; free on the
 Frame). With the headset on, SteamVR's compositor works at 120 Hz on the
 same GPU, and every full-view layer it blends costs: the HUD is a quad layer

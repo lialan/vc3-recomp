@@ -737,6 +737,7 @@ static void native_init(void)
         { "Quest 3", 2064, 2208 },
         { "Quest Pro", 1800, 1920 },
         { "Quest 2", 1832, 1920 },
+        { "SteamVR/OpenXR : cv", 2160, 2160 },   /* Steam Frame (SteamVR recommends 1728) */
     };
     XrSystemProperties sp = { XR_TYPE_SYSTEM_PROPERTIES };
     XrViewConfigurationView vcv[2] = { { XR_TYPE_VIEW_CONFIGURATION_VIEW },
@@ -2820,6 +2821,19 @@ static void xr_frame(void)
             && (vs.viewStateFlags & XR_VIEW_STATE_POSITION_VALID_BIT)
             && (vs.viewStateFlags & XR_VIEW_STATE_ORIENTATION_VALID_BIT);
         if (s_views_ok) {
+#ifdef CHIHIRO_RENDERER_VULKAN
+            {   /* each eye's field of view, for the foveated shading-rate images */
+                void ch_vk_target_set_foveation_view(const float tan_fov[2][4]);
+                float t[2][4];
+                for (int e = 0; e < 2; e++) {
+                    t[e][0] = tanf(s_views[e].fov.angleLeft);
+                    t[e][1] = tanf(s_views[e].fov.angleRight);
+                    t[e][2] = tanf(s_views[e].fov.angleUp);
+                    t[e][3] = tanf(s_views[e].fov.angleDown);
+                }
+                ch_vk_target_set_foveation_view(t);
+            }
+#endif
             /* Once a session, where the runtime puts each eye in the head's
              * frame: view 0 must be the left eye (x < 0). */
             static int logged;

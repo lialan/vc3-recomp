@@ -61,6 +61,7 @@ struct ChVkTarget {
     VkRenderPass pass;
     VkImageView view;
     VkFramebuffer framebuffer;
+    VkImage rate_image; VkDeviceMemory rate_memory; VkImageView rate_view;   /* foveation */
     const ChVkTexture *const *stage_images;
     ChVkTexture *dummy,*dummy_cube;
     const Nv2aCombiner *rc;
@@ -411,6 +412,9 @@ void ch_vk_target_destroy(ChVkTarget *t) {
     if(t->framebuffer) vkDestroyFramebuffer(t->device,t->framebuffer,NULL);
     if(t->view) vkDestroyImageView(t->device,t->view,NULL);
     if(t->pass) vkDestroyRenderPass(t->device,t->pass,NULL);
+    if(t->rate_view) vkDestroyImageView(t->device,t->rate_view,NULL);
+    if(t->rate_image) vkDestroyImage(t->device,t->rate_image,NULL);
+    if(t->rate_memory) vkFreeMemory(t->device,t->rate_memory,NULL);
     ch_vk_texture_destroy(t->dummy);
     ch_vk_texture_destroy(t->dummy_cube);
     if(t->queries) vkDestroyQueryPool(t->device,t->queries,NULL);
@@ -1529,8 +1533,152 @@ static uint64_t pipeline_identity(const ChVkTarget *t,const PipelineKey *key) {
 }
 /* The render pass a target's pipelines are built against: R8G8B8A8 color
  * and depth; with input_pass the depth an input attachment too. */
-static VkResult target_pass(VkDevice device,VkFormat depth_format,int input_pass,VkRenderPass *out) {
+/* Foveated shading on the eye images (VK_KHR_fragment_shading_rate). Every
+ * target of the registered device at least 1024 wide -- the immersive eye
+ * images, side by side, and their half-size copies; game surfaces are at
+ * most 640 -- renders with a shading-rate attachment: full rate within
+ * `inner` degrees of each eye's view axis, 2x1 out to `outer`, 2x2 out to
+ * `far`, 4x4 beyond (mostly the corners, at the lens's edge).
+ * Render pass, pipelines and boot-time recipes all ask target_foveated. */
+static struct {
+    VkDevice device; PFN_vkCreateRenderPass2KHR create_pass2;
+    uint32_t texel_w,texel_h; float inner,outer,far;
+    int have_view; float tan[2][4];
+} s_fov;
+void ch_vk_target_set_foveation(VkDevice device,PFN_vkCreateRenderPass2KHR create_pass2,
+    uint32_t texel_w,uint32_t texel_h,float inner_deg,float outer_deg,float far_deg) {
+    s_fov.create_pass2=create_pass2;s_fov.texel_w=texel_w;s_fov.texel_h=texel_h;
+    s_fov.inner=inner_deg;s_fov.outer=outer_deg;s_fov.far=far_deg;s_fov.device=device;
+}
+void ch_vk_target_set_foveation_view(const float tan_fov[2][4]) {
+    if(__atomic_load_n(&s_fov.have_view,__ATOMIC_ACQUIRE)) return;
+    memcpy(s_fov.tan,tan_fov,sizeof s_fov.tan);
+    __atomic_store_n(&s_fov.have_view,1,__ATOMIC_RELEASE);
+}
+static int target_foveated(VkDevice device,uint32_t width) {
+    return s_fov.device && device==s_fov.device && width>=1024;
+}
+/* The rate for a point of eye e at (u,v) in [0,1]: the angle from the view
+ * axis, from the eye's field of view (a symmetric ~100 degrees until the
+ * headset's is known). Encoding: log2(width)<<2 | log2(height). */
+static uint8_t fov_rate(int e,float u,float v) {
+    float l=-1.2f,r=1.2f,up=1.2f,dn=-1.2f;
+    if(__atomic_load_n(&s_fov.have_view,__ATOMIC_ACQUIRE)) {l=s_fov.tan[e][0];r=s_fov.tan[e][1];up=s_fov.tan[e][2];dn=s_fov.tan[e][3];}
+    float tx=l+u*(r-l),ty=up+v*(dn-up);
+    float a=atanf(sqrtf(tx*tx+ty*ty))*57.29578f;
+    return a<s_fov.inner?0:a<s_fov.outer?4:a<s_fov.far?5:10;
+}
+/* The target's shading-rate image: filled once, then kept in the
+ * attachment layout. */
+static VkResult rate_image_create(ChVkTarget *t) {
     VkResult result=VK_SUCCESS;
+    uint32_t w=(t->width+s_fov.texel_w-1)/s_fov.texel_w,h=(t->height+s_fov.texel_h-1)/s_fov.texel_h;
+    VkBuffer staging=VK_NULL_HANDLE;VkDeviceMemory staging_memory=VK_NULL_HANDLE;
+    VkCommandPool pool=VK_NULL_HANDLE;VkFence fence=VK_NULL_HANDLE;
+    VkImageCreateInfo ic={.sType=VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,.imageType=VK_IMAGE_TYPE_2D,.format=VK_FORMAT_R8_UINT,
+        .extent={w,h,1},.mipLevels=1,.arrayLayers=1,.samples=VK_SAMPLE_COUNT_1_BIT,.tiling=VK_IMAGE_TILING_OPTIMAL,
+        .usage=VK_IMAGE_USAGE_FRAGMENT_SHADING_RATE_ATTACHMENT_BIT_KHR|VK_IMAGE_USAGE_TRANSFER_DST_BIT};
+    TRY(vkCreateImage(t->device,&ic,NULL,&t->rate_image));
+    VkMemoryRequirements req;vkGetImageMemoryRequirements(t->device,t->rate_image,&req);
+    VkMemoryAllocateInfo alloc={.sType=VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,.allocationSize=req.size};
+    if(!memory_type(t->physical,req.memoryTypeBits,VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,&alloc.memoryTypeIndex)) {result=VK_ERROR_OUT_OF_DEVICE_MEMORY;goto fail;}
+    TRY(vkAllocateMemory(t->device,&alloc,NULL,&t->rate_memory));
+    TRY(vkBindImageMemory(t->device,t->rate_image,t->rate_memory,0));
+    VkImageViewCreateInfo vc={.sType=VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,.image=t->rate_image,
+        .viewType=VK_IMAGE_VIEW_TYPE_2D,.format=VK_FORMAT_R8_UINT,.subresourceRange={VK_IMAGE_ASPECT_COLOR_BIT,0,1,0,1}};
+    TRY(vkCreateImageView(t->device,&vc,NULL,&t->rate_view));
+    VkBufferCreateInfo bc={.sType=VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,.size=(VkDeviceSize)w*h,.usage=VK_BUFFER_USAGE_TRANSFER_SRC_BIT};
+    TRY(vkCreateBuffer(t->device,&bc,NULL,&staging));
+    vkGetBufferMemoryRequirements(t->device,staging,&req);
+    alloc.allocationSize=req.size;
+    if(!memory_type(t->physical,req.memoryTypeBits,VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT|VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,&alloc.memoryTypeIndex)) {result=VK_ERROR_OUT_OF_DEVICE_MEMORY;goto fail;}
+    TRY(vkAllocateMemory(t->device,&alloc,NULL,&staging_memory));
+    TRY(vkBindBufferMemory(t->device,staging,staging_memory,0));
+    uint8_t *rates;TRY(vkMapMemory(t->device,staging_memory,0,VK_WHOLE_SIZE,0,(void **)&rates));
+    unsigned counts[11]={0};
+    for(uint32_t y=0;y<h;y++) for(uint32_t x=0;x<w;x++) {
+        float px=(x+.5f)*s_fov.texel_w/(float)t->width*2,py=(y+.5f)*s_fov.texel_h/(float)t->height;
+        int e=px>=1;uint8_t r=fov_rate(e,px-e,py);rates[y*w+x]=r;counts[r]++;
+    }
+    vkUnmapMemory(t->device,staging_memory);
+    fprintf(stderr,"[Vulkan] foveated %ux%u: %u%% full rate, %u%% 2x1, %u%% 2x2, %u%% 4x4 (%ux%u texels of %ux%u)\n",t->width,t->height,
+        counts[0]*100/(w*h),counts[4]*100/(w*h),counts[5]*100/(w*h),counts[10]*100/(w*h),w,h,s_fov.texel_w,s_fov.texel_h);
+    VkCommandPoolCreateInfo pc={.sType=VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,.queueFamilyIndex=t->family};
+    TRY(vkCreateCommandPool(t->device,&pc,NULL,&pool));
+    VkCommandBuffer cmd;VkCommandBufferAllocateInfo ca={.sType=VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,.commandPool=pool,
+        .level=VK_COMMAND_BUFFER_LEVEL_PRIMARY,.commandBufferCount=1};
+    TRY(vkAllocateCommandBuffers(t->device,&ca,&cmd));
+    VkCommandBufferBeginInfo begin={.sType=VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,.flags=VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT};
+    TRY(vkBeginCommandBuffer(cmd,&begin));
+    VkImageMemoryBarrier b={.sType=VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,.dstAccessMask=VK_ACCESS_TRANSFER_WRITE_BIT,
+        .oldLayout=VK_IMAGE_LAYOUT_UNDEFINED,.newLayout=VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+        .srcQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED,.dstQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED,
+        .image=t->rate_image,.subresourceRange={VK_IMAGE_ASPECT_COLOR_BIT,0,1,0,1}};
+    vkCmdPipelineBarrier(cmd,VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,VK_PIPELINE_STAGE_TRANSFER_BIT,0,0,NULL,0,NULL,1,&b);
+    VkBufferImageCopy copy={.imageSubresource={VK_IMAGE_ASPECT_COLOR_BIT,0,0,1},.imageExtent={w,h,1}};
+    vkCmdCopyBufferToImage(cmd,staging,t->rate_image,VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,1,&copy);
+    b.srcAccessMask=VK_ACCESS_TRANSFER_WRITE_BIT;b.dstAccessMask=VK_ACCESS_FRAGMENT_SHADING_RATE_ATTACHMENT_READ_BIT_KHR;
+    b.oldLayout=VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;b.newLayout=VK_IMAGE_LAYOUT_FRAGMENT_SHADING_RATE_ATTACHMENT_OPTIMAL_KHR;
+    vkCmdPipelineBarrier(cmd,VK_PIPELINE_STAGE_TRANSFER_BIT,VK_PIPELINE_STAGE_FRAGMENT_SHADING_RATE_ATTACHMENT_BIT_KHR,0,0,NULL,0,NULL,1,&b);
+    TRY(vkEndCommandBuffer(cmd));
+    VkFenceCreateInfo fc={.sType=VK_STRUCTURE_TYPE_FENCE_CREATE_INFO};
+    TRY(vkCreateFence(t->device,&fc,NULL,&fence));
+    VkSubmitInfo submit={.sType=VK_STRUCTURE_TYPE_SUBMIT_INFO,.commandBufferCount=1,.pCommandBuffers=&cmd};
+    TRY(vkQueueSubmit(t->queue,1,&submit,fence));
+    TRY(vkWaitForFences(t->device,1,&fence,VK_TRUE,UINT64_MAX));
+fail:
+    if(fence) vkDestroyFence(t->device,fence,NULL);
+    if(pool) vkDestroyCommandPool(t->device,pool,NULL);
+    if(staging) vkDestroyBuffer(t->device,staging,NULL);
+    if(staging_memory) vkFreeMemory(t->device,staging_memory,NULL);
+    return result;
+}
+/* target_pass with a shading-rate attachment (2): render pass 2. */
+static VkResult target_pass_foveated(VkDevice device,VkFormat depth_format,int input_pass,VkRenderPass *out) {
+    VkAttachmentDescription2 a[3]={
+        {.sType=VK_STRUCTURE_TYPE_ATTACHMENT_DESCRIPTION_2,.format=VK_FORMAT_R8G8B8A8_UNORM,.samples=VK_SAMPLE_COUNT_1_BIT,
+         .loadOp=VK_ATTACHMENT_LOAD_OP_LOAD,.storeOp=VK_ATTACHMENT_STORE_OP_STORE,
+         .stencilLoadOp=VK_ATTACHMENT_LOAD_OP_DONT_CARE,.stencilStoreOp=VK_ATTACHMENT_STORE_OP_DONT_CARE,
+         .initialLayout=VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,.finalLayout=VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL},
+        {.sType=VK_STRUCTURE_TYPE_ATTACHMENT_DESCRIPTION_2,.format=depth_format,.samples=VK_SAMPLE_COUNT_1_BIT,
+         .loadOp=VK_ATTACHMENT_LOAD_OP_LOAD,.storeOp=VK_ATTACHMENT_STORE_OP_STORE,
+         .stencilLoadOp=VK_ATTACHMENT_LOAD_OP_LOAD,.stencilStoreOp=VK_ATTACHMENT_STORE_OP_STORE,
+         .initialLayout=VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,.finalLayout=VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL},
+        {.sType=VK_STRUCTURE_TYPE_ATTACHMENT_DESCRIPTION_2,.format=VK_FORMAT_R8_UINT,.samples=VK_SAMPLE_COUNT_1_BIT,
+         .loadOp=VK_ATTACHMENT_LOAD_OP_LOAD,.storeOp=VK_ATTACHMENT_STORE_OP_NONE,
+         .stencilLoadOp=VK_ATTACHMENT_LOAD_OP_DONT_CARE,.stencilStoreOp=VK_ATTACHMENT_STORE_OP_DONT_CARE,
+         .initialLayout=VK_IMAGE_LAYOUT_FRAGMENT_SHADING_RATE_ATTACHMENT_OPTIMAL_KHR,
+         .finalLayout=VK_IMAGE_LAYOUT_FRAGMENT_SHADING_RATE_ATTACHMENT_OPTIMAL_KHR}};
+    a[2].storeOp=VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    VkAttachmentReference2 color={.sType=VK_STRUCTURE_TYPE_ATTACHMENT_REFERENCE_2,.attachment=0,
+        .layout=VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,.aspectMask=VK_IMAGE_ASPECT_COLOR_BIT};
+    VkAttachmentReference2 depth={.sType=VK_STRUCTURE_TYPE_ATTACHMENT_REFERENCE_2,.attachment=1,
+        .layout=input_pass?VK_IMAGE_LAYOUT_GENERAL:VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+        .aspectMask=VK_IMAGE_ASPECT_DEPTH_BIT|VK_IMAGE_ASPECT_STENCIL_BIT};
+    VkAttachmentReference2 depth_input=depth;depth_input.aspectMask=VK_IMAGE_ASPECT_DEPTH_BIT;
+    VkAttachmentReference2 rate={.sType=VK_STRUCTURE_TYPE_ATTACHMENT_REFERENCE_2,.attachment=2,
+        .layout=VK_IMAGE_LAYOUT_FRAGMENT_SHADING_RATE_ATTACHMENT_OPTIMAL_KHR};
+    VkFragmentShadingRateAttachmentInfoKHR fsr={.sType=VK_STRUCTURE_TYPE_FRAGMENT_SHADING_RATE_ATTACHMENT_INFO_KHR,
+        .pFragmentShadingRateAttachment=&rate,.shadingRateAttachmentTexelSize={s_fov.texel_w,s_fov.texel_h}};
+    VkSubpassDescription2 sub={.sType=VK_STRUCTURE_TYPE_SUBPASS_DESCRIPTION_2,.pNext=&fsr,
+        .pipelineBindPoint=VK_PIPELINE_BIND_POINT_GRAPHICS,.colorAttachmentCount=1,.pColorAttachments=&color,
+        .pDepthStencilAttachment=&depth,.inputAttachmentCount=input_pass?1:0,.pInputAttachments=input_pass?&depth_input:NULL};
+    const VkPipelineStageFlags stages=VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT|VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT|VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
+    const VkAccessFlags access=VK_ACCESS_INPUT_ATTACHMENT_READ_BIT|VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT|VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+    VkSubpassDependency2 deps[3]={
+        {.sType=VK_STRUCTURE_TYPE_SUBPASS_DEPENDENCY_2,.srcSubpass=VK_SUBPASS_EXTERNAL,.dstSubpass=0,.srcStageMask=stages,.dstStageMask=stages,
+         .srcAccessMask=access,.dstAccessMask=access,.dependencyFlags=VK_DEPENDENCY_BY_REGION_BIT},
+        {.sType=VK_STRUCTURE_TYPE_SUBPASS_DEPENDENCY_2,.srcSubpass=0,.dstSubpass=0,.srcStageMask=stages,.dstStageMask=stages,
+         .srcAccessMask=access,.dstAccessMask=access,.dependencyFlags=VK_DEPENDENCY_BY_REGION_BIT},
+        {.sType=VK_STRUCTURE_TYPE_SUBPASS_DEPENDENCY_2,.srcSubpass=0,.dstSubpass=VK_SUBPASS_EXTERNAL,.srcStageMask=stages,.dstStageMask=stages,
+         .srcAccessMask=access,.dstAccessMask=access,.dependencyFlags=VK_DEPENDENCY_BY_REGION_BIT}};
+    VkRenderPassCreateInfo2 rp={.sType=VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO_2,.attachmentCount=3,.pAttachments=a,
+        .subpassCount=1,.pSubpasses=&sub,.dependencyCount=input_pass?3:0,.pDependencies=input_pass?deps:NULL};
+    return s_fov.create_pass2(device,&rp,NULL,out);
+}
+static VkResult target_pass(VkDevice device,VkFormat depth_format,int input_pass,uint32_t width,VkRenderPass *out) {
+    VkResult result=VK_SUCCESS;
+    if(target_foveated(device,width)) return target_pass_foveated(device,depth_format,input_pass,out);
     VkAttachmentDescription attachment={.format=VK_FORMAT_R8G8B8A8_UNORM,
         .samples=VK_SAMPLE_COUNT_1_BIT,.loadOp=VK_ATTACHMENT_LOAD_OP_LOAD,
         .storeOp=VK_ATTACHMENT_STORE_OP_STORE,
@@ -1648,6 +1796,10 @@ static VkResult pipeline_build(VkDevice device,VkPipelineCache cache,VkRenderPas
         .stageCount=2,.pStages=stages,.pVertexInputState=&input,.pInputAssemblyState=&assembly,
         .pViewportState=&vp,.pRasterizationState=&raster,.pMultisampleState=&ms,
         .pDynamicState=&dynamic,.pDepthStencilState=&key->depth,.pColorBlendState=&cb,.layout=layout,.renderPass=pass};
+    /* foveated targets: the rate from the attachment */
+    VkPipelineFragmentShadingRateStateCreateInfoKHR fsr={.sType=VK_STRUCTURE_TYPE_PIPELINE_FRAGMENT_SHADING_RATE_STATE_CREATE_INFO_KHR,
+        .fragmentSize={1,1},.combinerOps={VK_FRAGMENT_SHADING_RATE_COMBINER_OP_KEEP_KHR,VK_FRAGMENT_SHADING_RATE_COMBINER_OP_REPLACE_KHR}};
+    if(target_foveated(device,width)) pipeline.pNext=&fsr;
     TRY(vkCreateGraphicsPipelines(device,cache,1,&pipeline,NULL,out));
 fail:
     if(vert) vkDestroyShaderModule(device,vert,NULL);
@@ -1693,14 +1845,16 @@ fail:
 static VkResult create_pipeline(ChVkTarget *t,const PipelineKey *key) {
     VkResult result;
     if(!t->pass) {
-        TRY(target_pass(t->device,t->depth_format,t->input_pass,&t->pass));
+        int foveated=target_foveated(t->device,t->width);
+        if(foveated) TRY(rate_image_create(t));
+        TRY(target_pass(t->device,t->depth_format,t->input_pass,t->width,&t->pass));
         VkImageViewCreateInfo view={.sType=VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
             .image=t->image,.viewType=VK_IMAGE_VIEW_TYPE_2D,.format=VK_FORMAT_R8G8B8A8_UNORM,
             .subresourceRange={VK_IMAGE_ASPECT_COLOR_BIT,0,1,0,1}};
         TRY(vkCreateImageView(t->device,&view,NULL,&t->view));
-        VkImageView views[]={t->view,t->depth_view};
+        VkImageView views[]={t->view,t->depth_view,t->rate_view};
         VkFramebufferCreateInfo fb={.sType=VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
-            .renderPass=t->pass,.attachmentCount=2,.pAttachments=views,
+            .renderPass=t->pass,.attachmentCount=foveated?3:2,.pAttachments=views,
             .width=t->width,.height=t->height,.layers=1};
         TRY(vkCreateFramebuffer(t->device,&fb,NULL,&t->framebuffer));
     }
@@ -1792,7 +1946,7 @@ static VkResult recipe_build(const Recipe *r) {
     VkRenderPass pass=VK_NULL_HANDLE;VkDescriptorSetLayout set_layout=VK_NULL_HANDLE;
     VkPipelineLayout layout=VK_NULL_HANDLE;VkPipeline pipeline=VK_NULL_HANDLE;
     PipelineKey key=r->key;key.depth.pNext=NULL;
-    TRY(target_pass(device,(VkFormat)r->depth_format,(int)r->input_pass,&pass));
+    TRY(target_pass(device,(VkFormat)r->depth_format,(int)r->input_pass,r->width,&pass));
     TRY(pipeline_layout_create(device,&key,&set_layout,&layout));
     TRY(pipeline_build(device,s_recipes.cache,pass,layout,&key,r->width,r->height,&pipeline));
 fail:

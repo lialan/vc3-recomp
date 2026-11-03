@@ -102,11 +102,10 @@ static int vk_imm_view(void *context,Vc3VrView *view)
  * to 1280x960) after them */
 #define VK_EYE_MAX 2560
 #define VK_BRIDGE_CAPACITY ((VkDeviceSize)2*VK_EYE_MAX*VK_EYE_MAX*4+(VkDeviceSize)1280*960*4)
-/* Each eye's picture: the size the headset recommends (1728 on the Steam
- * Frame). 2048 kept every frame on its vblank with SteamVR's compositor
- * idle, but with the headset on (the compositor working at 120 Hz) only
- * 71% of game frames were shown exactly twice against 83% at 1728.
- * VC3_IMM_EYE=n draws n x n instead (up to VK_EYE_MAX). */
+/* Each eye's picture: the panel's native size (s_native_w; 2160 on the
+ * Steam Frame, where SteamVR recommends 1728), with foveated shading
+ * (vk_split_init) keeping E.S. on its vblank there. VC3_IMM_EYE=n draws
+ * n x n instead (up to VK_EYE_MAX). */
 static void vk_imm_eye_size(uint32_t *w,uint32_t *h)
 {
     const char *e=ch_env("IMM_EYE");
@@ -172,9 +171,9 @@ static void vk_split_init(VkDevice *device,VkQueue *queue)
     float priority=1;
     VkDeviceQueueCreateInfo q={.sType=VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,.queueFamilyIndex=s_vk.family,
         .queueCount=1,.pQueuePriorities=&priority};
-    const char *ext[4]={VK_KHR_EXTERNAL_MEMORY_FD_EXTENSION_NAME};uint32_t ext_count=1;
+    const char *ext[8]={VK_KHR_EXTERNAL_MEMORY_FD_EXTENSION_NAME};uint32_t ext_count=1;
     ChVkShaderFeatures shader_features;
-    if(!ch_vk_shader_features(s_vk.physical,&shader_features,ext,&ext_count,4)) s_vk.raw_fixed=0;
+    if(!ch_vk_shader_features(s_vk.physical,&shader_features,ext,&ext_count,8)) s_vk.raw_fixed=0;
     /* VC3_XR_GAME_PRIORITY=low|medium|high: the game queue's system-wide
      * priority (VK_EXT_global_priority), so the headset's per-display-frame
      * work can be scheduled ahead of the game's rendering. */
@@ -194,6 +193,40 @@ static void vk_split_init(VkDevice *device,VkQueue *queue)
             else {fprintf(stderr,"[quest Vulkan] game priority %s: not offered\n",lv);gp.globalPriority=0;}
         }
     }
+    /* Foveated shading on the eye images (vk_target.c): full rate within
+     * `inner` degrees of each eye's view axis, 2x1 to `outer`, 2x2 to `far`,
+     * 4x4 beyond -- native resolution for well under half the shading.
+     * VC3_XR_FOVEATION=inner,outer,far (default 30,45,60); 0: off. At
+     * 2160 per eye on the Steam Frame E.S. went from 70 of 239 game frames
+     * late to 0. */
+    VkPhysicalDeviceFragmentShadingRateFeaturesKHR fsr={.sType=VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FRAGMENT_SHADING_RATE_FEATURES_KHR,
+        .pipelineFragmentShadingRate=VK_TRUE,.attachmentFragmentShadingRate=VK_TRUE};
+    float fov_inner=30,fov_outer=45,fov_far=60;uint32_t fov_tw=0,fov_th=0;
+    {
+        const char *fv=ch_env("XR_FOVEATION");
+        if(fv && sscanf(fv,"%f,%f,%f",&fov_inner,&fov_outer,&fov_far)<1) fov_inner=0;
+        if(fv && atof(fv)<=0) fov_inner=0;
+        VkPhysicalDeviceFragmentShadingRateFeaturesKHR have={.sType=VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FRAGMENT_SHADING_RATE_FEATURES_KHR};
+        VkPhysicalDeviceFeatures2 f2={.sType=VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,.pNext=&have};
+        VkPhysicalDeviceFragmentShadingRatePropertiesKHR fp={.sType=VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FRAGMENT_SHADING_RATE_PROPERTIES_KHR};
+        VkPhysicalDeviceProperties2 p2={.sType=VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2,.pNext=&fp};
+        int ext_ok=ch_vk_device_has_extension(s_vk.physical,VK_KHR_FRAGMENT_SHADING_RATE_EXTENSION_NAME)
+            && ch_vk_device_has_extension(s_vk.physical,VK_KHR_CREATE_RENDERPASS_2_EXTENSION_NAME);
+        if(fov_inner>0 && ext_ok) {
+            vkGetPhysicalDeviceFeatures2(s_vk.physical,&f2);
+            vkGetPhysicalDeviceProperties2(s_vk.physical,&p2);
+        }
+        if(fov_inner>0 && ext_ok && have.pipelineFragmentShadingRate && have.attachmentFragmentShadingRate && ext_count+2<=8) {
+            ext[ext_count++]=VK_KHR_CREATE_RENDERPASS_2_EXTENSION_NAME;
+            ext[ext_count++]=VK_KHR_FRAGMENT_SHADING_RATE_EXTENSION_NAME;
+            fsr.pNext=shader_features.ubo_layout.pNext;shader_features.ubo_layout.pNext=&fsr;
+            fov_tw=fp.minFragmentShadingRateAttachmentTexelSize.width;fov_th=fp.minFragmentShadingRateAttachmentTexelSize.height;
+            if(fov_tw<16 && 16<=fp.maxFragmentShadingRateAttachmentTexelSize.width) fov_tw=16;
+            if(fov_th<16 && 16<=fp.maxFragmentShadingRateAttachmentTexelSize.height) fov_th=16;
+        } else if(fov_inner>0) {
+            fprintf(stderr,"[quest Vulkan] foveated shading not offered\n");fov_inner=0;
+        }
+    }
     VkDeviceCreateInfo dc={.sType=VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,.pNext=&shader_features.ubo_layout,.queueCreateInfoCount=1,.pQueueCreateInfos=&q,
         .pEnabledFeatures=&want,.enabledExtensionCount=ext_count,.ppEnabledExtensionNames=ext};
     VkDevice game;VkResult r=vkCreateDevice(s_vk.physical,&dc,NULL,&game);
@@ -201,6 +234,15 @@ static void vk_split_init(VkDevice *device,VkQueue *queue)
         fprintf(stderr,"[quest Vulkan] game priority refused (%d): the default\n",(int)r);
         q.pNext=NULL;dc.enabledExtensionCount=--ext_count;gp.globalPriority=0;
         r=vkCreateDevice(s_vk.physical,&dc,NULL,&game);
+    }
+    if(r==VK_SUCCESS && fov_inner>0) {
+        void ch_vk_target_set_foveation(VkDevice,PFN_vkCreateRenderPass2KHR,uint32_t,uint32_t,float,float,float);
+        PFN_vkCreateRenderPass2KHR pass2=(PFN_vkCreateRenderPass2KHR)vkGetDeviceProcAddr(game,"vkCreateRenderPass2KHR");
+        if(pass2) {
+            ch_vk_target_set_foveation(game,pass2,fov_tw,fov_th,fov_inner,fov_outer,fov_far);
+            fprintf(stderr,"[quest Vulkan] foveated shading: full rate within %.0f deg, 2x1 to %.0f, 2x2 to %.0f, 4x4 beyond (rate texel %ux%u)\n",
+                fov_inner,fov_outer,fov_far,fov_tw,fov_th);
+        }
     }
     if(r==VK_SUCCESS && gp.globalPriority) fprintf(stderr,"[quest Vulkan] game queue priority %s\n",ch_env("XR_GAME_PRIORITY"));
     if(r!=VK_SUCCESS) {fprintf(stderr,"[quest Vulkan] one device: game device %d\n",(int)r);return;}
