@@ -1,13 +1,19 @@
 # vc3-recomp
 
-Native macOS port of *Virtua Cop 3* (Sega Chihiro) by static recompilation with
-[xboxrecomp](https://github.com/sp00nznet/xboxrecomp). No game data is included:
-you need your own Chihiro dump containing a decrypted `vc3.xbe` and `media/`.
+Native port of *Virtua Cop 3* (Sega Chihiro) by static recompilation with
+[xboxrecomp](https://github.com/sp00nznet/xboxrecomp). It runs flat on macOS
+and Linux, and in VR on the Steam Frame (SteamVR/OpenXR, Vulkan, the game's 3D
+re-rendered per eye) and the Quest. No game data is included: you need your own
+Chihiro dump containing a decrypted `vc3.xbe` and `media/`.
 
-See [docs/PLAN.md](docs/PLAN.md) for status and roadmap.
+The toolkit submodule is the `vc3` branch of the fork
+[lialan/xboxrecomp](https://github.com/lialan/xboxrecomp/tree/vc3).
+See [steamframe/README.md](steamframe/README.md) for building and running on the
+Steam Frame, and [docs/PLAN.md](docs/PLAN.md) for status and roadmap.
 
 ```bash
-git submodule update --init
+git clone --recursive https://github.com/lialan/vc3-recomp.git
+# or, in an existing clone: git submodule update --init
 python3 -m venv .venv && .venv/bin/pip install capstone
 brew install sdl2 libepoxy
 VC3_GAME_DIR=/path/to/vc3 scripts/analyze.sh
