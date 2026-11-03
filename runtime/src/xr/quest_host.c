@@ -2692,7 +2692,7 @@ static void xr_frame(void)
     XrCompositionLayerProjection world = { XR_TYPE_COMPOSITION_LAYER_PROJECTION };
     XrCompositionLayerProjectionView pv[2], wv[2];
 #endif
-    const XrCompositionLayerBaseHeader *layers[4];
+    const XrCompositionLayerBaseHeader *layers[8];
     uint32_t nl = 0;
     Frame *f;
     int is_new, allow = 1;

@@ -37,6 +37,6 @@ XrResult ch_vk_xr_swapchain_settle(ChVkXrSwapchain *s);
  * frame, so each wait cost up to one): record a copy of packed RGBA8 rows
  * into the waited image (left COLOR_ATTACHMENT_OPTIMAL), and release an
  * image whose writes the caller has submitted. */
-XrResult ch_vk_xr_swapchain_record_buffer(ChVkXrSwapchain *s,VkCommandBuffer command,VkBuffer buffer);
+XrResult ch_vk_xr_swapchain_record_buffer(ChVkXrSwapchain *s,VkCommandBuffer command,VkBuffer buffer,VkDeviceSize offset);
 XrResult ch_vk_xr_swapchain_release_submitted(ChVkXrSwapchain *s);
 #endif

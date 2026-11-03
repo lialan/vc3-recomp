@@ -95,11 +95,15 @@ The game's 3D is drawn from each eye at the size SteamVR recommends (1728 on
 the Frame; `VC3_IMM_EYE=n` for n x n, up to 2560). Mipmapped textures are
 filtered 8x anisotropically (`CHIHIRO_VULKAN_ANISO=n`, 1 off; free on the
 Frame). With the headset on, SteamVR's compositor works at 120 Hz on the
-same GPU: game frames shown exactly twice (scripted route, compositor kept
-running with `power.pauseCompositorOnStandby` 0): 1728 84%, 2048 71%, 1440
-92%; the rest are E.S. frames shown four times. With the compositor idle
-2048 held every frame (uncapped E.S. activation 10.4 ms against 1728's 8.6),
-so measure with it running (below). What gets it there:
+same GPU, and every full-view layer it blends costs: the HUD is a quad layer
+of its own at the game's 640x480 (`VC3_XR_HUD_OVERLAY=1`: drawn into the
+overlay as before) and the overlay, now only the gun, laser and dot, is 0.75
+of the eye size (`VC3_OVERLAY_SCALE`). Game frames shown exactly twice
+(scripted route, compositor kept running with `power.pauseCompositorOnStandby`
+0): 84% with the HUD in a full-size overlay, 89% at overlay 0.75, 96% with
+the HUD quad (game frames shown four times: combat 7, E.S. activation 23,
+E.S. held 12). 2048 per eye showed 71% against 1728's 84%; with the
+compositor idle it held every frame, so measure with it running (below). What gets it there:
 
 - **Per-draw constants in uniform buffers** (constant registers on Adreno);
   devices enable `VK_KHR_uniform_buffer_standard_layout` for the std430
@@ -121,9 +125,12 @@ E.S. held ~90, E.S. activation ~83). `bench-light.sh` reports the headset
 side too (`/tmp/takestat.py`: display frames per game frame, 2 at 60 fps).
 
 Game zooms (a far enemy, E.S., the death close-up: the lens narrows from
-~45-60 to ~14 degrees) zoom the headset's world as much: vertices are read
-back through VC3's usual 45-degree lens, so a longer one magnifies; never
-zoomed out (`CHIHIRO_VULKAN_IMMERSIVE_ZOOM=0`: no zoom; 1: the OpenGL
+~45-60 to ~14 degrees) zoom the headset's world: vertices are read back
+through VC3's usual 45-degree lens, so a longer one magnifies, at most 1.75
+times (`CHIHIRO_VULKAN_IMMERSIVE_ZOOM_MAX`, 0 no limit: from 2 on, the
+textures a mip level sharper, E.S. held ran 141-151 of 239 frames off its
+vblank with the headset on against 52-58 unzoomed; 1.75 cost nothing
+measurable); never zoomed out (`CHIHIRO_VULKAN_IMMERSIVE_ZOOM=0`: no zoom; 1: the OpenGL
 renderer's normalisation to the most used lens). Aim and the HUD panel use
 the same projection.
 

@@ -260,6 +260,7 @@ static void vk_menu_upload(const void *rgba)
     s_vk_menu_dirty=1;
     pthread_mutex_unlock(&s_vk_queue);
 }
+static int vk_hud_in_overlay(void);
 static int vk_overlay_init(void)
 {
     XrViewConfigurationView views[2]={{XR_TYPE_VIEW_CONFIGURATION_VIEW},{XR_TYPE_VIEW_CONFIGURATION_VIEW}};
@@ -269,7 +270,11 @@ static int vk_overlay_init(void)
     pthread_mutex_lock(&s_vk_queue);
     for(unsigned e=0;e<2;e++) {
         const char *sc=ch_env("OVERLAY_SCALE");
-        float scale=sc && atof(sc)>.2 && atof(sc)<=1 ? (float)atof(sc) : 1;
+        /* 0.75 by default: the overlay holds the gun, laser and dot (the HUD
+         * is a quad of its own); SteamVR blends it over the whole view at
+         * 120 Hz, and 0.75 showed 93% of game frames exactly twice with the
+         * headset on against 89% at full size. */
+        float scale=sc && atof(sc)>.2 && atof(sc)<=1 ? (float)atof(sc) : vk_hud_in_overlay()?1:.75f;
         unsigned width=(unsigned)((s_native_w?s_native_w:views[e].recommendedImageRectWidth)*scale);
         unsigned height=(unsigned)((s_native_h?s_native_h:views[e].recommendedImageRectHeight)*scale);
         s_vk_eye[e].w=width;s_vk_eye[e].h=height;
@@ -400,6 +405,16 @@ static uint64_t s_vk_world_sequence;
 static XrCompositionLayerProjection s_vk_world_layer;
 static XrCompositionLayerProjectionView s_vk_world_views[2];
 static ChVkTarget *s_vk_hud_target;
+static ChVkXrQuad *s_vk_hud_quad;
+/* VC3_XR_HUD_OVERLAY=1: the HUD drawn into the overlay (sampled from a
+ * texture), as before the quad -- the overlay then full size. */
+static int vk_hud_in_overlay(void)
+{
+    static int on=-1;
+    if(on<0) on=ch_env("XR_HUD_OVERLAY") && *ch_env("XR_HUD_OVERLAY")=='1';
+    return on;
+}
+static uint32_t s_vk_hud_tw,s_vk_hud_th;
 static ChVkTexture *s_vk_hud_tex;
 static uint32_t s_vk_hud_w,s_vk_hud_h;
 static int s_vk_hud_valid;
@@ -480,11 +495,15 @@ static int vk_world_update(const Frame *f)
     (void)result;
     SEG(6,vk_xr_check(ch_vk_xr_swapchain_wait(s_vk_world,XR_INFINITE_DURATION,&index,&image),"world acquire"));
     VkCommandBuffer cmd=vk_host_begin();
-    SEG(7,vk_xr_check(ch_vk_xr_swapchain_record_buffer(s_vk_world,cmd,s_vk_bridge.xr_buffer[f->gpu.slot]),"world copy"));
+    SEG(7,vk_xr_check(ch_vk_xr_swapchain_record_buffer(s_vk_world,cmd,s_vk_bridge.xr_buffer[f->gpu.slot],0),"world copy"));
+    /* The HUD: a quad layer of its own at the game's 640x480, between the
+     * world and the overlay (SteamVR blends it only where it is; drawn into
+     * the full-view overlay it made that layer full size, and SteamVR
+     * blends the overlay over the whole view at 120 Hz). */
     s_vk_hud_valid=f->gpu.imm.hud;
-    if(s_vk_hud_valid) {
+    if(s_vk_hud_valid && vk_hud_in_overlay()) {
         const uint32_t hw=f->gpu.surface.width,hh=f->gpu.surface.height;
-        if(s_vk_hud_w!=hw || s_vk_hud_h!=hh) {
+        if(s_vk_hud_tw!=hw || s_vk_hud_th!=hh) {
             ch_vk_texture_destroy(s_vk_hud_tex);s_vk_hud_tex=NULL;
             ch_vk_target_destroy(s_vk_hud_target);s_vk_hud_target=NULL;
             vk_initialized_target(hw,hh,&s_vk_hud_target);
@@ -494,13 +513,28 @@ static int vk_world_update(const Frame *f)
                 .addressModeU=VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,.addressModeV=VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
                 .addressModeW=VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE};
             vk_check(ch_vk_texture_set_sampler(s_vk_hud_tex,&linear),"HUD sampler");
-            s_vk_hud_w=hw;s_vk_hud_h=hh;
+            s_vk_hud_tw=hw;s_vk_hud_th=hh;
         }
         SEG(8,vk_check(ch_vk_texture_record_from_buffer(s_vk_hud_tex,cmd,s_vk_bridge.xr_buffer[f->gpu.slot],
+            f->gpu.hud_offset),"HUD copy"));
+    } else if(s_vk_hud_valid) {
+        const uint32_t hw=f->gpu.surface.width,hh=f->gpu.surface.height;
+        if(s_vk_hud_quad && (s_vk_hud_w!=hw || s_vk_hud_h!=hh)) {
+            vk_xr_check(ch_vk_xr_quad_destroy(s_vk_hud_quad),"old HUD quad");s_vk_hud_quad=NULL;
+        }
+        if(!s_vk_hud_quad) {
+            const XrPosef pose={.orientation={0,0,0,1},.position={0,0,-5}};
+            vk_xr_check(ch_vk_xr_quad_create(s_inst,s_sess,xrGetInstanceProcAddr,s_vk.device,hw,hh,s_local,&pose,
+                (XrExtent2Df){1,1},XR_COMPOSITION_LAYER_BLEND_TEXTURE_SOURCE_ALPHA_BIT|
+                XR_COMPOSITION_LAYER_UNPREMULTIPLIED_ALPHA_BIT,&s_vk_hud_quad),"HUD quad");
+            s_vk_hud_w=hw;s_vk_hud_h=hh;
+        }
+        SEG(8,vk_xr_check(ch_vk_xr_quad_record_buffer(s_vk_hud_quad,cmd,s_vk_bridge.xr_buffer[f->gpu.slot],
             f->gpu.hud_offset),"HUD copy"));
     }
     s_vk_host.world=(int)vk_host_submit();
     SEG(9,vk_xr_check(ch_vk_xr_swapchain_release_submitted(s_vk_world),"world release"));
+    if(s_vk_hud_valid && !vk_hud_in_overlay()) vk_xr_check(ch_vk_xr_quad_release_submitted(s_vk_hud_quad),"HUD release");
     s_vk_world_sequence=f->gpu.sequence;
     return 1;
 }
@@ -635,6 +669,15 @@ static unsigned vk_present(const Frame *f,const XrCompositionLayerBaseHeader **l
         SEG(0,screen_new=vk_world_update(f));
         const XrCompositionLayerBaseHeader *world=vk_world_layer(f);
         if(world) layers[count++]=world;
+        float pc[3],pw,ph;
+        if(s_vk_hud_valid && s_vk_hud_quad && !vk_hud_in_overlay() && hud_panel(f,pc,&pw,&ph)) {
+            float c[3];yaw_rot(s_anchor_yaw,pc,c);
+            XrPosef hp={.orientation={0,sinf(s_anchor_yaw*.5f),0,cosf(s_anchor_yaw*.5f)},
+                .position={c[0]+s_anchor_p[0],c[1]+s_anchor_p[1],c[2]+s_anchor_p[2]}};
+            vk_xr_check(ch_vk_xr_quad_pose(s_vk_hud_quad,&hp,(XrExtent2Df){pw,ph}),"HUD pose");
+            const XrCompositionLayerBaseHeader *hud=ch_vk_xr_quad_layer(s_vk_hud_quad);
+            if(hud) layers[count++]=hud;
+        }
     } else if(f && vk_screen_in_eyes()) screen_new=vk_screen_update(f);
     else if(f) {
         XrExtent2Df size={s_height*(float)f->lw/f->lh,s_height};
@@ -666,7 +709,7 @@ static unsigned vk_present(const Frame *f,const XrCompositionLayerBaseHeader **l
     if(eye_test<0) eye_test=ch_env("XR_EYE_TEST") && *ch_env("XR_EYE_TEST")=='1';
     if(swap_eyes<0) swap_eyes=ch_env("XR_SWAP_EYES") && *ch_env("XR_SWAP_EYES")=='1';
     const int screen=!imm && s_vk_scr_tex && vk_screen_in_eyes();
-    const int hud_shown=imm && s_vk_hud_valid;
+    const int hud_shown=imm && s_vk_hud_valid && vk_hud_in_overlay();
     int overlay_want=s_overlay_ok>0 && s_views_ok && (s_qo.gun_valid || eye_test || screen || hud_shown);
     int overlay_reuse=overlay_want && !screen_new && overlay_reuse_frame(s_vk_overlay_have_last,overlay_full,s_menu.open,s_vk_overlay_frame,display_period);
     if(!overlay_want) s_vk_overlay_have_last=0;

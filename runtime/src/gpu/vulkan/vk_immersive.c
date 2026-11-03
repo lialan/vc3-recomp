@@ -32,7 +32,7 @@ struct ChVkImmersive {
     struct {float k;uint32_t n;} zoom[ZOOM_SLOTS]; float kbase;
     /* per-batch projection cache: identical matrices, identical projection */
     Nv2aFixedState last_ff; float last_aa[2]; int last_valid,last_ok; VrGameProj last;
-    int zoom_normalise;   /* CHIHIRO_VULKAN_IMMERSIVE_ZOOM: 0 the true projection, 1 the OpenGL renderer's zoom_proj, 2 (default) follow zooms in */
+    int zoom_normalise; float zoom_max;   /* CHIHIRO_VULKAN_IMMERSIVE_ZOOM: 0 the true projection, 1 the OpenGL renderer's zoom_proj, 2 (default) follow zooms in */
     int half_effects;     /* CHIHIRO_VULKAN_IMMERSIVE_HALF_EFFECTS=0: every surface's eyes at native size */
     uint64_t guest_eye_samples;
     int log; uint64_t frames,world_batches,hud_batches,flat_batches,skipped_batches;
@@ -155,6 +155,12 @@ VkResult ch_vk_immersive_create(const ChVkImmersiveConfig *config,ChVkImmersive 
      * lens, which drifted to the close-up's after a long continue. */
     e=getenv("CHIHIRO_VULKAN_IMMERSIVE_ZOOM");
     m->zoom_normalise=e?atoi(e):2;
+    e=getenv("CHIHIRO_VULKAN_IMMERSIVE_ZOOM_MAX");
+    /* Magnification at most 1.75 by default: from 2 on (the textures a
+     * whole mip level sharper) E.S. ran a third of its frames late with the
+     * headset on (SteamVR's compositor sharing the GPU); 1.75 cost nothing
+     * measurable. 0: no limit. */
+    m->zoom_max=e?(float)atof(e):1.75f;
     e=getenv("CHIHIRO_VULKAN_IMMERSIVE_HALF_EFFECTS");
     m->half_effects=!e || atoi(e);
     *out=m; return VK_SUCCESS;
@@ -189,6 +195,7 @@ static VrGameProj zoomed(const ChVkImmersive *m,const VrGameProj *g,uint32_t wid
      * The host's projection is this one: aim and the HUD panel follow. */
     if(m->zoom_normalise==2 && width) {
         float k=IMM_ZOOM_BASE*(float)width/640.0f;
+        if(m->zoom_max>=1 && fabsf(g->kx)>k*m->zoom_max) k=fabsf(g->kx)/m->zoom_max;   /* magnification at most zoom_max */
         if(fabsf(g->kx)>k) {float z=k/fabsf(g->kx);o.kx*=z;o.ky*=z;}
     }
     return o;

@@ -57,6 +57,20 @@ XrResult ch_vk_xr_quad_update_buffer(ChVkXrQuad *q,VkQueue queue,uint32_t family
     if(r==XR_SUCCESS) {q->pending=0;q->ready=1;}
     return r;
 }
+XrResult ch_vk_xr_quad_record_buffer(ChVkXrQuad *q,VkCommandBuffer command,VkBuffer buffer,VkDeviceSize offset) {
+    if(!q || !command || !buffer) return XR_ERROR_VALIDATION_FAILURE;
+    q->pending=1;q->ready=0;
+    uint32_t index;VkImage image;
+    XrResult r=ch_vk_xr_swapchain_wait(q->swapchain,XR_INFINITE_DURATION,&index,&image);
+    if(r!=XR_SUCCESS) return r;
+    return ch_vk_xr_swapchain_record_buffer(q->swapchain,command,buffer,offset);
+}
+XrResult ch_vk_xr_quad_release_submitted(ChVkXrQuad *q) {
+    if(!q) return XR_ERROR_VALIDATION_FAILURE;
+    XrResult r=ch_vk_xr_swapchain_release_submitted(q->swapchain);
+    if(r==XR_SUCCESS) {q->pending=0;q->ready=1;}
+    return r;
+}
 XrResult ch_vk_xr_quad_update_texture(ChVkXrQuad *q,ChVkTexture *texture,XrDuration timeout,VkResult *vk_result) {
     if(!q || !texture || !vk_result || timeout<0) return XR_ERROR_VALIDATION_FAILURE;
     q->pending=1;q->ready=0;
