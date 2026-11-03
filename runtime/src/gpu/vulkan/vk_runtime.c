@@ -67,6 +67,16 @@ static void frame_completed(const Nv2aSurface *surface)
             (unsigned long long)runtime.frames,(now-previous)/1e6);
         previous=now;
     }
+    /* The cache was saved only on a clean exit, and a game closed from its
+     * launcher (Steam) never has one: every session compiled every pipeline
+     * again, mid-play. Every ~10 s, when the cache has grown, it is saved
+     * (on this thread, which serializes pipeline creation). */
+    if(runtime.pipeline_cache && runtime.cache_path && runtime.frames%600==0) {
+        static size_t saved;size_t size=0;
+        if(vkGetPipelineCacheData(runtime.cache_device,runtime.pipeline_cache,&size,NULL)==VK_SUCCESS && size>saved) {
+            save_pipeline_cache();saved=size;
+        }
+    }
     if(runtime.frames==1 || runtime.frames%60==0)
         fprintf(stderr,"[Vulkan] completed frame %llu: %ux%u, guest=%08X\n",
                 (unsigned long long)runtime.frames,surface->width,surface->height,surface->color_va);

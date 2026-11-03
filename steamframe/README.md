@@ -46,9 +46,38 @@ game. The game folder (`vc3.xbe`, `media/`) is `~/work/vc3-game` unless
 
 `bench.sh <label> [binary]` runs the scripted combat route (2100 frames) and
 prints frame times and costs for the combat, E.S. activation and E.S. held
-windows; extra options come from the environment.
+windows; extra options come from the environment. Its profiling (per-draw
+timers) costs a few ms a frame: `bench-light.sh` runs the same route without
+it and scores the frame intervals as a player sees them. Both keep the
+pipeline cache between runs (`/tmp/vc3s/save`).
 
 ## Performance defaults and switches (`env.txt`)
+
+### Immersive VR
+
+The game's 3D is drawn from each eye at the headset's native size (1728 per
+eye on the Frame; `VC3_IMM_EYE=n` for n x n). Combat and E.S. hold 60 fps
+there, each game frame shown twice at 120 Hz, with ~45% of the GPU and the
+busiest CPU thread ~33% busy. What gets it there:
+
+- **Per-draw constants in uniform buffers** (constant registers on Adreno);
+  devices enable `VK_KHR_uniform_buffer_standard_layout` for the std430
+  blocks. Without it the GPU vertex path is off (CPU transforms).
+- **Fetch specialization** (`CHIHIRO_VULKAN_SPECIALIZE_FETCH=0`: the generic
+  vertex shaders, ~2500-3400 instructions each).
+- **Only the eyes are drawn** for screen-shaped surfaces in immersive frames
+  (`CHIHIRO_VULKAN_IMMERSIVE_SKIP_GUEST=0` draws the guest copy too); effect
+  maps made from them sample the eyes.
+- Texture cache sized for eye snapshots; the culling frustum widened to 140
+  degrees while immersive (`VC3_IMM_CULL_FOV`); the pipeline cache saved
+  every ~10 s when it grew, not only on a clean exit.
+
+Diagnostics: `CHIHIRO_VULKAN_IMMERSIVE_LOG=1|2`, `CHIHIRO_VULKAN_IMMERSIVE_DUMP=dir`
+(scene eyes and guest picture), `VC3_XR_DUMP=dir` (the headset's eyes and HUD),
+`CHIHIRO_VULKAN_DRAW_TIMING=1` (GPU time per draw kind), and Mesa's
+`IR3_SHADER_DEBUG=vs,fs` with `MESA_SHADER_CACHE_DISABLE=1` (shader stats).
+
+### Flat
 
 E.S. mode runs at 60 fps on the Frame (about 13 ms of work per frame).
 What gets it there, and how to turn each part off:
