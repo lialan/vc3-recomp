@@ -2,6 +2,9 @@
 #define _GNU_SOURCE   /* dladdr (CHIHIRO_VULKAN_WAIT_STACKS) */
 #endif
 #include "vk_target.h"
+#ifdef CH_VK_SPIRV_OPT
+#include "vk_spirv_specialize.h"
+#endif
 #include "vk_depth_quant.h"
 #include "vk_depth_pack.h"
 #include "vk_image_read.h"
@@ -1727,6 +1730,26 @@ static VkResult target_pass(VkDevice device,VkFormat depth_format,int input_pass
 fail:
     return result;
 }
+#ifdef CH_VK_SPIRV_OPT
+/* Shaders specialized on the CPU (vk_spirv_specialize.cpp) where the driver
+ * does not fold specialization constants; CHIHIRO_VULKAN_CPU_SPECIALIZE=0
+ * leaves it to the driver. */
+static int cpu_specialize_on(void) {
+    static int on=-1;
+    if(on<0) {const char *e=getenv("CHIHIRO_VULKAN_CPU_SPECIALIZE");on=!e || atoi(e)!=0;
+        fprintf(stderr,"[Vulkan] shaders specialized on the CPU: %s\n",on?"yes":"no");}
+    return on;
+}
+static _Atomic unsigned long long s_spec_ns;
+static _Atomic unsigned s_spec_count,s_spec_failed;
+static void cpu_specialize_time(uint64_t ns) {s_spec_ns+=ns;}
+static void cpu_specialize_note(unsigned stage,int ok,size_t in,size_t out) {
+    if(!ok) {if(s_spec_failed++<4) fprintf(stderr,"[Vulkan] CPU specialization failed (%s stage): driver specializes\n",stage?"fragment":"vertex");return;}
+    unsigned n=++s_spec_count;
+    if(n<=4 || n%50==0) fprintf(stderr,"[Vulkan] CPU-specialized %u shaders, %.1f ms each on average (last: %s %zu -> %zu bytes)\n",
+        n,s_spec_ns/1e6/(n>1?n-1:1),stage?"fragment":"vertex",in,out);
+}
+#endif
 /* A pipeline from its key alone (and the target's size: the viewport is
  * static) -- what a target builds, and what the recipes precompile. */
 static VkResult pipeline_build(VkDevice device,VkPipelineCache cache,VkRenderPass pass,VkPipelineLayout layout,
@@ -1746,6 +1769,9 @@ static VkResult pipeline_build(VkDevice device,VkPipelineCache cache,VkRenderPas
 #undef VP_MODULE
         }
     }
+#ifdef CH_VK_SPIRV_OPT
+    const uint32_t *vert_code=shader.pCode;const size_t vert_bytes=shader.codeSize;
+#endif
     TRY(vkCreateShaderModule(device,&shader,NULL,&vert));
 #define FRAGMENT(name) do { \
     shader.codeSize=key->fragment_depth?sizeof(color_##name##_depth_spv):sizeof(color_##name##_spv); \
@@ -1763,6 +1789,9 @@ static VkResult pipeline_build(VkDevice device,VkPipelineCache cache,VkRenderPas
         if(key->alpha_shader) FRAGMENT(frag);else FRAGMENT(frag_noat);
     }
 #undef FRAGMENT
+#ifdef CH_VK_SPIRV_OPT
+    const uint32_t *frag_code=shader.pCode;const size_t frag_bytes=shader.codeSize;
+#endif
     TRY(vkCreateShaderModule(device,&shader,NULL,&frag));
     VkPipelineShaderStageCreateInfo stages[]={
         {.sType=VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,.stage=VK_SHADER_STAGE_VERTEX_BIT,.module=vert,.pName="main"},
@@ -1790,6 +1819,26 @@ static VkResult pipeline_build(VkDevice device,VkPipelineCache cache,VkRenderPas
     for(unsigned i=0;i<25;i++) fixed_entries[i]=(VkSpecializationMapEntry){i,i*4,4};
     VkSpecializationInfo fixed_specialization={25,fixed_entries,sizeof key->fixed_fetch,key->fixed_fetch};
     if(key->fixed && !key->vertex_count) stages[0].pSpecializationInfo=&fixed_specialization;
+#ifdef CH_VK_SPIRV_OPT
+    if(cpu_specialize_on()) for(unsigned s=0;s<2;s++) {
+        if(!stages[s].pSpecializationInfo) continue;
+        uint32_t *code=NULL;size_t bytes=0;
+        uint64_t t0=time_ns();
+        if(ch_vk_spirv_specialize(s?frag_code:vert_code,s?frag_bytes:vert_bytes,stages[s].pSpecializationInfo,&code,&bytes)) {
+            cpu_specialize_note(s,0,0,0);continue;
+        }
+        VkShaderModule m=VK_NULL_HANDLE;
+        VkShaderModuleCreateInfo info={.sType=VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,.codeSize=bytes,.pCode=code};
+        VkResult made=vkCreateShaderModule(device,&info,NULL,&m);
+        free(code);
+        if(made!=VK_SUCCESS) {cpu_specialize_note(s,0,0,0);continue;}
+        VkShaderModule *slot=s?&frag:&vert;
+        vkDestroyShaderModule(device,*slot,NULL);*slot=m;
+        stages[s].module=m;stages[s].pSpecializationInfo=NULL;
+        cpu_specialize_note(s,1,(s?frag_bytes:vert_bytes),bytes);
+        cpu_specialize_time(time_ns()-t0);
+    }
+#endif
     VkVertexInputBindingDescription binding={0,sizeof(ChVkColorVertex),VK_VERTEX_INPUT_RATE_VERTEX};   /* fixed: no vertex input */
 
     VkVertexInputAttributeDescription attrs[]={

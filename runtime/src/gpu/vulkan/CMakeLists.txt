@@ -156,6 +156,23 @@ if(CHIHIRO_VULKAN_PIPELINE_CACHE_SEEDS)
 endif()
 
 target_sources(chihiro_vulkan PRIVATE ../guest_write_watch.c)
+set(CHIHIRO_VULKAN_SPIRV_OPT_DIR "" CACHE PATH
+    "SPIRV-Tools for the target (include/, lib/libSPIRV-Tools{-opt,}.a): pipelines specialized on the CPU")
+if(CHIHIRO_VULKAN_SPIRV_OPT_DIR)
+    enable_language(CXX)
+    target_sources(chihiro_vulkan PRIVATE vk_spirv_specialize.cpp)
+    set_source_files_properties(vk_spirv_specialize.cpp PROPERTIES COMPILE_OPTIONS "-std=c++17")
+    target_compile_definitions(chihiro_vulkan PRIVATE CH_VK_SPIRV_OPT=1)
+    target_include_directories(chihiro_vulkan PRIVATE "${CHIHIRO_VULKAN_SPIRV_OPT_DIR}/include")
+    target_link_libraries(chihiro_vulkan PUBLIC "${CHIHIRO_VULKAN_SPIRV_OPT_DIR}/lib/libSPIRV-Tools-opt.a"
+        "${CHIHIRO_VULKAN_SPIRV_OPT_DIR}/lib/libSPIRV-Tools.a")
+    # the games link with the C driver: the C++ runtime explicitly
+    if(ANDROID)
+        target_link_libraries(chihiro_vulkan PUBLIC c++_static c++abi)
+    else()
+        target_link_libraries(chihiro_vulkan PUBLIC stdc++)
+    endif()
+endif()
 target_compile_features(chihiro_vulkan PUBLIC c_std_11)
 target_compile_options(chihiro_vulkan PRIVATE -Wall -Wextra -Werror)
 target_include_directories(chihiro_vulkan PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}"
