@@ -72,6 +72,11 @@ busiest CPU thread ~33% busy. What gets it there:
   degrees while immersive (`VC3_IMM_CULL_FOV`); the pipeline cache saved
   every ~10 s when it grew, not only on a clean exit.
 
+Headroom: `RECOMP_VBLANK_HZ=120 VC3_XR_CADENCE=0` runs the game faster than
+real time, as fast as the pipeline allows (native 1728/eye: combat ~98 fps,
+E.S. held ~79, E.S. activation ~70). `bench-light.sh` reports the headset
+side too (`/tmp/takestat.py`: display frames per game frame, 2 at 60 fps).
+
 Diagnostics: `CHIHIRO_VULKAN_IMMERSIVE_LOG=1|2`, `CHIHIRO_VULKAN_IMMERSIVE_DUMP=dir`
 (scene eyes and guest picture), `VC3_XR_DUMP=dir` (the headset's eyes and HUD),
 `CHIHIRO_VULKAN_DRAW_TIMING=1` (GPU time per draw kind), and Mesa's
