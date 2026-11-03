@@ -476,6 +476,9 @@ static Frame *take_frame(int *is_new,int allow)
 #endif
 
 static float s_dist = 2.6f, s_height = 1.9f;    /* metres */
+/* Screen size "Fill view" (the default): the screen spans the eyes' whole
+ * vertical field of view at any distance, as the world does in HOTD4. */
+static int s_fill = 1;
 #define EYE_DISTANCE 0.064f                       /* metres */
 
 #ifndef CHIHIRO_RENDERER_VULKAN
@@ -516,8 +519,11 @@ static void screen_load(void)
     const char *v;
     if ((v = vc3_setting_get("vr_distance=")) && atof(v) > 0.5)
         s_dist = (float)atof(v);
-    if ((v = vc3_setting_get("vr_height=")) && atof(v) > 0.3)
-        s_height = (float)atof(v);
+    if ((v = vc3_setting_get("vr_height="))) {
+        s_fill = strcmp(v, "fill") == 0;
+        if (!s_fill && atof(v) > 0.3)
+            s_height = (float)atof(v);
+    }
     s_vr.sight = key_index(vc3_setting_get("vr_sight="), SIGHT_KEY, QO_SIGHT_COUNT,
                            QO_SIGHT_RED_DOT);
     s_vr.laser = key_index(vc3_setting_get("vr_laser="), LASER_KEY, 3, LASER_DOT);
@@ -544,7 +550,10 @@ static void screen_save(void)
     char b[32];
     snprintf(b, sizeof b, "%.2f", s_dist);
     vc3_setting_put("vr_distance=", b);
-    snprintf(b, sizeof b, "%.2f", s_height);
+    if (s_fill)
+        snprintf(b, sizeof b, "fill");
+    else
+        snprintf(b, sizeof b, "%.2f", s_height);
     vc3_setting_put("vr_height=", b);
 }
 
@@ -1434,6 +1443,20 @@ static void qrot(XrQuaternionf q, const float v[3], float o[3])
 
 static XrView s_views[2];
 static int s_views_ok;
+static void screen_fill_apply(void)
+{
+    float up = 0, down = 0;
+    int e;
+    if (!s_fill || !s_views_ok)
+        return;
+    for (e = 0; e < 2; e++) {
+        float u = tanf(s_views[e].fov.angleUp), d = -tanf(s_views[e].fov.angleDown);
+        if (u > up) up = u;
+        if (d > down) down = d;
+    }
+    if (up + down > 0.2f && up + down < 20.0f)
+        s_height = s_dist * (up + down);
+}
 
 /* Where the screen hangs: straight ahead of the anchor, s_dist away, its
  * centre at the anchor's height. The anchor is the LOCAL origin until
@@ -1783,7 +1806,10 @@ static void menu_items(XmItem *it)
         snprintf(it[M_RES].value, 40, "%dx%s", vc3_scale_get(),
                  vc3_scale_get() > 1 && vc3_stereo_get() ? " (slow in 3D)" : "");
     snprintf(it[M_DIST].value, 40, "%.1f m", s_dist);
-    snprintf(it[M_SIZE].value, 40, "%.1f m tall", s_height);
+    if (s_fill)
+        snprintf(it[M_SIZE].value, 40, "Fill view");
+    else
+        snprintf(it[M_SIZE].value, 40, "%.1f m tall", s_height);
     snprintf(it[M_COINS].value, 40, "%s", s_vr.auto_coins ? "Automatic" : "By menu");
     if (s_menu.reset_armed)
         snprintf(it[M_RESET].value, 40, "Pull again to reset");
@@ -1930,7 +1956,16 @@ static void menu_choose(int item)
         }
         break;
     case M_DIST: cycle(&s_dist, dists, 6); break;
-    case M_SIZE: cycle(&s_height, sizes, 5); break;
+    case M_SIZE:        /* the fixed sizes, then Fill view */
+        if (s_fill) {
+            s_fill = 0;
+            s_height = sizes[0];
+        } else if (s_height >= sizes[4] - 0.01f) {
+            s_fill = 1;
+        } else {
+            cycle(&s_height, sizes, 5);
+        }
+        break;
     case M_COINS: s_vr.auto_coins = !s_vr.auto_coins; break;
     case M_COIN: s_menu.coin = 1; break;
     case M_RECENTRE: recentre(); break;
@@ -2197,6 +2232,8 @@ static void gun_frame(XrTime t, const Frame *f)
         XrVector2f st = act_vec2(a_stick_xy, off);
         if (!s_menu.open && (fabsf(st.y) > 0.3f || fabsf(st.x) > 0.3f)) {
             s_dist -= st.y * 0.02f;
+            if (st.x != 0.0f)
+                s_fill = 0;
             s_height *= 1.0f + st.x * 0.01f;
             if (s_dist < 0.8f) s_dist = 0.8f;
             if (s_dist > 8.0f) s_dist = 8.0f;
@@ -2641,6 +2678,7 @@ static void xr_frame(void)
             }
         }
         view_publish();
+        screen_fill_apply();
     }
     perf_frame();
     rate_watch();
@@ -2658,7 +2696,7 @@ static void xr_frame(void)
     else
         s_qo.gun_valid = 0;
 #ifdef CHIHIRO_RENDERER_VULKAN
-    vk_test_dump();
+    vk_test_dump(f);
 #endif
 
     ei.displayTime = fs.predictedDisplayTime;

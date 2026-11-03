@@ -185,6 +185,9 @@ VkResult ch_vk_target_color_bgra(ChVkTarget *target,int enabled);
  * Host buffers retain width*height*4 bytes; mode2 uses guest Morton order. */
 VkResult ch_vk_target_color_layout(ChVkTarget *target,int mode);
 VkResult ch_vk_target_import_color(ChVkTarget *target, const void *rgba, VkDeviceSize bytes);
+/* Replace color from a same-device buffer of tightly packed RGBA8 rows (one
+ * another device shares); complete on return, ends in transfer-source layout. */
+VkResult ch_vk_target_import_buffer(ChVkTarget *target, VkBuffer source, VkDeviceSize capacity);
 /* Explicit host representation: normalized float32 depth + uint8 stencil.
  * Transfers preserve color and finish in depth/stencil attachment layout.
  * This API does not infer a guest depth format/pitch from zeta_va. */

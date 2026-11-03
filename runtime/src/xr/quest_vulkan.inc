@@ -14,6 +14,12 @@ static struct {
     uint32_t w,h;
     void *pixels;
 } s_vk_eye[2];
+/* The game's picture drawn into each eye's image, behind the gun: SteamVR
+ * shows OpenXR quad layers above the app's projection layers, so a quad
+ * screen hid the gun. VC3_XR_SCREEN_QUAD=1 brings the quad back. */
+static uint64_t s_vk_scr_sequence;
+static float s_vk_scr_aspect=4.0f/3.0f;
+static int s_vk_scr_eyes=-1;
 static XrCompositionLayerProjection s_vk_overlay_layer;
 static XrCompositionLayerProjectionView s_vk_overlay_views[2];
 static int s_vk_overlay_have_last;
@@ -191,14 +197,23 @@ static int vk_overlay_init(void)
 /* VC3_XR_FAKE_GUN=1 with VC3_XR_DUMP: once the views are known, a gun held
  * in front of the left eye, aimed straight ahead, drawn into that eye's
  * overlay and written out; VC3_XR_FAKE_MENU=1 also paints the panel. */
-static void vk_test_dump(void)
+static int vk_screen_in_eyes(void);
+static void vk_screen_draw(ChVkTarget *,const float [16],void *,size_t);
+static ChVkTexture *s_vk_scr_tex;
+static ChVkTarget *s_vk_scr_target;
+static uint32_t s_vk_scr_w,s_vk_scr_h;
+static int vk_screen_update(const Frame *);
+static void vk_test_dump(const Frame *f)
 {
     static int done;
     static unsigned frames;
-    if(done || !ch_env("XR_DUMP") || !s_views_ok || s_overlay_ok<=0 || ++frames<60) return;
+    if(done || !ch_env("XR_DUMP") || !s_views_ok || s_overlay_ok<=0 || ++frames<(ch_env("XR_DUMP_AFTER")?(unsigned)atoi(ch_env("XR_DUMP_AFTER")):60u)) return;
+    /* headless, SteamVR never asks for a frame (shouldRender): the screen from here */
+    if(vk_screen_in_eyes() && f) vk_screen_update(f);
     done=1;
     if(ch_env("XR_FAKE_MENU") && *ch_env("XR_FAKE_MENU")=='1') {s_menu.open=0;menu_toggle("test");menu_paint();}
     if(!ch_env("XR_FAKE_GUN") || (*ch_env("XR_FAKE_GUN")!='1' && *ch_env("XR_FAKE_GUN")!='2')) return;
+    head_pose(s_anchor_p,&s_anchor_yaw);screen_fill_apply();   /* the screen ahead, as after a recentre */
     const XrView *v=&s_views[0];
     /* XR_FAKE_GUN=2: the eye on the sight line, as when aiming through it */
     const int aiming=ch_env("XR_FAKE_GUN")[0]=='2';
@@ -212,9 +227,67 @@ static void vk_test_dump(void)
     static const float transparent[4]={0,0,0,0};
     eye_viewproj(v,vp);
     vk_check(ch_vk_target_clear_read(s_vk_eye[0].target,transparent,s_vk_eye[0].pixels,bytes),"test overlay clear");
+    if(s_vk_scr_tex) vk_screen_draw(s_vk_eye[0].target,vp,s_vk_eye[0].pixels,bytes);
     vk_check(ch_vk_overlay_read(s_vk_eye[0].target,&g,vp,eye,qo_sight_height(g.sight),s_vk_eye[0].pixels,bytes),"test overlay draw");
     vk_check(ch_vk_target_read_color(s_vk_eye[0].target,s_vk_eye[0].pixels,bytes),"test overlay read");
     dump_ppm("overlay.ppm",s_vk_eye[0].pixels,(int)s_vk_eye[0].w,(int)s_vk_eye[0].h);
+}
+static int vk_screen_in_eyes(void)
+{
+    if(s_vk_scr_eyes<0) {
+        const char *e=ch_env("XR_SCREEN_QUAD");
+        s_vk_scr_eyes=s_vk_split && !(e && *e=='1');
+        fprintf(stderr,"[xr] game screen drawn %s\n",s_vk_scr_eyes?"into the eye images":"as a quad layer");
+    }
+    return s_vk_scr_eyes;
+}
+/* A new frame from the slot's shared buffer: returns whether it changed. */
+static int vk_screen_update(const Frame *f)
+{
+    if(s_vk_scr_w!=(uint32_t)f->w || s_vk_scr_h!=(uint32_t)f->h) {
+        ch_vk_texture_destroy(s_vk_scr_tex);s_vk_scr_tex=NULL;
+        ch_vk_target_destroy(s_vk_scr_target);s_vk_scr_target=NULL;
+        vk_initialized_target((uint32_t)f->w,(uint32_t)f->h,&s_vk_scr_target);
+        vk_check(ch_vk_target_snapshot_texture(s_vk_scr_target,1,&s_vk_scr_tex),"screen texture");
+        const VkSamplerCreateInfo linear={.sType=VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
+            .magFilter=VK_FILTER_LINEAR,.minFilter=VK_FILTER_LINEAR,.mipmapMode=VK_SAMPLER_MIPMAP_MODE_NEAREST,
+            .addressModeU=VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,.addressModeV=VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+            .addressModeW=VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE};
+        vk_check(ch_vk_texture_set_sampler(s_vk_scr_tex,&linear),"screen sampler");
+        s_vk_scr_w=(uint32_t)f->w;s_vk_scr_h=(uint32_t)f->h;s_vk_scr_sequence=0;
+    }
+    if(f->lw>0 && f->lh>0) s_vk_scr_aspect=(float)f->lw/(float)f->lh;
+    if(s_vk_scr_sequence==f->gpu.sequence) return 0;
+    vk_check(ch_vk_target_import_buffer(s_vk_scr_target,s_vk_bridge.xr_buffer[f->gpu.slot],
+        s_vk_bridge.capacity),"screen import");
+    vk_check(ch_vk_target_refresh_texture(s_vk_scr_target,s_vk_scr_tex),"screen refresh");
+    s_vk_scr_sequence=f->gpu.sequence;
+    return 1;
+}
+/* The screen where the quad layer would hang (s_dist ahead of the anchor,
+ * s_height tall), opaque, into an eye target in LOCAL space. */
+static void vk_screen_draw(ChVkTarget *target,const float vp[16],void *pixels,size_t bytes)
+{
+    const float right[3]={1,0,0},ahead[3]={0,0,-s_dist};
+    float r[3],c[3],hw=s_height*s_vk_scr_aspect*.5f,hh=s_height*.5f;
+    yaw_rot(s_anchor_yaw,right,r);yaw_rot(s_anchor_yaw,ahead,c);
+    for(int k=0;k<3;k++) c[k]+=s_anchor_p[k];
+    static const float corner[6][4]={{-1,1,0,0},{1,1,1,0},{-1,-1,0,1},{1,1,1,0},{1,-1,1,1},{-1,-1,0,1}};
+    ChVkColorVertex v[6]={0};
+    static const uint16_t idx[6]={0,1,2,3,4,5};
+    for(int i=0;i<6;i++) {
+        float p[3],clip[4];
+        for(int k=0;k<3;k++) p[k]=c[k]+r[k]*hw*corner[i][0]+(k==1?hh*corner[i][1]:0);
+        for(int k=0;k<4;k++) clip[k]=vp[k]*p[0]+vp[4+k]*p[1]+vp[8+k]*p[2]+vp[12+k];
+        v[i].xy[0]=clip[0];v[i].xy[1]=-clip[1];v[i].xy[2]=(clip[2]+clip[3])*.5f;v[i].xy[3]=clip[3];
+        v[i].xy[4]=corner[i][2];v[i].xy[5]=corner[i][3];
+        v[i].rgba[0]=v[i].rgba[1]=v[i].rgba[2]=0;v[i].rgba[3]=1;
+    }
+    /* opaque first (the game's alpha means nothing here), then the picture */
+    const Nv2aRenderState opaque={.color_mask=0x01010101},picture={.color_mask=0x00010101};
+    vk_check(ch_vk_target_draw_state_read(target,NULL,v,6,idx,6,&opaque,pixels,bytes),"screen backing");
+    for(int i=0;i<6;i++) v[i].rgba[0]=v[i].rgba[1]=v[i].rgba[2]=1;
+    vk_check(ch_vk_target_draw_texture_read(target,NULL,v,6,idx,6,&picture,s_vk_scr_tex,pixels,bytes),"screen draw");
 }
 static unsigned vk_present(const Frame *f,const XrCompositionLayerBaseHeader **layers,XrDuration display_period)
 {
@@ -225,7 +298,9 @@ static unsigned vk_present(const Frame *f,const XrCompositionLayerBaseHeader **l
     yaw_rot(s_anchor_yaw,forward,center);
     pose.orientation.y=sinf(s_anchor_yaw*.5f);pose.orientation.w=cosf(s_anchor_yaw*.5f);
     pose.position=(XrVector3f){center[0]+s_anchor_p[0],center[1]+s_anchor_p[1],center[2]+s_anchor_p[2]};
-    if(f) {
+    int screen_new=0;
+    if(f && vk_screen_in_eyes()) screen_new=vk_screen_update(f);
+    else if(f) {
         XrExtent2Df size={s_height*(float)f->lw/f->lh,s_height};
         if(s_vk_screen_w!=(uint32_t)f->w || s_vk_screen_h!=(uint32_t)f->h) {
             vk_xr_check(ch_vk_xr_quad_destroy(s_vk_screen),"old screen");s_vk_screen=NULL;
@@ -254,8 +329,9 @@ static unsigned vk_present(const Frame *f,const XrCompositionLayerBaseHeader **l
     static int eye_test=-1,swap_eyes=-1;
     if(eye_test<0) eye_test=ch_env("XR_EYE_TEST") && *ch_env("XR_EYE_TEST")=='1';
     if(swap_eyes<0) swap_eyes=ch_env("XR_SWAP_EYES") && *ch_env("XR_SWAP_EYES")=='1';
-    int overlay_want=s_overlay_ok>0 && s_views_ok && (s_qo.gun_valid || eye_test);
-    int overlay_reuse=overlay_want && overlay_reuse_frame(s_vk_overlay_have_last,overlay_full,s_menu.open,s_vk_overlay_frame,display_period);
+    const int screen=s_vk_scr_tex && vk_screen_in_eyes();
+    int overlay_want=s_overlay_ok>0 && s_views_ok && (s_qo.gun_valid || eye_test || screen);
+    int overlay_reuse=overlay_want && !screen_new && overlay_reuse_frame(s_vk_overlay_have_last,overlay_full,s_menu.open,s_vk_overlay_frame,display_period);
     if(!overlay_want) s_vk_overlay_have_last=0;
     /* Diagnostics for the eye mapping: EYE_TEST tints the left eye's overlay
      * red and the right eye's blue; SWAP_EYES draws each eye's overlay from
@@ -269,6 +345,7 @@ static unsigned vk_present(const Frame *f,const XrCompositionLayerBaseHeader **l
             static const float transparent[4]={0,0,0,0},tint[2][4]={{.35f,0,0,.35f},{0,0,.35f,.35f}};
             eye_viewproj(v,vp);
             vk_check(ch_vk_target_clear_read(s_vk_eye[e].target,eye_test?tint[e]:transparent,s_vk_eye[e].pixels,bytes),"overlay clear");
+            if(screen) vk_screen_draw(s_vk_eye[e].target,vp,s_vk_eye[e].pixels,bytes);
             if(s_qo.gun_valid) vk_check(ch_vk_overlay_read(s_vk_eye[e].target,&s_qo,vp,eye,qo_sight_height(s_vr.sight),
                 s_vk_eye[e].pixels,bytes),"overlay draw");
             vk_xr_check(ch_vk_xr_swapchain_wait(s_vk_eye[e].chain,XR_INFINITE_DURATION,&index,&image),"overlay acquire");
