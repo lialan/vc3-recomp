@@ -172,11 +172,13 @@ side too (`/tmp/takestat.py`: display frames per game frame, 2 at 60 fps).
 
 Game zooms (a far enemy, E.S., the death close-up: the lens narrows from
 ~45-60 to ~14 degrees) zoom the headset's world: vertices are read back
-through VC3's usual 45-degree lens, so a longer one magnifies, at most 1.75
-times (`CHIHIRO_VULKAN_IMMERSIVE_ZOOM_MAX`, 0 no limit: from 2 on, the
-textures a mip level sharper, E.S. held ran 141-151 of 239 frames off its
-vblank with the headset on against 52-58 unzoomed; 1.75 cost nothing
-measurable); never zoomed out (`CHIHIRO_VULKAN_IMMERSIVE_ZOOM=0`: no zoom; 1: the OpenGL
+through VC3's usual 45-degree lens, so a longer one magnifies as much (up
+to ~4.6x in combat). A smaller magnification shows targets smaller than the
+game judges hits by, and shots that look on target miss, so there is no
+limit by default (`CHIHIRO_VULKAN_IMMERSIVE_ZOOM_MAX=n`: at most n). From
+2x on the textures are a mip level sharper, which cost E.S. a third of its
+frames before the dynamic resolution; the resolution now steps down for
+it. Never zoomed out (`CHIHIRO_VULKAN_IMMERSIVE_ZOOM=0`: no zoom; 1: the OpenGL
 renderer's normalisation to the most used lens). Aim and the HUD panel use
 the same projection.
 

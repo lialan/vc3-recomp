@@ -197,11 +197,13 @@ VkResult ch_vk_immersive_create(const ChVkImmersiveConfig *config,ChVkImmersive 
     e=getenv("CHIHIRO_VULKAN_IMMERSIVE_ZOOM");
     m->zoom_normalise=e?atoi(e):2;
     e=getenv("CHIHIRO_VULKAN_IMMERSIVE_ZOOM_MAX");
-    /* Magnification at most 1.75 by default: from 2 on (the textures a
-     * whole mip level sharper) E.S. ran a third of its frames late with the
-     * headset on (SteamVR's compositor sharing the GPU); 1.75 cost nothing
-     * measurable. 0: no limit. */
-    m->zoom_max=e?(float)atof(e):1.75f;
+    /* No limit by default: the game's lens goes to ~4.6x (a far enemy, the
+     * death close-up), and a view that magnifies less shows its targets
+     * smaller than the game judges a hit by -- shots on them missed. The
+     * extra GPU cost (textures a mip level sharper from 2x on) is what the
+     * dynamic resolution absorbs. n >= 1: at most n (1.75 held E.S. to 60
+     * before the dynamic resolution). */
+    m->zoom_max=e?(float)atof(e):0.0f;
     e=getenv("CHIHIRO_VULKAN_IMMERSIVE_HALF_EFFECTS");
     m->half_effects=!e || atoi(e);
     m->dynamic=1;m->calm_need=6;
