@@ -492,7 +492,7 @@ static struct {
     int imm_scale;      /* immersive detail: 0 native (default), else 1x or 2x */
     int screen_native;  /* the virtual screen drawn at its size on the display
                            (default), else at the Resolution setting's scale */
-} s_vr = { QO_SIGHT_IRON, LASER_DOT, 1, 0, 1, 1, 120, 0, 1 };
+} s_vr = { QO_SIGHT_RED_DOT, LASER_DOT, 1, 0, 1, 1, 120, 0, 1 };
 /* The display's own pixels per eye (native_init): what "Native" draws. */
 static uint32_t s_native_w, s_native_h;
 
@@ -513,7 +513,7 @@ static void screen_load(void)
     if ((v = vc3_setting_get("vr_height=")) && atof(v) > 0.3)
         s_height = (float)atof(v);
     s_vr.sight = key_index(vc3_setting_get("vr_sight="), SIGHT_KEY, QO_SIGHT_COUNT,
-                           QO_SIGHT_IRON);
+                           QO_SIGHT_RED_DOT);
     s_vr.laser = key_index(vc3_setting_get("vr_laser="), LASER_KEY, 3, LASER_DOT);
     if ((v = vc3_setting_get("vr_gun=")))
         s_vr.show_gun = strcmp(v, "off") != 0;
@@ -1720,6 +1720,18 @@ static int overlay_init(void)
  * second opens and closes it too. */
 enum { M_SCREEN, M_DETAIL, M_REFRESH, M_SIGHT, M_LASER, M_GUN, M_HAND, M_STEREO, M_ASPECT, M_RES, M_DIST, M_SIZE,
        M_COINS, M_COIN, M_RECENTRE, M_TEST, M_SERVICE, M_RESET, M_CLOSE, M_COUNT };
+/* The rows shown, in The House of the Dead 4 VR's order. The Vulkan
+ * renderer draws the game as it is (no immersive view, stereo, render scale
+ * or 16:9 there), so its panel has only the items that act. */
+#ifdef CHIHIRO_RENDERER_VULKAN
+static const int s_rows[] = { M_SIGHT, M_LASER, M_GUN, M_HAND, M_DIST, M_SIZE, M_REFRESH,
+                              M_COINS, M_COIN, M_RECENTRE, M_TEST, M_SERVICE, M_RESET, M_CLOSE };
+#else
+static const int s_rows[] = { M_SCREEN, M_DETAIL, M_REFRESH, M_SIGHT, M_LASER, M_GUN, M_HAND, M_STEREO,
+                              M_ASPECT, M_RES, M_DIST, M_SIZE, M_COINS, M_COIN, M_RECENTRE, M_TEST,
+                              M_SERVICE, M_RESET, M_CLOSE };
+#endif
+#define MENU_ROWS ((int)(sizeof s_rows / sizeof s_rows[0]))
 static struct {
     int open, hover, dirty;
     float c[3], right[3], up[3], n[3], hw, hh;  /* where it hangs, LOCAL metres */
@@ -1732,9 +1744,9 @@ static void menu_items(XmItem *it)
     static const char *const sight[] = { "Iron sights", "Red dot", "Holographic" };
     static const char *const laser[] = { "Laser and dot", "Dot only", "Off" };
     static const char *const labels[M_COUNT] = {
-        "Screen", "Immersive detail", "Refresh", "Sight", "Laser", "Gun model", "Gun hand", "Stereo 3D", "Aspect", "Resolution",
+        "Screen", "Immersive detail", "Display rate", "Sight", "Laser", "Gun model", "Gun hand", "Stereo 3D", "Aspect", "Resolution",
         "Screen distance", "Screen size", "Coins", "Insert a coin", "Recentre view",
-        "Arcade Test button", "Arcade Service button", "Reset game", "Close" };
+        "Arcade Test button (select)", "Arcade Service button (next)", "Reset game", "Close" };
     int i;
     for (i = 0; i < M_COUNT; i++) {
         it[i].label = labels[i];
@@ -1771,13 +1783,41 @@ static void menu_items(XmItem *it)
         snprintf(it[M_RESET].value, 40, "Pull again to reset");
 }
 
+/* VC3_XR_DUMP=<dir>: the panel's picture (panel.ppm) and, once, the left
+ * eye's overlay (overlay.ppm), for checking them without a headset. */
+static void dump_ppm(const char *name, const unsigned char *rgba, int w, int h)
+{
+    const char *dir = ch_env("XR_DUMP");
+    char path[512];
+    FILE *fp;
+    int i;
+    if (!dir || !*dir)
+        return;
+    snprintf(path, sizeof path, "%s/%s", dir, name);
+    if (!(fp = fopen(path, "wb")))
+        return;
+    fprintf(fp, "P6\n%d %d\n255\n", w, h);
+    for (i = 0; i < w * h; i++) {       /* over mid grey, so alpha shows */
+        unsigned a = rgba[i * 4 + 3], k;
+        for (k = 0; k < 3; k++) {
+            unsigned c = rgba[i * 4 + k] + (128u * (255u - a)) / 255u;
+            fputc((int)(c > 255 ? 255 : c), fp);
+        }
+    }
+    fclose(fp);
+    fprintf(stderr, "[xr] dumped %s\n", path);
+}
 static void menu_paint(void)
 {
     static unsigned char img[XM_W * XM_H * 4];
-    XmItem it[M_COUNT];
+    XmItem it[M_COUNT], shown[M_COUNT];
+    int i;
     menu_items(it);
-    xm_paint(img, chihiro_profile()->vr.panel_title, it, M_COUNT, s_menu.hover,
-             "Point, pull the trigger. Menu button: close");
+    for (i = 0; i < MENU_ROWS; i++)
+        shown[i] = it[s_rows[i]];
+    xm_paint(img, chihiro_profile()->vr.panel_title, shown, MENU_ROWS, s_menu.hover,
+             "Point, pull the trigger. Menu button: close.");
+    dump_ppm("panel.ppm", img, XM_W, XM_H);
 #ifdef CHIHIRO_RENDERER_VULKAN
     vk_menu_upload(img);
 #else
@@ -2085,7 +2125,7 @@ static void gun_frame(XrTime t, const Frame *f)
     if (s_menu.open) {          /* the gun points at the panel; the game sees nothing */
         float u, v, hit[3];
         int on = located && menu_hit(o, d, &u, &v, hit);
-        int row = on ? xm_row_at(u, v, M_COUNT) : -1;
+        int row = on ? xm_row_at(u, v, MENU_ROWS) : -1;
         if (row != s_menu.hover) {
             s_menu.hover = row;
             s_menu.dirty = 1;
@@ -2095,7 +2135,7 @@ static void gun_frame(XrTime t, const Frame *f)
         s_qo.beam = 1;
         s_qo.dot = on;
         if (now[s_gun][0] && !was[s_gun][0] && row >= 0) {
-            menu_choose(row);
+            menu_choose(s_rows[row]);
             rumble(s_gun, 0.25f, 15);
         }
         if (s_menu.dirty)
@@ -2611,6 +2651,9 @@ static void xr_frame(void)
         gun_frame(fs.predictedDisplayTime, f);
     else
         s_qo.gun_valid = 0;
+#ifdef CHIHIRO_RENDERER_VULKAN
+    vk_test_dump();
+#endif
 
     ei.displayTime = fs.predictedDisplayTime;
     ei.environmentBlendMode = XR_ENVIRONMENT_BLEND_MODE_OPAQUE;

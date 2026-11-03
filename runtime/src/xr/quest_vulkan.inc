@@ -175,6 +175,34 @@ static int vk_overlay_init(void)
     pthread_mutex_unlock(&s_vk_queue);
     return 1;
 }
+/* VC3_XR_FAKE_GUN=1 with VC3_XR_DUMP: once the views are known, a gun held
+ * in front of the left eye, aimed straight ahead, drawn into that eye's
+ * overlay and written out; VC3_XR_FAKE_MENU=1 also paints the panel. */
+static void vk_test_dump(void)
+{
+    static int done;
+    static unsigned frames;
+    if(done || !ch_env("XR_DUMP") || !s_views_ok || s_overlay_ok<=0 || ++frames<60) return;
+    done=1;
+    if(ch_env("XR_FAKE_MENU") && *ch_env("XR_FAKE_MENU")=='1') {s_menu.open=0;menu_toggle("test");menu_paint();}
+    if(!ch_env("XR_FAKE_GUN") || (*ch_env("XR_FAKE_GUN")!='1' && *ch_env("XR_FAKE_GUN")!='2')) return;
+    const XrView *v=&s_views[0];
+    /* XR_FAKE_GUN=2: the eye on the sight line, as when aiming through it */
+    const int aiming=ch_env("XR_FAKE_GUN")[0]=='2';
+    const float offset[3]={aiming?0:0.03f,aiming?-qo_sight_height(s_vr.sight):-0.035f,-0.32f},ahead[3]={0,0,-2.6f};
+    float o[3],a[3],vp[16],eye[3]={v->pose.position.x,v->pose.position.y,v->pose.position.z};
+    qrot(v->pose.orientation,offset,o);qrot(v->pose.orientation,ahead,a);
+    QoFrame g={.gun_valid=1,.gun_q={v->pose.orientation.x,v->pose.orientation.y,v->pose.orientation.z,v->pose.orientation.w},
+        .sight=s_vr.sight,.show_gun=1,.beam=s_vr.laser==LASER_ON,.dot=1};
+    for(int k=0;k<3;k++){g.gun_p[k]=eye[k]+o[k];g.end[k]=g.gun_p[k]+a[k];}
+    size_t bytes=(size_t)s_vk_eye[0].w*s_vk_eye[0].h*4;
+    static const float transparent[4]={0,0,0,0};
+    eye_viewproj(v,vp);
+    vk_check(ch_vk_target_clear_read(s_vk_eye[0].target,transparent,s_vk_eye[0].pixels,bytes),"test overlay clear");
+    vk_check(ch_vk_overlay_read(s_vk_eye[0].target,&g,vp,eye,qo_sight_height(g.sight),s_vk_eye[0].pixels,bytes),"test overlay draw");
+    vk_check(ch_vk_target_read_color(s_vk_eye[0].target,s_vk_eye[0].pixels,bytes),"test overlay read");
+    dump_ppm("overlay.ppm",s_vk_eye[0].pixels,(int)s_vk_eye[0].w,(int)s_vk_eye[0].h);
+}
 static unsigned vk_present(const Frame *f,const XrCompositionLayerBaseHeader **layers,XrDuration display_period)
 {
     unsigned count=0;
