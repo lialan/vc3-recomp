@@ -1,4 +1,6 @@
 #include "vk_state.h"
+#include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 static int factor(uint32_t f, VkBlendFactor *out) {
     switch(f) {
@@ -128,6 +130,18 @@ static int address_mode(uint32_t guest,VkSamplerAddressMode *out) {
     default: return 0;
     }
 }
+static float s_anisotropy;
+void ch_vk_sampler_anisotropy_enable(VkPhysicalDevice physical,VkPhysicalDeviceFeatures *enabled) {
+    const char *e=getenv("CHIHIRO_VULKAN_ANISO");
+    float want=e?(float)atof(e):8.0f;
+    VkPhysicalDeviceFeatures f;VkPhysicalDeviceProperties p;
+    vkGetPhysicalDeviceFeatures(physical,&f);vkGetPhysicalDeviceProperties(physical,&p);
+    if(want>p.limits.maxSamplerAnisotropy) want=p.limits.maxSamplerAnisotropy;
+    if(!f.samplerAnisotropy || !(want>1)) {s_anisotropy=0;return;}
+    enabled->samplerAnisotropy=VK_TRUE;
+    if(s_anisotropy!=want) fprintf(stderr,"[Vulkan] anisotropic filtering %.0fx\n",want);
+    s_anisotropy=want;
+}
 VkResult ch_vk_sampler_state(const Nv2aTexture *s,VkSamplerCreateInfo *out) {
     if(!s || !out) return VK_ERROR_INITIALIZATION_FAILED;
     uint32_t min=(s->filter>>16)&255,mag=(s->filter>>24)&15;
@@ -151,6 +165,11 @@ VkResult ch_vk_sampler_state(const Nv2aTexture *s,VkSamplerCreateInfo *out) {
     if(min>=3 && levels==1) sampler.minFilter=VK_FILTER_LINEAR;
     sampler.mipmapMode=min>=5?VK_SAMPLER_MIPMAP_MODE_LINEAR:VK_SAMPLER_MIPMAP_MODE_NEAREST;
     sampler.maxLod=(float)(levels-1);
+    if(s_anisotropy>1 && levels>1 && (min==4 || min==6)) {   /* linear, mipmapped */
+        sampler.anisotropyEnable=VK_TRUE;sampler.maxAnisotropy=s_anisotropy;
+        static int noted;
+        if(!noted) {noted=1;fprintf(stderr,"[Vulkan] anisotropic sampling in use (min filter %u, %u levels)\n",min,levels);}
+    }
     if(!address_mode(s->addr_u,&sampler.addressModeU) || !address_mode(s->addr_v,&sampler.addressModeV))
         return VK_ERROR_FEATURE_NOT_PRESENT;
     *out=sampler; return VK_SUCCESS;

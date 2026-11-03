@@ -18,6 +18,7 @@ struct ImmSurface {
      * div: the eyes' current divisor; last_3d/last_shown: frames. */
     uint32_t div;uint64_t last_3d,last_shown;size_t pixels_bytes;
     uint32_t world,drawn,flat,hud,full;    /* this frame: 3D batches; any eye work; 2D flat/HUD/full-screen */
+    uint32_t composite;    /* this frame: flat draws sampling eyes (the scene drawn elsewhere, composited in) */
 };
 struct ChVkImmersive {
     ChVkImmersiveConfig config;
@@ -292,6 +293,16 @@ VkResult ch_vk_immersive_draw(ChVkImmersive *m,const Nv2aSurface *s,const Nv2aBa
         state.depth_test_enable=state.depth_write=state.stencil_enable=0;
         copy.state=&state;
         m->hud_batches++;
+        if(m->log) {   /* a big 2D draw on the HUD covers the world behind it */
+            Nv2aRawExtent e;int ok=b->raw->extent && b->raw->extent(b->raw,&e);
+            float area=ok?(e.x1-e.x0)*(e.y1-e.y0)/((float)s->width*s->height):-1;
+            if(!ok || area>.2f)
+                fprintf(stderr,"[immersive big hud] frame %llu into %08X %s w0 %g idx %u extent %.0f..%.0f x %.0f..%.0f (%.0f%%) blend %u %04X/%04X mask %08X alpha %u tex %08X %ux%u fmt %02X\n",
+                    (unsigned long long)m->frames,s->color_va,b->raw->kind==NV2A_RAW_FIXED?"fixed":"prog",b->raw->w0,b->raw->index_count,
+                    ok?e.x0:0,ok?e.x1:0,ok?e.y0:0,ok?e.y1:0,area*100,state.blend_enable,state.blend_src,state.blend_dst,state.color_mask,
+                    state.alpha_test_enable,b->texture?b->texture->offset:0,b->texture?b->texture->width:0,b->texture?b->texture->height:0,
+                    b->texture?b->texture->color:0);
+        }
         return ch_vk_nv2a_draw_fixed_hud_read(m->hud,s,&copy,fixed,m->config.decode,resolve,context,
             m->hud_pixels,(size_t)m->hud_width*m->hud_height*4);
     }
@@ -302,6 +313,7 @@ VkResult ch_vk_immersive_draw(ChVkImmersive *m,const Nv2aSurface *s,const Nv2aBa
     if(!is3d && m->config.textures) {
         if(b->texture && eye_source(m,b->texture)) imm.sbs|=16;
         for(unsigned i=0;i<4;i++) if(b->stage[i] && eye_source(m,b->stage[i])) imm.sbs|=1u<<i;
+        if(imm.sbs) f->composite++;
     }
     if(is3d) {
         VrGameProj z=zoomed(m,&g);
@@ -359,6 +371,7 @@ static void dump_scene(ChVkImmersive *m,struct ImmSurface *scene) {
     char path[512];
     snprintf(path,sizeof path,"%s/scene-%05llu-eyes.ppm",dir,(unsigned long long)m->frames);dump_ppm_target(scene->eyes,path);
     if(guest) {snprintf(path,sizeof path,"%s/scene-%05llu-flat.ppm",dir,(unsigned long long)m->frames);dump_ppm_target(guest,path);}
+    if(m->hud && m->hud_used) {snprintf(path,sizeof path,"%s/scene-%05llu-hud.ppm",dir,(unsigned long long)m->frames);dump_ppm_target(m->hud,path);}
 }
 int ch_vk_immersive_guest_draw(ChVkImmersive *m,ChVkTarget *t,const Nv2aSurface *s,const Nv2aBatch *b,
     const ChVkFixedGeometry *fixed,ChVkSampleResolver resolve,void *context,void *pixels,VkDeviceSize bytes,VkResult *result) {
@@ -387,12 +400,36 @@ VkResult ch_vk_immersive_flip(ChVkImmersive *m,uint32_t presented,const Vc3VrVie
     }
     if(best) zoom_note(m,m->projection.kx);
     if(m->on) dump_scene(m,scene);
-    if(m->on && shown_f && shown_f->eyes && shown_f->world && m->projection_ok) {
+    /* What the headset gets: VC3 draws its scene off-screen and composites
+     * it onto the presented surface with one full-screen draw; only a few
+     * effects go there as 3D (none, some frames) -- eyes composited from
+     * eyes hold the scene. When the presented picture holds no scene but
+     * the frame drew one (game over, name entry: the scene goes on behind a
+     * 2D picture), the scene with the HUD over it. The screen only for a
+     * frame without 3D: while immersive, screen-shaped surfaces are not
+     * drawn flat, so the screen would be stale -- the next frame is flat.
+     * Only full-size eyes: a half-size effect buffer presented is resized
+     * below, in this flip (its eyes freed). */
+    struct ImmSurface *src=NULL;
+    if(m->on && m->projection_ok) {
+        if(shown_f && shown_f->eyes && shown_f->div<2 && (shown_f->world || shown_f->composite)) src=shown_f;
+        else if(scene && scene->eyes && scene->div<2) src=scene;
+    }
+    if(src) {
         out->view=m->view;out->projection=zoomed(m,&m->projection);out->projection_ok=1;
-        out->guest_width=shown_f->width;out->guest_height=shown_f->height;
+        out->guest_width=src->width;out->guest_height=src->height;
         out->eye_width=m->config.eye_width;out->eye_height=m->config.eye_height;
         out->hud=m->hud_used;
-        *eyes_out=shown_f->eyes;*hud_out=m->hud_used?m->hud:NULL;
+        *eyes_out=src->eyes;*hud_out=m->hud_used?m->hud:NULL;
+    }
+    {   /* every switch between the eyes and the screen, and why */
+        static int was=-1;
+        int now=src==shown_f && src?1:src?2:0;
+        if(m->log && now!=was)
+            fprintf(stderr,"[immersive switch] frame %llu -> %s: on %d presented %08X (3D %u, composited %u, eyes %d) total 3D %u projection %d\n",
+                (unsigned long long)m->frames,now==1?"eyes":now==2?"scene behind 2D":"screen",m->on,presented,shown_f?shown_f->world:0,
+                shown_f?shown_f->composite:0,shown_f && shown_f->eyes,total,m->projection_ok);
+        was=now;
     }
     m->frames++;
     if(m->log && m->frames%120==0)
@@ -441,6 +478,6 @@ VkResult ch_vk_immersive_flip(ChVkImmersive *m,uint32_t presented,const Vc3VrVie
     m->on=next && next->on && total>0 && m->projection_ok;
     if(m->on) m->view=*next;
     m->hud_used=0;
-    for(unsigned i=0;i<m->count;i++) {struct ImmSurface *f=&m->surfaces[i];f->world=f->drawn=f->flat=f->hud=f->full=0;}
+    for(unsigned i=0;i<m->count;i++) {struct ImmSurface *f=&m->surfaces[i];f->world=f->drawn=f->flat=f->hud=f->full=f->composite=0;}
     return VK_SUCCESS;
 }

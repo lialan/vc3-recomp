@@ -1,5 +1,6 @@
 #include "vk_xr.h"
 #include "vk_device_features.h"
+#include "vk_state.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -88,6 +89,7 @@ XrResult ch_vk_xr_device_create_with_options(XrInstance xr,XrSystemId system,
     features=(VkPhysicalDeviceFeatures){.occlusionQueryPrecise=features.occlusionQueryPrecise,
         .fillModeNonSolid=features.fillModeNonSolid,
         .shaderClipDistance=features.shaderClipDistance,.depthClamp=features.depthClamp};
+    ch_vk_sampler_anisotropy_enable(d.physical,&features);
     float priority=1;
     VkDeviceQueueCreateInfo qci={.sType=VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
         .queueFamilyIndex=d.family,.queueCount=1,.pQueuePriorities=&priority};

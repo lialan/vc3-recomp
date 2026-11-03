@@ -55,10 +55,15 @@ pipeline cache between runs (`/tmp/vc3s/save`).
 
 ### Immersive VR
 
-The game's 3D is drawn from each eye at the headset's native size (1728 per
-eye on the Frame; `VC3_IMM_EYE=n` for n x n). Combat and E.S. hold 60 fps
-there, each game frame shown twice at 120 Hz, with ~45% of the GPU and the
-busiest CPU thread ~33% busy. What gets it there:
+The game's 3D is drawn from each eye at 32/27 of the size SteamVR
+recommends: 2048 per eye on the Frame (it recommends 1728; its panels are
+2160; `VC3_IMM_EYE=n` for n x n, up to 2560). Mipmapped textures are
+filtered 8x anisotropically (`CHIHIRO_VULKAN_ANISO=n`, 1 off; free on the
+Frame). Uncapped (vblank 120 Hz), per eye size, E.S. activation mean (p99):
+1728 8.6 ms (13.0), 2048 10.4 (13.7), 2160 11.3 (16.1), 2304 12.2 (15.8),
+2560 14.3 (17.9); at 60 fps 2048 kept every combat and E.S. frame on its
+vblank in three runs, 2160 missed about 1 in 450. Combat and E.S. hold 60
+fps, each game frame shown twice at 120 Hz. What gets it there:
 
 - **Per-draw constants in uniform buffers** (constant registers on Adreno);
   devices enable `VK_KHR_uniform_buffer_standard_layout` for the std430
@@ -79,8 +84,21 @@ real time, as fast as the pipeline allows (native 1728/eye: combat ~101 fps,
 E.S. held ~90, E.S. activation ~83). `bench-light.sh` reports the headset
 side too (`/tmp/takestat.py`: display frames per game frame, 2 at 60 fps).
 
-Diagnostics: `CHIHIRO_VULKAN_IMMERSIVE_LOG=1|2`, `CHIHIRO_VULKAN_IMMERSIVE_DUMP=dir`
-(scene eyes and guest picture), `VC3_XR_DUMP=dir` (the headset's eyes and HUD),
+What the headset gets: VC3 draws its scene off-screen and composites it
+onto the presented surface with one full-screen draw, so a frame whose
+presented eyes were composited from eyes counts as 3D (before, frames with
+none of the few direct 3D effects fell to the fill-view screen: the 2D
+picture over the view). When the presented picture holds no scene but the
+frame drew one (game over, name entry), the scene with the HUD over it;
+the screen only once a frame has no 3D. The HUD panel follows the game's
+lens down to its usual 45 degrees and no further, so the death and
+continue close-up (~14 degrees) no longer shrinks "CONTINUE?".
+
+Diagnostics: `CHIHIRO_VULKAN_IMMERSIVE_LOG=1|2` (with 1: every switch
+between eyes, scene and screen, and 2D draws over 20% of the HUD), `CHIHIRO_VULKAN_IMMERSIVE_DUMP=dir`
+(scene eyes, guest picture and HUD), `VC3_XR_DUMP=dir` (the headset's eyes and HUD;
+with `VC3_XR_FAKE_GUN=1 VC3_XR_DUMP_ZOOMED=1500` the left eye's overlay with the
+HUD panel at the death/continue close-up),
 `CHIHIRO_VULKAN_DRAW_TIMING=1` (GPU time per draw kind), and Mesa's
 `IR3_SHADER_DEBUG=vs,fs` with `MESA_SHADER_CACHE_DISABLE=1` (shader stats).
 

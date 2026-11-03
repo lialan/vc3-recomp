@@ -1,6 +1,7 @@
 #include "vk_runtime.h"
 #include "vk_backend.h"
 #include "vk_device_features.h"
+#include "vk_state.h"
 #include "vk_pipeline_cache_file.h"
 #include "chihiro/ch_env.h"
 #include "xbox_memory_layout.h"
@@ -457,6 +458,7 @@ int ch_vk_runtime_start(void)
     enabled.occlusionQueryPrecise=supported.occlusionQueryPrecise;
     enabled.fillModeNonSolid=supported.fillModeNonSolid;
     enabled.shaderClipDistance=supported.shaderClipDistance;enabled.depthClamp=supported.depthClamp;
+    ch_vk_sampler_anisotropy_enable(physical,&enabled);
     float priority=1;
     VkDeviceQueueCreateInfo queue_info={.sType=VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
         .queueFamilyIndex=family,.queueCount=1,.pQueuePriorities=&priority};

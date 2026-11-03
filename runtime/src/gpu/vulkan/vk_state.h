@@ -11,4 +11,9 @@ VkResult ch_vk_blend_state(const Nv2aRenderState *guest,
     VkPipelineColorBlendAttachmentState *attachment, float constants[4]);
 VkResult ch_vk_depth_state(const Nv2aRenderState *guest, VkPipelineDepthStencilStateCreateInfo *out);
 VkResult ch_vk_sampler_state(const Nv2aTexture *guest, VkSamplerCreateInfo *out);
+/* Anisotropic filtering of mipmapped, linearly filtered textures (the
+ * OpenGL renderer's VC3_GL_ANISO): CHIHIRO_VULKAN_ANISO=n, default 8, 1 off,
+ * capped to the device. Call before vkCreateDevice: enables the feature in
+ * *enabled when the device has it; 0 is used until then. */
+void ch_vk_sampler_anisotropy_enable(VkPhysicalDevice physical, VkPhysicalDeviceFeatures *enabled);
 #endif

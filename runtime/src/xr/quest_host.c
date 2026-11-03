@@ -1528,6 +1528,9 @@ static void recentre(void)
 #define IMM_NEAR 0.05f                  /* metres */
 #define IMM_FAR 2000.0f
 #define HUD_DIST 5.0f                   /* the HUD panel, metres from the anchor */
+/* The longest lens the HUD panel follows, in 640x480 pixels: VC3's usual
+ * 45 x 34.5 degree view (its culling frustum), 320 / tan 22.5 degrees. */
+#define HUD_K_MAX 772.5f
 static pthread_mutex_t s_view_lock = PTHREAD_MUTEX_INITIALIZER;
 static XrView s_pub_views[2];
 static int s_pub_ok;
@@ -1679,9 +1682,17 @@ static int hud_panel(const Frame *f, float c[3], float *w, float *h)
     c[1] = v[1] / u;
     c[2] = v[2] / u;
     /* the HUD is drawn as wide as the picture (16:9: the middle 4:3 is the
-     * game's view) */
-    *w = HUD_DIST * (float)f->lw / fabsf(g.kx);
-    *h = HUD_DIST * (float)vf->gh / fabsf(g.ky);
+     * game's view). The VR view never zooms, so neither does the HUD: when
+     * the game's lens is longer than its usual one (the death and continue
+     * close-up, ~14 degrees; E.S.), the panel keeps the usual size -- sized
+     * by the lens, "CONTINUE?" shrank to a small patch. A wider lens sizes
+     * it exactly (its marks over what they mark). */
+    {
+        float kx = fminf(fabsf(g.kx), HUD_K_MAX * vf->gw / 640.0f);
+        float ky = fminf(fabsf(g.ky), HUD_K_MAX * vf->gh / 480.0f);
+        *w = HUD_DIST * (float)f->lw / kx;
+        *h = HUD_DIST * (float)vf->gh / ky;
+    }
     return 1;
 }
 

@@ -1,4 +1,5 @@
 #include "../gpu/vulkan/vk_device_features.h"
+#include "../gpu/vulkan/vk_state.h"
 /* Native Vulkan presentation for the shared Quest host. Included after the
  * common input/menu/view math; no session lifecycle or input polling here. */
 static ChVkXrQuad *s_vk_screen,*s_vk_menu;
@@ -97,15 +98,24 @@ static int vk_imm_view(void *context,Vc3VrView *view)
     (void)context;
     return vc3_vr_view_latch(view);
 }
-/* Each eye's picture: the display's own (native) size, as the headset
- * recommends; VC3_IMM_EYE=n draws n x n instead. */
+/* a slot: the eyes side by side at up to VK_EYE_MAX each, and the HUD (up
+ * to 1280x960) after them */
+#define VK_EYE_MAX 2560
+#define VK_BRIDGE_CAPACITY ((VkDeviceSize)2*VK_EYE_MAX*VK_EYE_MAX*4+(VkDeviceSize)1280*960*4)
+/* Each eye's picture: 32/27 (~1.19) times the size the headset recommends
+ * each way -- 2048 on the Steam Frame (recommends 1728, panels 2160). 2048
+ * kept every combat and E.S. frame on its vblank in three runs; 2160
+ * missed ~1 in 450 (uncapped E.S. p99 16.1 ms), 2560 does not fit.
+ * VC3_IMM_EYE=n draws n x n instead. */
 static void vk_imm_eye_size(uint32_t *w,uint32_t *h)
 {
     const char *e=ch_env("IMM_EYE");
     int n=e?atoi(e):0;
-    if(n>=256 && n<=2048) {*w=*h=(uint32_t)n;return;}
-    *w=s_native_w>=256 && s_native_w<=2048?s_native_w:1440;
-    *h=s_native_h>=256 && s_native_h<=2048?s_native_h:*w;
+    if(n>=256 && n<=VK_EYE_MAX) {*w=*h=(uint32_t)n;return;}
+    uint32_t nw=s_native_w>=256?s_native_w:1440,nh=s_native_h>=256?s_native_h:nw;
+    *w=(nw*32/27+8)/16*16;*h=(nh*32/27+8)/16*16;
+    if(*w>VK_EYE_MAX) *w=VK_EYE_MAX;
+    if(*h>VK_EYE_MAX) *h=VK_EYE_MAX;
 }
 static void vk_dump_target(const char *name,ChVkTarget *target,int opaque)
 {
@@ -150,7 +160,6 @@ static VkResult vk_publish_imm(void *context,const Nv2aSurface *surface,ChVkTarg
  * 90. Its own device has a queue of its own; frames cross to the headset's
  * device through shared buffers (vk_xr_bridge.h). Falls back to the one
  * device, logged, if any of it is missing. */
-#define VK_BRIDGE_CAPACITY ((VkDeviceSize)4096*2160*4)
 static void vk_split_init(VkDevice *device,VkQueue *queue)
 {
     const char *e=ch_env("XR_SPLIT_DEVICE");
@@ -159,6 +168,7 @@ static void vk_split_init(VkDevice *device,VkQueue *queue)
     VkPhysicalDeviceFeatures f;vkGetPhysicalDeviceFeatures(s_vk.physical,&f);
     VkPhysicalDeviceFeatures want={.occlusionQueryPrecise=f.occlusionQueryPrecise,.fillModeNonSolid=f.fillModeNonSolid,
         .shaderClipDistance=f.shaderClipDistance,.depthClamp=f.depthClamp};
+    ch_vk_sampler_anisotropy_enable(s_vk.physical,&want);
     float priority=1;
     VkDeviceQueueCreateInfo q={.sType=VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,.queueFamilyIndex=s_vk.family,
         .queueCount=1,.pQueuePriorities=&priority};
@@ -279,6 +289,9 @@ static int vk_overlay_init(void)
  * in front of the left eye, aimed straight ahead, drawn into that eye's
  * overlay and written out; VC3_XR_FAKE_MENU=1 also paints the panel. */
 static int vk_screen_in_eyes(void);
+static void vk_hud_draw(const Frame *,ChVkTarget *,const float [16],void *,size_t);
+static int s_vk_hud_valid;
+static int vk_world_update(const Frame *);
 static void vk_screen_draw(ChVkTarget *,const float [16],void *,size_t);
 static ChVkTexture *s_vk_scr_tex;
 static ChVkTarget *s_vk_scr_target;
@@ -289,6 +302,13 @@ static void vk_test_dump(const Frame *f)
     static int done;
     static unsigned frames;
     if(done || !ch_env("XR_DUMP") || !s_views_ok || s_overlay_ok<=0 || ++frames<(ch_env("XR_DUMP_AFTER")?(unsigned)atoi(ch_env("XR_DUMP_AFTER")):60u)) return;
+    /* XR_DUMP_ZOOMED=k: wait for an immersive frame whose game lens is
+     * longer than k pixels (the death and continue close-up) and its HUD */
+    if(ch_env("XR_DUMP_ZOOMED")) {
+        if(!f || !f->vr.imm || !(fabsf(f->vr.gp[0])>atof(ch_env("XR_DUMP_ZOOMED")))) return;
+        vk_world_update(f);   /* headless, SteamVR never asks for a frame: the HUD from here */
+        if(!s_vk_hud_valid) return;
+    }
     /* headless, SteamVR never asks for a frame (shouldRender): the screen from here */
     if(vk_screen_in_eyes() && f && !f->vr.imm) vk_screen_update(f);
     done=1;
@@ -309,6 +329,7 @@ static void vk_test_dump(const Frame *f)
     eye_viewproj(v,vp);
     vk_check(ch_vk_target_clear_read(s_vk_eye[0].target,transparent,s_vk_eye[0].pixels,bytes),"test overlay clear");
     if(s_vk_scr_tex) vk_screen_draw(s_vk_eye[0].target,vp,s_vk_eye[0].pixels,bytes);
+    if(f && f->vr.imm) vk_hud_draw(f,s_vk_eye[0].target,vp,s_vk_eye[0].pixels,bytes);
     vk_check(ch_vk_overlay_read(s_vk_eye[0].target,&g,vp,eye,qo_sight_height(g.sight),s_vk_eye[0].pixels,bytes),"test overlay draw");
     vk_check(ch_vk_target_read_color(s_vk_eye[0].target,s_vk_eye[0].pixels,bytes),"test overlay read");
     dump_ppm("overlay.ppm",s_vk_eye[0].pixels,(int)s_vk_eye[0].w,(int)s_vk_eye[0].h);
