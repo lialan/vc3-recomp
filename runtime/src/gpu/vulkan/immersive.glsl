@@ -7,8 +7,9 @@
 // triangle out of the other eye's half. Requires params.p (ChVkFixedParams).
 void ch_imm_texcoords(inout vec2 uv,inout vec4 t[4]) {
     uint m=params.p.imm_sbs;
-    if(params.p.imm_mode==0u || m==0u) return;
-    float e=float(gl_InstanceIndex&1)*.5;
+    if(m==0u) return;
+    // mode 0 (a guest draw sampling eyes, e.g. an effect map): the left eye
+    float e=params.p.imm_mode==0u?0.:float(gl_InstanceIndex&1)*.5;
     for(int i=0;i<4;i++) if((m&(1u<<uint(i)))!=0u) t[i].x=t[i].x*.5+e*(t[i].w==0?1:t[i].w);
     if((m&16u)!=0u) uv.x=uv.x*.5+e;
 }

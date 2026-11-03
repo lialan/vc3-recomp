@@ -1,5 +1,6 @@
 #include "vk_runtime.h"
 #include "vk_backend.h"
+#include "vk_device_features.h"
 #include "vk_pipeline_cache_file.h"
 #include "chihiro/ch_env.h"
 #include "xbox_memory_layout.h"
@@ -147,6 +148,16 @@ static VkResult present_target(void *unused,const Nv2aSurface *surface,ChVkTarge
     return r;
 }
 
+/* Immersive frames keep the same frame accounting (intervals, frame limit). */
+static VkResult present_immersive(void *unused,const Nv2aSurface *surface,ChVkTarget *eyes,ChVkTarget *hud,const ChVkImmFrame *frame)
+{
+    (void)unused;
+    VkResult r=host_config.present_immersive(host_config.render_context,surface,eyes,hud,frame);
+    if(r!=VK_SUCCESS && r!=VK_NOT_READY) return r;
+    frame_completed(surface);
+    return r;
+}
+
 static VkResult present_pixels(void *unused,const Nv2aSurface *surface,const void *rgba,size_t bytes,int bgra)
 {
     (void)unused;
@@ -260,10 +271,11 @@ static VkResult attach(ChVkBackendConfig config)
     } else if(config.immersive_view && !config.texture_cache_bytes) {
         /* Flat draws sample other surfaces' eye images (a snapshot costs
          * both eyes twice over: image and staging); too small a budget pins
-         * them and decodes everything else on the CPU every draw. Room for
-         * four besides the game's textures. */
+         * them and decodes everything else on the CPU every draw. E.S.
+         * samples several surfaces' eyes, each pinned for a frame or two:
+         * room for twelve besides the game's textures. */
         size_t snapshot=(size_t)config.immersive_eye_width*2*config.immersive_eye_height*4*2;
-        config.texture_cache_bytes=((size_t)128<<20)+4*snapshot;
+        config.texture_cache_bytes=((size_t)128<<20)+12*snapshot;
     }
     fprintf(stderr,"[Vulkan] texture cache budget: %zuMiB\n",
         config.texture_cache_bytes?config.texture_cache_bytes>>20:(size_t)64);
@@ -334,6 +346,7 @@ static VkResult attach(ChVkBackendConfig config)
     config.strict_texture_checks=texture_watch && !strcmp(texture_watch,"0");
     config.present_rgba=present;
     if(config.present_target) config.present_target=present_target;
+    if(config.present_immersive) config.present_immersive=present_immersive;
     if(!has_host_config || !host_config.present_rgba) config.present_bgra=present_bgra;
     if(!config.fatal) config.fatal=fatal;
     const char *cache_path=ch_env("VULKAN_PIPELINE_CACHE");
@@ -422,8 +435,12 @@ int ch_vk_runtime_start(void)
     float priority=1;
     VkDeviceQueueCreateInfo queue_info={.sType=VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
         .queueFamilyIndex=family,.queueCount=1,.pQueuePriorities=&priority};
-    VkDeviceCreateInfo device_info={.sType=VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
-        .queueCreateInfoCount=1,.pQueueCreateInfos=&queue_info,.pEnabledFeatures=&enabled};
+    const char *device_extensions[4];uint32_t device_extension_count=0;ChVkShaderFeatures shader_features;
+    int ubo_layout=ch_vk_shader_features(physical,&shader_features,device_extensions,&device_extension_count,4);
+    if(!ubo_layout) {enabled.shaderClipDistance=VK_FALSE;}   /* no GPU transforms (raw_fixed) */
+    VkDeviceCreateInfo device_info={.sType=VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,.pNext=&shader_features.ubo_layout,
+        .queueCreateInfoCount=1,.pQueueCreateInfos=&queue_info,.pEnabledFeatures=&enabled,
+        .enabledExtensionCount=device_extension_count,.ppEnabledExtensionNames=device_extensions};
     result=vkCreateDevice(physical,&device_info,NULL,&runtime.device);
     if(result!=VK_SUCCESS) goto fail;
     VkQueue queue;

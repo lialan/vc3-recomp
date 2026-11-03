@@ -161,6 +161,9 @@ struct ChVkTarget {
     int failed;
     struct { const char *caller; int readback; uint64_t count,wait_ns,gpu_ns,tail_ns; } finish_reasons[32];
     int tail_stamped; /* timing slot 2: the render pass ended, readbacks/copies follow */
+    /* CHIHIRO_VULKAN_DRAW_TIMING=1: a timestamp after every batched draw. */
+    VkQueryPool draw_pool[RING_SLOTS]; uint32_t draw_n[RING_SLOTS];
+    struct {uint8_t bucket;uint32_t indices;} draw_meta[RING_SLOTS][BATCH_DRAWS+2];
     int submitted_reason;
 };
 static VkResult finish_batch_named(ChVkTarget *,int,const char *);
@@ -307,7 +310,7 @@ static VkResult reserve_geometry(ChVkTarget *t,VkDeviceSize size) {
     VkResult result;
     VkBuffer buffer=VK_NULL_HANDLE;VkDeviceMemory memory=VK_NULL_HANDLE;void *mapped=NULL;
     VkBufferCreateInfo info={.sType=VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,.size=capacity,
-        .usage=VK_BUFFER_USAGE_VERTEX_BUFFER_BIT|VK_BUFFER_USAGE_INDEX_BUFFER_BIT|VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+        .usage=VK_BUFFER_USAGE_VERTEX_BUFFER_BIT|VK_BUFFER_USAGE_INDEX_BUFFER_BIT|VK_BUFFER_USAGE_STORAGE_BUFFER_BIT|VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
         .sharingMode=VK_SHARING_MODE_EXCLUSIVE};
     TRY(vkCreateBuffer(t->device,&info,NULL,&buffer));
     VkMemoryRequirements req;vkGetBufferMemoryRequirements(t->device,buffer,&req);
@@ -465,8 +468,12 @@ static VkResult create_depth(VkPhysicalDevice physical,VkDevice device,VkQueue q
      * benefit. A discard-free module is not automatically faster. */
     t->split_alpha=split && atoi(split);
     const char *fetch=getenv("CHIHIRO_VULKAN_SPECIALIZE_FETCH");
-    /* Keep opt-in until an uncontended game comparison establishes a win. */
-    t->specialize_fetch=fetch && atoi(fetch);
+    /* Attribute formats and fixed-function modes as specialization constants:
+     * the generic fixed-function vertex shader was ~2500-3400 instructions with
+     * its decode loops left in (ir3 stats on the Steam Frame); specialized,
+     * E.S. at native eye size went from ~18-19.7 to 16.7 ms a frame. Default
+     * on; CHIHIRO_VULKAN_SPECIALIZE_FETCH=0: the generic shaders. */
+    t->specialize_fetch=!fetch || atoi(fetch);
     const char *specialize=getenv("CHIHIRO_VULKAN_SPECIALIZE_RC");
     t->specialize_rc=!specialize || atoi(specialize);
     t->depth_format=depth_format;t->input_depth=input_depth;
@@ -586,6 +593,11 @@ static VkResult create_depth(VkPhysicalDevice physical,VkDevice device,VkQueue q
                 .queryType=VK_QUERY_TYPE_TIMESTAMP,.queryCount=3};
             TRY(vkCreateQueryPool(device,&timing,NULL,&t->timing));
             if(t->ring) for(unsigned k=1;k<RING_SLOTS;k++) TRY(vkCreateQueryPool(device,&timing,NULL,&t->slots[k].timing));
+            const char *draws=getenv("CHIHIRO_VULKAN_DRAW_TIMING");
+            if(draws && atoi(draws)) {
+                VkQueryPoolCreateInfo per_draw=timing;per_draw.queryCount=BATCH_DRAWS+2;
+                for(unsigned k=0;k<(t->ring?RING_SLOTS:1u);k++) TRY(vkCreateQueryPool(device,&per_draw,NULL,&t->draw_pool[k]));
+            }
         }
     }
     *out=t; return VK_SUCCESS;
@@ -768,6 +780,36 @@ static void wait_stack_note(uint64_t ns) {
 #else
 static void wait_stack_note(uint64_t ns) {(void)ns;}
 #endif
+/* Per-draw GPU time by bucket: vertex path (fixed/program/CPU) x fragment
+ * shader (plain/textured/combiner/effect) x eye target or guest. */
+static struct {uint64_t ns,draws,indices,instances;} draw_stats[3][4][2];
+static uint64_t draw_stats_start;
+static const char *const draw_vertex_name[3]={"fixed","program","cpu"};
+static const char *const draw_fragment_name[4]={"plain","textured","combiner","effect"};
+static void draw_timing_collect(ChVkTarget *t,unsigned k) {
+    uint32_t n=t->draw_n[k];
+    if(!t->draw_pool[k] || !n) return;
+    uint64_t stamps[BATCH_DRAWS+2];
+    if(vkGetQueryPoolResults(t->device,t->draw_pool[k],0,n+1,sizeof stamps,stamps,sizeof(uint64_t),VK_QUERY_RESULT_64_BIT)!=VK_SUCCESS) {t->draw_n[k]=0;return;}
+    uint64_t mask=t->timestamp_bits==64?UINT64_MAX:((UINT64_C(1)<<t->timestamp_bits)-1);
+    for(uint32_t i=1;i<=n;i++) {
+        unsigned b=t->draw_meta[k][i].bucket,v=b>>3,f=(b>>1)&3,e=b&1;
+        uint64_t ns=(uint64_t)(((stamps[i]-stamps[i-1])&mask)*t->timestamp_period);
+        draw_stats[v][f][e].ns+=ns;draw_stats[v][f][e].draws++;draw_stats[v][f][e].indices+=t->draw_meta[k][i].indices;
+    }
+    t->draw_n[k]=0;
+    uint64_t now=time_ns();
+    if(!draw_stats_start) draw_stats_start=now;
+    if(now-draw_stats_start<2000000000ull) return;
+    fprintf(stderr,"[Vulkan draw GPU] %.1fs:",(now-draw_stats_start)/1e9);
+    for(unsigned v=0;v<3;v++) for(unsigned f=0;f<4;f++) for(unsigned e=0;e<2;e++) if(draw_stats[v][f][e].draws)
+        fprintf(stderr," %s/%s/%s=%llu draws %.1fms (%.1fus, %llu idx/draw)",draw_vertex_name[v],draw_fragment_name[f],e?"eyes":"guest",
+            (unsigned long long)draw_stats[v][f][e].draws,draw_stats[v][f][e].ns/1e6,
+            draw_stats[v][f][e].ns/1e3/draw_stats[v][f][e].draws,
+            (unsigned long long)(draw_stats[v][f][e].indices/draw_stats[v][f][e].draws));
+    fputc('\n',stderr);
+    memset(draw_stats,0,sizeof draw_stats);draw_stats_start=now;
+}
 static VkResult drain_ring(ChVkTarget *);
 static VkResult retire_batch(ChVkTarget *t) {
     {VkResult drained=drain_ring(t);if(drained!=VK_SUCCESS) return drained;}
@@ -781,6 +823,7 @@ static VkResult retire_batch(ChVkTarget *t) {
     /* Detach before retirement callbacks: the copy is complete, and a callback
      * may release resources associated with the dependent target. */
     if(t->copy_destination) {t->copy_destination->copy_source=NULL;t->copy_destination=NULL;}
+    draw_timing_collect(t,t->slot);
     if(t->timing) {
         uint64_t waited=time_ns()-wait_start;
         t->timing_stats.batch_wait_ns+=waited;
@@ -833,6 +876,7 @@ static VkResult retire_slot(ChVkTarget *t,unsigned k) {
     uint64_t wait_start=time_ns();
     TRY(vkWaitForFences(t->device,1,&t->slots[k].fence,VK_TRUE,5000000000ULL));
     wait_stack_note(time_ns()-wait_start);
+    draw_timing_collect(t,k);
     if(t->slots[k].timing) {
         uint64_t waited=time_ns()-wait_start,stamps[3];
         t->timing_stats.batch_wait_ns+=waited;
@@ -1020,6 +1064,10 @@ static VkResult begin_batch(ChVkTarget *t) {
             vkCmdResetQueryPool(t->command,t->timing,0,3);t->tail_stamped=0;
             vkCmdWriteTimestamp(t->command,VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,t->timing,0);
         }
+        if(t->draw_pool[t->slot]) {
+            vkCmdResetQueryPool(t->command,t->draw_pool[t->slot],0,BATCH_DRAWS+2);t->draw_n[t->slot]=0;
+            vkCmdWriteTimestamp(t->command,VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,t->draw_pool[t->slot],0);
+        }
         VkImageMemoryBarrier barriers[2]={
             {.sType=VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,.srcAccessMask=VK_ACCESS_TRANSFER_READ_BIT,
                 .dstAccessMask=VK_ACCESS_COLOR_ATTACHMENT_READ_BIT|VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
@@ -1071,6 +1119,13 @@ static VkResult record_batch(ChVkTarget *t,VkBuffer geometry,VkDeviceSize index_
     vkCmdBindVertexBuffers(t->command,0,1,&geometry,&vertex_offset);
     vkCmdBindIndexBuffer(t->command,geometry,index_offset,VK_INDEX_TYPE_UINT16);
     vkCmdDrawIndexed(t->command,index_count,t->fixed && t->fixed->imm_mode?2:1,0,0,0);
+    if(t->draw_pool[t->slot] && t->draw_n[t->slot]<BATCH_DRAWS) {
+        uint32_t i=++t->draw_n[t->slot];
+        const PipelineKey *key=&t->active_pipeline->key;
+        unsigned v=!key->fixed?2:key->vertex_count?1:0,f=key->shader&3,e=t->fixed && t->fixed->imm_mode;
+        t->draw_meta[t->slot][i].bucket=(uint8_t)(v<<3|f<<1|e);t->draw_meta[t->slot][i].indices=index_count;
+        vkCmdWriteTimestamp(t->command,VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,t->draw_pool[t->slot],i);
+    }
     if(t->quantized_depth && t->quantized_depth!=5 && t->active_pipeline->key.depth.depthTestEnable &&
        t->active_pipeline->key.depth.depthWriteEnable) {
         /* Quantization helpers bind their own graphics state/push layout. */
@@ -1497,21 +1552,25 @@ static VkResult create_pipeline(ChVkTarget *t, const VkPipelineColorBlendAttachm
     t->active_pipeline->has_descriptors=texture!=NULL || t->rc!=NULL || t->fixed!=NULL;
     if(t->active_pipeline->has_descriptors) {
         VkDescriptorSetLayoutBinding bindings[5];unsigned n=0;
-        uint32_t images=t->rc?8:texture?1:0,buffers=(t->rc!=NULL)+2*(t->fixed!=NULL);
+        /* Per-draw constants (combiner, fixed/program state) are uniform
+         * buffers -- loaded into constant registers once a draw -- and the
+         * vertex streams a storage buffer. */
+        uint32_t images=t->rc?8:texture?1:0,uniforms=(t->rc!=NULL)+(t->fixed!=NULL),buffers=t->fixed!=NULL;
         if(images) bindings[n++]=(VkDescriptorSetLayoutBinding){.binding=0,
             .descriptorType=VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,.descriptorCount=t->rc?4:1,.stageFlags=VK_SHADER_STAGE_FRAGMENT_BIT};
         if(t->rc) {
-            bindings[n++]=(VkDescriptorSetLayoutBinding){.binding=1,.descriptorType=VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,.descriptorCount=1,.stageFlags=VK_SHADER_STAGE_FRAGMENT_BIT};
+            bindings[n++]=(VkDescriptorSetLayoutBinding){.binding=1,.descriptorType=VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,.descriptorCount=1,.stageFlags=VK_SHADER_STAGE_FRAGMENT_BIT};
             bindings[n++]=(VkDescriptorSetLayoutBinding){.binding=2,.descriptorType=VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,.descriptorCount=4,.stageFlags=VK_SHADER_STAGE_FRAGMENT_BIT};
         }
         if(t->fixed) bindings[n++]=(VkDescriptorSetLayoutBinding){.binding=3,
-            .descriptorType=VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,.descriptorCount=1,.stageFlags=VK_SHADER_STAGE_VERTEX_BIT};
+            .descriptorType=VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,.descriptorCount=1,.stageFlags=VK_SHADER_STAGE_VERTEX_BIT};
         if(t->fixed) bindings[n++]=(VkDescriptorSetLayoutBinding){.binding=4,
             .descriptorType=VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,.descriptorCount=1,.stageFlags=VK_SHADER_STAGE_VERTEX_BIT};
         VkDescriptorSetLayoutCreateInfo dsl={.sType=VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,.bindingCount=n,.pBindings=bindings};
         TRY(vkCreateDescriptorSetLayout(t->device,&dsl,NULL,&t->active_pipeline->descriptor_layout));
-        VkDescriptorPoolSize sizes[2];n=0;
+        VkDescriptorPoolSize sizes[3];n=0;
         if(images) sizes[n++]=(VkDescriptorPoolSize){VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,images};
+        if(uniforms) sizes[n++]=(VkDescriptorPoolSize){VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,uniforms};
         if(buffers) sizes[n++]=(VkDescriptorPoolSize){VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,buffers};
         uint32_t banks=t->ring?RING_SLOTS:1;
         for(unsigned i=0;i<n;i++) sizes[i].descriptorCount*=(t->batch_enabled?t->batch_limit:1)*banks;
@@ -1570,15 +1629,15 @@ static void update_descriptors(ChVkTarget *t,const ChVkTexture *texture,
         buffers[b]=(VkDescriptorBufferInfo){buffer,base,256};
         writes[n++]=(VkWriteDescriptorSet){.sType=VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
             .dstSet=t->active_pipeline->descriptor_set,.dstBinding=1,.descriptorCount=1,
-            .descriptorType=VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,.pBufferInfo=&buffers[b++]};
+            .descriptorType=VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,.pBufferInfo=&buffers[b++]};
     }
     if(t->fixed) {
         buffers[b]=(VkDescriptorBufferInfo){buffer,base+256,ch_vk_raw_params_size(t->fixed)};
         writes[n++]=(VkWriteDescriptorSet){.sType=VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
             .dstSet=t->active_pipeline->descriptor_set,.dstBinding=3,.descriptorCount=1,
-            .descriptorType=VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,.pBufferInfo=&buffers[b++]};
+            .descriptorType=VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,.pBufferInfo=&buffers[b++]};
         buffers[b]=(VkDescriptorBufferInfo){buffer,t->vertex_offset,vertex_bytes};
-        writes[n]=writes[n-1];writes[n].dstBinding=4;writes[n++].pBufferInfo=&buffers[b];
+        writes[n]=writes[n-1];writes[n].dstBinding=4;writes[n].descriptorType=VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;writes[n++].pBufferInfo=&buffers[b];
     }
     if(n) vkUpdateDescriptorSets(t->device,n,writes,0,NULL);
 }

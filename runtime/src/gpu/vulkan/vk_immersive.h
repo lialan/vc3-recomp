@@ -49,6 +49,12 @@ VkResult ch_vk_immersive_clear(ChVkImmersive *,const Nv2aSurface *,const Nv2aRen
     uint32_t flags,uint32_t argb,uint32_t zs);
 VkResult ch_vk_immersive_draw(ChVkImmersive *,const Nv2aSurface *,const Nv2aBatch *,
     const ChVkFixedGeometry *fixed,ChVkSampleResolver,void *resolver_context);
+/* With the guest's screen-shaped draws skipped (only the eyes are drawn),
+ * a guest draw into another target that samples such a surface -- an effect
+ * map made from the scene -- samples its eyes (the left one) instead. Returns
+ * 1 and draws when it applies, 0 to draw as usual. */
+int ch_vk_immersive_guest_draw(ChVkImmersive *,ChVkTarget *,const Nv2aSurface *,const Nv2aBatch *,
+    const ChVkFixedGeometry *,ChVkSampleResolver,void *,void *pixels,VkDeviceSize bytes,VkResult *);
 /* At the flip, after the guest's: the frame's dominant projection; whether
  * the presented surface is shown immersive (eyes/hud set, borrowed until the
  * next draw); then the next frame's view (NULL or !on: flat). */

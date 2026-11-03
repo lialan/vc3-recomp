@@ -20,6 +20,11 @@ typedef struct {uint64_t pipeline_ns,batch_wait_ns,batch_gpu_ns,upload_wait_ns;
     uint64_t depth_copy_ns,depth_copy_calls;} FrameCosts;
 struct ChVkBackend { ChVkFixedScratch raw_scratch; struct {int enabled;uint64_t completion_us,completion_cpu_ns,completion_calls,prepare_us,prepare_cpu_ns;uint64_t draw_cpu_ns,clear_cpu_ns,flip_cpu_ns,trim_cpu_ns;uint64_t draw_us,clear_us,flip_us,trim_us,surface_us,coherence_us,imports_us,raster_us,store_us,texture_uploads;FrameCosts retired,previous;} costs; VkPipelineCache pipeline_cache; struct {int enabled;uint64_t start,n,surface,coherence,imports,draw,store,no_color,flushes,depth_flushes,paired_flushes;} profile; struct {int enabled;uint64_t previous,us[120];unsigned count;} frame_profile; ChVkBackendConfig host; ChVkTextureCache *textures; ChVkDepthResident *zeta; ChVkImmersive *imm; uint64_t raw_compact_batches,raw_snapshot_bytes,raw_expanded_bytes; uint64_t color_snapshot_copy_bytes_saved,unchanged_color_draws,unchanged_depth_draws,early_color_reads,clear_color_imports_avoided,clear_color_bytes_avoided; uint64_t frames,raw_draws,raw_programs,raw_program_vertices,raw_declined,color_clock,cpu_batches,cpu_vertices,cpu_texels,cpu_texture_us,cpu_color_pixels,cpu_color_us,cpu_depth_pixels; struct Surface surfaces[MAX_SURFACES]; unsigned count; };
 static ChVkBackend *active;
+static int imm_skip_guest=-1;
+static int skip_guest(void) {
+    if(imm_skip_guest<0) {const char *e=getenv("CHIHIRO_VULKAN_IMMERSIVE_SKIP_GUEST");imm_skip_guest=!e || atoi(e);}
+    return imm_skip_guest;
+}
 static ChVkTarget *guest_target_of(void *,uint32_t);
 static void flush_color(struct Surface *);
 static void observe_guest_colors(void);
@@ -641,6 +646,13 @@ static void import_depth(struct Surface *f,int overwrite) {
 static void clear(const Nv2aSurface *s,const Nv2aRenderState *rs,uint32_t flags,uint32_t argb,uint32_t zs) {
     Nv2aSurface narrowed;s=narrow_surface(s,rs,&narrowed);
     configure_render_thread();
+    /* Skipped guest draws (immersive): the eyes take the clear alone. */
+    if(skip_guest() && active->imm && ch_vk_immersive_on(active->imm) && s->width &&
+       (uint64_t)s->width*3==(uint64_t)s->height*4) {
+        VkResult r=ch_vk_immersive_clear(active->imm,s,rs,flags,argb,zs);
+        if(r!=VK_SUCCESS) fatal(r,"immersive clear");
+        return;
+    }
     uint64_t cpu=active->costs.enabled?thread_cpu_ns():0;
     uint64_t start=active->costs.enabled?now_us():0;
     struct Surface *f=surface(s,rs);
@@ -671,6 +683,19 @@ static void draw_batch(const Nv2aSurface *s,const Nv2aBatch *b,const ChVkFixedGe
      * Pending earlier work remains ordered by the normal fence/flip path. */
     if(!s->width || !s->height) return;
     if(!fixed) {active->cpu_batches++;active->cpu_vertices+=b->count;}
+    /* An immersive frame's screen-shaped surfaces only feed the eyes; their
+     * own draws would go unseen, so they are not drawn (half the draws, and
+     * none of their guest coherence). Draws into other targets that sample
+     * them sample their eyes (ch_vk_immersive_guest_draw); visibility queries
+     * stay on the guest. CHIHIRO_VULKAN_IMMERSIVE_SKIP_GUEST=0: draw both. */
+    {
+        if(skip_guest() && fixed && active->imm && ch_vk_immersive_on(active->imm) && !b->zpass_out &&
+           (uint64_t)s->width*3==(uint64_t)s->height*4) {
+            VkResult r=ch_vk_immersive_draw(active->imm,s,b,fixed,active->textures?resolve_sample:NULL,active);
+            if(r!=VK_SUCCESS) fatal(r,"immersive draw");
+            return;
+        }
+    }
     uint64_t cpu=active->costs.enabled?thread_cpu_ns():0;
     uint64_t t[6]={0};
     if(active->profile.enabled) t[0]=now_us();
@@ -686,7 +711,10 @@ static void draw_batch(const Nv2aSurface *s,const Nv2aBatch *b,const ChVkFixedGe
     flush_sampled_colors(b);
     if(b->state->depth_test_enable || b->state->stencil_enable) import_depth(f,0);
     if(active->profile.enabled) t[3]=now_us();
-    VkResult result=fixed?ch_vk_nv2a_draw_fixed_resolved_read(f->target,s,b,fixed,decode_cpu_texture,
+    VkResult result=VK_SUCCESS;
+    int eyes_sampled=skip_guest() && fixed && active->imm && ch_vk_immersive_guest_draw(active->imm,f->target,s,b,fixed,
+        active->textures?resolve_sample:NULL,active,f->rgba,f->bytes,&result);
+    if(!eyes_sampled) result=fixed?ch_vk_nv2a_draw_fixed_resolved_read(f->target,s,b,fixed,decode_cpu_texture,
         active->textures?resolve_sample:NULL,active,f->rgba,f->bytes):
         ch_vk_nv2a_draw_resolved_read(f->target,s,b,decode_cpu_texture,
         active->textures?resolve_sample:NULL,active,f->rgba,f->bytes);
@@ -714,6 +742,26 @@ static void draw_batch(const Nv2aSurface *s,const Nv2aBatch *b,const ChVkFixedGe
     if(active->imm) {
         VkResult r=ch_vk_immersive_draw(active->imm,s,b,fixed,active->textures?resolve_sample:NULL,active);
         if(r!=VK_SUCCESS) fatal(r,"immersive draw");
+    }
+    if(getenv("CHIHIRO_VULKAN_ZPASS_LOG") && (uint64_t)s->width*3!=(uint64_t)s->height*4) {
+        for(unsigned k=0;k<5;k++) {
+            const Nv2aTexture *tx=k<4?b->stage[k]:b->texture;
+            if(!tx) continue;
+            for(unsigned i=0;i<active->count;i++) {
+                const Nv2aSurface *g=&active->surfaces[i].guest;
+                if(g->color_va==tx->offset && (uint64_t)g->width*3==(uint64_t)g->height*4) {
+                    static uint64_t m;
+                    if(m++%20==0) fprintf(stderr,"[screen-sampled] frame %llu into %08X %ux%u from %08X %ux%u stage %u\n",
+                        (unsigned long long)active->frames,s->color_va,s->width,s->height,g->color_va,g->width,g->height,k);
+                }
+            }
+        }
+    }
+    if(b->zpass_out && getenv("CHIHIRO_VULKAN_ZPASS_LOG")) {
+        static uint64_t n;Nv2aRawExtent e;int ok=b->raw && b->raw->extent && b->raw->extent(b->raw,&e);
+        if(n++%7==0) fprintf(stderr,"[zpass] frame %llu surface %08X %ux%u raw %d w0 %.2f extent %.0f..%.0f x %.0f..%.0f depth %u/%04X mask %08X result %u\n",
+            (unsigned long long)active->frames,s->color_va,s->width,s->height,b->raw?(int)b->raw->kind:-1,b->raw?b->raw->w0:0,
+            ok?e.x0:-1,ok?e.x1:-1,ok?e.y0:-1,ok?e.y1:-1,b->state->depth_test_enable,b->state->depth_func,b->state->color_mask,*b->zpass_out);
     }
     if(active->costs.enabled) active->costs.draw_cpu_ns+=thread_cpu_ns()-cpu;
     if(active->profile.enabled) {t[5]=now_us();profile_draw(t);}

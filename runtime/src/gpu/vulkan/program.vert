@@ -1,9 +1,10 @@
 #version 450
 #extension GL_GOOGLE_include_directive : require
+#extension GL_EXT_scalar_block_layout : require
 #extension GL_EXT_control_flow_attributes : require
 #include "fixed_layout.glsl"
 #include "attribute_decode.glsl"
-layout(std430,set=0,binding=3) readonly buffer RawParams {ChVkFixedParams p;} params;
+layout(std430,set=0,binding=3) uniform RawParams {ChVkFixedParams p;} params;   // uniform: constant registers
 #include "vertex_program.glsl"
 #define CH_ATTRIBUTE_FORMAT(slot) (vp_fetch_specialized!=0u?vp_attribute_format(slot):params.p.attribute_format[slot])
 #include "attribute_stream.glsl"

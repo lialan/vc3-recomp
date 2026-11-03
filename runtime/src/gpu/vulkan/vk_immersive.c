@@ -24,6 +24,7 @@ struct ChVkImmersive {
     /* per-batch projection cache: identical matrices, identical projection */
     Nv2aFixedState last_ff; float last_aa[2]; int last_valid,last_ok; VrGameProj last;
     int zoom_normalise;   /* CHIHIRO_VULKAN_IMMERSIVE_ZOOM=1: the OpenGL renderer's zoom_proj */
+    uint64_t guest_eye_samples;
     int log; uint64_t frames,world_batches,hud_batches,flat_batches,skipped_batches;
 };
 static int screen_shaped(const Nv2aSurface *s) {
@@ -117,7 +118,11 @@ VkResult ch_vk_immersive_create(const ChVkImmersiveConfig *config,ChVkImmersive 
        !config->eye_height || config->eye_width>4096 || config->eye_height>4096) return VK_ERROR_INITIALIZATION_FAILED;
     ChVkImmersive *m=calloc(1,sizeof *m); if(!m) return VK_ERROR_OUT_OF_HOST_MEMORY;
     m->config=*config;
-    if(!m->config.batch_limit) m->config.batch_limit=256;
+    /* Each batch is a render pass, and on a tiler each pass loads and stores
+     * the whole eye image: the eyes take the largest batches (diagnostic
+     * override CHIHIRO_VULKAN_IMMERSIVE_BATCH). */
+    {const char *b=getenv("CHIHIRO_VULKAN_IMMERSIVE_BATCH");
+     m->config.batch_limit=b && atoi(b)>0 && atoi(b)<=256?(uint32_t)atoi(b):256;}
     const char *e=getenv("CHIHIRO_VULKAN_IMMERSIVE_LOG");
     m->log=e?atoi(e):0;
     /* Off by default: the game's own projection recovers each vertex where
@@ -178,9 +183,17 @@ static int batch_projection(ChVkImmersive *m,const Nv2aBatch *b,VrGameProj *out)
     if(m->last_ok) *out=m->last;
     return m->last_ok;
 }
-static int full_screen(const Nv2aBatch *b,const Nv2aSurface *s) {
+static struct ImmSurface *eye_source(ChVkImmersive *,const Nv2aTexture *);
+static int full_screen(ChVkImmersive *m,const Nv2aBatch *b,const Nv2aSurface *s) {
     Nv2aRawExtent e;
-    if(!b->raw->extent || !b->raw->extent(b->raw,&e)) return 0;
+    if(!b->raw->extent || !b->raw->extent(b->raw,&e)) {
+        /* No extent (a big screen-space mesh, not transformed on the CPU):
+         * one that samples a surface with eyes is a composite of the scene
+         * (E.S. distortion), drawn across the eyes; anything else the HUD. */
+        if(b->texture && eye_source(m,b->texture)) return 1;
+        for(unsigned i=0;i<4;i++) if(b->stage[i] && eye_source(m,b->stage[i])) return 1;
+        return 0;
+    }
     return e.x1-e.x0>=.9f*s->width && e.y1-e.y0>=.9f*s->height;
 }
 VkResult ch_vk_immersive_draw(ChVkImmersive *m,const Nv2aSurface *s,const Nv2aBatch *b,
@@ -230,7 +243,7 @@ VkResult ch_vk_immersive_draw(ChVkImmersive *m,const Nv2aSurface *s,const Nv2aBa
     if(!m->on) return VK_SUCCESS;
     if(!fixed) {m->skipped_batches++;return VK_SUCCESS;}
     Nv2aBatch copy=*b; copy.zpass_out=NULL;
-    int full=!is3d && full_screen(b,s);
+    int full=!is3d && full_screen(m,b,s);
     if(!is3d) {if(!f) f=find(m,s);if(f) f->full+=full;}
     if(!is3d && shown(m,s->color_va) && !full) {
         if(f) f->hud++;
@@ -292,6 +305,18 @@ static void dump_scene(ChVkImmersive *m,struct ImmSurface *scene) {
     char path[512];
     snprintf(path,sizeof path,"%s/scene-%05llu-eyes.ppm",dir,(unsigned long long)m->frames);dump_ppm_target(scene->eyes,path);
     if(guest) {snprintf(path,sizeof path,"%s/scene-%05llu-flat.ppm",dir,(unsigned long long)m->frames);dump_ppm_target(guest,path);}
+}
+int ch_vk_immersive_guest_draw(ChVkImmersive *m,ChVkTarget *t,const Nv2aSurface *s,const Nv2aBatch *b,
+    const ChVkFixedGeometry *fixed,ChVkSampleResolver resolve,void *context,void *pixels,VkDeviceSize bytes,VkResult *result) {
+    if(!m || !m->on || !fixed || !b || !b->raw || !m->config.textures) return 0;
+    ChVkImmDraw imm={.mode=0};
+    if(b->texture && eye_source(m,b->texture)) imm.sbs|=16;
+    for(unsigned i=0;i<4;i++) if(b->stage[i] && eye_source(m,b->stage[i])) imm.sbs|=1u<<i;
+    if(!imm.sbs) return 0;
+    struct ImmResolve chain={m,resolve,context};
+    *result=ch_vk_nv2a_draw_immersive_read(t,s,b,fixed,&imm,m->config.decode,imm_resolve,&chain,pixels,bytes);
+    m->guest_eye_samples++;
+    return 1;
 }
 VkResult ch_vk_immersive_flip(ChVkImmersive *m,uint32_t presented,const Vc3VrView *next,
     ChVkImmFrame *out,ChVkTarget **eyes_out,ChVkTarget **hud_out) {

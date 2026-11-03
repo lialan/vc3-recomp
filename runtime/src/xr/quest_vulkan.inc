@@ -1,3 +1,4 @@
+#include "../gpu/vulkan/vk_device_features.h"
 /* Native Vulkan presentation for the shared Quest host. Included after the
  * common input/menu/view math; no session lifecycle or input polling here. */
 static ChVkXrQuad *s_vk_screen,*s_vk_menu;
@@ -96,11 +97,15 @@ static int vk_imm_view(void *context,Vc3VrView *view)
     (void)context;
     return vc3_vr_view_latch(view);
 }
-static uint32_t vk_imm_eye_size(void)
+/* Each eye's picture: the display's own (native) size, as the headset
+ * recommends; VC3_IMM_EYE=n draws n x n instead. */
+static void vk_imm_eye_size(uint32_t *w,uint32_t *h)
 {
-    const char *e=ch_env("IMM_EYE");   /* each eye's picture, square, pixels */
+    const char *e=ch_env("IMM_EYE");
     int n=e?atoi(e):0;
-    return n>=256 && n<=2048?(uint32_t)n:1440;
+    if(n>=256 && n<=2048) {*w=*h=(uint32_t)n;return;}
+    *w=s_native_w>=256 && s_native_w<=2048?s_native_w:1440;
+    *h=s_native_h>=256 && s_native_h<=2048?s_native_h:*w;
 }
 static void vk_dump_target(const char *name,ChVkTarget *target,int opaque)
 {
@@ -157,9 +162,11 @@ static void vk_split_init(VkDevice *device,VkQueue *queue)
     float priority=1;
     VkDeviceQueueCreateInfo q={.sType=VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,.queueFamilyIndex=s_vk.family,
         .queueCount=1,.pQueuePriorities=&priority};
-    const char *ext[]={VK_KHR_EXTERNAL_MEMORY_FD_EXTENSION_NAME};
-    VkDeviceCreateInfo dc={.sType=VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,.queueCreateInfoCount=1,.pQueueCreateInfos=&q,
-        .pEnabledFeatures=&want,.enabledExtensionCount=1,.ppEnabledExtensionNames=ext};
+    const char *ext[4]={VK_KHR_EXTERNAL_MEMORY_FD_EXTENSION_NAME};uint32_t ext_count=1;
+    ChVkShaderFeatures shader_features;
+    if(!ch_vk_shader_features(s_vk.physical,&shader_features,ext,&ext_count,4)) s_vk.raw_fixed=0;
+    VkDeviceCreateInfo dc={.sType=VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,.pNext=&shader_features.ubo_layout,.queueCreateInfoCount=1,.pQueueCreateInfos=&q,
+        .pEnabledFeatures=&want,.enabledExtensionCount=ext_count,.ppEnabledExtensionNames=ext};
     VkDevice game;VkResult r=vkCreateDevice(s_vk.physical,&dc,NULL,&game);
     if(r!=VK_SUCCESS) {fprintf(stderr,"[quest Vulkan] one device: game device %d\n",(int)r);return;}
     r=ch_vk_xr_bridge_create(s_vk.physical,s_vk.device,game,VK_BRIDGE_CAPACITY,&s_vk_bridge);
@@ -198,7 +205,7 @@ static int vk_host_init(void)
      * device in them) and the GPU transforms. */
     if(s_vk_split && s_vk.raw_fixed) {
         config.immersive_view=vk_imm_view;config.present_immersive=vk_publish_imm;
-        config.immersive_eye_width=config.immersive_eye_height=vk_imm_eye_size();
+        vk_imm_eye_size(&config.immersive_eye_width,&config.immersive_eye_height);
     }
     return ch_vk_runtime_configure(&config);
 }

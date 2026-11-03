@@ -1,4 +1,5 @@
 #include "vk_xr.h"
+#include "vk_device_features.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -126,7 +127,10 @@ XrResult ch_vk_xr_device_create_with_options(XrInstance xr,XrSystemId system,
             global.globalPriority=0;
         }
     }
-    VkDeviceCreateInfo dci={.sType=VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
+    ChVkShaderFeatures shader_features;
+    uint32_t base_extensions=extension_count;
+    if(!ch_vk_shader_features(d.physical,&shader_features,extensions,&extension_count,32)) d.raw_fixed=0;
+    VkDeviceCreateInfo dci={.sType=VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,.pNext=&shader_features.ubo_layout,
         .queueCreateInfoCount=1,.pQueueCreateInfos=&qci,.pEnabledFeatures=&features,
         .enabledExtensionCount=extension_count,.ppEnabledExtensionNames=extensions};
     XrVulkanDeviceCreateInfoKHR xd={.type=XR_TYPE_VULKAN_DEVICE_CREATE_INFO_KHR,
@@ -135,7 +139,14 @@ XrResult ch_vk_xr_device_create_with_options(XrInstance xr,XrSystemId system,
     XR_TRY(create_device(xr,&xd,&d.device,vk_result));
     if(*vk_result!=VK_SUCCESS && global.globalPriority) {
         fprintf(stderr,"[Vulkan] queue priority refused (VkResult %d): the default\n",(int)*vk_result);
-        qci.pNext=NULL; dci.enabledExtensionCount=options->device_extension_count+(d.external_memory?1:0);
+        /* the same list without global priority (always appended last) */
+        qci.pNext=NULL;
+        if(extension_count>base_extensions) {
+            uint32_t k=0;
+            for(uint32_t i=0;i<extension_count;i++) if(strcmp(extensions[i],VK_EXT_GLOBAL_PRIORITY_EXTENSION_NAME)) extensions[k++]=extensions[i];
+            extension_count=k;
+        } else extension_count=options->device_extension_count+(d.external_memory?1:0);
+        dci.enabledExtensionCount=extension_count;
         global.globalPriority=0;
         XR_TRY(create_device(xr,&xd,&d.device,vk_result));
     }

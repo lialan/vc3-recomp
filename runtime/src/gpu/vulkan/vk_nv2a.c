@@ -108,7 +108,7 @@ static VkResult sample_image(ChVkTarget *target,const Nv2aTexture *tx,ChVkDecode
 }
 static VkResult draw_decoded(ChVkTarget *t, const Nv2aSurface *s,
     const Nv2aBatch *b, ChVkDecodeTexture decode, const ChVkEye *eye, int panel, ChVkSampleResolver resolve, void *context, void *pixels, VkDeviceSize bytes,const ChVkFixedGeometry *fixed,const ChVkImmDraw *imm) {
-    if(!s || !s->width || !s->height || (!eye && !panel && !imm && !matches(t,s)) || (imm && !fixed) || !b || !b->state || (!fixed && (!b->vertices || !b->count || b->count%3)))
+    if(!s || !s->width || !s->height || (!eye && !panel && !(imm && imm->mode) && !matches(t,s)) || (imm && !fixed) || !b || !b->state || (!fixed && (!b->vertices || !b->count || b->count%3)))
         return VK_ERROR_INITIALIZATION_FAILED;
     if(eye) {
         const VrGameProj *g=&eye->game_projection;
@@ -231,12 +231,15 @@ static VkResult draw_decoded(ChVkTarget *t, const Nv2aSurface *s,
     }
     /* Combiner descriptors are independently copied: stage[] is authoritative
      * rather than the convenience texture pointer's identity. */
-    ChVkFixedParams params;
+    /* The per-draw state is set in place: the prepared geometry belongs to
+     * this batch's draws (a ~6 KiB copy per draw was the hottest memcpy). */
+    ChVkFixedParams *params=fixed?(ChVkFixedParams *)&fixed->params:NULL;
     if(fixed) {
-        params=fixed->params;params.surface[0]=s->width;params.surface[1]=s->height;
-        params.depth[0]=low;params.depth[1]=high;
-        params.texture[0]=plain?plain->width:1;params.texture[1]=plain?plain->height:1;
-        if(imm) {params.imm_mode=imm->mode;params.imm_sbs=imm->sbs;memcpy(params.imm_gp,imm->gp,sizeof params.imm_gp);memcpy(params.imm_vp,imm->vp,sizeof params.imm_vp);}
+        params->surface[0]=s->width;params->surface[1]=s->height;
+        params->depth[0]=low;params->depth[1]=high;
+        params->texture[0]=plain?plain->width:1;params->texture[1]=plain?plain->height:1;
+        params->imm_mode=imm?imm->mode:0;params->imm_sbs=imm?imm->sbs:0;
+        if(imm && imm->mode==1) {memcpy(params->imm_gp,imm->gp,sizeof params->imm_gp);memcpy(params->imm_vp,imm->vp,sizeof params->imm_vp);}
     }
     if(rc) for(unsigned st=0;st<4;st++) {
         uint32_t mode=(rc->stage_program>>(st*5))&31;
@@ -249,16 +252,16 @@ static VkResult draw_decoded(ChVkTarget *t, const Nv2aSurface *s,
         if(result!=VK_SUCCESS) goto done;
         result=leases[st].gpu?VK_SUCCESS:ch_vk_texture_set_sampler(stage_images[st],&sm); if(result!=VK_SUCCESS) goto done;
         if(!tx->cube && !d3d8_format_is_swizzled(tx->color) && !d3d8_format_dxt_block_bytes(tx->color)) {
-            if(fixed) {params.stage_scale[st][0]=1.f/tx->width;params.stage_scale[st][1]=1.f/tx->height;}
+            if(fixed) {params->stage_scale[st][0]=1.f/tx->width;params->stage_scale[st][1]=1.f/tx->height;}
             else for(uint32_t i=0;i<b->count;i++) { v[i].xy[11+st*4]/=tx->width; v[i].xy[12+st*4]/=tx->height; }
         }
     }
     uint64_t textures_done=profile?profile_us():0;
     uint32_t samples=0;
-    if(fixed && panel==2) result=ch_vk_target_draw_fixed_coverage_read(t,&params,fixed->vertices,fixed->vertex_count,
+    if(fixed && panel==2) result=ch_vk_target_draw_fixed_coverage_read(t,params,fixed->vertices,fixed->vertex_count,
         fixed->indices,fixed->index_count,b->state,texture,rc,b->fog_color,
         (const ChVkTexture *const *)stage_images,pixels,bytes);
-    else if(fixed) result=ch_vk_target_draw_fixed_read(t,&params,fixed->vertices,fixed->vertex_count,
+    else if(fixed) result=ch_vk_target_draw_fixed_read(t,params,fixed->vertices,fixed->vertex_count,
         fixed->indices,fixed->index_count,b->state,texture,b->zpass_out?&samples:NULL,rc,b->fog_color,
         (const ChVkTexture *const *)stage_images,pixels,bytes);
     else if(panel) result=ch_vk_target_draw_panel_read(t,v,b->count,indices,b->count,b->state,texture,
@@ -497,7 +500,8 @@ VkResult ch_vk_nv2a_draw_fixed_resolved_read(ChVkTarget *t,const Nv2aSurface *s,
 VkResult ch_vk_nv2a_draw_immersive_read(ChVkTarget *t,const Nv2aSurface *s,const Nv2aBatch *b,
     const ChVkFixedGeometry *fixed,const ChVkImmDraw *imm,ChVkDecodeTexture decode,ChVkSampleResolver resolve,
     void *context,void *pixels,VkDeviceSize bytes) {
-    if(!t || !fixed || !fixed->vertices || !fixed->indices || !b || !b->raw || !imm || imm->mode<1 || imm->mode>2 || b->zpass_out)
+    if(!t || !fixed || !fixed->vertices || !fixed->indices || !b || !b->raw || !imm || imm->mode>2 || (!imm->mode && !imm->sbs) ||
+       (imm->mode && b->zpass_out))
         return VK_ERROR_INITIALIZATION_FAILED;
     if(imm->mode==1) {
         for(unsigned i=0;i<5;i++) if(!isfinite(imm->gp[i])) return VK_ERROR_INITIALIZATION_FAILED;

@@ -24,12 +24,18 @@ struct Page {
 struct ChGuestWriteWatch {
     ChGuestWriteView *views;size_t count,page_size,pages;
     struct Page *page;
-    uint64_t ranges,checks,unchanged,single_pass_checks,single_pass_pages;
+    uint64_t ranges,checks,unchanged,single_pass_checks,single_pass_pages,epoch_hits;
     atomic_ullong faults,protect_calls;
+    /* Bumped after any page's state, generation or writability changes. A
+     * range found clean at epoch E is still clean while the epoch is E: the
+     * check is then O(1) instead of a scan of every page (a 640x480 surface:
+     * ~300 pages, checked several times a draw). */
+    atomic_ullong epoch;
 };
 struct ChGuestWriteRange {
-    ChGuestWriteWatch *watch;size_t first,count;uint64_t stamp[];
+    ChGuestWriteWatch *watch;size_t first,count;uint64_t epoch;int clean;uint64_t stamp[];
 };
+static void bump(ChGuestWriteWatch *w) {atomic_fetch_add_explicit(&w->epoch,1,memory_order_release);}
 static void lock_page(struct Page *p) {
     while(atomic_exchange_explicit(&p->lock,1,memory_order_acquire)) {}
 }
@@ -105,7 +111,7 @@ ChGuestWriteWatch *ch_guest_write_watch_create(const ChGuestWriteView *views,siz
     w->page=calloc(w->pages,sizeof *w->page);
     if(!w->views || !w->page) {free(w->views);free(w->page);free(w);return NULL;}
     memcpy(w->views,views,count*sizeof *views);w->count=count;w->page_size=size;
-    atomic_init(&w->faults,0);atomic_init(&w->protect_calls,0);
+    atomic_init(&w->faults,0);atomic_init(&w->protect_calls,0);atomic_init(&w->epoch,1);
     for(size_t i=0;i<w->pages;i++) {
         atomic_init(&w->page[i].lock,0);atomic_init(&w->page[i].state,0);
         atomic_init(&w->page[i].writable,1);atomic_init(&w->page[i].generation,1);
@@ -146,13 +152,15 @@ ChGuestWriteRange *ch_guest_write_range_create(ChGuestWriteWatch *w,const void *
         if(atomic_load_explicit(&p->state,memory_order_relaxed)==2) {unlock_page(p);free(r);return NULL;}
         atomic_store_explicit(&p->state,1,memory_order_release);unlock_page(p);
     }
-    w->ranges++;return r;
+    bump(w);w->ranges++;return r;
 }
 void ch_guest_write_range_destroy(ChGuestWriteRange *r) {free(r);}
 int ch_guest_write_range_changed(ChGuestWriteRange *r) {
     if(!r) return 1;
     ChGuestWriteWatch *w=r->watch;int changed=0,needs_arm=0;
     w->checks++;
+    const uint64_t epoch=atomic_load_explicit(&w->epoch,memory_order_acquire);
+    if(r->clean && r->epoch==epoch) {w->unchanged++;w->epoch_hits++;return 0;}
     /* Stable protected ranges need one scan, not a separate arming probe and
      * generation scan. If any page needs arming, retain the locked full rescan
      * below so writable intervals and active leases stay conservative. */
@@ -168,6 +176,7 @@ int ch_guest_write_range_changed(ChGuestWriteRange *r) {
     if(!needs_arm) {
         w->single_pass_checks++;w->single_pass_pages+=r->count;
         if(!changed) w->unchanged++;
+        r->epoch=epoch;r->clean=!changed;
         return changed;
     }
     if(needs_arm) {
@@ -209,8 +218,9 @@ int ch_guest_write_range_changed(ChGuestWriteRange *r) {
             changed|=r->stamp[j]!=generation;r->stamp[j]=generation;
         }
     }
-    if(needs_arm) for(size_t j=0;j<r->count;j++) unlock_page(&w->page[r->first+j]);
+    if(needs_arm) {for(size_t j=0;j<r->count;j++) unlock_page(&w->page[r->first+j]);bump(w);}
     if(!changed) w->unchanged++;
+    r->clean=0;   /* armed just now: the next check scans once more, then trusts the epoch */
     return changed;
 }
 void ch_guest_write_range_rebase(ChGuestWriteRange *r) {if(r) (void)ch_guest_write_range_changed(r);}
@@ -251,7 +261,7 @@ int ch_guest_write_watch_fault(ChGuestWriteWatch *w,uintptr_t address,int write_
     int ok=protect_page(w,i,PROT_READ|PROT_WRITE);
     atomic_store_explicit(&p->writable,1,memory_order_release);
     if(!ok) atomic_store_explicit(&p->state,2,memory_order_release);
-    unlock_page(p);return ok;
+    bump(w);unlock_page(p);return ok;
 }
 static void visit_write(ChGuestWriteWatch *w,void *memory,size_t bytes,int action) {
     if(!w || !bytes || bytes>UINTPTR_MAX-(uintptr_t)memory) return;
@@ -276,10 +286,10 @@ static void visit_write(ChGuestWriteWatch *w,void *memory,size_t bytes,int actio
             for(size_t k=i;k<end;k++) atomic_store_explicit(&w->page[k].writable,1,memory_order_release);
             i=end;
         }
-        for(size_t i=first;i<=last;i++) {
+        for(size_t i=first;i<=last;i++)
             if(action==2) atomic_store_explicit(&w->page[i].state,2,memory_order_release);
-            unlock_page(&w->page[i]);
-        }
+        bump(w);
+        for(size_t i=first;i<=last;i++) unlock_page(&w->page[i]);
     }
 }
 void ch_guest_write_watch_begin(ChGuestWriteWatch *w,void *p,size_t n) {visit_write(w,p,n,0);}

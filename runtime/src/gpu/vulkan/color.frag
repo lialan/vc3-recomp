@@ -1,4 +1,5 @@
 #version 450
+#extension GL_EXT_scalar_block_layout : require
 #ifdef DEPTH_QUANT_FRAGMENT
 #extension GL_GOOGLE_include_directive : require
 #include "depth_quant.glsl"
@@ -30,7 +31,7 @@ layout(constant_id=101) const uint ch_sample_types=0u;
 #define CH_NV_SHADER_GLSL 1
 #include "../nv2a_stage_fetch.h"
 CH_NV_STAGE_FETCH_FUNCTION
-layout(std430,set=0,binding=1) readonly buffer Combiner { ChRc rc; uint pad[2]; vec4 fog_color; uvec4 stage_on; } params;
+layout(std430,set=0,binding=1) uniform Combiner { ChRc rc; uint pad[2]; vec4 fog_color; uvec4 stage_on; } params;   // uniform: constant registers
 layout(set=0,binding=0) uniform sampler2D stage_images[4];
 layout(set=0,binding=2) uniform samplerCube cube_images[4];
 layout(location=2) in vec4 spec;

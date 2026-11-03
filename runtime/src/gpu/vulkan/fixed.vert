@@ -1,10 +1,13 @@
 #version 450
 #extension GL_GOOGLE_include_directive : require
+#extension GL_EXT_scalar_block_layout : require
 #define CH_NV_SHADER_GLSL 1
 #include "../nv2a_fixed_shader.h"
 #include "fixed_layout.glsl"
 #include "attribute_decode.glsl"
-layout(std430,set=0,binding=3) readonly buffer FixedParams { ChVkFixedParams p; } params;
+// A uniform block (std430: the C layout): the compiler can keep it in constant
+// registers, where a storage buffer is a memory load per vertex.
+layout(std430,set=0,binding=3) uniform FixedParams { ChVkFixedParams p; } params;
 layout(constant_id=0) const uint ff_specialized=0u;
 layout(constant_id=1) const uint ff_format_0=0u;
 layout(constant_id=2) const uint ff_format_1=0u;
