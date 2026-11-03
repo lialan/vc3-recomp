@@ -60,6 +60,8 @@ VkResult ch_vk_texture_upload_cube(VkPhysicalDevice,VkDevice,VkQueue,uint32_t fa
 VkResult ch_vk_texture_read_level_rgba(ChVkTexture *,uint32_t level,void *,VkDeviceSize);
 /* Descriptor uses SHADER_READ_ONLY_OPTIMAL, nearest filtering and clamp. */
 VkDescriptorImageInfo ch_vk_texture_descriptor(const ChVkTexture *texture);
+VkResult ch_vk_texture_borrow(VkDevice device,VkQueue queue,VkImage image,uint32_t width,uint32_t height,
+    int alpha_one,const VkSamplerCreateInfo *sampler,ChVkTexture **out);
 /* Diagnostic GPU copy, restores shader-read layout; caller excludes sampling.
  * Cube readbacks contain all six tightly packed faces in upload order. */
 VkResult ch_vk_texture_read_rgba(ChVkTexture *texture, void *rgba, VkDeviceSize bytes);

@@ -88,7 +88,7 @@ struct ChVkTarget {
     int quantized_depth,input_pass,input_depth,packed_transfer,depth_morton;
     ChVkDepthPack *depth_pack;
     ChVkImageRead *depth_read,*color_read,*paired_color_read,*depth_color_read;
-    int sampled_color_read;
+    int sampled_color_read,sampleable;
     int sampled_depth_read;
     ChVkColorPack *color_pack,*paired_color_pack;
     int specialize_fetch;
@@ -165,8 +165,16 @@ struct ChVkTarget {
     VkQueryPool draw_pool[RING_SLOTS]; uint32_t draw_n[RING_SLOTS];
     struct {uint8_t bucket;uint32_t indices;} draw_meta[RING_SLOTS][BATCH_DRAWS+2];
     int submitted_reason;
+    /* Lending (ch_vk_target_lend_texture): the target whose batch samples this
+     * image in place, and as a reader the images its batch holds. A lent
+     * image is SHADER_READ_ONLY only inside the reader's batch: the reader
+     * moves it there before its render pass and back to TRANSFER_SRC after. */
+    struct ChVkTarget *live_reader;
+    struct {struct ChVkTarget *source;int recorded;} live[8]; unsigned live_count;
+    struct {uint32_t key[12];ChVkTexture *texture;} lent[8]; unsigned lent_count;
 };
 static VkResult finish_batch_named(ChVkTarget *,int,const char *);
+static void live_release(ChVkTarget *);
 static VkResult drain_ring(ChVkTarget *);
 static VkResult wait_copy_source(ChVkTarget *);
 static VkResult retire_copy_out(ChVkTarget *);
@@ -372,6 +380,7 @@ VkResult ch_vk_target_pipeline_cache(ChVkTarget *t,VkPipelineCache cache) {
 }
 void ch_vk_target_destroy(ChVkTarget *t) {
     if(!t) return;
+    live_release(t);
     (void)wait_copy_source(t);(void)retire_copy_out(t);
     if(t->color_readback_active) (void)ch_vk_target_read_color_end(t);
     if(t->readback_active) (void)ch_vk_target_read_depth_end(t);
@@ -380,6 +389,12 @@ void ch_vk_target_destroy(ChVkTarget *t) {
     if(t->failed) vkQueueWaitIdle(t->queue);
     if(t->ring) (void)drain_ring(t);
     retire_samples(t);
+    for(unsigned i=0;i<t->live_count;i++) if(t->live[i].source->live_reader==t) t->live[i].source->live_reader=NULL;
+    t->live_count=0;
+    if(t->lent_count) {   /* readers' batches may still sample these views */
+        vkQueueWaitIdle(t->queue);
+        for(unsigned i=0;i<t->lent_count;i++) ch_vk_texture_destroy(t->lent[i].texture);
+    }
     for(unsigned i=0;i<t->pipeline_extent;i++) destroy_pipeline(t,&t->pipelines[i]);
     if(t->ring) for(unsigned i=1;i<RING_SLOTS;i++) {
         unsigned o=(t->slot+i)%RING_SLOTS;
@@ -486,16 +501,18 @@ static VkResult create_depth(VkPhysicalDevice physical,VkDevice device,VkQueue q
         .usage=VK_IMAGE_USAGE_TRANSFER_DST_BIT|VK_IMAGE_USAGE_TRANSFER_SRC_BIT|
                VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,.sharingMode=VK_SHARING_MODE_EXCLUSIVE};
     const char *direct_color=getenv("CHIHIRO_VULKAN_DIRECT_COLOR_READ");
-    if((!direct_color || atoi(direct_color)) &&
-       ((uint64_t)width*height+63)/64<=device_properties.limits.maxComputeWorkGroupCount[0]) {
+    {   /* Sampled usage: compute color reads, and other targets sampling this
+         * image in place (ch_vk_target_lend_texture). */
         VkImageFormatProperties support;
         result=vkGetPhysicalDeviceImageFormatProperties(physical,image.format,image.imageType,
             image.tiling,image.usage|VK_IMAGE_USAGE_SAMPLED_BIT,image.flags,&support);
         if(result!=VK_ERROR_FORMAT_NOT_SUPPORTED) {
             TRY(result);
-            t->sampled_color_read=width<=support.maxExtent.width && height<=support.maxExtent.height &&
+            t->sampleable=width<=support.maxExtent.width && height<=support.maxExtent.height &&
                 (support.sampleCounts&VK_SAMPLE_COUNT_1_BIT);
-            if(t->sampled_color_read) image.usage|=VK_IMAGE_USAGE_SAMPLED_BIT;
+            if(t->sampleable) image.usage|=VK_IMAGE_USAGE_SAMPLED_BIT;
+            t->sampled_color_read=t->sampleable && (!direct_color || atoi(direct_color)) &&
+                ((uint64_t)width*height+63)/64<=device_properties.limits.maxComputeWorkGroupCount[0];
         }
     }
     TRY(vkCreateImage(device,&image,NULL,&t->image));
@@ -927,13 +944,53 @@ static VkResult rotate(ChVkTarget *t) {
     for(unsigned i=0;i<t->pipeline_extent;i++) t->pipelines[i].set_used=0;
     return r;
 }
+static void live_barrier(VkCommandBuffer command,const ChVkTarget *source,int acquire) {
+    VkImageMemoryBarrier b={.sType=VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+        .srcAccessMask=acquire?VK_ACCESS_TRANSFER_READ_BIT|VK_ACCESS_TRANSFER_WRITE_BIT|VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT:0,
+        .dstAccessMask=acquire?VK_ACCESS_SHADER_READ_BIT:VK_ACCESS_TRANSFER_READ_BIT,
+        .oldLayout=acquire?VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL:VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+        .newLayout=acquire?VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL:VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+        .srcQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED,.dstQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED,
+        .image=source->image,.subresourceRange={VK_IMAGE_ASPECT_COLOR_BIT,0,1,0,1}};
+    vkCmdPipelineBarrier(command,
+        acquire?VK_PIPELINE_STAGE_TRANSFER_BIT|VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT:VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+        acquire?VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT:VK_PIPELINE_STAGE_TRANSFER_BIT|VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+        0,0,NULL,0,NULL,1,&b);
+}
+static void live_forget(ChVkTarget *reader,const ChVkTarget *source) {
+    for(unsigned i=0;i<reader->live_count;i++) if(reader->live[i].source==source) {
+        reader->live[i]=reader->live[--reader->live_count];return;
+    }
+}
+/* Anything about to touch a lent image first sends the reader's batch to the
+ * queue: its samples precede the touch, and its finish hands the image back. */
+static void live_release(ChVkTarget *source) {
+    ChVkTarget *reader=source->live_reader;
+    if(!reader) return;
+    for(unsigned i=0;i<reader->live_count;i++) if(reader->live[i].source==source && !reader->live[i].recorded) {
+        reader->live[i]=reader->live[--reader->live_count];source->live_reader=NULL;return;
+    }
+    (void)ch_vk_target_submit(reader);
+    /* No batch was recorded after all: the barrier never reached the queue. */
+    if(source->live_reader==reader) {live_forget(reader,source);source->live_reader=NULL;}
+}
 static VkResult finish_batch_with_copy(ChVkTarget *t,int readback,const char *caller,ChVkTarget *depth_destination,ChVkTexture *texture_destination,int defer_wait) {
     if(!t || t->failed) return VK_ERROR_INITIALIZATION_FAILED;
     VkResult result;
+    live_release(t);
     if(t->submitted) return retire_batch(t);
     if(!t->pending) {TRY(drain_ring(t));TRY(wait_copy_source(t));return wait_upload(t);}
     uint64_t finish_start=t->timing?time_ns():0;
     vkCmdEndRenderPass(t->command);
+    {   /* Hand lent images back once this batch's samples are recorded. */
+        unsigned kept=0;
+        for(unsigned i=0;i<t->live_count;i++) {
+            if(!t->live[i].recorded) {t->live[kept++]=t->live[i];continue;}
+            live_barrier(t->command,t->live[i].source,0);
+            if(t->live[i].source->live_reader==t) t->live[i].source->live_reader=NULL;
+        }
+        t->live_count=kept;
+    }
     if(t->timing) {vkCmdWriteTimestamp(t->command,VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,t->timing,2);t->tail_stamped=1;}
     VkImageMemoryBarrier barrier={.sType=VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
         .srcAccessMask=VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,.dstAccessMask=VK_ACCESS_TRANSFER_READ_BIT,
@@ -1055,11 +1112,20 @@ static VkResult begin_batch(ChVkTarget *t) {
     VkResult result;
     TRY(retire_copy_out(t));
     if(!t->pending) {
+        live_release(t);   /* new writes: a reader's samples go first */
+        for(unsigned i=0;i<t->live_count;) {   /* recorded into a batch that never reached the queue */
+            if(!t->live[i].recorded) {i++;continue;}
+            if(t->live[i].source->live_reader==t) t->live[i].source->live_reader=NULL;
+            t->live[i]=t->live[--t->live_count];
+        }
         t->recorded_pipeline=VK_NULL_HANDLE;t->recorded_push_layout=VK_NULL_HANDLE;t->recorded_blend_valid=0;t->recorded_stencil_valid=0;
         TRY(vkResetCommandBuffer(t->command,0));TRY(vkResetFences(t->device,1,&t->fence));
         VkCommandBufferBeginInfo begin={.sType=VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,.flags=VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT};
         TRY(vkBeginCommandBuffer(t->command,&begin));
         color_staging_reuse(t);
+        for(unsigned i=0;i<t->live_count;i++) if(!t->live[i].recorded) {
+            live_barrier(t->command,t->live[i].source,1);t->live[i].recorded=1;
+        }
         if(t->timing) {
             vkCmdResetQueryPool(t->command,t->timing,0,3);t->tail_stamped=0;
             vkCmdWriteTimestamp(t->command,VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,t->timing,0);
@@ -1382,6 +1448,34 @@ VkResult ch_vk_target_snapshot_texture(ChVkTarget *t,uint32_t levels,ChVkTexture
     if(result!=VK_SUCCESS) return result;
     if(t->layout!=VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL) return VK_ERROR_INITIALIZATION_FAILED;
     return ch_vk_texture_copy_image(t->physical,t->device,t->queue,t->family,t->width,t->height,t->image,levels,out);
+}
+VkResult ch_vk_target_lend_texture(ChVkTarget *t,ChVkTarget *reader,int alpha_one,
+    const VkSamplerCreateInfo *s,ChVkTexture **out) {
+    if(!t || !reader || !s || !out || t==reader || t->failed || reader->failed || !t->initialized ||
+       !t->sampleable || t->device!=reader->device || t->queue!=reader->queue) return VK_NOT_READY;
+    uint32_t key[12]={(uint32_t)alpha_one,s->magFilter,s->minFilter,s->mipmapMode,s->addressModeU,s->addressModeV,
+        s->addressModeW,s->borderColor,s->unnormalizedCoordinates,s->compareEnable,s->anisotropyEnable,0};
+    memcpy(&key[11],&s->maxLod,sizeof key[11]);
+    ChVkTexture *texture=NULL;
+    for(unsigned i=0;i<t->lent_count;i++) if(!memcmp(t->lent[i].key,key,sizeof key)) {texture=t->lent[i].texture;break;}
+    if(!texture) {
+        if(t->lent_count==sizeof t->lent/sizeof t->lent[0]) return VK_NOT_READY;
+        VkResult r=ch_vk_texture_borrow(t->device,t->queue,t->image,t->width,t->height,alpha_one,s,&texture);
+        if(r!=VK_SUCCESS) return r;
+        memcpy(t->lent[t->lent_count].key,key,sizeof key);t->lent[t->lent_count++].texture=texture;
+    }
+    if(t->live_reader!=reader) {
+        if(reader->live_count==sizeof reader->live/sizeof reader->live[0]) return VK_NOT_READY;
+        live_release(t);
+        VkResult r=retire_copy_out(t);if(r!=VK_SUCCESS) return r;
+        r=ch_vk_target_submit(t);if(r!=VK_SUCCESS) return r;   /* the image's writes reach the queue first */
+        if(t->layout!=VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL) return VK_NOT_READY;
+        /* The acquire barrier goes before the reader's next render pass. */
+        if(reader->pending) {r=ch_vk_target_submit(reader);if(r!=VK_SUCCESS) return r;}
+        reader->live[reader->live_count].source=t;reader->live[reader->live_count++].recorded=0;
+        t->live_reader=reader;
+    }
+    *out=texture;return VK_SUCCESS;
 }
 VkResult ch_vk_target_refresh_texture(ChVkTarget *t,ChVkTexture *texture) {
     if(!t || t->failed || !t->initialized) return VK_ERROR_INITIALIZATION_FAILED;
@@ -1940,6 +2034,7 @@ VkResult ch_vk_target_record_copy_to_buffer(ChVkTarget *t,VkCommandBuffer comman
         return VK_ERROR_INITIALIZATION_FAILED;
     /* This target's recorded work goes to the queue first, without a wait;
      * the copy is ordered after it on the same queue by the barrier. */
+    live_release(t);
     VkResult r=ch_vk_target_submit(t);
     if(r!=VK_SUCCESS) return r;
     if(t->layout!=VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL) return VK_ERROR_FEATURE_NOT_PRESENT;

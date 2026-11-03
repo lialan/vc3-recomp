@@ -15,6 +15,7 @@ struct ChVkTexture {
     VkDeviceSize staging_bytes;
     ChVkTextureDecode *decoder;
     uint32_t decode_max_bytes,decode_max_groups[2];
+    int borrowed; /* image owned elsewhere (ch_vk_texture_borrow) */
 };
 #define TRY(x) do { result=(x); if(result!=VK_SUCCESS) goto fail; } while(0)
 static int memory_type(VkPhysicalDevice gpu,uint32_t bits,VkMemoryPropertyFlags flags,uint32_t *out) {
@@ -39,7 +40,7 @@ void ch_vk_texture_destroy(ChVkTexture *t) {
     if(t->pool) vkDestroyCommandPool(t->device,t->pool,NULL);
     if(t->sampler) vkDestroySampler(t->device,t->sampler,NULL);
     if(t->view) vkDestroyImageView(t->device,t->view,NULL);
-    if(t->image) vkDestroyImage(t->device,t->image,NULL);
+    if(t->image && !t->borrowed) vkDestroyImage(t->device,t->image,NULL);
     if(t->image_memory) vkFreeMemory(t->device,t->image_memory,NULL);
     ch_vk_texture_decode_destroy(t->decoder);
     if(t->staging) vkDestroyBuffer(t->device,t->staging,NULL);
@@ -324,6 +325,25 @@ VkResult ch_vk_texture_copy_image(VkPhysicalDevice gpu,VkDevice device,VkQueue q
     ChVkTexture *t=NULL;
     VkResult r=allocate_texture(gpu,device,queue,family,width,height,levels,1,&t);
     if(r==VK_SUCCESS) r=ch_vk_texture_copy_from_image(t,device,source,width,height);
+    if(r!=VK_SUCCESS) {ch_vk_texture_destroy(t);return r;}
+    *out=t;return VK_SUCCESS;
+}
+/* A view and sampler of an image owned elsewhere (a render target sampled
+ * in place). Destroying it leaves the image alone. */
+VkResult ch_vk_texture_borrow(VkDevice device,VkQueue queue,VkImage image,uint32_t width,uint32_t height,
+    int alpha_one,const VkSamplerCreateInfo *sampler,ChVkTexture **out) {
+    if(!device || !image || !sampler || !out || !width || !height) return VK_ERROR_INITIALIZATION_FAILED;
+    ChVkTexture *t=calloc(1,sizeof *t);
+    if(!t) return VK_ERROR_OUT_OF_HOST_MEMORY;
+    t->device=device;t->queue=queue;t->image=image;t->borrowed=1;
+    t->width=width;t->height=height;t->levels=1;t->layers=1;t->bytes=(VkDeviceSize)width*height*4;
+    VkImageViewCreateInfo info={.sType=VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,.image=image,
+        .viewType=VK_IMAGE_VIEW_TYPE_2D,.format=VK_FORMAT_R8G8B8A8_UNORM,
+        .components={VK_COMPONENT_SWIZZLE_IDENTITY,VK_COMPONENT_SWIZZLE_IDENTITY,VK_COMPONENT_SWIZZLE_IDENTITY,
+            alpha_one?VK_COMPONENT_SWIZZLE_ONE:VK_COMPONENT_SWIZZLE_IDENTITY},
+        .subresourceRange={VK_IMAGE_ASPECT_COLOR_BIT,0,1,0,1}};
+    VkResult r=vkCreateImageView(device,&info,NULL,&t->view);
+    if(r==VK_SUCCESS) r=vkCreateSampler(device,sampler,NULL,&t->sampler);
     if(r!=VK_SUCCESS) {ch_vk_texture_destroy(t);return r;}
     *out=t;return VK_SUCCESS;
 }

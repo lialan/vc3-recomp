@@ -1,4 +1,5 @@
 #include "vk_immersive.h"
+#include "vk_state.h"
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -51,13 +52,25 @@ static struct ImmSurface *eye_source(ChVkImmersive *m,const Nv2aTexture *tx) {
 }
 /* A flat draw sampling a surface that has eyes samples its eyes (each eye
  * its half: imm_sbs); everything else resolves as for the guest. */
-struct ImmResolve { ChVkImmersive *m; ChVkSampleResolver next; void *context; };
+struct ImmResolve { ChVkImmersive *m; ChVkSampleResolver next; void *context; ChVkTarget *reader; };
+/* A lent image lives as long as its target: nothing to release, but a lease
+ * with a release keeps the draw asynchronous. */
+static void lend_release(void *context,ChVkTexture *image) {(void)context;(void)image;}
 static VkResult imm_resolve(void *context,const Nv2aTexture *tx,ChVkSampleImage *out) {
     struct ImmResolve *c=context;
     struct ImmSurface *f=c->m->config.textures?eye_source(c->m,tx):NULL;
     if(f) {
         Nv2aTexture key=*tx;ch_vk_target_size(f->eyes,&key.width,&key.height);
         key.pitch=key.width*4;
+        static int lend=-1;
+        if(lend<0) {const char *e=getenv("CHIHIRO_VULKAN_IMMERSIVE_LEND");lend=!e || atoi(e)!=0;}
+        if(lend && c->reader) {   /* in place: no copy of the eye image */
+            VkSamplerCreateInfo sampler;ChVkTexture *image=NULL;
+            VkResult r=ch_vk_sampler_state(&key,&sampler);
+            if(r==VK_SUCCESS) r=ch_vk_target_lend_texture(f->eyes,c->reader,tx->color==0x1e || tx->color==0x07,&sampler,&image);
+            if(r==VK_SUCCESS) {*out=(ChVkSampleImage){.width=key.width,.height=key.height,.gpu=image,.release=lend_release};return VK_SUCCESS;}
+            if(r!=VK_NOT_READY) return r;
+        }
         VkResult r=ch_vk_texture_cache_resolve_target(c->m->config.textures,&key,f->eyes,f->serial,out);
         if(r!=VK_NOT_READY) return r;
     }
@@ -319,7 +332,7 @@ VkResult ch_vk_immersive_draw(ChVkImmersive *m,const Nv2aSurface *s,const Nv2aBa
             ok?e.x0:-1,ok?e.x1:-1,ok?e.y0:-1,ok?e.y1:-1,ok?e.u0:-1,ok?e.u1:-1,ok?e.v0:-1,ok?e.v1:-1,imm.sbs);
     }
     f->drawn++;f->serial++;
-    struct ImmResolve chain={m,resolve,context};
+    struct ImmResolve chain={m,resolve,context,f->eyes};
     return ch_vk_nv2a_draw_immersive_read(f->eyes,s,&copy,fixed,&imm,m->config.decode,imm_resolve,&chain,
         f->pixels,f->pixels_bytes);
 }
@@ -354,7 +367,7 @@ int ch_vk_immersive_guest_draw(ChVkImmersive *m,ChVkTarget *t,const Nv2aSurface 
     if(b->texture && eye_source(m,b->texture)) imm.sbs|=16;
     for(unsigned i=0;i<4;i++) if(b->stage[i] && eye_source(m,b->stage[i])) imm.sbs|=1u<<i;
     if(!imm.sbs) return 0;
-    struct ImmResolve chain={m,resolve,context};
+    struct ImmResolve chain={m,resolve,context,t};
     *result=ch_vk_nv2a_draw_immersive_read(t,s,b,fixed,&imm,m->config.decode,imm_resolve,&chain,pixels,bytes);
     m->guest_eye_samples++;
     return 1;

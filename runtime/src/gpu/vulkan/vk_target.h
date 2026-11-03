@@ -8,6 +8,11 @@
 #include "vk_texture.h"
 #include "vk_fixed.h"
 typedef struct ChVkTarget ChVkTarget;
+/* Samples t's color image in place from reader's draws (no copy): reader's
+ * batch holds it until reader's next submission, and anything touching t
+ * first submits reader. VK_NOT_READY when it cannot; the caller copies. */
+VkResult ch_vk_target_lend_texture(ChVkTarget *t,ChVkTarget *reader,int alpha_one,
+    const VkSamplerCreateInfo *sampler,ChVkTexture **out);
 /* Exact D32 -> guest Z24 -> D32 GPU round-trip, preserving stencil.
  * Synchronous validation entry point; does not enable resident rendering. */
 VkResult ch_vk_target_quantize_depth(ChVkTarget *);
