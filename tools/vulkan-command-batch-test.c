@@ -102,8 +102,8 @@ int ch_test_command_batches(VkPhysicalDevice gpu,VkDevice device,VkQueue queue,u
         REQUIRE(ch_vk_target_draw_state_read(t,NULL,v,4,indices,6,&opaque,pixels,sizeof pixels)==VK_SUCCESS);
         REQUIRE(ch_vk_target_read_color(t,pixels,sizeof pixels)==VK_SUCCESS);
         for(unsigned i=0;i<sizeof pixels;i++) REQUIRE(pixels[i]==((i%4==0 || i%4==3)?255:0));
-        /* The batch ring's second slot owns its own geometry arena. */
-        ch_vk_target_resource_stats(t,&stats);REQUIRE(stats.geometry_allocations==2 || stats.geometry_allocations==3);
+        /* Each batch-ring slot owns its own geometry arena (four slots). */
+        ch_vk_target_resource_stats(t,&stats);REQUIRE(stats.geometry_allocations>=2 && stats.geometry_allocations<=5);
         for(unsigned k=0;k<4;k++) for(unsigned c=0;c<4;c++) v[k].rgba[c]=1;
         /* More states than the LRU capacity must finish before eviction. */
         static const uint32_t sources[]={0,1,0x300,0x301,0x302};

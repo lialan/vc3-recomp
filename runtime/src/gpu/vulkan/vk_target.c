@@ -38,6 +38,7 @@ _Static_assert(offsetof(PipelineKey,vertex_fetch_specialized)==offsetof(Pipeline
 /* Bound descriptor/snapshot lifetimes without forcing a wait every 64 draws.
  * Queries, guest publication, resource pressure and target changes still finish. */
 #define BATCH_DRAWS CH_VK_MAX_BATCH_DRAWS
+#define RING_SLOTS 4
 typedef struct {ChVkTexture *image;void (*release)(void *,ChVkTexture *);void *context;int owned;} Retired;
 typedef struct {
     PipelineKey key;
@@ -45,8 +46,8 @@ typedef struct {
     VkDescriptorSetLayout descriptor_layout;
     VkDescriptorPool descriptor_pool;
     /* One bank per batch slot: an in-flight batch keeps its sets. */
-    VkDescriptorSet descriptor_set,sets[2][BATCH_DRAWS];
-    uint32_t set_count[2],set_used;
+    VkDescriptorSet descriptor_set,sets[RING_SLOTS][BATCH_DRAWS];
+    uint32_t set_count[RING_SLOTS],set_used;
     VkPipelineLayout pipeline_layout;
     VkPipeline pipeline;
     int has_descriptors;
@@ -155,7 +156,7 @@ struct ChVkTarget {
         VkDeviceSize geometry_capacity;int geometry_coherent;
         Retired *retired;uint32_t retired_count;
         int inflight,reason,tail_stamped;uint64_t finish_start;
-    } slots[2];
+    } slots[RING_SLOTS];
     int initialized;
     int failed;
     struct { const char *caller; int readback; uint64_t count,wait_ns,gpu_ns,tail_ns; } finish_reasons[32];
@@ -377,14 +378,14 @@ void ch_vk_target_destroy(ChVkTarget *t) {
     if(t->ring) (void)drain_ring(t);
     retire_samples(t);
     for(unsigned i=0;i<t->pipeline_extent;i++) destroy_pipeline(t,&t->pipelines[i]);
-    if(t->ring) {
-        unsigned o=t->slot^1u;
+    if(t->ring) for(unsigned i=1;i<RING_SLOTS;i++) {
+        unsigned o=(t->slot+i)%RING_SLOTS;
         if(t->slots[o].geometry) vkDestroyBuffer(t->device,t->slots[o].geometry,NULL);
         if(t->slots[o].geometry_memory) vkFreeMemory(t->device,t->slots[o].geometry_memory,NULL);
         if(t->slots[o].timing) vkDestroyQueryPool(t->device,t->slots[o].timing,NULL);
         if(t->slots[o].fence) vkDestroyFence(t->device,t->slots[o].fence,NULL);
     }
-    free(t->slots[0].retired);free(t->slots[1].retired);
+    for(unsigned k=0;k<RING_SLOTS;k++) free(t->slots[k].retired);
     if(t->pipeline_cache && !t->borrowed_pipeline_cache) vkDestroyPipelineCache(t->device,t->pipeline_cache,NULL);
     destroy_geometry(t);
     if(t->framebuffer) vkDestroyFramebuffer(t->device,t->framebuffer,NULL);
@@ -562,10 +563,12 @@ static VkResult create_depth(VkPhysicalDevice physical,VkDevice device,VkQueue q
     t->slots[0].retired=t->retired=calloc(BATCH_DRAWS*5,sizeof *t->retired);
     if(!t->retired) {result=VK_ERROR_OUT_OF_HOST_MEMORY;goto fail;}
     if(t->ring) {
-        t->slots[1].retired=calloc(BATCH_DRAWS*5,sizeof *t->retired);
-        if(!t->slots[1].retired) {result=VK_ERROR_OUT_OF_HOST_MEMORY;goto fail;}
-        TRY(vkAllocateCommandBuffers(device,&cmd,&t->slots[1].command));
-        TRY(vkCreateFence(device,&fence,NULL,&t->slots[1].fence));
+        for(unsigned k=1;k<RING_SLOTS;k++) {
+            t->slots[k].retired=calloc(BATCH_DRAWS*5,sizeof *t->retired);
+            if(!t->slots[k].retired) {result=VK_ERROR_OUT_OF_HOST_MEMORY;goto fail;}
+            TRY(vkAllocateCommandBuffers(device,&cmd,&t->slots[k].command));
+            TRY(vkCreateFence(device,&fence,NULL,&t->slots[k].fence));
+        }
     }
     const char *profile=getenv("CHIHIRO_VULKAN_PROFILE");
     const char *timestamps=getenv("CHIHIRO_VULKAN_GPU_TIMESTAMPS");
@@ -582,7 +585,7 @@ static VkResult create_depth(VkPhysicalDevice physical,VkDevice device,VkQueue q
             VkQueryPoolCreateInfo timing={.sType=VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO,
                 .queryType=VK_QUERY_TYPE_TIMESTAMP,.queryCount=3};
             TRY(vkCreateQueryPool(device,&timing,NULL,&t->timing));
-            if(t->ring) TRY(vkCreateQueryPool(device,&timing,NULL,&t->slots[1].timing));
+            if(t->ring) for(unsigned k=1;k<RING_SLOTS;k++) TRY(vkCreateQueryPool(device,&timing,NULL,&t->slots[k].timing));
         }
     }
     *out=t; return VK_SUCCESS;
@@ -854,12 +857,16 @@ fail:
     retire_retired(t->slots[k].retired,&t->slots[k].retired_count);return result;
 }
 static VkResult drain_ring(ChVkTarget *t) {
-    return t->ring?retire_slot(t,t->slot^1u):VK_SUCCESS;
+    /* Oldest first: the slot after the recording one was submitted first. */
+    if(t->ring) for(unsigned i=1;i<RING_SLOTS;i++) {
+        VkResult r=retire_slot(t,(t->slot+i)%RING_SLOTS);if(r!=VK_SUCCESS) return r;
+    }
+    return VK_SUCCESS;
 }
 /* The just-submitted batch moves to its slot; recording continues in the
  * other one once that slot's earlier batch has completed. */
 static VkResult rotate(ChVkTarget *t) {
-    unsigned k=t->slot,n=k^1u;
+    unsigned k=t->slot,n=(k+1)%RING_SLOTS;
     t->slots[k].command=t->command;t->slots[k].fence=t->fence;t->slots[k].timing=t->timing;
     t->slots[k].geometry=t->geometry;t->slots[k].geometry_memory=t->geometry_memory;t->slots[k].geometry_map=t->geometry_map;
     t->slots[k].geometry_capacity=t->geometry_capacity;t->slots[k].geometry_coherent=t->geometry_coherent;
@@ -1506,7 +1513,7 @@ static VkResult create_pipeline(ChVkTarget *t, const VkPipelineColorBlendAttachm
         VkDescriptorPoolSize sizes[2];n=0;
         if(images) sizes[n++]=(VkDescriptorPoolSize){VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,images};
         if(buffers) sizes[n++]=(VkDescriptorPoolSize){VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,buffers};
-        uint32_t banks=t->ring?2:1;
+        uint32_t banks=t->ring?RING_SLOTS:1;
         for(unsigned i=0;i<n;i++) sizes[i].descriptorCount*=(t->batch_enabled?t->batch_limit:1)*banks;
         VkDescriptorPoolCreateInfo pool={.sType=VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,.maxSets=(t->batch_enabled?t->batch_limit:1)*banks,.poolSizeCount=n,.pPoolSizes=sizes};
         TRY(vkCreateDescriptorPool(t->device,&pool,NULL,&t->active_pipeline->descriptor_pool));
@@ -1514,7 +1521,8 @@ static VkResult create_pipeline(ChVkTarget *t, const VkPipelineColorBlendAttachm
             .descriptorPool=t->active_pipeline->descriptor_pool,.descriptorSetCount=1,.pSetLayouts=&t->active_pipeline->descriptor_layout};
         TRY(vkAllocateDescriptorSets(t->device,&alloc,&t->active_pipeline->descriptor_set));
         t->active_pipeline->sets[t->slot][0]=t->active_pipeline->descriptor_set;
-        t->active_pipeline->set_count[t->slot]=1;t->active_pipeline->set_count[t->slot^1u]=0;
+        for(unsigned k=0;k<RING_SLOTS;k++) t->active_pipeline->set_count[k]=0;
+        t->active_pipeline->set_count[t->slot]=1;
         layout.setLayoutCount=1;layout.pSetLayouts=&t->active_pipeline->descriptor_layout;
     }
     TRY(vkCreatePipelineLayout(t->device,&layout,NULL,&t->active_pipeline->pipeline_layout));
@@ -1865,7 +1873,11 @@ VkResult ch_vk_target_draw_texture_read(ChVkTarget *t, const float rgba[4],
 }
 
 VkDevice ch_vk_target_device(const ChVkTarget *t) { return t?t->device:VK_NULL_HANDLE; }
-VkFence ch_vk_target_completion_fence(const ChVkTarget *t) { return t && !t->pending && !t->copy_source && !(t->ring && t->slots[t->slot^1u].inflight)?(t->upload_pending?t->upload_fence:t->fence):VK_NULL_HANDLE; }
+static int ring_inflight(const ChVkTarget *t) {
+    if(t->ring) for(unsigned k=0;k<RING_SLOTS;k++) if(t->slots[k].inflight) return 1;
+    return 0;
+}
+VkFence ch_vk_target_completion_fence(const ChVkTarget *t) { return t && !t->pending && !t->copy_source && !ring_inflight(t)?(t->upload_pending?t->upload_fence:t->fence):VK_NULL_HANDLE; }
 VkResult ch_vk_target_export_image(ChVkTarget *t,VkImage destination,void *verify,VkDeviceSize bytes) {
     if(!t || t->failed || !t->initialized || !destination || destination==t->image ||
         (verify && bytes<t->bytes)) return VK_ERROR_INITIALIZATION_FAILED;
