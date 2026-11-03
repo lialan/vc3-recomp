@@ -200,6 +200,25 @@ static VkResult store_surface_color(struct Surface *f,const void *pixels) {
         memcpy(dst+(size_t)y*f->guest.pitch,(const unsigned char *)pixels+(size_t)y*f->guest.width*4,(size_t)f->guest.width*4);
     return VK_SUCCESS;
 }
+/* A pitch narrower than the width (VC3's attract sets a 640x480 clip on a
+ * 1024-byte pitch): the GL renderer draws such a surface pitch/bpp pixels
+ * wide, the rest clipped; so is it here, for every use of the surface. */
+static const Nv2aSurface *narrow_surface(const Nv2aSurface *s,const Nv2aRenderState *rs,Nv2aSurface *copy) {
+    ChVkGuestLayout layout;
+    if(!s || !rs || !s->bytes_per_pixel || s->pitch<s->bytes_per_pixel || s->pitch/s->bytes_per_pixel>=s->width ||
+       ch_vk_guest_layout(rs->surface_format,s->width,s->height,s->pitch,s->bytes_per_pixel,&layout)==VK_SUCCESS) return s;
+    *copy=*s;copy->width=s->pitch/s->bytes_per_pixel;
+    /* The clip's height is stale too: the surface ends where its depth
+     * buffer begins (VC3: 256 rows of 1024 bytes, then the depth). */
+    if(rs->zeta_va>s->color_va && rs->zeta_va<s->color_va+(uint64_t)s->pitch*s->height &&
+       (rs->zeta_va-s->color_va)/s->pitch>0)
+        copy->height=(uint32_t)((rs->zeta_va-s->color_va)/s->pitch);
+    if(ch_vk_guest_layout(rs->surface_format,copy->width,copy->height,copy->pitch,copy->bytes_per_pixel,&layout)!=VK_SUCCESS) return s;
+    static unsigned logged;
+    if(logged++<4) fprintf(stderr,"[Vulkan] surface %08X %ux%u pitch %u: drawn %ux%u, up to its pitch and depth\n",
+        s->color_va,s->width,s->height,s->pitch,copy->width,copy->height);
+    return copy;
+}
 static struct Surface *surface(const Nv2aSurface *s,const Nv2aRenderState *rs) {
     if(!active || !s || !rs) fatal(VK_ERROR_INITIALIZATION_FAILED,"surface arguments");
     ChVkGuestLayout layout;
@@ -581,8 +600,12 @@ static void import_depth(struct Surface *f,int overwrite) {
         for(unsigned i=0;i<active->count;i++) {
             struct Surface *c=&active->surfaces[i];const ChVkGuestLayout color_layout=c->layout;
             if((uint64_t)c->guest.color_va<f->state.zeta_va+depth_layout.span &&
-               (uint64_t)f->state.zeta_va<c->guest.color_va+color_layout.span)
+               (uint64_t)f->state.zeta_va<c->guest.color_va+color_layout.span) {
+                fprintf(stderr,"[Vulkan] depth %08X (+%llu, pitch %u) of surface %08X %ux%u overlaps color %08X %ux%u pitch %u\n",
+                    f->state.zeta_va,(unsigned long long)depth_layout.span,f->state.zeta_pitch,
+                    f->guest.color_va,f->guest.width,f->guest.height,c->guest.color_va,c->guest.width,c->guest.height,c->guest.pitch);
                 fatal(VK_ERROR_FEATURE_NOT_PRESENT,"color/depth storage alias");
+            }
         }
         if((f->native_z24 || f->quantized_z24) && format==2) {
             r=overwrite?ch_vk_depth_resident_bind_clear(active->zeta,f->target,&f->guest,&f->state):
@@ -601,6 +624,7 @@ static void import_depth(struct Surface *f,int overwrite) {
     if(r!=VK_SUCCESS) fatal(r,"guest depth import");
 }
 static void clear(const Nv2aSurface *s,const Nv2aRenderState *rs,uint32_t flags,uint32_t argb,uint32_t zs) {
+    Nv2aSurface narrowed;s=narrow_surface(s,rs,&narrowed);
     configure_render_thread();
     uint64_t cpu=active->costs.enabled?thread_cpu_ns():0;
     uint64_t start=active->costs.enabled?now_us():0;
@@ -620,6 +644,7 @@ static void clear(const Nv2aSurface *s,const Nv2aRenderState *rs,uint32_t flags,
     if(active->costs.enabled) {active->costs.clear_us+=now_us()-start;active->costs.clear_cpu_ns+=thread_cpu_ns()-cpu;}
 }
 static void draw_batch(const Nv2aSurface *s,const Nv2aBatch *b,const ChVkFixedGeometry *fixed) {
+    Nv2aSurface narrowed;if(b) s=narrow_surface(s,b->state,&narrowed);
     configure_render_thread();
     if(!b || !s) fatal(VK_ERROR_INITIALIZATION_FAILED,"batch arguments");
     /* An empty guest clip cannot rasterize fragments. Reset-state draws may
