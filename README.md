@@ -3,13 +3,44 @@
 Native port of *Virtua Cop 3* (Sega Chihiro) by static recompilation with
 [xboxrecomp](https://github.com/sp00nznet/xboxrecomp). It runs flat on macOS
 and Linux, and in VR on the Steam Frame (SteamVR/OpenXR, Vulkan, the game's 3D
-re-rendered per eye) and the Quest. No game data is included: you need your own
-Chihiro dump containing a decrypted `vc3.xbe` and `media/`.
+re-rendered per eye) and the Quest. Nothing from the game is in this
+repository: you supply your own copy (see [Game files](#game-files)).
 
 The toolkit submodule is the `vc3` branch of the fork
 [lialan/xboxrecomp](https://github.com/lialan/xboxrecomp/tree/vc3).
 See [steamframe/README.md](steamframe/README.md) for building and running on the
 Steam Frame, and [docs/PLAN.md](docs/PLAN.md) for status and roadmap.
+
+## Game files
+
+No game files are in this repository, and none may be committed: not
+`vc3.xbe` or `media/`, and nothing made from them either (lifted code,
+screenshots, pipeline caches or recipes). `.gitignore` blocks them. Builds
+and releases contain no game data; you supply your own copy:
+
+1. From your own Virtua Cop 3 Chihiro disc dump, copy the decrypted
+   `vc3.xbe` and the whole `media/` folder into one folder:
+
+   ```text
+   vc3-game/
+     vc3.xbe
+     media/
+   ```
+
+   The lifted code is made for one build of the game (Chihiro, XDK 5028,
+   2003-02-26): `scripts/lift.sh` checks the XBE's SHA-256 against
+   `games/vc3/game.conf` and refuses any other.
+2. Tell each tool where that folder is:
+   - lifting and the Mac build: `VC3_GAME_DIR=/path/to/vc3-game` (or pass the
+     path: `build/vc3 /path/to/vc3-game`); the Mac app asks once and
+     remembers it;
+   - Steam Frame: copy it to `~/work/vc3-game` on the Frame, e.g.
+     `rsync -a /path/to/vc3-game/ steamos@<frame-address>:work/vc3-game/`
+     (see [steamframe/README.md](steamframe/README.md));
+   - Quest: `quest/install.sh /path/to/vc3-game` copies it to
+     `/sdcard/VirtuaCop3`.
+
+## Setup
 
 ```bash
 git clone --recursive https://github.com/lialan/vc3-recomp.git

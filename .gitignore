@@ -76,3 +76,14 @@ quest/playrec-out/
 
 # PGO profiles (quest/pgo-profile.sh)
 quest/*.profdata
+
+# Made from the game's data, so never committed either: the game folder,
+# pipeline caches and recipes (compiled from its shaders), and screenshots
+# or frame dumps (its images). Each user makes their own.
+media/
+vc3-game/
+*.cache
+*.recipes
+validation/**/*.png
+validation/**/*.ppm
+validation/**/*.raw

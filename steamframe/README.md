@@ -26,8 +26,18 @@ HOTD4 Frame package) and ship both in `lib/` beside the game.
 
 `~/Games/VC3/`: `vc3` (VR), `vc3-flat`, `lib/`, `launch.sh` (VR) and
 `launch-flat.sh` from this folder. Add `launch.sh` to Steam as a non-Steam
-game. The game folder (`vc3.xbe`, `media/`) is `~/work/vc3-game` unless
-`game-dir.txt` names another; `env.txt` holds extra options.
+game. `env.txt` holds extra options.
+
+Game files: copy your own game folder (`vc3.xbe` and `media/`, see the main
+README's "Game files") to the Frame; none is in this repository. With ssh
+enabled on the Frame, from the computer that has it:
+
+```sh
+rsync -a /path/to/vc3-game/ steamos@<frame-address>:work/vc3-game/
+```
+
+The launchers look in `~/work/vc3-game` unless `~/Games/VC3/game-dir.txt`
+holds another path, and stop with "no vc3.xbe in ..." if it is missing.
 
 ## What the Frame needs
 
@@ -94,10 +104,15 @@ record only) build every recorded one into the pipeline cache while the game
 boots (~19 s to attract mode), so play finds them compiled (~1 ms each).
 Measured cold (no driver shader cache): 217 in-game compiles, 17 frames off
 their vblank -> 184 recipes precompiled in 10.6 s, in-game builds 3 ms at
-most, no frame off its vblank. `pipelines.recipes` beside the game (from
-long scripted runs: combat, E.S., death, continue, game over, name entry,
-the attract demos) is added to the save's once per seed by the launchers;
-what play adds on top is precompiled from the next start. The log line
+most, no frame off its vblank. Recipes describe the game's own shaders, so
+none is in the repository: the first time you reach a scene it can stutter
+once, and from the next start it is precompiled. To record ahead of play,
+run long scripted routes with `bench.sh` (combat, E.S., death, continue,
+game over, name entry, the attract demos) and copy the run's
+`/tmp/vc3b/<label>/save/vulkan-pipelines.recipes` to
+`~/Games/VC3/pipelines.recipes`: the
+launchers add a `pipelines.recipes` beside the game to the save's once per
+seed. The log line
 `[Vulkan pipelines] precompiled N of N recipes in X ms` reports it.
 
 ## Performance defaults and switches (`env.txt`)

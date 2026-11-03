@@ -58,7 +58,9 @@ PIPELINE_ARGS=("-DCHIHIRO_VULKAN_PIPELINE_CACHE_VENDOR=0x5143")
 if [ "${CHIHIRO_VULKAN_PIPELINE_CACHE_SEEDS+x}" = x ]; then
     PIPELINE_ARGS+=("-DCHIHIRO_VULKAN_PIPELINE_CACHE_SEEDS=$CHIHIRO_VULKAN_PIPELINE_CACHE_SEEDS")
 else
-    # Per-game Quest3 training artifacts; multiple driver UUIDs may coexist.
+    # Per-game Quest3 training artifacts you made on your own Quest; multiple
+    # driver UUIDs may coexist. They are compiled from the game's shaders, so
+    # they stay out of git (see games/vc3/pipeline-cache/quest3/README.md).
     PACKAGED_SEEDS=""
     for seed in "$ROOT/games/$GAME/pipeline-cache/quest3/"*.cache; do
         [ -f "$seed" ] || continue
@@ -66,8 +68,12 @@ else
     done
     PIPELINE_ARGS+=("-DCHIHIRO_VULKAN_PIPELINE_CACHE_SEEDS=$PACKAGED_SEEDS")
 fi
-# Vulkan release packages require a seed; OFF is an explicit training build.
-PIPELINE_ARGS+=("-DCHIHIRO_VULKAN_REQUIRE_PIPELINE_CACHE_SEEDS=${CHIHIRO_VULKAN_REQUIRE_PIPELINE_CACHE_SEEDS:-ON}")
+# A seed is required by default only when one is supplied (a damaged or
+# foreign one then fails the build); with none, the game records its own
+# pipelines on the headset as it plays.
+SEEDS_GIVEN=OFF
+[ -n "${CHIHIRO_VULKAN_PIPELINE_CACHE_SEEDS:-}${PACKAGED_SEEDS:-}" ] && SEEDS_GIVEN=ON
+PIPELINE_ARGS+=("-DCHIHIRO_VULKAN_REQUIRE_PIPELINE_CACHE_SEEDS=${CHIHIRO_VULKAN_REQUIRE_PIPELINE_CACHE_SEEDS:-$SEEDS_GIVEN}")
 if [ -n "${CHIHIRO_RENDERER:-}" ]; then
     PIPELINE_ARGS+=("-DCHIHIRO_RENDERER=$CHIHIRO_RENDERER")
 fi
