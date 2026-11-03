@@ -100,7 +100,7 @@ static uint32_t vk_imm_eye_size(void)
 {
     const char *e=ch_env("IMM_EYE");   /* each eye's picture, square, pixels */
     int n=e?atoi(e):0;
-    return n>=256 && n<=2048?(uint32_t)n:1024;
+    return n>=256 && n<=2048?(uint32_t)n:1440;
 }
 static void vk_dump_target(const char *name,ChVkTarget *target,int opaque)
 {

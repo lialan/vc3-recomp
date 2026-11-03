@@ -257,10 +257,41 @@ VkResult ch_vk_immersive_draw(ChVkImmersive *m,const Nv2aSurface *s,const Nv2aBa
         m->world_batches++;
     } else {m->flat_batches++;f->flat++;}
     memcpy(imm.vp,m->view.vp,sizeof imm.vp);
+    if(imm.sbs && m->log>1 && m->frames%30==0) {
+        Nv2aRawExtent e;int ok=b->raw->extent && b->raw->extent(b->raw,&e);
+        const Nv2aTexture *tx=(imm.sbs&16)?b->texture:b->stage[__builtin_ctz(imm.sbs)];
+        fprintf(stderr,"[immersive eyes-sampled] frame %llu into %08X from %08X %ux%u fmt %02X: xy %.0f..%.0f %.0f..%.0f uv %.1f..%.1f %.1f..%.1f mask %x\n",
+            (unsigned long long)m->frames,s->color_va,tx?tx->offset:0,tx?tx->width:0,tx?tx->height:0,tx?tx->color:0,
+            ok?e.x0:-1,ok?e.x1:-1,ok?e.y0:-1,ok?e.y1:-1,ok?e.u0:-1,ok?e.u1:-1,ok?e.v0:-1,ok?e.v1:-1,imm.sbs);
+    }
     f->drawn++;f->serial++;
     struct ImmResolve chain={m,resolve,context};
     return ch_vk_nv2a_draw_immersive_read(f->eyes,s,&copy,fixed,&imm,m->config.decode,imm_resolve,&chain,
         f->pixels,(size_t)m->config.eye_width*2*m->config.eye_height*4);
+}
+static void dump_ppm_target(ChVkTarget *t,const char *path) {
+    uint32_t w,h;ch_vk_target_size(t,&w,&h);
+    unsigned char *px=malloc((size_t)w*h*4);
+    FILE *f=px && ch_vk_target_read_color(t,px,(VkDeviceSize)w*h*4)==VK_SUCCESS?fopen(path,"wb"):NULL;
+    if(f) {
+        fprintf(f,"P6\n%u %u\n255\n",w,h);
+        for(size_t i=0;i<(size_t)w*h;i++) fwrite(px+i*4,1,3,f);
+        fclose(f);fprintf(stderr,"[immersive] dumped %s\n",path);
+    }
+    free(px);
+}
+/* CHIHIRO_VULKAN_IMMERSIVE_DUMP=dir (every CHIHIRO_VULKAN_IMMERSIVE_DUMP_EVERY
+ * immersive frames, 300 by default): the scene surface's eyes and the guest's
+ * own picture of it, the same frame. */
+static void dump_scene(ChVkImmersive *m,struct ImmSurface *scene) {
+    static const char *dir;static unsigned every,n;
+    if(!dir) {dir=getenv("CHIHIRO_VULKAN_IMMERSIVE_DUMP");if(!dir) dir="";
+        const char *e=getenv("CHIHIRO_VULKAN_IMMERSIVE_DUMP_EVERY");every=e && atoi(e)>0?(unsigned)atoi(e):300;}
+    if(!*dir || !scene || !scene->eyes || !m->config.guest_target || ++n%every) return;
+    ChVkTarget *guest=m->config.guest_target(m->config.guest_context,scene->va);
+    char path[512];
+    snprintf(path,sizeof path,"%s/scene-%05llu-eyes.ppm",dir,(unsigned long long)m->frames);dump_ppm_target(scene->eyes,path);
+    if(guest) {snprintf(path,sizeof path,"%s/scene-%05llu-flat.ppm",dir,(unsigned long long)m->frames);dump_ppm_target(guest,path);}
 }
 VkResult ch_vk_immersive_flip(ChVkImmersive *m,uint32_t presented,const Vc3VrView *next,
     ChVkImmFrame *out,ChVkTarget **eyes_out,ChVkTarget **hud_out) {
@@ -268,14 +299,15 @@ VkResult ch_vk_immersive_flip(ChVkImmersive *m,uint32_t presented,const Vc3VrVie
     memset(out,0,sizeof *out);*eyes_out=*hud_out=NULL;
     /* The frame's projection: the screen-shaped surface the most 3D went
      * into -- the scene. */
-    uint32_t best=0,total=0; struct ImmSurface *shown_f=NULL;
+    uint32_t best=0,total=0; struct ImmSurface *shown_f=NULL,*scene=NULL;
     for(unsigned i=0;i<m->count;i++) {
         struct ImmSurface *f=&m->surfaces[i];
         total+=f->world;
-        if(f->projection_ok && f->world>best) {best=f->world;m->projection=f->projection;m->projection_ok=1;}
+        if(f->projection_ok && f->world>best) {best=f->world;m->projection=f->projection;m->projection_ok=1;scene=f;}
         if(f->va==presented) shown_f=f;
     }
     if(best) zoom_note(m,m->projection.kx);
+    if(m->on) dump_scene(m,scene);
     if(m->on && shown_f && shown_f->eyes && shown_f->world && m->projection_ok) {
         out->view=m->view;out->projection=zoomed(m,&m->projection);out->projection_ok=1;
         out->guest_width=shown_f->width;out->guest_height=shown_f->height;

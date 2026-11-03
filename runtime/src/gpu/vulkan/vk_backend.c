@@ -20,6 +20,7 @@ typedef struct {uint64_t pipeline_ns,batch_wait_ns,batch_gpu_ns,upload_wait_ns;
     uint64_t depth_copy_ns,depth_copy_calls;} FrameCosts;
 struct ChVkBackend { ChVkFixedScratch raw_scratch; struct {int enabled;uint64_t completion_us,completion_cpu_ns,completion_calls,prepare_us,prepare_cpu_ns;uint64_t draw_cpu_ns,clear_cpu_ns,flip_cpu_ns,trim_cpu_ns;uint64_t draw_us,clear_us,flip_us,trim_us,surface_us,coherence_us,imports_us,raster_us,store_us,texture_uploads;FrameCosts retired,previous;} costs; VkPipelineCache pipeline_cache; struct {int enabled;uint64_t start,n,surface,coherence,imports,draw,store,no_color,flushes,depth_flushes,paired_flushes;} profile; struct {int enabled;uint64_t previous,us[120];unsigned count;} frame_profile; ChVkBackendConfig host; ChVkTextureCache *textures; ChVkDepthResident *zeta; ChVkImmersive *imm; uint64_t raw_compact_batches,raw_snapshot_bytes,raw_expanded_bytes; uint64_t color_snapshot_copy_bytes_saved,unchanged_color_draws,unchanged_depth_draws,early_color_reads,clear_color_imports_avoided,clear_color_bytes_avoided; uint64_t frames,raw_draws,raw_programs,raw_program_vertices,raw_declined,color_clock,cpu_batches,cpu_vertices,cpu_texels,cpu_texture_us,cpu_color_pixels,cpu_color_us,cpu_depth_pixels; struct Surface surfaces[MAX_SURFACES]; unsigned count; };
 static ChVkBackend *active;
+static ChVkTarget *guest_target_of(void *,uint32_t);
 static void flush_color(struct Surface *);
 static void observe_guest_colors(void);
 static void observe_guest_color(struct Surface *);
@@ -821,7 +822,7 @@ static void flip(void) {
         if(on && !active->imm && active->pipeline_cache) {
             ChVkImmersiveConfig ic={.physical=active->host.physical,.device=active->host.device,.queue=active->host.queue,
                 .family=active->host.family,.pipeline_cache=active->pipeline_cache,.eye_width=active->host.immersive_eye_width,
-                .eye_height=active->host.immersive_eye_height,.batch_limit=active->host.batch_draw_limit,.decode=decode_cpu_texture,.textures=active->textures};
+                .eye_height=active->host.immersive_eye_height,.batch_limit=active->host.batch_draw_limit,.decode=decode_cpu_texture,.textures=active->textures,.guest_target=guest_target_of,.guest_context=active};
             VkResult r=ch_vk_immersive_create(&ic,&active->imm);
             if(r!=VK_SUCCESS) fatal(r,"immersive creation");
             fprintf(stderr,"[Vulkan] immersive view: each eye %ux%u\n",ic.eye_width,ic.eye_height);
@@ -866,6 +867,11 @@ static int observe_raw(const Nv2aSurface *s,const Nv2aBatch *b) {
     VkResult r=active->host.observe_raw(active->host.render_context,s,b);
     if(r!=VK_SUCCESS) fatal(r,"raw metadata observation");
     return 0; /* Retain the executor's reference CPU transform path. */
+}
+static ChVkTarget *guest_target_of(void *context,uint32_t va) {
+    ChVkBackend *b=context;
+    for(unsigned i=0;i<b->count;i++) if(b->surfaces[i].guest.color_va==va) return b->surfaces[i].target;
+    return NULL;
 }
 static void queue_lock(ChVkBackend *b) {
     if(b && b->host.lock_queue) b->host.lock_queue(b->host.queue_context);

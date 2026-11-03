@@ -258,10 +258,12 @@ static VkResult attach(ChVkBackendConfig config)
             return VK_ERROR_INITIALIZATION_FAILED;
         config.texture_cache_bytes=(size_t)value<<20;
     } else if(config.immersive_view && !config.texture_cache_bytes) {
-        /* Flat draws sample other surfaces' eye images (each snapshot about
-         * 16 MiB at 1024 per eye): pinned under 64 MiB, the rest decoded on
-         * the CPU every draw. */
-        config.texture_cache_bytes=(size_t)256<<20;
+        /* Flat draws sample other surfaces' eye images (a snapshot costs
+         * both eyes twice over: image and staging); too small a budget pins
+         * them and decodes everything else on the CPU every draw. Room for
+         * four besides the game's textures. */
+        size_t snapshot=(size_t)config.immersive_eye_width*2*config.immersive_eye_height*4*2;
+        config.texture_cache_bytes=((size_t)128<<20)+4*snapshot;
     }
     fprintf(stderr,"[Vulkan] texture cache budget: %zuMiB\n",
         config.texture_cache_bytes?config.texture_cache_bytes>>20:(size_t)64);
