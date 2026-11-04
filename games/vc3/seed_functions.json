@@ -68,5 +68,10 @@
   "start": "0x0010232F",
   "observed": true,
   "note": "PsCreateSystemThreadEx StartContext1 observed at runtime; decodes as a function body."
+ },
+ {
+  "start": "0x00058C00",
+  "observed": true,
+  "note": "Indirect-call target observed at runtime (third mission: 'Failed to resolve VA', thousands of calls skipped); push ebx after a jump table and nop padding, which static analysis took for data."
  }
 ]
