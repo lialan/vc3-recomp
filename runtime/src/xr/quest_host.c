@@ -2908,6 +2908,26 @@ static void xr_frame(void)
             && (vs.viewStateFlags & XR_VIEW_STATE_POSITION_VALID_BIT)
             && (vs.viewStateFlags & XR_VIEW_STATE_ORIENTATION_VALID_BIT);
         if (s_views_ok) {
+            /* VC3_XR_FAKE_HEAD=1, for a headset nobody wears (test runs): the
+             * eyes level at the anchor, facing its yaw -- what a player looking
+             * straight ahead sees, not wherever a headset on a table points */
+            static int fake_head = -1;
+            if (fake_head < 0)
+                fake_head = ch_env("XR_FAKE_HEAD") && *ch_env("XR_FAKE_HEAD") == '1';
+            if (fake_head) {
+                const XrVector3f *a = &s_views[0].pose.position, *b = &s_views[1].pose.position;
+                const float right[3] = { 1, 0, 0 };
+                float half = 0.5f * sqrtf((b->x - a->x) * (b->x - a->x) + (b->y - a->y) * (b->y - a->y)
+                                          + (b->z - a->z) * (b->z - a->z)), r[3];
+                yaw_rot(s_anchor_yaw, right, r);
+                for (int e = 0; e < 2; e++) {
+                    const float side = e ? half : -half;
+                    s_views[e].pose.orientation = (XrQuaternionf){ 0, sinf(s_anchor_yaw * .5f), 0,
+                                                                   cosf(s_anchor_yaw * .5f) };
+                    s_views[e].pose.position = (XrVector3f){ s_anchor_p[0] + side * r[0], s_anchor_p[1],
+                                                             s_anchor_p[2] + side * r[2] };
+                }
+            }
 #ifdef CHIHIRO_RENDERER_VULKAN
             {   /* each eye's field of view, for the foveated shading-rate images */
                 void ch_vk_target_set_foveation_view(const float tan_fov[2][4]);

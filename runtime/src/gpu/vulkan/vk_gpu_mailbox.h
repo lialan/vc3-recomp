@@ -22,6 +22,11 @@ typedef struct {
     /* Shown from this time on (ch_vk_gpu_mailbox_set_pacing's clock; 0: at
      * once): the vblank its flip completes at, as a console shows it. */
     uint64_t due_ns;
+    /* Due -- its due time, else a game frame's time (60 Hz) after the frame
+     * before it was taken -- but its copy (so the game's GPU work before it)
+     * unfinished at a take_ready: the headset showed the frame before it once
+     * more because of the GPU. */
+    int gpu_late;
 } ChVkGpuFrame;
 /* Present pacing: due() gives a frame published now the time it is due
  * (0: at once), now() the same clock; take_ready waits for it. */
@@ -56,6 +61,10 @@ VkResult ch_vk_gpu_mailbox_take(ChVkGpuMailbox *,ChVkGpuFrame *);
 /* As take, but only a frame whose copy has finished (bridge mode); VK_NOT_READY
  * leaves it waiting. Never blocks on the GPU. */
 VkResult ch_vk_gpu_mailbox_take_ready(ChVkGpuMailbox *,ChVkGpuFrame *);
+/* Frames taken late for the GPU (gpu_late) so far, over all mailboxes: what
+ * dynamic resolution answers. A frame the game itself publishes late (loads,
+ * compiles, 30 fps scenes) is not waiting at those takes and does not count. */
+uint64_t ch_vk_gpu_mailbox_gpu_late_count(void);
 /* Finish consumer GPU use before release. Frames are move-only values. */
 void ch_vk_gpu_frame_release(ChVkGpuFrame *);
 /* Stop/join users first. Returns VK_NOT_READY while taken frames remain;

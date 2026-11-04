@@ -2,6 +2,7 @@
 #include <pthread.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 struct ChVkGpuMailbox {
     pthread_mutex_t lock;
     struct { ChVkTexture *image; uint32_t w,h; int held; } slots[CH_VK_GPU_MAILBOX_SLOTS];
@@ -14,6 +15,7 @@ struct ChVkGpuMailbox {
     VkDevice device; VkCommandPool pool;
     uint64_t (*due)(void),(*now)(void);
     struct {VkCommandBuffer command;VkFence fence;int pending;} copy[CH_VK_GPU_MAILBOX_SLOTS];
+    uint64_t last_take_ns;   /* take_ready's last frame taken (CLOCK_MONOTONIC) */
 };
 void ch_vk_gpu_mailbox_set_pacing(ChVkGpuMailbox *b,uint64_t (*due)(void),uint64_t (*now)(void)) {
     if(!b) return;
@@ -122,15 +124,25 @@ VkResult ch_vk_gpu_mailbox_take(ChVkGpuMailbox *b,ChVkGpuFrame *out) {
     }
     pthread_mutex_unlock(&b->lock);return r;
 }
+static uint64_t s_gpu_late;   /* frames taken late for the GPU, all mailboxes */
+uint64_t ch_vk_gpu_mailbox_gpu_late_count(void) {return __atomic_load_n(&s_gpu_late,__ATOMIC_RELAXED);}
+static uint64_t mono_ns(void) {struct timespec t;clock_gettime(CLOCK_MONOTONIC,&t);return (uint64_t)t.tv_sec*1000000000ull+(uint64_t)t.tv_nsec;}
+/* A frame due by now that is not done marks itself late: a game frame's time
+ * (60 Hz, less 1 ms) since the last frame taken, or its due time (pacing). */
+#define LATE_AFTER_NS 15666667ull
 VkResult ch_vk_gpu_mailbox_take_ready(ChVkGpuMailbox *b,ChVkGpuFrame *out) {
     if(!b || !out || out->owner || out->image) return VK_ERROR_INITIALIZATION_FAILED;
     pthread_mutex_lock(&b->lock);
     VkResult r=VK_NOT_READY;
-    if(b->waiting && (!b->pending[0].due_ns || !b->now || b->now()>=b->pending[0].due_ns) &&
-       (!b->pending[0].ready || vkGetFenceStatus(b->pending[0].ready_device,b->pending[0].ready)==VK_SUCCESS)) {
-        *out=b->pending[0];
-        for(unsigned k=1;k<b->waiting;k++) b->pending[k-1]=b->pending[k];
-        memset(&b->pending[--b->waiting],0,sizeof b->pending[0]);r=VK_SUCCESS;
+    if(b->waiting && (!b->pending[0].due_ns || !b->now || b->now()>=b->pending[0].due_ns)) {
+        if(!b->pending[0].ready || vkGetFenceStatus(b->pending[0].ready_device,b->pending[0].ready)==VK_SUCCESS) {
+            *out=b->pending[0];
+            for(unsigned k=1;k<b->waiting;k++) b->pending[k-1]=b->pending[k];
+            memset(&b->pending[--b->waiting],0,sizeof b->pending[0]);r=VK_SUCCESS;
+            if(out->gpu_late) __atomic_add_fetch(&s_gpu_late,1,__ATOMIC_RELAXED);
+            b->last_take_ns=mono_ns();
+        } else if(b->pending[0].due_ns || (b->last_take_ns && mono_ns()-b->last_take_ns>=LATE_AFTER_NS))
+            b->pending[0].gpu_late=1;   /* due, the GPU not done: the headset shows the last frame again */
     }
     pthread_mutex_unlock(&b->lock);return r;
 }

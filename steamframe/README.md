@@ -162,11 +162,28 @@ ran at 40 fps in play): after half a second with 2+ late game frames the
 eyes drop a level -- 90, 80, 70% of each eye's width and height, the picture
 in a corner of each eye's half, the rest clipped (no cost) and outside the
 headset's `imageRect` -- and come back after 3 calm seconds (longer after a
-failed try). Each level has its own foveation pattern, kept on each eye's
-view axis. `CHIHIRO_VULKAN_IMMERSIVE_SCALE=1`: native always (or 0.9/0.8/0.7
-fixed); level changes are logged as `[immersive] render scale`. At 2560 per
-eye (an overload): late frames combat/E.S. activation/held 5/8/0 against
-4/15/13 with the fixed pattern. Mipmapped textures are
+failed try). A late frame is one the headset showed late for the GPU: a game
+frame's time after the last frame was taken, the next was published but its
+GPU work unfinished (`ch_vk_gpu_mailbox_gpu_late_count`). Frames the game
+itself publishes late (loads, compiles, 30 fps scenes) don't count, nor the
+first 2 s after the 3D starts. (It used to count gaps between emulated
+vblanks seen from the render thread, whose own jitter read 2-7 late frames a
+half second while the headset showed every frame on time: play sat at
+70-90% where native held 60.) Each level has its own foveation pattern, kept
+on each eye's view axis. `CHIHIRO_VULKAN_IMMERSIVE_SCALE=1`: native always
+(or 0.9/0.8/0.7 fixed); level changes are logged as `[immersive] render
+scale`, and with `CHIHIRO_VULKAN_IMMERSIVE_LOG=1` each half second with
+late frames. The stats panel shows the picture as drawn ("1512x1512 70%")
+and the game's share of the GPU ("GPU 64% game 55%"); the menu's Native
+reads "Native, now at 70%" while lowered. Screens on, held gun, head level
+(`VC3_XR_FAKE_HEAD=1`), default settings: mission 1 and mission 2's first
+area stay at native, 57-61 fps, GPU 60-73% (game 52-64%); at 2560 per eye in
+mission 2's first area (an overload) it steps down to 70-90% and back.
+
+Test runs need `VC3_XR_FAKE_HEAD=1` (with `VC3_XR_FAKE_GUN=1`): without it
+the view follows a headset lying on a table, which draws far less than a
+player looking at the action (mission 2's first area: game GPU 35-53%
+against 52-64%). Mipmapped textures are
 filtered 8x anisotropically (`CHIHIRO_VULKAN_ANISO=n`, 1 off; free on the
 Frame). With the headset on, SteamVR's compositor works at 120 Hz on the
 same GPU, and every full-view layer it blends costs: the HUD is a quad layer

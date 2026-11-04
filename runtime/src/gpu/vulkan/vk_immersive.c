@@ -43,34 +43,39 @@ struct ChVkImmersive {
     uint64_t guest_eye_samples;
     int log; uint64_t frames,world_batches,hud_batches,flat_batches,skipped_batches;
     /* Dynamic resolution: the eyes drawn at k_levels[level] of their size. */
-    int dynamic,level,went_finer; unsigned window,late,calm,calm_need;
-    uint32_t last_vblank; uint64_t level_since_ns;
+    int dynamic,level,went_finer; unsigned window,late,calm,calm_need,on_frames;
+    uint64_t late_seen,level_since_ns;   /* the GPU-late count at the window's start */
     uint64_t trace_until; unsigned trace_left;   /* CHIHIRO_VULKAN_IMMERSIVE_TRACE (diagnostic) */
     struct ImmSurface *last_src; int last_hud; unsigned repeats;   /* the picture the last flip showed */
 };
 /* Dynamic resolution levels (fraction of each eye's width and height). A
  * scene heavier than the GPU's 16.7 ms (VC3's later areas at native 2160 on
  * the Steam Frame: 40 fps) steps down a level after half a second with 2+
- * late frames, two with 8+ (a late frame: 2-4 emulated vblanks since the
- * previous; more is a load; this thread runs pipelined behind the game, so
- * its own clock hides them); a level up after calm_need quiet half-seconds
- * (3 s), doubled (to 32 s) when a step up is undone within 10 s.
+ * late frames, two with 8+; a level up after calm_need quiet half-seconds
+ * (3 s), doubled (to 32 s) when a step up is undone within 10 s. A late frame
+ * is one the headset showed late because its GPU work was unfinished when it
+ * was due (ch_vk_gpu_mailbox_gpu_late_count): what a lower resolution helps.
+ * Frames the game itself makes late (loads, compiles, 30 fps scenes) do not
+ * count, nor the first 2 s after the eyes turn on (a scene's first frames). (Gaps between emulated vblanks, as seen from this thread, counted
+ * before: its own jitter behind the game made 2-7 a half second while the
+ * headset showed every frame on time, holding native at 70-90%.)
  * CHIHIRO_VULKAN_IMMERSIVE_SCALE=k: fixed at the nearest level; =1: native
  * always. */
 static const float k_levels[4]={1.f,.9f,.8f,.7f};
 void ch_vk_target_set_foveation_level(int level);
-uint32_t xbox_VblankCount(void) __attribute__((weak));   /* the kernel's; absent in tools */
+uint64_t ch_vk_gpu_mailbox_gpu_late_count(void) __attribute__((weak));   /* absent in tools */
 static uint64_t mono_ns(void) {struct timespec ts;clock_gettime(CLOCK_MONOTONIC,&ts);return (uint64_t)ts.tv_sec*1000000000ull+(uint64_t)ts.tv_nsec;}
 static void scale_control(ChVkImmersive *m) {
-    if(!m->dynamic || !m->on || !xbox_VblankCount) {m->last_vblank=0;return;}
+    if(!ch_vk_gpu_mailbox_gpu_late_count) return;
+    uint64_t total=ch_vk_gpu_mailbox_gpu_late_count();
+    /* not on, or within 2 s of turning on (a new scene's first frames do
+     * one-off GPU work): nothing to judge */
+    if(!m->dynamic || !m->on) m->on_frames=0;
+    if(!m->dynamic || !m->on || ++m->on_frames<=120) {m->late_seen=total;m->window=0;return;}
     uint64_t now=mono_ns();
-    uint32_t vb=xbox_VblankCount();
-    if(m->last_vblank) {
-        uint32_t d=vb-m->last_vblank;
-        if(d>=2 && d<=4) m->late++;   /* a missed vblank, not a load */
-    }
-    m->last_vblank=vb;
     if(++m->window<30) return;
+    m->late=(unsigned)(total-m->late_seen);m->late_seen=total;
+    if(m->log && m->late) fprintf(stderr,"[immersive] %u GPU-late frames in %u at %.0f%%\n",m->late,m->window,k_levels[m->level]*100);
     int prev=m->level;
     if(m->late>=2 && m->level<3) {
         if(m->went_finer && now-m->level_since_ns<10000000000ull) m->calm_need=m->calm_need*2>64?64:m->calm_need*2;
