@@ -115,6 +115,18 @@ launchers add a `pipelines.recipes` beside the game to the save's once per
 seed. The log line
 `[Vulkan pipelines] precompiled N of N recipes in X ms` reports it.
 
+To cover every scene before anyone plays it, `harvest.sh [seconds]` plays
+each mission unattended (`play.sh`: sweeping aim, a shot every 0.25 s,
+reloads, the pedal, Start and coins to continue -- the mission 2 boss is
+~11 minutes in), merges every recipe the runs recorded with the installed
+game's, and boots once from an empty save with only those, filling a fresh
+driver cache: `/tmp/vc3p/harvest/pipelines.recipes` goes beside the game,
+`turnip-seed.cache` into `games/vc3/pipeline-cache/steamframe/` and the build
+(`-DCHIHIRO_VULKAN_PIPELINE_CACHE_SEEDS=...`, see the README there), so the
+binary starts with them compiled. A cold compile in play costs 100 ms to
+1 s; `play.sh` alone is also the way to look for slow scenes (its log has
+`[stats]` every 5 s and `[immersive switch]` lines).
+
 ## Performance defaults and switches (`env.txt`)
 
 ### Immersive VR
@@ -159,7 +171,15 @@ compositor idle it held every frame, so measure with it running (below). What ge
   vertex shaders, ~2500-3400 instructions each).
 - **Only the eyes are drawn** for screen-shaped surfaces in immersive frames
   (`CHIHIRO_VULKAN_IMMERSIVE_SKIP_GUEST=0` draws the guest copy too); effect
-  maps made from them sample the eyes.
+  maps made from them sample the eyes. Visibility queries on those surfaces
+  count as visible (the pixels the query covers) instead of a flat draw that
+  waits for the GPU each time -- their flat depth is stale anyway; the
+  mission 2 boss runs ~1500 a frame and sat at 10-15 fps
+  (`CHIHIRO_VULKAN_IMMERSIVE_ZPASS=0`: the flat draw and its real count).
+- **A slow frame spread over several flips stays in the eyes**: a flip that
+  drew nothing on the presented surface shows the last picture again
+  (`[immersive switch] ... the last picture again`); dropping to the screen
+  there drew the next frame flat as well, slower still.
 - **Eye images sampled in place** (`CHIHIRO_VULKAN_IMMERSIVE_LEND=0`: copied
   first, up to four 24 MB copies an E.S. frame, ~2.7 ms of GPU).
 - Texture cache sized for eye snapshots; the culling frustum widened to 140

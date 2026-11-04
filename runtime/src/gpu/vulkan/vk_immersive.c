@@ -6,6 +6,10 @@
 #include <string.h>
 #include <time.h>
 #define IMM_SURFACES 8
+/* 3D batches in a frame that make a surface a scene, kept at full size: an
+ * effect buffer gets a stray one (the mission 2 boss's feedback buffer: one
+ * a frame), and growing its eyes rebuilt their pipelines (~130 ms). */
+#define IMM_SCENE_BATCHES 8u
 #define ZOOM_SLOTS 8
 /* VC3's usual lens in 640-wide pixels: its 45 x 34.5 degree culling view */
 #define IMM_ZOOM_BASE 772.5f
@@ -40,6 +44,8 @@ struct ChVkImmersive {
     /* Dynamic resolution: the eyes drawn at k_levels[level] of their size. */
     int dynamic,level,went_finer; unsigned window,late,calm,calm_need;
     uint32_t last_vblank; uint64_t level_since_ns;
+    uint64_t trace_until; unsigned trace_left;   /* CHIHIRO_VULKAN_IMMERSIVE_TRACE (diagnostic) */
+    struct ImmSurface *last_src; int last_hud; unsigned repeats;   /* the picture the last flip showed */
 };
 /* Dynamic resolution levels (fraction of each eye's width and height). A
  * scene heavier than the GPU's 16.7 ms (VC3's later areas at native 2160 on
@@ -142,7 +148,9 @@ static VkResult configure(ChVkImmersive *m,ChVkTarget *t,unsigned char *pixels,s
 }
 static VkResult eyes(ChVkImmersive *m,struct ImmSurface *f) {
     if(f->eyes) return VK_SUCCESS;
-    if(!f->div) f->div=1;
+    /* A new surface not on screen starts as an effect buffer (half size):
+     * full-size eyes made only to be halved at the flip cost a rebuild. */
+    if(!f->div) f->div=m->half_effects && !shown(m,f->va)?2:1;
     uint32_t w=m->config.eye_width*2/f->div,h=m->config.eye_height/f->div;
     size_t bytes=(size_t)w*h*4;
     f->pixels=malloc(bytes); if(!f->pixels) return VK_ERROR_OUT_OF_HOST_MEMORY;
@@ -295,8 +303,22 @@ static int full_screen(ChVkImmersive *m,const Nv2aBatch *b,const Nv2aSurface *s)
     }
     return e.x1-e.x0>=.9f*s->width && e.y1-e.y0>=.9f*s->height;
 }
+/* CHIHIRO_VULKAN_IMMERSIVE_TRACE=N (diagnostic): from immersive frame N,
+ * every draw of the 3 frames after a switch away from the eyes (40 such
+ * frames at most): where it went and what it sampled. */
+static void trace_draw(const ChVkImmersive *m,const Nv2aSurface *s,const Nv2aBatch *b,int is3d) {
+    if(m->frames>m->trace_until || !m->trace_until) return;
+    Nv2aRawExtent e;int ok=b->raw && b->raw->extent && b->raw->extent(b->raw,&e);
+    const Nv2aTexture *tx=b->texture?b->texture:b->stage[0];
+    fprintf(stderr,"[imm trace] f%llu on %d into %08X %ux%u 3d %d %s w0 %g idx %u ext %.0f..%.0f x %.0f..%.0f tex %08X %ux%u fmt %02X st1 %08X blend %u %04X/%04X mask %08X\n",
+        (unsigned long long)m->frames,m->on,s->color_va,s->width,s->height,is3d,
+        b->raw?b->raw->kind==NV2A_RAW_FIXED?"fixed":"prog":"none",b->raw?b->raw->w0:0,b->raw?b->raw->index_count:0,
+        ok?e.x0:-1,ok?e.x1:-1,ok?e.y0:-1,ok?e.y1:-1,tx?tx->offset:0,tx?tx->width:0,tx?tx->height:0,tx?tx->color:0,
+        b->stage[1]?b->stage[1]->offset:0,b->state->blend_enable,b->state->blend_src,b->state->blend_dst,b->state->color_mask);
+}
 VkResult ch_vk_immersive_draw(ChVkImmersive *m,const Nv2aSurface *s,const Nv2aBatch *b,
     const ChVkFixedGeometry *fixed,ChVkSampleResolver resolve,void *context) {
+    if(m && s && b && b->state && !screen_shaped(s)) trace_draw(m,s,b,-1);
     if(!m || !s || !b || !b->state || !screen_shaped(s)) return VK_SUCCESS;
     if(b->zpass_out) return VK_SUCCESS;   /* visibility queries are the guest's */
     struct ImmSurface *f=NULL;
@@ -348,6 +370,7 @@ VkResult ch_vk_immersive_draw(ChVkImmersive *m,const Nv2aSurface *s,const Nv2aBa
                 (e.x1-e.x0)*b->raw->w0/fabsf(m->projection.kx),(e.y1-e.y0)*b->raw->w0/fabsf(m->projection.ky));
         (void)np;
     }
+    trace_draw(m,s,b,is3d);
     if(!m->on) return VK_SUCCESS;
     if(!fixed) {m->skipped_batches++;return VK_SUCCESS;}
     Nv2aBatch copy=*b; copy.zpass_out=NULL;
@@ -497,23 +520,37 @@ VkResult ch_vk_immersive_flip(ChVkImmersive *m,uint32_t presented,const Vc3VrVie
      * frame without 3D: while immersive, screen-shaped surfaces are not
      * drawn flat, so the screen would be stale -- the next frame is flat.
      * Only full-size eyes: a half-size effect buffer presented is resized
-     * below, in this flip (its eyes freed). */
+     * below, in this flip (its eyes freed).
+     * A flip that drew nothing on the presented surface repeats the last
+     * picture, the eyes kept on: VC3 spreads a frame it cannot finish in a
+     * vblank over several flips (the mission 2 boss: the scene in one, its
+     * effects in the next, the composite onto the presented surface three
+     * flips on). Dropping to the screen there made the next frame flat --
+     * every screen-shaped draw drawn flat as well -- slower still: 10 fps.
+     * At most 30 in a row (a long blank goes to the screen). */
     struct ImmSurface *src=NULL;
-    if(m->on && m->projection_ok) {
+    /* (a clear alone does not count: VC3 clears the back buffer it draws three flips on) */
+    int untouched=!shown_f || !(shown_f->world || shown_f->flat || shown_f->hud || shown_f->composite);
+    int repeat=m->on && m->projection_ok && untouched && m->last_src && m->last_src->eyes && m->last_src->div<2 && m->repeats<30;
+    if(repeat) src=m->last_src;
+    else if(m->on && m->projection_ok) {
         if(shown_f && shown_f->eyes && shown_f->div<2 && (shown_f->world || shown_f->composite)) src=shown_f;
         else if(scene && scene->eyes && scene->div<2) src=scene;
     }
+    int hud=(repeat?m->last_hud:m->hud_used) && m->hud;
+    /* Only a presented picture repeats: the scene buffer may be half redrawn. */
+    m->last_src=repeat || (src && src==shown_f)?src:NULL;m->last_hud=hud;m->repeats=repeat?m->repeats+1:0;
     if(src) {
         out->view=m->view;out->projection=zoomed(m,&m->projection,src->width);out->projection_ok=1;
         out->guest_width=src->width;out->guest_height=src->height;
         out->eye_width=m->config.eye_width;out->eye_height=m->config.eye_height;
         out->scale=k_levels[m->level];
-        out->hud=m->hud_used;
-        *eyes_out=src->eyes;*hud_out=m->hud_used?m->hud:NULL;
+        out->hud=hud;
+        *eyes_out=src->eyes;*hud_out=hud?m->hud:NULL;
         if(m->log) {   /* a frame with no HUD drops the HUD layer: where its 2D went */
             static unsigned with,without,shown_lines;
-            if(m->hud_used) with++; else without++;
-            if(!m->hud_used && shown_lines<40) {
+            if(hud) with++; else without++;
+            if(!hud && shown_lines<40) {
                 shown_lines++;
                 fprintf(stderr,"[immersive no hud] frame %llu (with %u, without %u) presented %08X:",
                     (unsigned long long)m->frames,with,without,presented);
@@ -538,11 +575,19 @@ VkResult ch_vk_immersive_flip(ChVkImmersive *m,uint32_t presented,const Vc3VrVie
     }
     {   /* every switch between the eyes and the screen, and why */
         static int was=-1;
-        int now=src==shown_f && src?1:src?2:0;
+        int now=repeat?3:src==shown_f && src?1:src?2:0;
+        static const char *const what[]={"screen","eyes","scene behind 2D","the last picture again"};
         if(m->log && now!=was)
             fprintf(stderr,"[immersive switch] frame %llu -> %s: on %d presented %08X (3D %u, composited %u, eyes %d) total 3D %u projection %d\n",
-                (unsigned long long)m->frames,now==1?"eyes":now==2?"scene behind 2D":"screen",m->on,presented,shown_f?shown_f->world:0,
+                (unsigned long long)m->frames,what[now],m->on,presented,shown_f?shown_f->world:0,
                 shown_f?shown_f->composite:0,shown_f && shown_f->eyes,total,m->projection_ok);
+        static long long trace_from=-2;
+        if(trace_from==-2) {const char *e=getenv("CHIHIRO_VULKAN_IMMERSIVE_TRACE");trace_from=e?atoll(e):-1;m->trace_left=40;}
+        if(trace_from>=0 && now!=1 && now!=was && m->frames>=(uint64_t)trace_from && m->trace_left) {
+            m->trace_until=m->frames+3;m->trace_left--;
+        }
+        if(m->frames<=m->trace_until && m->trace_until)
+            fprintf(stderr,"[imm trace] f%llu flip presented %08X -> %s\n",(unsigned long long)m->frames,presented,what[now]);
         was=now;
     }
     m->frames++;
@@ -571,10 +616,10 @@ VkResult ch_vk_immersive_flip(ChVkImmersive *m,uint32_t presented,const Vc3VrVie
      * long done), so no pins pile up across frames. */
     for(unsigned i=0;i<m->count;i++) {
         struct ImmSurface *f=&m->surfaces[i];
-        if(f->world) f->last_3d=m->frames;
+        if(f->world>=IMM_SCENE_BATCHES) f->last_3d=m->frames;
         if(f->va==presented || shown(m,f->va)) f->last_shown=m->frames;
         if(!f->eyes) continue;
-        /* Resize: effect-only for ~2 s -> half size; 3D or shown -> full. */
+        /* Resize: effect-only for ~2 s -> half size; a scene or shown -> full. */
         uint32_t want=m->half_effects && m->frames-f->last_3d>120 && m->frames-f->last_shown>120?2:1;
         if(want!=f->div) {
             VkResult r=ch_vk_target_finish(f->eyes);if(r!=VK_SUCCESS) return r;
@@ -589,7 +634,9 @@ VkResult ch_vk_immersive_flip(ChVkImmersive *m,uint32_t presented,const Vc3VrVie
     }
     if(m->hud) {VkResult r=m->hud_used?ch_vk_target_submit(m->hud):ch_vk_target_finish(m->hud);if(r!=VK_SUCCESS) return r;}
     m->previous_3d=total;
-    m->on=next && next->on && total>0 && m->projection_ok;
+    /* On while the frames draw 3D or show eyes: the flip with the composite
+     * may hold no 3D of its own (drawn flips before, as above). */
+    m->on=next && next->on && (total>0 || src) && m->projection_ok;
     if(m->on) m->view=*next;
     m->hud_used=0;
     for(unsigned i=0;i<m->count;i++) {struct ImmSurface *f=&m->surfaces[i];f->world=f->drawn=f->flat=f->hud=f->full=f->composite=0;}

@@ -4,6 +4,7 @@
 #include "vk_guest_layout.h"
 #include "vk_texture_cache.h"
 #include "vk_depth_resident.h"
+#include <math.h>
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
@@ -24,6 +25,11 @@ static int imm_skip_guest=-1;
 static int skip_guest(void) {
     if(imm_skip_guest<0) {const char *e=getenv("CHIHIRO_VULKAN_IMMERSIVE_SKIP_GUEST");imm_skip_guest=!e || atoi(e);}
     return imm_skip_guest;
+}
+static int imm_zpass_visible(void) {
+    static int on=-1;
+    if(on<0) {const char *e=getenv("CHIHIRO_VULKAN_IMMERSIVE_ZPASS");on=!e || atoi(e);}
+    return on;
 }
 static ChVkTarget *guest_target_of(void *,uint32_t);
 static void submit_pending(void);
@@ -716,6 +722,29 @@ static void draw_batch(const Nv2aSurface *s,const Nv2aBatch *b,const ChVkFixedGe
      * none of their guest coherence). Draws into other targets that sample
      * them sample their eyes (ch_vk_immersive_guest_draw); visibility queries
      * stay on the guest. CHIHIRO_VULKAN_IMMERSIVE_SKIP_GUEST=0: draw both. */
+    /* ...except a query on such a surface: its flat depth is stale (the
+     * world went to the eyes), so the count could only be a guess, and each
+     * cost a synchronous GPU round trip (~95 us) -- the mission 2 boss runs
+     * ~1500 a frame, 10-15 fps. Counted visible instead: the pixels its
+     * extent covers, the safe answer for a game culling with them; one that
+     * also writes color draws into the eyes. CHIHIRO_VULKAN_IMMERSIVE_ZPASS=0:
+     * the flat draw and its real count, as before. */
+    if(b->zpass_out && imm_zpass_visible() && skip_guest() && fixed && active->imm &&
+       ch_vk_immersive_on(active->imm) && (uint64_t)s->width*3==(uint64_t)s->height*4) {
+        uint64_t pixels=(uint64_t)s->width*s->height;
+        Nv2aRawExtent e;
+        if(b->raw && b->raw->extent && b->raw->extent(b->raw,&e)) {
+            float x0=fmaxf(e.x0,0),x1=fminf(e.x1,(float)s->width),y0=fmaxf(e.y0,0),y1=fminf(e.y1,(float)s->height);
+            pixels=x1>x0 && y1>y0?(uint64_t)((x1-x0)*(y1-y0)):0;
+        }
+        *b->zpass_out+=(uint32_t)pixels;
+        if(b->state->color_mask&0x01010101) {
+            Nv2aBatch copy=*b;copy.zpass_out=NULL;
+            VkResult r=ch_vk_immersive_draw(active->imm,s,&copy,fixed,active->textures?resolve_sample:NULL,active);
+            if(r!=VK_SUCCESS) fatal(r,"immersive draw");
+        }
+        return;
+    }
     {
         if(skip_guest() && fixed && active->imm && ch_vk_immersive_on(active->imm) && !b->zpass_out &&
            (uint64_t)s->width*3==(uint64_t)s->height*4) {
