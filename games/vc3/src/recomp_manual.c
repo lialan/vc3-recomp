@@ -103,6 +103,17 @@ extern void vc3_sound_queue_locked(void (*generated)(void));
 void sub_000ECB80(void) { vc3_sound_queue_locked(sub_000ECB80_gen); }  /* send an event */
 void sub_000ED750(void) { vc3_sound_queue_locked(sub_000ED750_gen); }  /* the sound thread takes them */
 
+/* The sun's light-shaft blur (post effect 26, areas 7-12: the mission 2
+ * boss), left out: it cannot work here. Each frame it clears a screen-sized
+ * scratch target, draws the sun into it, copies the 128x128 around the sun
+ * into a texture with D3DDevice_CopyRects -- a 2D blit (NV062/NV09F) this GPU
+ * emulation does not do -- and draws that texture ten times over the screen,
+ * growing from the sun. The copy never lands, so the quads draw a texture
+ * that never holds the sun; in VR they went on the HUD layer, and the
+ * scratch target's clear and draw were eye-sized work. Returns as its own
+ * early-out (no sun model) does; its only caller drops the argument. */
+void sub_00072760(void) { g_esp += 4; }   /* ret */
+
 /* ── Manual function overrides ─────────────────────────────── */
 
 /*

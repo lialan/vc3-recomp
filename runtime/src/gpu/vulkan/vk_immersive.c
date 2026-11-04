@@ -313,6 +313,19 @@ static int full_screen(ChVkImmersive *m,const Nv2aBatch *b,const Nv2aSurface *s)
     }
     return e.x1-e.x0>=.9f*s->width && e.y1-e.y0>=.9f*s->height;
 }
+/* A draw sampling a screen-shaped surface: a picture of the screen, whose
+ * picture is in its eyes -- its own, flat, is not drawn while immersive.
+ * The mission 2 boss's heat haze draws ~40 soft blobs a frame that each
+ * redraw the screen under them (stage 1: the surface being drawn); on the
+ * HUD they showed that surface's last flat picture -- the route map before
+ * the fight -- in front of the world for the whole fight. */
+static int samples_screen(const ChVkImmersive *m,const Nv2aBatch *b) {
+    for(unsigned k=0;k<5;k++) {
+        const Nv2aTexture *tx=k<4?b->stage[k]:b->texture;
+        if(tx) for(unsigned i=0;i<m->count;i++) if(m->surfaces[i].va==tx->offset) return 1;
+    }
+    return 0;
+}
 /* CHIHIRO_VULKAN_IMMERSIVE_TRACE=N (diagnostic): from immersive frame N,
  * every draw of the 3 frames after a switch away from the eyes (40 such
  * frames at most): where it went and what it sampled.
@@ -398,6 +411,9 @@ VkResult ch_vk_immersive_draw(ChVkImmersive *m,const Nv2aSurface *s,const Nv2aBa
     int full=!is3d && full_screen(m,b,s);
     if(!is3d) {if(!f) f=find(m,s);if(f) f->full+=full;}
     if(!is3d && shown(m,s->color_va) && !full) {
+        /* a screen effect over part of the screen (samples_screen): left
+         * out -- in front of the world it would be a stale flat picture */
+        if(samples_screen(m,b)) {m->skipped_batches++;return VK_SUCCESS;}
         if(f) f->hud++;
         /* The HUD has color only: depth and stencil cannot reject it. */
         VkResult r=hud(m,s); if(r!=VK_SUCCESS) return r;

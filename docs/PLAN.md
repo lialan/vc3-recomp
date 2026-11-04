@@ -147,6 +147,10 @@ Known issues:
   Reload uses the gun's off-screen switch (JVS button 2).
 * Sound is emulated and measured (RECOMP_AUDIO_WAV) but muted unless
   `VC3_SOUND=1`.
+* The GPU's 2D blit (NV062/NV09F, `D3DDevice_CopyRects`) is not emulated.
+  Its one known user, the sun's light-shaft blur in areas 7-12 (the mission
+  2 boss, post effect 26, `sub_00072760`), drew a texture the copy never
+  filled, so it is left out (`src/recomp_manual.c`).
 
 Debug switches: `VC3_GL=0` (software rasteriser), `VC3_GL_STATS`,
 `VC3_GL_FTRACE=<flag>`, `VC3_GL_RCDBG=1..7`, `VC3_JVS_TRACE`,
