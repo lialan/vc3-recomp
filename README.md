@@ -166,7 +166,8 @@ point at a row and pull the trigger to change the sight, laser (laser and
 dot, dot only, off), gun model, gun hand, stereo 3D, aspect, resolution,
 screen distance and size, coins (automatic or from the panel), and to insert
 a coin, recentre the view, press the cabinet's Test or Service button, or
-reset the game. The other hand's thumbstick also moves the screen (up/down:
+reset the game; its Controls row lists what each button does (Vulkan
+builds). The other hand's thumbstick also moves the screen (up/down:
 nearer/farther, left/right: smaller/larger), and its A / X held for a second
 recentres the view.
 The Quest defaults to 1x (2x and up are GPU-bound in 3D), 16:9, 3D, iron

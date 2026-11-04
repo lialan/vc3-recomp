@@ -1806,14 +1806,15 @@ static int overlay_init(void)
  * input meanwhile. Holding the other hand's upper button (B / Y) for a
  * second opens and closes it too. */
 enum { M_SCREEN, M_DETAIL, M_REFRESH, M_SIGHT, M_LASER, M_GUN, M_HAND, M_STEREO, M_ASPECT, M_RES, M_DIST, M_SIZE,
-       M_COINS, M_COIN, M_RECENTRE, M_TEST, M_SERVICE, M_RESET, M_CLOSE, M_STATS, M_EYE, M_COUNT };
+       M_COINS, M_COIN, M_RECENTRE, M_TEST, M_SERVICE, M_RESET, M_CLOSE, M_STATS, M_EYE, M_CONTROLS, M_COUNT };
 /* The rows shown, in The House of the Dead 4 VR's order. The Vulkan
  * renderer has the immersive view (Screen) and HOTD4's Resolution per eye
  * but no stereo screen, render scale or 16:9, so its panel has only the
- * items that act. */
+ * items that act -- and room for Controls, a page of what each button does. */
 #ifdef CHIHIRO_RENDERER_VULKAN
 static const int s_rows[] = { M_SCREEN, M_SIGHT, M_LASER, M_GUN, M_HAND, M_STATS, M_DIST, M_SIZE, M_REFRESH,
-                              M_EYE, M_COINS, M_COIN, M_RECENTRE, M_TEST, M_SERVICE, M_RESET, M_CLOSE };
+                              M_EYE, M_COINS, M_COIN, M_RECENTRE, M_TEST, M_SERVICE, M_RESET, M_CONTROLS,
+                              M_CLOSE };
 #else
 static const int s_rows[] = { M_SCREEN, M_DETAIL, M_REFRESH, M_SIGHT, M_LASER, M_GUN, M_HAND, M_STEREO,
                               M_ASPECT, M_RES, M_DIST, M_SIZE, M_COINS, M_COIN, M_RECENTRE, M_TEST,
@@ -1825,7 +1826,37 @@ static struct {
     float c[3], right[3], up[3], n[3], hw, hh;  /* where it hangs, LOCAL metres */
     int test_frames, service_frames, coin;
     int reset_armed;            /* "Reset game" chosen once: a second time resets */
+    int page;                   /* 0 the settings, 1 the controls */
 } s_menu;
+
+/* The controls page: what each button does, named for the hand the gun is
+ * in (A / B on the right controller, X / Y on the left); its last row,
+ * Back, returns to the settings. */
+#define CTRL_ROWS 12
+static void controls_items(XmItem *it)
+{
+    static char held[2][24];
+    const int right = s_gun == HAND_R;
+    static const char *const label[CTRL_ROWS] = {
+        "Gun trigger", "Gun grip", NULL, NULL, "Stick click (either)", "Left menu button", "Other hand trigger",
+        "Other hand grip", NULL, NULL, "Other hand stick", "Back" };
+    static const char *const value[CTRL_ROWS] = {
+        "Fire; off the screen, reload", "Reload", "Foot pedal (E.S. mode)", "CHANGE button", NULL,
+        "Settings panel", "Gun to that hand", "Foot pedal", "Recentre view", "Settings panel",
+        "Screen distance, size", "" };
+    int i;
+    snprintf(held[0], sizeof held[0], "Other hand %s, held", right ? "X" : "A");
+    snprintf(held[1], sizeof held[1], "Other hand %s, held", right ? "Y" : "B");
+    for (i = 0; i < CTRL_ROWS; i++) {
+        it[i].label = label[i];
+        snprintf(it[i].value, 40, "%s", value[i] ? value[i] : "");
+    }
+    it[2].label = right ? "Gun hand A" : "Gun hand X";
+    it[3].label = right ? "Gun hand B" : "Gun hand Y";
+    snprintf(it[4].value, 40, "%s", s_vr.auto_coins ? "Start (with a coin)" : "Start");
+    it[8].label = held[0];
+    it[9].label = held[1];
+}
 
 static void menu_items(XmItem *it)
 {
@@ -1835,7 +1866,7 @@ static void menu_items(XmItem *it)
         "Screen", "Immersive detail", "Display rate", "Sight", "Laser", "Gun model", "Gun hand", "Stereo 3D", "Aspect", "Resolution",
         "Screen distance", "Screen size", "Coins", "Insert a coin", "Recentre view",
         "Arcade Test button (select)", "Arcade Service button (next)", "Reset game", "Close", "Show stats",
-        "Resolution per eye" };
+        "Resolution per eye", "Controls" };
     int i;
     for (i = 0; i < M_COUNT; i++) {
         it[i].label = labels[i];
@@ -1911,11 +1942,16 @@ static void menu_paint(void)
     static unsigned char img[XM_W * XM_H * 4];
     XmItem it[M_COUNT], shown[M_COUNT];
     int i;
-    menu_items(it);
-    for (i = 0; i < MENU_ROWS; i++)
-        shown[i] = it[s_rows[i]];
-    xm_paint(img, chihiro_profile()->vr.panel_title, shown, MENU_ROWS, s_menu.hover,
-             "Point, pull the trigger. Menu button: close.");
+    if (s_menu.page) {
+        controls_items(shown);
+        xm_paint(img, "Controls", shown, CTRL_ROWS, s_menu.hover, "Point at Back, pull the trigger.");
+    } else {
+        menu_items(it);
+        for (i = 0; i < MENU_ROWS; i++)
+            shown[i] = it[s_rows[i]];
+        xm_paint(img, chihiro_profile()->vr.panel_title, shown, MENU_ROWS, s_menu.hover,
+                 "Point, pull the trigger. Menu button: close.");
+    }
     dump_ppm("panel.ppm", img, XM_W, XM_H);
 #ifdef CHIHIRO_RENDERER_VULKAN
     vk_menu_upload(img);
@@ -1951,6 +1987,7 @@ static void menu_toggle(const char *why)
 {
     s_menu.open = !s_menu.open;
     s_menu.reset_armed = 0;
+    s_menu.page = 0;
     if (s_menu.open) {
         menu_place();
         s_menu.hover = -1;
@@ -2042,6 +2079,7 @@ static void menu_choose(int item)
         s_vr.eye = eyes[k];
         break;
     }
+    case M_CONTROLS: s_menu.page = 1; s_menu.hover = -1; break;
     case M_COINS: s_vr.auto_coins = !s_vr.auto_coins; break;
     case M_COIN: s_menu.coin = 1; break;
     case M_RECENTRE: recentre(); break;
@@ -2262,7 +2300,7 @@ static void gun_frame(XrTime t, const Frame *f)
     if (s_menu.open) {          /* the gun points at the panel; the game sees nothing */
         float u, v, hit[3];
         int on = located && menu_hit(o, d, &u, &v, hit);
-        int row = on ? xm_row_at(u, v, MENU_ROWS) : -1;
+        int row = on ? xm_row_at(u, v, s_menu.page ? CTRL_ROWS : MENU_ROWS) : -1;
         if (row != s_menu.hover) {
             s_menu.hover = row;
             s_menu.dirty = 1;
@@ -2271,7 +2309,12 @@ static void gun_frame(XrTime t, const Frame *f)
             memcpy(s_qo.end, hit, sizeof hit);
         s_qo.beam = 1;
         s_qo.dot = on;
-        if (now[s_gun][0] && !was[s_gun][0] && row >= 0) {
+        if (now[s_gun][0] && !was[s_gun][0] && s_menu.page && row == CTRL_ROWS - 1) {
+            s_menu.page = 0;            /* Back */
+            s_menu.hover = -1;
+            s_menu.dirty = 1;
+            rumble(s_gun, 0.25f, 15);
+        } else if (now[s_gun][0] && !was[s_gun][0] && !s_menu.page && row >= 0) {
             menu_choose(s_rows[row]);
             rumble(s_gun, 0.25f, 15);
         }
