@@ -188,6 +188,7 @@ struct ChVkTarget {
 static VkResult finish_batch_named(ChVkTarget *,int,const char *);
 static void live_release(ChVkTarget *);
 static void open_pass(ChVkTarget *,uint32_t,const VkClearValue *);
+static VkResult submit_as(ChVkTarget *,const char *);
 static VkFramebuffer target_framebuffer(const ChVkTarget *);   /* foveation level's */
 static VkResult drain_ring(ChVkTarget *);
 static VkResult wait_copy_source(ChVkTarget *);
@@ -992,7 +993,7 @@ static void live_release(ChVkTarget *source) {
     for(unsigned i=0;i<reader->live_count;i++) if(reader->live[i].source==source && !reader->live[i].recorded) {
         reader->live[i]=reader->live[--reader->live_count];source->live_reader=NULL;return;
     }
-    (void)ch_vk_target_submit(reader);
+    (void)submit_as(reader,"lent_image_released");
     /* No batch was recorded after all: the barrier never reached the queue. */
     if(source->live_reader==reader) {live_forget(reader,source);source->live_reader=NULL;}
 }
@@ -1062,13 +1063,19 @@ static VkResult finish_batch_named(ChVkTarget *t,int readback,const char *caller
     return finish_batch_with_copy(t,readback,caller,NULL,NULL,0);
 }
 VkResult ch_vk_target_finish(ChVkTarget *t) {return finish_batch_named(t,0,"external_completion");}
-VkResult ch_vk_target_submit(ChVkTarget *t) {
+/* why: the batch boundary's name in the profile ([Vulkan batch boundaries]):
+ * lazy_completion (a flip or guest completion), lent_by_source (its image
+ * lent: its writes go first), lend_to_reader (about to sample a newly lent
+ * image), lent_image_released (an image it samples is about to change or
+ * go to another reader). */
+static VkResult submit_as(ChVkTarget *t,const char *why) {
     if(!t || t->failed) return VK_ERROR_INITIALIZATION_FAILED;
     if(!t->pending || t->submitted) return VK_SUCCESS;
-    VkResult r=finish_batch_with_copy(t,0,"lazy_completion",NULL,NULL,1);
+    VkResult r=finish_batch_with_copy(t,0,why,NULL,NULL,1);
     if(r==VK_SUCCESS) t->deferred_retire=t->submitted;
     return r;
 }
+VkResult ch_vk_target_submit(ChVkTarget *t) {return submit_as(t,"lazy_completion");}
 static VkResult quantize_depth(ChVkTarget *,int);
 VkResult ch_vk_target_depth_quantization(ChVkTarget *t,int mode) {
     if(!t || mode<0 || mode>5)return VK_ERROR_INITIALIZATION_FAILED;
@@ -1505,7 +1512,7 @@ VkResult ch_vk_target_lend_texture(ChVkTarget *t,ChVkTarget *reader,int alpha_on
         if(reader->live_count==sizeof reader->live/sizeof reader->live[0]) return VK_NOT_READY;
         live_release(t);
         VkResult r=retire_copy_out(t);if(r!=VK_SUCCESS) return r;
-        r=ch_vk_target_submit(t);if(r!=VK_SUCCESS) return r;   /* the image's writes reach the queue first */
+        r=submit_as(t,"lent_by_source");if(r!=VK_SUCCESS) return r;   /* the image's writes reach the queue first */
         if(t->layout!=VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL) return VK_NOT_READY;
         /* The acquire barrier goes before the reader's next render pass --
          * before this batch's own when it has not begun (an opening clear
@@ -1514,7 +1521,7 @@ VkResult ch_vk_target_lend_texture(ChVkTarget *t,ChVkTarget *reader,int alpha_on
          * render pass holding only the clear: on a GPU that renders in
          * tiles, the whole image stored and loaded back. */
         int in_batch=reader->pending && reader->pass_deferred;
-        if(reader->pending && !in_batch) {r=ch_vk_target_submit(reader);if(r!=VK_SUCCESS) return r;}
+        if(reader->pending && !in_batch) {r=submit_as(reader,"lend_to_reader");if(r!=VK_SUCCESS) return r;}
         if(in_batch) live_barrier(reader->command,t,1);
         reader->live[reader->live_count].source=t;reader->live[reader->live_count++].recorded=in_batch;
         t->live_reader=reader;

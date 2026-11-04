@@ -265,7 +265,19 @@ Done so far, in `vk_target.c` and `vk_immersive.c`:
   (-3.5%); fps unchanged, ~20 MB more memory
   (`CHIHIRO_VULKAN_IMMERSIVE_BATCH=256`: as before).
 
-Ruled out: leaving out the corners of each eye's picture that the lenses
+What still ends an eye batch (`CHIHIRO_VULKAN_PROFILE=1`, `[Vulkan batch
+boundaries]`, mission 2's first area, per frame): full-size eyes 4.7 --
+`lent_by_source` 2.3 (the scene sampled after new draws: its writes go to
+the queue first), `lazy_completion` 1.1 (the flip), `lent_image_released`
+0.9 (an image it samples is about to be drawn into), `batch_limit` 0.4;
+glow buffers 3.1 -- `lent_image_released` 1.4, `geometry_full` 0.8,
+`lend_to_reader` 0.4, `lazy_completion` 0.3. Most follow VC3's own order
+of drawing and sampling.
+
+Ruled out: letting several readers sample a lent image at once (it went
+to one reader at a time, so lending it on ended the last reader's batch):
+the glow's batch ends 3.0 -> 2.3 a frame, but tiled GPU unchanged over two
+pairs. Leaving out the corners of each eye's picture that the lenses
 never show (XR_KHR_visibility_mask: 7% of a picture on the Frame) -- no
 measurable change. Run to run the same route varies ~5%.
 
