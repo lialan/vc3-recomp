@@ -2462,7 +2462,12 @@ static VkResult draw_full(ChVkTarget *t, const float rgba[4],
     VkDeviceSize payload=header+vertex_bytes+(VkDeviceSize)index_count*sizeof(*indices);
     VkDeviceSize base=t->pending?(t->geometry_used+255)/256*256:0;
     if(base>UINT64_MAX-payload) {result=VK_ERROR_OUT_OF_HOST_MEMORY;goto fail;}
-    if(t->pending && base+payload>t->geometry_capacity) {
+    /* Only a batch with geometry in the arena is ended by it: in the ring, one
+     * holding clears alone (no draw yet; a slot's arena is made at its first
+     * draw, and rotate waited for the slot) gets its arena below instead --
+     * VC3's glow buffers, cleared and then drawn, ended there 0.8 times a
+     * frame on an arena not yet made. */
+    if(t->pending && (t->geometry_used || !t->ring) && base+payload>t->geometry_capacity) {
         if(t->ring && t->batch_enabled) TRY(finish_batch_with_copy(t,0,"geometry_full",NULL,NULL,1));
         else TRY(finish_batch_named(t,0,__func__));
         base=0;
