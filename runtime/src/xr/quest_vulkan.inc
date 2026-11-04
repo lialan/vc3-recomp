@@ -747,6 +747,59 @@ static void vk_overlay_draw(unsigned e,const float vp[16],const float eye[3],siz
             s_qo.end[0],s_qo.end[1],s_qo.end[2],eye[0],eye[1],eye[2],s_qo.beam,s_qo.dot,s_qo.flash,s_qo.sight,s_menu.open);
     }
 }
+/* The HUD spread toward the edges of the view, leaving the middle clear
+ * (VC3_XR_HUD_SPREAD=0: one quad, as the game draws it). The picture goes in
+ * pieces, each a quad layer of the one HUD swapchain (its subImage): the
+ * corner groups -- score, magazine/weapon/lives, player 2's -- move out by
+ * HUD_SPREAD_X of the panel's half width and HUD_SPREAD_Y of its half height
+ * (times VC3_XR_HUD_SPREAD)
+ * (at the usual lens their outer edges ~38 degrees to the side, ~26 up and
+ * down), the gauge and credits down, the middle stays. The pieces tile the
+ * picture: nothing is shown twice. Rectangles in VC3's 640x480 HUD, y down,
+ * cut round its layout; dx, dy: which way the piece moves. */
+static const struct { short x0,y0,x1,y1; signed char dx,dy; } k_hud_pieces[]={
+    {  0,  0,200, 64,-1,-1},   /* score */
+    {200,  0,440, 64, 0, 0},
+    {440,  0,640, 64, 1,-1},   /* player 2's score */
+    {  0, 64,640,280, 0, 0},   /* the middle */
+    {218,280,430,395, 0, 0},
+    {  0,280,218,480,-1, 1},   /* magazine, weapon, lives */
+    {430,280,640,428, 1, 1},   /* player 2's */
+    {390,428,640,480, 1, 1},   /* ... and PRESS START BUTTON */
+    {218,395,430,428, 0, 1},   /* the gauge */
+    {218,428,390,480, 0, 1},   /* credits */
+};
+#define HUD_PIECES (sizeof k_hud_pieces/sizeof k_hud_pieces[0])
+#define HUD_SPREAD_X .85f
+#define HUD_SPREAD_Y .55f
+static XrCompositionLayerQuad s_vk_hud_piece[HUD_PIECES];
+/* The pieces of the HUD's quad layer (base, posed at hp, pw x ph metres) into
+ * layers; 0 when it is not to be spread (then the caller shows it whole). */
+static unsigned vk_hud_pieces(const XrCompositionLayerBaseHeader *base,const XrPosef *hp,float pw,float ph,
+    const XrCompositionLayerBaseHeader **layers)
+{
+    static float spread=-1;   /* VC3_XR_HUD_SPREAD=k: k times as far out (1 by default; 0: off) */
+    if(spread<0) spread=ch_env("XR_HUD_SPREAD")?(float)atof(ch_env("XR_HUD_SPREAD")):1.f;
+    const uint32_t tw=s_vk_hud_tw,th=s_vk_hud_th;
+    if(!(spread>0) || !tw || tw*3!=th*4) return 0;   /* the game's 4:3 HUD only */
+    const float right_unit[3]={1,0,0};float r[3];yaw_rot(s_anchor_yaw,right_unit,r);
+    const float sx=(float)tw/640.f,sy=(float)th/480.f;
+    for(unsigned i=0;i<HUD_PIECES;i++) {
+        XrCompositionLayerQuad q=*(const XrCompositionLayerQuad *)base;
+        const int32_t x0=(int32_t)(k_hud_pieces[i].x0*sx+.5f),y0=(int32_t)(k_hud_pieces[i].y0*sy+.5f);
+        const int32_t x1=(int32_t)(k_hud_pieces[i].x1*sx+.5f),y1=(int32_t)(k_hud_pieces[i].y1*sy+.5f);
+        q.subImage.imageRect=(XrRect2Di){{x0,y0},{x1-x0,y1-y0}};
+        q.size=(XrExtent2Df){(float)(x1-x0)/(float)tw*pw,(float)(y1-y0)/(float)th*ph};
+        /* the piece's centre from the panel's, metres: right, up */
+        const float cx=((float)(x0+x1)*.5f/(float)tw-.5f)*pw+k_hud_pieces[i].dx*spread*HUD_SPREAD_X*pw*.5f;
+        const float cy=(.5f-(float)(y0+y1)*.5f/(float)th)*ph-k_hud_pieces[i].dy*spread*HUD_SPREAD_Y*ph*.5f;
+        q.pose=*hp;
+        q.pose.position.x+=r[0]*cx;q.pose.position.y+=cy;q.pose.position.z+=r[2]*cx;
+        s_vk_hud_piece[i]=q;
+        layers[i]=(const XrCompositionLayerBaseHeader *)&s_vk_hud_piece[i];
+    }
+    return HUD_PIECES;
+}
 static unsigned vk_present(const Frame *f,const XrCompositionLayerBaseHeader **layers,XrDuration display_period)
 {
     unsigned count=0;
@@ -770,7 +823,10 @@ static unsigned vk_present(const Frame *f,const XrCompositionLayerBaseHeader **l
                 .position={c[0]+s_anchor_p[0],c[1]+s_anchor_p[1],c[2]+s_anchor_p[2]}};
             vk_xr_check(ch_vk_xr_quad_pose(s_vk_hud_quad,&hp,(XrExtent2Df){pw,ph}),"HUD pose");
             const XrCompositionLayerBaseHeader *hud=ch_vk_xr_quad_layer(s_vk_hud_quad);
-            if(hud) layers[count++]=hud;
+            if(hud) {
+                unsigned n=vk_hud_pieces(hud,&hp,pw,ph,layers+count);
+                if(n) count+=n; else layers[count++]=hud;
+            }
         }
     } else if(f && vk_screen_in_eyes()) screen_new=vk_screen_update(f);
     else if(f) {

@@ -175,20 +175,28 @@ on each eye's view axis. `CHIHIRO_VULKAN_IMMERSIVE_SCALE=1`: native always
 scale`, and with `CHIHIRO_VULKAN_IMMERSIVE_LOG=1` each half second with
 late frames. The stats panel shows the picture as drawn ("1512x1512 70%")
 and the game's share of the GPU ("GPU 64% game 55%"); the menu's Native
-reads "Native, now at 70%" while lowered. Screens on, held gun, head level
+reads "Native, now at 70%" while lowered. Screens on, head level
 (`VC3_XR_FAKE_HEAD=1`), default settings: mission 1 and mission 2's first
 area stay at native, 57-61 fps, GPU 60-73% (game 52-64%); at 2560 per eye in
 mission 2's first area (an overload) it steps down to 70-90% and back.
 
-Test runs need `VC3_XR_FAKE_HEAD=1` (with `VC3_XR_FAKE_GUN=1`): without it
-the view follows a headset lying on a table, which draws far less than a
-player looking at the action (mission 2's first area: game GPU 35-53%
-against 52-64%). Mipmapped textures are
-filtered 8x anisotropically (`CHIHIRO_VULKAN_ANISO=n`, 1 off; free on the
+Test runs need `VC3_XR_FAKE_HEAD=1`: without it the view follows a headset
+lying on a table, which draws far less than a player looking at the action
+(mission 2's first area: game GPU 35-53% against 52-64%).
+`VC3_XR_FAKE_GUN=1` holds a gun in front of the eyes (`VC3_XR_FAKE_GUN_YAW=deg`
+aims it to the left, `VC3_XR_FAKE_YAW=deg` turns the head); with nobody
+wearing the headset the session is only VISIBLE and xrSyncActions fails,
+and the gun code runs there for it (before, it never ran in test runs).
+
+Mipmapped textures are filtered 8x anisotropically (`CHIHIRO_VULKAN_ANISO=n`, 1 off; free on the
 Frame). With the headset on, SteamVR's compositor works at 120 Hz on the
 same GPU, and every full-view layer it blends costs: the HUD is a quad layer
 of its own at the game's 640x480 (`VC3_XR_HUD_OVERLAY=1`: drawn into the
-overlay as before) and the overlay, now only the gun, laser and dot, is 0.75
+overlay as before), shown in ten pieces of the one swapchain: the corner
+groups (score, magazine/weapon/lives, player 2's) spread toward the edges of
+the view, ~38 degrees to the side and ~26 up or down at the usual lens, the
+gauge and credits lower, the middle clear (`VC3_XR_HUD_SPREAD=k`: k times
+as far; 0, one quad as the game draws it) and the overlay, now only the gun, laser and dot, is 0.75
 of the eye size (`VC3_OVERLAY_SCALE`). Game frames shown exactly twice
 (scripted route, compositor kept running with `power.pauseCompositorOnStandby`
 0): 84% with the HUD in a full-size overlay, 89% at overlay 0.75, 96% with
