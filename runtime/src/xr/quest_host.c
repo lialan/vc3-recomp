@@ -525,7 +525,9 @@ static struct {
     int screen_native;  /* the virtual screen drawn at its size on the display
                            (default), else at the Resolution setting's scale */
     int show_stats;     /* the stats panel, head-locked top right (default on) */
-} s_vr = { QO_SIGHT_RED_DOT, LASER_DOT, 1, 0, 1, 1, 120, 0, 1, 1 };
+    int eye;            /* Vulkan: each eye's picture n x n, 0 native (default); at the next start */
+} s_vr = { QO_SIGHT_RED_DOT, LASER_DOT, 1, 0, 1, 1, 120, 0, 1, 1, 0 };
+static int s_eye_boot;  /* s_vr.eye this run was started with */
 /* The display's own pixels per eye (native_init): what "Native" draws. */
 static uint32_t s_native_w, s_native_h;
 
@@ -569,6 +571,9 @@ static void screen_load(void)
         s_vr.screen_native = strcmp(v, "scale") != 0;
     if ((v = vc3_setting_get("vr_stats=")))
         s_vr.show_stats = strcmp(v, "off") != 0;
+    if ((v = vc3_setting_get("vr_eye=")))
+        s_vr.eye = atoi(v) >= 256 ? atoi(v) : 0;        /* "native": 0 */
+    s_eye_boot = s_vr.eye;
 }
 
 static void screen_save(void)
@@ -599,6 +604,8 @@ static void vr_save(void)
         vc3_setting_put("vr_res=", s_vr.imm_scale == 1 ? "1x" : s_vr.imm_scale == 2 ? "2x"
                                                          : "native");
         vc3_setting_put("vr_screen_res=", s_vr.screen_native ? "native" : "scale");
+        snprintf(b, sizeof b, "%d", s_vr.eye);
+        vc3_setting_put("vr_eye=", s_vr.eye ? b : "native");
     }
     screen_save();
 }
@@ -1799,13 +1806,14 @@ static int overlay_init(void)
  * input meanwhile. Holding the other hand's upper button (B / Y) for a
  * second opens and closes it too. */
 enum { M_SCREEN, M_DETAIL, M_REFRESH, M_SIGHT, M_LASER, M_GUN, M_HAND, M_STEREO, M_ASPECT, M_RES, M_DIST, M_SIZE,
-       M_COINS, M_COIN, M_RECENTRE, M_TEST, M_SERVICE, M_RESET, M_CLOSE, M_STATS, M_COUNT };
+       M_COINS, M_COIN, M_RECENTRE, M_TEST, M_SERVICE, M_RESET, M_CLOSE, M_STATS, M_EYE, M_COUNT };
 /* The rows shown, in The House of the Dead 4 VR's order. The Vulkan
- * renderer has the immersive view (Screen) but no stereo screen, render
- * scale or 16:9, so its panel has only the items that act. */
+ * renderer has the immersive view (Screen) and HOTD4's Resolution per eye
+ * but no stereo screen, render scale or 16:9, so its panel has only the
+ * items that act. */
 #ifdef CHIHIRO_RENDERER_VULKAN
 static const int s_rows[] = { M_SCREEN, M_SIGHT, M_LASER, M_GUN, M_HAND, M_STATS, M_DIST, M_SIZE, M_REFRESH,
-                              M_COINS, M_COIN, M_RECENTRE, M_TEST, M_SERVICE, M_RESET, M_CLOSE };
+                              M_EYE, M_COINS, M_COIN, M_RECENTRE, M_TEST, M_SERVICE, M_RESET, M_CLOSE };
 #else
 static const int s_rows[] = { M_SCREEN, M_DETAIL, M_REFRESH, M_SIGHT, M_LASER, M_GUN, M_HAND, M_STEREO,
                               M_ASPECT, M_RES, M_DIST, M_SIZE, M_COINS, M_COIN, M_RECENTRE, M_TEST,
@@ -1826,7 +1834,8 @@ static void menu_items(XmItem *it)
     static const char *const labels[M_COUNT] = {
         "Screen", "Immersive detail", "Display rate", "Sight", "Laser", "Gun model", "Gun hand", "Stereo 3D", "Aspect", "Resolution",
         "Screen distance", "Screen size", "Coins", "Insert a coin", "Recentre view",
-        "Arcade Test button (select)", "Arcade Service button (next)", "Reset game", "Close", "Show stats" };
+        "Arcade Test button (select)", "Arcade Service button (next)", "Reset game", "Close", "Show stats",
+        "Resolution per eye" };
     int i;
     for (i = 0; i < M_COUNT; i++) {
         it[i].label = labels[i];
@@ -1863,6 +1872,12 @@ static void menu_items(XmItem *it)
     else
         snprintf(it[M_SIZE].value, 40, "%.1f m tall", s_height);
     snprintf(it[M_COINS].value, 40, "%s", s_vr.auto_coins ? "Automatic" : "By menu");
+    if (!s_vr.eye && s_eye_boot)        /* the eyes are made at start-up */
+        snprintf(it[M_EYE].value, 40, "Native (on restart)");
+    else if (!s_vr.eye)
+        snprintf(it[M_EYE].value, 40, "Native (%u)", s_native_w);
+    else
+        snprintf(it[M_EYE].value, 40, "%d%s", s_vr.eye, s_vr.eye == s_eye_boot ? "" : " (on restart)");
     if (s_menu.reset_armed)
         snprintf(it[M_RESET].value, 40, "Pull again to reset");
 }
@@ -2019,6 +2034,14 @@ static void menu_choose(int item)
             cycle(&s_height, sizes, 5);
         }
         break;
+    case M_EYE: {       /* HOTD4's sizes, then the panel's own (native) */
+        static const int eyes[] = { 1216, 1440, 1680, 1920, 0 };
+        int k = 0;
+        while (s_vr.eye && k < 4 && eyes[k] <= s_vr.eye)
+            k++;
+        s_vr.eye = eyes[k];
+        break;
+    }
     case M_COINS: s_vr.auto_coins = !s_vr.auto_coins; break;
     case M_COIN: s_menu.coin = 1; break;
     case M_RECENTRE: recentre(); break;
@@ -2046,7 +2069,7 @@ static void menu_choose(int item)
  * Start (with automatic coins, a coin with it); the left menu button opens
  * the settings. A trigger on the other hand moves the gun there. The other
  * hand's thumbstick moves the screen (up/down: nearer/farther; left/right:
- * smaller/larger). */
+ * smaller/larger); its A / X held for a second recentres the view. */
 static float s_hit_u = -1, s_hit_v = -1;
 static QoFrame s_qo;
 static XrTime s_shot_t;
@@ -2055,7 +2078,7 @@ static void gun_frame(XrTime t, const Frame *f)
 {
     static int was[2][5], was_menu, was_start;
     static float stick_cool;
-    static XrTime panel_held;
+    static XrTime panel_held, recentre_held;
     static unsigned frames;
     XrActiveActionSet as = { 0 };
     XrActionsSyncInfo sy = { XR_TYPE_ACTIONS_SYNC_INFO };
@@ -2104,6 +2127,13 @@ static void gun_frame(XrTime t, const Frame *f)
         menu_toggle("held button");
         rumble(off, 0.3f, 20);
     }
+    if (now[off][1] && !was[off][1])    /* its lower button (A / X) held: Recentre view */
+        recentre_held = t;
+    if (now[off][1] && recentre_held && t - recentre_held >= 1000000000) {
+        recentre_held = 0;
+        recentre();
+        rumble(off, 0.3f, 20);
+    }
 
     s_hit_u = s_hit_v = -1;
     s_qo.gun_valid = 0;
@@ -2125,6 +2155,19 @@ static void gun_frame(XrTime t, const Frame *f)
             (void)pitch;
             loc.pose.position = (XrVector3f){ 0.0f, -sh - 0.002f, -0.30f };
             got = 1;
+        }
+        if (got) {  /* a unit quaternion, finite: the overlay (vk_overlay.c) refuses others */
+            XrQuaternionf *q = &loc.pose.orientation;
+            float n = sqrtf(q->x * q->x + q->y * q->y + q->z * q->z + q->w * q->w);
+            if (n > 1e-3f && isfinite(n) && isfinite(loc.pose.position.x)
+                && isfinite(loc.pose.position.y) && isfinite(loc.pose.position.z)) {
+                q->x /= n;
+                q->y /= n;
+                q->z /= n;
+                q->w /= n;
+            } else {
+                got = 0;
+            }
         }
         if (got) {
             static const float fwd[3] = { 0, 0, -1 };
@@ -2254,7 +2297,7 @@ static void gun_frame(XrTime t, const Frame *f)
     /* the kick and the flash of a shot */
     {
         double ms = s_shot_t ? (double)(t - s_shot_t) / 1e6 : 1e9;
-        s_qo.kick = ms < 140 ? (float)(1.0 - ms / 140.0) : 0.0f;
+        s_qo.kick = ms >= 0 && ms < 140 ? (float)(1.0 - ms / 140.0) : 0.0f;
         s_qo.flash = ms < 40;
     }
 

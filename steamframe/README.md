@@ -120,7 +120,8 @@ seed. The log line
 ### Immersive VR
 
 The game's 3D is drawn from each eye at the panel's native 2160x2160
-(SteamVR recommends 1728; `VC3_IMM_EYE=n` for n x n, up to 2560), with
+(SteamVR recommends 1728; the settings panel's Resolution per eye, 1216 to
+1920 or Native, from the next start; `VC3_IMM_EYE=n` for n x n, up to 2560), with
 foveated shading (`VK_KHR_fragment_shading_rate` attachments on the eye
 images): full rate within 30 degrees of each eye's view axis, 2x1 to 45, 2x2
 to 60, 4x4 beyond -- 12%, 25%, 52% and 9% of the image

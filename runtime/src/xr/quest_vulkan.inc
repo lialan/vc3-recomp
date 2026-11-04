@@ -104,12 +104,12 @@ static int vk_imm_view(void *context,Vc3VrView *view)
 #define VK_BRIDGE_CAPACITY ((VkDeviceSize)2*VK_EYE_MAX*VK_EYE_MAX*4+(VkDeviceSize)1280*960*4)
 /* Each eye's picture: the panel's native size (s_native_w; 2160 on the
  * Steam Frame, where SteamVR recommends 1728), with foveated shading
- * (vk_split_init) keeping E.S. on its vblank there. VC3_IMM_EYE=n draws
- * n x n instead (up to VK_EYE_MAX). */
+ * (vk_split_init) keeping E.S. on its vblank there. The panel's Resolution
+ * per eye (vr_eye=n) or VC3_IMM_EYE=n draws n x n instead (up to VK_EYE_MAX). */
 static void vk_imm_eye_size(uint32_t *w,uint32_t *h)
 {
     const char *e=ch_env("IMM_EYE");
-    int n=e?atoi(e):0;
+    int n=e?atoi(e):s_vr.eye;
     if(n>=256 && n<=VK_EYE_MAX) {*w=*h=(uint32_t)n;return;}
     uint32_t nw=s_native_w>=256?s_native_w:1440,nh=s_native_h>=256?s_native_h:nw;
     *w=nw;*h=nh;
@@ -723,6 +723,24 @@ static const XrCompositionLayerBaseHeader *vk_stats_layer(void)
     }
     return ch_vk_xr_quad_layer(s_vk_stats);
 }
+/* The gun, its beam and dot into an eye's overlay. Input the overlay
+ * refuses (VK_ERROR_INITIALIZATION_FAILED, checked before each part is
+ * drawn) costs that eye the rest of its gun for the frame, logged with what
+ * it was given: it aborted the game with the settings panel open
+ * (2026-11-03). Other failures stop. */
+static void vk_overlay_draw(unsigned e,const float vp[16],const float eye[3],size_t bytes)
+{
+    VkResult r=ch_vk_overlay_read(s_vk_eye[e].target,&s_qo,vp,eye,qo_sight_height(s_vr.sight),s_vk_eye[e].pixels,bytes);
+    if(r!=VK_ERROR_INITIALIZATION_FAILED) {vk_check(r,"overlay draw");return;}
+    static unsigned refused;
+    if(refused++<8) {
+        const float *q=s_qo.gun_q;
+        fprintf(stderr,"[quest Vulkan] overlay draw refused (%u): eye %u |q|^2 %.6f kick %.3f gun %.3f %.3f %.3f "
+            "end %.3f %.3f %.3f eye %.3f %.3f %.3f beam %d dot %d flash %d sight %d panel %d\n",
+            refused,e,q[0]*q[0]+q[1]*q[1]+q[2]*q[2]+q[3]*q[3],s_qo.kick,s_qo.gun_p[0],s_qo.gun_p[1],s_qo.gun_p[2],
+            s_qo.end[0],s_qo.end[1],s_qo.end[2],eye[0],eye[1],eye[2],s_qo.beam,s_qo.dot,s_qo.flash,s_qo.sight,s_menu.open);
+    }
+}
 static unsigned vk_present(const Frame *f,const XrCompositionLayerBaseHeader **layers,XrDuration display_period)
 {
     unsigned count=0;
@@ -804,8 +822,7 @@ static unsigned vk_present(const Frame *f,const XrCompositionLayerBaseHeader **l
             SEG(1,vk_check(ch_vk_target_clear_aspects_read(s_vk_eye[e].target,1,eye_test?tint[e]:transparent,0,0,s_vk_eye[e].pixels,bytes),"overlay clear"));
             if(screen) vk_screen_draw(s_vk_eye[e].target,vp,s_vk_eye[e].pixels,bytes);
             if(hud_shown) SEG(2,vk_hud_draw(f,s_vk_eye[e].target,vp,s_vk_eye[e].pixels,bytes));
-            if(s_qo.gun_valid) SEG(3,vk_check(ch_vk_overlay_read(s_vk_eye[e].target,&s_qo,vp,eye,qo_sight_height(s_vr.sight),
-                s_vk_eye[e].pixels,bytes),"overlay draw"));
+            if(s_qo.gun_valid) SEG(3,vk_overlay_draw(e,vp,eye,bytes));
             SEG(10,vk_xr_check(ch_vk_xr_swapchain_wait(s_vk_eye[e].chain,XR_INFINITE_DURATION,&index,&image),"overlay acquire"));
             if(!ocmd) ocmd=vk_host_begin();
             VkResult exported;
