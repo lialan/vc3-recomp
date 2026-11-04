@@ -241,12 +241,10 @@ cost +60% (20 us a draw) and the other targets twice as much: each eye
 surface's batch ends 4-6 times a frame where another samples it (scene ->
 glow -> composite -> trail), and every end stores and reloads whole images.
 For the Quest that is the work: fewer of those ends, then load/store ops.
-A clear that opens a batch, full or color-only (the glow buffers), is now
-the render pass's own clear (load op CLEAR) rather than one drawn inside
-it: mission 2 -5% (12.70 -> 12.05 us an eye draw), tiled eyes 20.2 -> 19.4
-us and the other targets 2.37 -> 2.15 ms; combat unchanged
-(`CHIHIRO_VULKAN_PASS_CLEAR=0`: as before). Depth and stencil alone that
-way cost ~4% on the Frame's direct rendering, so they stay inside. Ruled out: leaving out the corners of each eye's picture that the lenses
+A full clear that opens a batch is now the render pass's own clear (load
+op CLEAR) rather than one drawn inside it: mission 2 -4% (12.70 -> 12.35 us
+an eye draw, two runs each), tiled 20.2 -> 19.5 us; combat unchanged
+(`CHIHIRO_VULKAN_PASS_CLEAR=0`: as before). Ruled out: leaving out the corners of each eye's picture that the lenses
 never show (XR_KHR_visibility_mask: 7% of a picture on the Frame) -- no
 measurable change. Run to run the same route varies ~5%.
 
