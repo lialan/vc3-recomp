@@ -62,7 +62,11 @@ struct ChVkTarget {
     uint32_t family;
     VkPhysicalDevice physical;
     VkRenderPass pass;
-    VkRenderPass pass_clear;   /* the same pass clearing color, depth and stencil as it begins */
+    VkRenderPass pass_clear[8];   /* by clear aspects (1 color, 6 depth and stencil, 7 all): the same pass clearing them as it begins */
+    /* A batch opened by such a clear begins its render pass at its first
+     * draw (or its end): an image lent to it in between is acquired before
+     * the pass instead of ending the batch (vk_target_lend_texture). */
+    int pass_deferred; uint32_t deferred_aspects; VkClearValue deferred_clear[2];
     VkImageView view;
     VkFramebuffer framebuffer;
     /* foveation: a rate image and framebuffer per dynamic-resolution level */
@@ -183,6 +187,7 @@ struct ChVkTarget {
 };
 static VkResult finish_batch_named(ChVkTarget *,int,const char *);
 static void live_release(ChVkTarget *);
+static void open_pass(ChVkTarget *,uint32_t,const VkClearValue *);
 static VkFramebuffer target_framebuffer(const ChVkTarget *);   /* foveation level's */
 static VkResult drain_ring(ChVkTarget *);
 static VkResult wait_copy_source(ChVkTarget *);
@@ -418,7 +423,7 @@ void ch_vk_target_destroy(ChVkTarget *t) {
     if(t->framebuffer) vkDestroyFramebuffer(t->device,t->framebuffer,NULL);
     if(t->view) vkDestroyImageView(t->device,t->view,NULL);
     if(t->pass) vkDestroyRenderPass(t->device,t->pass,NULL);
-    if(t->pass_clear) vkDestroyRenderPass(t->device,t->pass_clear,NULL);
+    for(int i=0;i<8;i++) if(t->pass_clear[i]) vkDestroyRenderPass(t->device,t->pass_clear[i],NULL);
     for(int i=0;i<4;i++) {
         if(i && t->fov_fb[i]) vkDestroyFramebuffer(t->device,t->fov_fb[i],NULL);   /* [0] is t->framebuffer */
         if(t->rate_view[i]) vkDestroyImageView(t->device,t->rate_view[i],NULL);
@@ -998,6 +1003,7 @@ static VkResult finish_batch_with_copy(ChVkTarget *t,int readback,const char *ca
     if(t->submitted) return retire_batch(t);
     if(!t->pending) {TRY(drain_ring(t));TRY(wait_copy_source(t));return wait_upload(t);}
     uint64_t finish_start=t->timing?time_ns():0;
+    if(t->pass_deferred) open_pass(t,t->deferred_aspects,t->deferred_clear);   /* a batch of the clear alone */
     vkCmdEndRenderPass(t->command);
     {   /* Hand lent images back once this batch's samples are recorded. */
         unsigned kept=0;
@@ -1125,9 +1131,17 @@ fail:t->failed=1;return result;
 VkResult ch_vk_target_quantize_depth(ChVkTarget *t) {return quantize_depth(t,1);}
 VkResult ch_vk_target_quantize_depth_draw(ChVkTarget *t) {return quantize_depth(t,2);}
 VkResult ch_vk_target_quantize_depth_input(ChVkTarget *t) {return quantize_depth(t,3);}
-/* clear: the batch opens with a full clear of color, depth and stencil --
- * the render pass's own (pass_clear), not a clear drawn inside it. */
-static VkResult begin_batch_clear(ChVkTarget *t,const VkClearValue clear[2]) {
+static void open_pass(ChVkTarget *t,uint32_t aspects,const VkClearValue *clear) {
+    VkRenderPassBeginInfo pass={.sType=VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,.renderPass=clear?t->pass_clear[aspects&7]:t->pass,
+        .framebuffer=target_framebuffer(t),.renderArea={{0,0},{t->width,t->height}},
+        .clearValueCount=clear?2:0,.pClearValues=clear};
+    vkCmdBeginRenderPass(t->command,&pass,VK_SUBPASS_CONTENTS_INLINE);
+    t->pass_deferred=0;
+}
+/* clear: the batch opens with a clear of these aspects (1 color, 2 depth,
+ * 4 stencil) -- the render pass's own (pass_clear), not one drawn inside it;
+ * the pass itself begins at the batch's first draw or its end. */
+static VkResult begin_batch_clear(ChVkTarget *t,uint32_t aspects,const VkClearValue clear[2]) {
     VkResult result;
     TRY(retire_copy_out(t));
     if(!t->pending) {
@@ -1168,15 +1182,17 @@ static VkResult begin_batch_clear(ChVkTarget *t,const VkClearValue clear[2]) {
         vkCmdPipelineBarrier(t->command,VK_PIPELINE_STAGE_TRANSFER_BIT|VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT|VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
             VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT|VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT|VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
             0,0,NULL,0,NULL,2,barriers);
-        VkRenderPassBeginInfo pass={.sType=VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,.renderPass=clear?t->pass_clear:t->pass,
-            .framebuffer=target_framebuffer(t),.renderArea={{0,0},{t->width,t->height}},
-            .clearValueCount=clear?2:0,.pClearValues=clear};
-        vkCmdBeginRenderPass(t->command,&pass,VK_SUBPASS_CONTENTS_INLINE);
-    }
+        static int defer=-1;   /* CHIHIRO_VULKAN_DEFER_PASS=0: the pass begins with the clear */
+        if(defer<0) {const char *e=getenv("CHIHIRO_VULKAN_DEFER_PASS");defer=!e || atoi(e)!=0;}
+        t->pass_deferred=0;
+        if(clear && defer) {
+            t->pass_deferred=1;t->deferred_aspects=aspects;memcpy(t->deferred_clear,clear,sizeof t->deferred_clear);
+        } else open_pass(t,aspects,clear);
+    } else if(t->pass_deferred) open_pass(t,t->deferred_aspects,t->deferred_clear);
     return VK_SUCCESS;
 fail:t->failed=1;return result;
 }
-static VkResult begin_batch(ChVkTarget *t) {return begin_batch_clear(t,NULL);}
+static VkResult begin_batch(ChVkTarget *t) {return begin_batch_clear(t,0,NULL);}
 static VkResult record_batch(ChVkTarget *t,VkBuffer geometry,VkDeviceSize index_offset,uint32_t index_count) {
     VkResult result;
     uint64_t record_start=t->timing?time_ns():0;
@@ -1491,9 +1507,16 @@ VkResult ch_vk_target_lend_texture(ChVkTarget *t,ChVkTarget *reader,int alpha_on
         VkResult r=retire_copy_out(t);if(r!=VK_SUCCESS) return r;
         r=ch_vk_target_submit(t);if(r!=VK_SUCCESS) return r;   /* the image's writes reach the queue first */
         if(t->layout!=VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL) return VK_NOT_READY;
-        /* The acquire barrier goes before the reader's next render pass. */
-        if(reader->pending) {r=ch_vk_target_submit(reader);if(r!=VK_SUCCESS) return r;}
-        reader->live[reader->live_count].source=t;reader->live[reader->live_count++].recorded=0;
+        /* The acquire barrier goes before the reader's next render pass --
+         * before this batch's own when it has not begun (an opening clear
+         * alone: VC3's presented surfaces and glow buffers, cleared, then
+         * composited from the scene's eyes). Ending the batch there cost a
+         * render pass holding only the clear: on a GPU that renders in
+         * tiles, the whole image stored and loaded back. */
+        int in_batch=reader->pending && reader->pass_deferred;
+        if(reader->pending && !in_batch) {r=ch_vk_target_submit(reader);if(r!=VK_SUCCESS) return r;}
+        if(in_batch) live_barrier(reader->command,t,1);
+        reader->live[reader->live_count].source=t;reader->live[reader->live_count++].recorded=in_batch;
         t->live_reader=reader;
     }
     *out=texture;return VK_SUCCESS;
@@ -1677,7 +1700,9 @@ static VkResult target_pass_foveated(VkDevice device,VkFormat depth_format,int i
          .initialLayout=VK_IMAGE_LAYOUT_FRAGMENT_SHADING_RATE_ATTACHMENT_OPTIMAL_KHR,
          .finalLayout=VK_IMAGE_LAYOUT_FRAGMENT_SHADING_RATE_ATTACHMENT_OPTIMAL_KHR}};
     a[2].storeOp=VK_ATTACHMENT_STORE_OP_DONT_CARE;
-    if(clear) a[0].loadOp=a[1].loadOp=a[1].stencilLoadOp=VK_ATTACHMENT_LOAD_OP_CLEAR;
+    if(clear&1) a[0].loadOp=VK_ATTACHMENT_LOAD_OP_CLEAR;
+    if(clear&2) a[1].loadOp=VK_ATTACHMENT_LOAD_OP_CLEAR;
+    if(clear&4) a[1].stencilLoadOp=VK_ATTACHMENT_LOAD_OP_CLEAR;
     VkAttachmentReference2 color={.sType=VK_STRUCTURE_TYPE_ATTACHMENT_REFERENCE_2,.attachment=0,
         .layout=VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,.aspectMask=VK_IMAGE_ASPECT_COLOR_BIT};
     VkAttachmentReference2 depth={.sType=VK_STRUCTURE_TYPE_ATTACHMENT_REFERENCE_2,.attachment=1,
@@ -1704,8 +1729,9 @@ static VkResult target_pass_foveated(VkDevice device,VkFormat depth_format,int i
         .subpassCount=1,.pSubpasses=&sub,.dependencyCount=input_pass?3:0,.pDependencies=input_pass?deps:NULL};
     return s_fov.create_pass2(device,&rp,NULL,out);
 }
-/* clear: color, depth and stencil cleared as the pass begins (load/store
- * ops leave a pass compatible: the same pipelines and framebuffers). */
+/* clear: these aspects (1 color, 2 depth, 4 stencil) cleared as the pass
+ * begins (load ops leave a pass compatible: the same pipelines and
+ * framebuffers). */
 static VkResult target_pass(VkDevice device,VkFormat depth_format,int input_pass,uint32_t width,int clear,VkRenderPass *out) {
     VkResult result=VK_SUCCESS;
     if(target_foveated(device,width)) return target_pass_foveated(device,depth_format,input_pass,clear,out);
@@ -1721,7 +1747,9 @@ static VkResult target_pass(VkDevice device,VkFormat depth_format,int input_pass
         .loadOp=VK_ATTACHMENT_LOAD_OP_LOAD,.storeOp=VK_ATTACHMENT_STORE_OP_STORE,
         .stencilLoadOp=VK_ATTACHMENT_LOAD_OP_LOAD,.stencilStoreOp=VK_ATTACHMENT_STORE_OP_STORE,
         .initialLayout=VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,.finalLayout=VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL}};
-    if(clear) attachments[0].loadOp=attachments[1].loadOp=attachments[1].stencilLoadOp=VK_ATTACHMENT_LOAD_OP_CLEAR;
+    if(clear&1) attachments[0].loadOp=VK_ATTACHMENT_LOAD_OP_CLEAR;
+    if(clear&2) attachments[1].loadOp=VK_ATTACHMENT_LOAD_OP_CLEAR;
+    if(clear&4) attachments[1].stencilLoadOp=VK_ATTACHMENT_LOAD_OP_CLEAR;
     VkAttachmentReference depth_ref={1,input_pass?VK_IMAGE_LAYOUT_GENERAL:VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL};
     VkAttachmentReference ref={0,VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL};
     VkSubpassDescription sub={.pipelineBindPoint=VK_PIPELINE_BIND_POINT_GRAPHICS,
@@ -1950,7 +1978,10 @@ static VkResult create_pipeline(ChVkTarget *t,const PipelineKey *key) {
         int foveated=target_foveated(t->device,t->width);
         if(foveated) for(int lv=0;lv<4;lv++) TRY(rate_image_create(t,lv));
         TRY(target_pass(t->device,t->depth_format,t->input_pass,t->width,0,&t->pass));
-        TRY(target_pass(t->device,t->depth_format,t->input_pass,t->width,1,&t->pass_clear));
+        /* the clears VC3 opens batches with; not depth and stencil alone
+         * (6): on Turnip's direct rendering that pass cost ~4% in mission 2 */
+        static const int variants[]={1,7};
+        for(int i=0;i<2;i++) TRY(target_pass(t->device,t->depth_format,t->input_pass,t->width,variants[i],&t->pass_clear[variants[i]]));
         VkImageViewCreateInfo view={.sType=VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
             .image=t->image,.viewType=VK_IMAGE_VIEW_TYPE_2D,.format=VK_FORMAT_R8G8B8A8_UNORM,
             .subresourceRange={VK_IMAGE_ASPECT_COLOR_BIT,0,1,0,1}};
@@ -2498,15 +2529,17 @@ VkResult ch_vk_target_clear_aspects_read(ChVkTarget *t, uint32_t flags,
         return render_read(t,rgba,flags,depth,stencil,VK_NULL_HANDLE,0,0,pixels,bytes);
     VkResult result;
     if(t->pending==t->batch_limit) TRY(finish_batch_named(t,0,__func__));
-    /* A full clear opening a batch is the render pass's own: tiled GPUs then
-     * load nothing (CHIHIRO_VULKAN_PASS_CLEAR=0: drawn inside the pass). */
+    /* A clear opening a batch -- all, color only, or depth and stencil -- is
+     * the render pass's own: a tiler loads nothing for those aspects
+     * (CHIHIRO_VULKAN_PASS_CLEAR=0: drawn inside the pass). */
     static int pass_clear=-1;
     if(pass_clear<0) {const char *e=getenv("CHIHIRO_VULKAN_PASS_CLEAR");pass_clear=!e || atoi(e)!=0;}
-    if(pass_clear && flags==7 && !t->pending && t->pass_clear) {
-        VkClearValue clear[2];memcpy(clear[0].color.float32,rgba,4*sizeof(float));
+    if(pass_clear && !t->pending && t->pass_clear[flags]) {
+        VkClearValue clear[2]={0};
+        if(flags&1) memcpy(clear[0].color.float32,rgba,4*sizeof(float));
         clear[1].depthStencil=(VkClearDepthStencilValue){
-            t->quantized_depth==5?ch_vk_depth_unpack(ch_vk_depth_pack_attachment(depth)):depth,stencil};
-        TRY(begin_batch_clear(t,clear));
+            t->quantized_depth==5 && (flags&2)?ch_vk_depth_unpack(ch_vk_depth_pack_attachment(depth)):depth,stencil};
+        TRY(begin_batch_clear(t,flags,clear));
         t->pending++;t->pending_clears++;t->resource_stats.batch_clears++;
         return VK_SUCCESS;
     }

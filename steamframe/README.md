@@ -241,10 +241,25 @@ cost +60% (20 us a draw) and the other targets twice as much: each eye
 surface's batch ends 4-6 times a frame where another samples it (scene ->
 glow -> composite -> trail), and every end stores and reloads whole images.
 For the Quest that is the work: fewer of those ends, then load/store ops.
-A full clear that opens a batch is now the render pass's own clear (load
-op CLEAR) rather than one drawn inside it: mission 2 -4% (12.70 -> 12.35 us
-an eye draw, two runs each), tiled 20.2 -> 19.5 us; combat unchanged
-(`CHIHIRO_VULKAN_PASS_CLEAR=0`: as before). Ruled out: leaving out the corners of each eye's picture that the lenses
+Done so far, both `vk_target.c`:
+- A clear that opens a batch, full or color-only (the glow buffers), is
+  the render pass's own clear (load op CLEAR) rather than one drawn inside
+  it (`CHIHIRO_VULKAN_PASS_CLEAR=0`: as before): mission 2 12.70 -> 12.35
+  us an eye draw with full clears, 12.05 with color-only too; tiled 20.2
+  -> 19.4. Depth and stencil alone that way cost ~4% on the Frame's direct
+  rendering, so those stay inside the pass.
+- That pass begins at the batch's first draw, not with the clear
+  (`CHIHIRO_VULKAN_DEFER_PASS=0`: with it). VC3 clears its presented
+  surfaces and glow buffers, then composites the scene's eyes into them;
+  sampling the eyes ended the batch, so each such clear was a render pass
+  of its own -- in tiles, the whole image stored and loaded back. Now the
+  eyes are acquired before the one pass. Tiled, two pairs: eyes 10.56 ->
+  9.51 ms a frame, other targets 2.25 -> 1.91 (-11% in all); batch ends a
+  frame 5.6 -> 4.4 (full-size eyes), 4.75 -> 3.1 (glow). Direct rendering
+  (the Frame's own), three pairs: no difference beyond run-to-run noise
+  (13.6 vs 13.2 us an eye draw, runs 13.0-14.1).
+
+Ruled out: leaving out the corners of each eye's picture that the lenses
 never show (XR_KHR_visibility_mask: 7% of a picture on the Frame) -- no
 measurable change. Run to run the same route varies ~5%.
 
