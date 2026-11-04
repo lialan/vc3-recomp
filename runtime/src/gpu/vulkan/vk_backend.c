@@ -262,12 +262,28 @@ static struct Surface *surface(const Nv2aSurface *s,const Nv2aRenderState *rs) {
        (uint64_t)s->width*s->height>SIZE_MAX/4)
         fatal(VK_ERROR_INITIALIZATION_FAILED,"surface bounds");
     struct Surface *f=NULL;
-    for(unsigned i=0;i<active->count;i++) {
+    for(unsigned i=0;i<active->count;) {
         struct Surface *previous=&active->surfaces[i];
-        if(previous->guest.color_va==s->color_va) {f=previous;continue;}
+        if(previous->guest.color_va==s->color_va) {f=previous;i++;continue;}
         uint64_t old_start=previous->guest.color_va,old_end=old_start+previous->layout.span;
-        if(s->color_va<old_end && old_start<(uint64_t)s->color_va+span)
-            fatal(VK_ERROR_FEATURE_NOT_PRESENT,"overlapping surfaces");
+        if(!(s->color_va<old_end && old_start<(uint64_t)s->color_va+span)) {i++;continue;}
+        /* The game reallocated render-target memory under an older surface
+         * (VC3, minutes into play: 0x83318000 over 0x83315000). That surface
+         * is gone: write it back and retire it as a resize does, drop the
+         * textures sampled from it, and move the last surface into its slot. */
+        static unsigned logged;
+        if(logged++<8) fprintf(stderr,"[Vulkan] surface %08X (span %llu) overlapped by %08X (span %llu): retired\n",
+            previous->guest.color_va,(unsigned long long)previous->layout.span,s->color_va,(unsigned long long)span);
+        observe_guest_color(previous);flush_color(previous);
+        if(active->zeta) {
+            VkResult r=ch_vk_depth_resident_release(active->zeta);
+            if(r!=VK_SUCCESS) fatal(r,"depth owner before overlapped surface retirement");
+        }
+        if(active->costs.enabled) add_target_costs(&active->costs.retired,previous->target);
+        if(active->textures) ch_vk_texture_cache_forget_source(active->textures,previous->target);
+        release_surface(previous);
+        unsigned last=--active->count;
+        if(i!=last) {active->surfaces[i]=active->surfaces[last];memset(&active->surfaces[last],0,sizeof active->surfaces[last]);}
     }
     if(f && f->guest.width==s->width && f->guest.height==s->height &&
        f->guest.pitch==s->pitch && f->guest.bytes_per_pixel==s->bytes_per_pixel) {
