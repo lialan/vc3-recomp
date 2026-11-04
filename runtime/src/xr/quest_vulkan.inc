@@ -466,6 +466,7 @@ static void vk_screen_draw(ChVkTarget *target,const float vp[16],void *pixels,si
 static ChVkXrSwapchain *s_vk_world;
 static uint32_t s_vk_world_w,s_vk_world_h;
 static float s_vk_world_scale=1;   /* the copied frame's dynamic resolution (ChVkImmFrame.scale) */
+static int s_vk_world_shown;       /* the last frame submitted showed the world layer */
 static uint64_t s_vk_world_sequence;
 static XrCompositionLayerProjection s_vk_world_layer;
 static XrCompositionLayerProjectionView s_vk_world_views[2];
@@ -562,6 +563,7 @@ static int vk_world_update(const Frame *f)
     VkCommandBuffer cmd=vk_host_begin();
     SEG(7,vk_xr_check(ch_vk_xr_swapchain_record_buffer(s_vk_world,cmd,s_vk_bridge.xr_buffer[f->gpu.slot],0),"world copy"));
     s_vk_world_scale=f->gpu.imm.scale>0 && f->gpu.imm.scale<=1?f->gpu.imm.scale:1;
+    s_drawn_pct=(int)(s_vk_world_scale*100+.5f);
     /* The HUD: a quad layer of its own at the game's 640x480, between the
      * world and the overlay (SteamVR blends it only where it is; drawn into
      * the full-view overlay it made that layer full size, and SteamVR
@@ -672,7 +674,11 @@ static void vk_stats_sample(void)
     LgStats stats={0};
     stats.fps=(int)(frames*1e6/elapsed+.5);
     stats.frame_ms=frames?(float)(elapsed/1000.0/frames):-1;
-    stats.eye_w=(int)s_vk_eye[0].w;stats.eye_h=(int)s_vk_eye[0].h;
+    if(s_vk_world_shown) {   /* the game's 3D: each eye's picture as drawn now */
+        stats.eye_w=(int)(s_vk_world_w/2*s_vk_world_scale+.5f);
+        stats.eye_h=(int)(s_vk_world_h*s_vk_world_scale+.5f);
+        stats.scale_pct=(int)(s_vk_world_scale*100+.5f);
+    } else {stats.eye_w=(int)s_vk_eye[0].w;stats.eye_h=(int)s_vk_eye[0].h;}   /* the screen, in the overlay */
     struct timespec ts;
     if(s_guest_clock_ok && clock_gettime(s_guest_clock,&ts)==0) {   /* the game thread's CPU time per frame */
         double cpu=ts.tv_sec*1e3+ts.tv_nsec/1e6;
@@ -752,10 +758,11 @@ static unsigned vk_present(const Frame *f,const XrCompositionLayerBaseHeader **l
     pose.position=(XrVector3f){center[0]+s_anchor_p[0],center[1]+s_anchor_p[1],center[2]+s_anchor_p[2]};
     int screen_new=0;
     const int imm=f && f->vr.imm;
+    s_vk_world_shown=0;
     if(imm) {
         SEG(0,screen_new=vk_world_update(f));
         const XrCompositionLayerBaseHeader *world=vk_world_layer(f);
-        if(world) layers[count++]=world;
+        if(world) {layers[count++]=world;s_vk_world_shown=1;}
         float pc[3],pw,ph;
         if(s_vk_hud_valid && s_vk_hud_quad && !vk_hud_in_overlay() && hud_panel(f,pc,&pw,&ph)) {
             float c[3];yaw_rot(s_anchor_yaw,pc,c);

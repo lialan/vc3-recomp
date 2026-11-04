@@ -530,6 +530,9 @@ static struct {
 static int s_eye_boot;  /* s_vr.eye this run was started with */
 /* The display's own pixels per eye (native_init): what "Native" draws. */
 static uint32_t s_native_w, s_native_h;
+/* The eyes' last immersive frame as drawn, % of their size each way: below
+ * 100 when the Vulkan renderer's dynamic resolution has lowered it; 0 none. */
+static int s_drawn_pct;
 
 static int key_index(const char *v, const char *const *keys, int n, int dflt)
 {
@@ -1875,7 +1878,9 @@ static void menu_items(XmItem *it)
     snprintf(it[M_SCREEN].value, 40, "%s", s_vr.immersive ? "Immersive" : "Virtual screen");
     /* Native: the display's own pixels; 1x / 2x: the game's 640 across an
      * eye spanning the whole view, as a share of them */
-    if (!s_vr.imm_scale)
+    if (!s_vr.imm_scale && s_drawn_pct > 0 && s_drawn_pct < 100)
+        snprintf(it[M_DETAIL].value, 40, "Native, now at %d%%", s_drawn_pct);
+    else if (!s_vr.imm_scale)
         snprintf(it[M_DETAIL].value, 40, "Native (%ux%u)", s_native_w, s_native_h);
     else if (s_native_w)
         snprintf(it[M_DETAIL].value, 40, "%dx (%u%% of native)", s_vr.imm_scale,

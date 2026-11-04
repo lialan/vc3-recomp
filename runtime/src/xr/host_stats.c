@@ -165,16 +165,22 @@ static int fd_step(void)
 
 static void fd_sweep(int steps) { while (steps-- > 0 && fd_step()) {} }
 
-/* The GPU time of all followed clients since the last call, ns; clients whose
- * file is gone (closed, or the process ended) are dropped. */
-static long long fd_busy_ns(void)
+/* The GPU time of all followed clients since the last call, ns, and in *own
+ * that of this process's; clients whose file is gone (closed, or the process
+ * ended) are dropped. */
+static long long fd_busy_ns(long long *own)
 {
     long long sum = 0;
+    const int self = (int)getpid();
+    *own = 0;
     for (int i = 0; i < g_nfd;) {
         unsigned id;
         long long ns;
         if (!fdinfo_read(g_fdc[i].pid, g_fdc[i].fd, &id, &ns) || id != g_fdc[i].id) { g_fdc[i] = g_fdc[--g_nfd]; continue; }
-        if (ns > g_fdc[i].ns) sum += ns - g_fdc[i].ns;
+        if (ns > g_fdc[i].ns) {
+            sum += ns - g_fdc[i].ns;
+            if (g_fdc[i].pid == self) *own += ns - g_fdc[i].ns;
+        }
         g_fdc[i++].ns = ns;
     }
     return sum;
@@ -182,6 +188,7 @@ static long long fd_busy_ns(void)
 
 static double now_s(void);
 static volatile int g_fd_pct = -1;      /* the thread's latest load, % */
+static volatile int g_fd_own_pct = -1;  /* of it, this process's */
 static volatile long g_fd_asked_ms;     /* when lg_stats_sample last read it; the thread rests when that is old */
 
 static void *fd_thread(void *arg)
@@ -195,10 +202,12 @@ static void *fd_thread(void *arg)
     if (dir_open(&g_fdd, p)) while (g_fdd.fd >= 0) fd_step();
     for (;; usleep(500000)) {
         double wall = now_s();
-        if (wall * 1000 - g_fd_asked_ms > 2000) { wall0 = -1; g_fd_pct = -1; continue; }   /* panel hidden */
-        long long ns = fd_busy_ns();
+        if (wall * 1000 - g_fd_asked_ms > 2000) { wall0 = -1; g_fd_pct = g_fd_own_pct = -1; continue; }   /* panel hidden */
+        long long own, ns = fd_busy_ns(&own);
         double pct = wall0 >= 0 && wall > wall0 ? ns / ((wall - wall0) * 1e7) : -1;
+        double own_pct = wall0 >= 0 && wall > wall0 ? own / ((wall - wall0) * 1e7) : -1;
         g_fd_pct = pct < 0 || !g_nfd ? -1 : pct > 100 ? 100 : (int)(pct + .5);
+        g_fd_own_pct = own_pct < 0 || !g_nfd ? -1 : own_pct > 100 ? 100 : (int)(own_pct + .5);
         wall0 = wall;
         fd_sweep(FD_STEPS);
     }
@@ -289,7 +298,9 @@ void lg_stats_sample(LgStats *s)
     if (g_fd_on) {
         g_fd_asked_ms = (long)(wall * 1000);
         s->gpu_pct = g_fd_pct;
+        s->gpu_own_pct = g_fd_own_pct;
     } else {
+        s->gpu_own_pct = -1;
         long busy = read_long(g_gpu_busy);
         s->gpu_pct = busy < 0 ? -1 : (int)(g_busy_kgsl || busy <= 100 ? busy : busy / 10);   /* devfreq load may be per mille */
     }
@@ -322,8 +333,14 @@ void lg_stats_format(const LgStats *s, char lines[LG_STATS_LINES][LG_STATS_LINE]
     snprintf(lines[1], LG_STATS_LINE, "CPU  game %s%%  main %s ms", num(a, sizeof a, "%.0f", s->cpu_pct, s->cpu_pct >= 0),
              num(b, sizeof b, "%.1f", s->game_ms, s->game_ms >= 0));
     if (s->gpu_pct < 0 && s->gpu_mhz <= 0 && s->gpu_c < 0) snprintf(lines[2], LG_STATS_LINE, "GPU  n/a");
+    else if (s->gpu_own_pct >= 0)   /* the whole GPU and the game's own share (the panel fits ~26 characters) */
+        snprintf(lines[2], LG_STATS_LINE, "GPU  %s%%  game %s%%  %sC",
+                 num(a, sizeof a, "%.0f", s->gpu_pct, s->gpu_pct >= 0), num(d, sizeof d, "%.0f", s->gpu_own_pct, 1),
+                 num(c, sizeof c, "%.0f", s->gpu_c, s->gpu_c >= 0));
     else snprintf(lines[2], LG_STATS_LINE, "GPU  %s%%  %s MHz  %sC", num(a, sizeof a, "%.0f", s->gpu_pct, s->gpu_pct >= 0),
                   num(b, sizeof b, "%.0f", s->gpu_mhz, s->gpu_mhz > 0), num(c, sizeof c, "%.0f", s->gpu_c, s->gpu_c >= 0));
-    snprintf(lines[3], LG_STATS_LINE, "MEM %s MB  %sx%s", num(a, sizeof a, "%.0f", s->rss_mb, s->rss_mb >= 0),
-             num(b, sizeof b, "%.0f", s->eye_w, s->eye_w > 0), num(d, sizeof d, "%.0f", s->eye_h, s->eye_h > 0));
+    snprintf(lines[3], LG_STATS_LINE, "MEM %s MB  %sx%s%s", num(a, sizeof a, "%.0f", s->rss_mb, s->rss_mb >= 0),
+             num(b, sizeof b, "%.0f", s->eye_w, s->eye_w > 0), num(d, sizeof d, "%.0f", s->eye_h, s->eye_h > 0),
+             s->scale_pct > 0 && s->scale_pct < 100
+                 ? (snprintf(c, sizeof c, " %d%%", s->scale_pct), c) : "");
 }

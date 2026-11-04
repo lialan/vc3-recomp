@@ -17,10 +17,13 @@ typedef struct {
     float cpu_pct;      /* the game process's CPU time, % of all online cores */
     float game_ms;      /* the game thread's CPU time per frame */
     int gpu_pct;        /* GPU busy */
+    int gpu_own_pct;    /* of it, this process's own work (DRM fdinfo only; else -1) */
     int gpu_mhz;        /* GPU clock */
     int gpu_c;          /* GPU temperature, Celsius */
     int rss_mb;         /* the process's resident memory */
-    int eye_w, eye_h;   /* each eye's image (the caller's) */
+    int eye_w, eye_h;   /* each eye's picture as drawn (the caller's) */
+    int scale_pct;      /* that picture's share of its full size, 1-99 when the
+                           dynamic resolution has lowered it; else 0 */
 } LgStats;
 
 #define LG_STATS_LINES 4
