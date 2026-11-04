@@ -22,7 +22,9 @@
  * VC3_AUTOKEYS scripts presses for unattended runs: "t:key,t:key", with t in
  * seconds since the first poll and key one of test, service, coin, start,
  * fire, reload (each held for half a second), e.g.
- * VC3_AUTOKEYS="3:test,8:coin,9:start".
+ * VC3_AUTOKEYS="3:test,8:coin,9:start". "a-b/p:key" presses key every p
+ * seconds from a until b, for runs that play on through the missions:
+ * "26-900/0.25:fire" (with VC3_AUTOFIRE_MS shorter than the period).
  * AUTOKEYS_CLOCK=flips measures that timeline in executor flips at 60 Hz
  * instead of wall time, for comparisons between differently paced renderers.
  */
@@ -54,7 +56,7 @@
 #define AUTO_MAX     512   /* at 32 the E.S. scenarios' later pedal presses were dropped */
 #define AUTO_HOLD_MS 500   /* > one poll at the current frame rate */
 
-typedef struct { uint32_t at_ms; char key[12]; } auto_t;
+typedef struct { uint32_t at_ms, until_ms, every_ms; char key[12]; } auto_t;
 
 static auto_t s_auto[AUTO_MAX];
 static int s_nauto = -1;
@@ -74,12 +76,19 @@ static void auto_parse(void)
     const char *s = ch_env("AUTOKEYS");
     s_nauto = 0;
     while (s && *s && s_nauto < AUTO_MAX) {
-        double t;
+        double t, until = 0, every = 0;
         char key[12];
         int n = 0;
-        if (sscanf(s, "%lf:%11[a-z]%n", &t, key, &n) != 2)
-            break;
+        if (sscanf(s, "%lf-%lf/%lf:%11[a-z]%n", &t, &until, &every, key, &n) != 4
+                || every <= 0) {
+            until = every = 0;
+            n = 0;
+            if (sscanf(s, "%lf:%11[a-z]%n", &t, key, &n) != 2)
+                break;
+        }
         s_auto[s_nauto].at_ms = (uint32_t)(t * 1000.0);
+        s_auto[s_nauto].until_ms = (uint32_t)(until * 1000.0);
+        s_auto[s_nauto].every_ms = (uint32_t)(every * 1000.0);
         snprintf(s_auto[s_nauto].key, sizeof(s_auto[0].key), "%s", key);
         s_nauto++;
         s += n;
@@ -105,15 +114,19 @@ static int auto_held(const char *key, uint32_t t)
 {
     static unsigned char logged[AUTO_MAX];   /* per script entry */
     int i;
-    for (i = 0; i < s_nauto; i++)
-        if (!strcmp(s_auto[i].key, key) && t >= s_auto[i].at_ms
-                && t < s_auto[i].at_ms + auto_hold_ms(key)) {
+    for (i = 0; i < s_nauto; i++) {
+        const auto_t *a = &s_auto[i];
+        if (strcmp(a->key, key) || t < a->at_ms)
+            continue;
+        if (a->every_ms ? t < a->until_ms && (t - a->at_ms) % a->every_ms < auto_hold_ms(key)
+                        : t < a->at_ms + auto_hold_ms(key)) {
             if (!logged[i]) {
                 logged[i] = 1;
                 fprintf(stderr, "[INPUT] auto %s at %.1fs\n", key, t / 1000.0);
             }
             return 1;
         }
+    }
     return 0;
 }
 
@@ -742,15 +755,18 @@ void host_input_poll(chihiro_input_t *in)
     /* A scripted shot with no window under the mouse aims at VC3_AUTOAIM
      * ("x,y" in 0..1, default the centre), so unattended runs can shoot; an
      * explicit VC3_AUTOAIM also holds the aim between shots;
-     * VC3_AUTOAIM=sweep[:s] keeps it moving over the screen, as a player's
-     * does, from s seconds on (the centre before: shots that hit fill the
-     * E.S. gauge). */
+     * VC3_AUTOAIM=sweep[:s[:x,y]] keeps it moving over the screen, as a
+     * player's does, from s seconds on (before, x,y -- a mission on Mission
+     * Select -- or the centre: shots that hit fill the E.S. gauge). */
     if (ux < 0.0 && (auto_held("fire", t) || ch_env("AUTOAIM"))) {
         const char *aim = ch_env("AUTOAIM");
         ux = 0.5;
         uy = 0.5;
         if (aim && !strncmp(aim, "sweep", 5)) {
-            if (t >= (uint32_t)(atof(aim[5] == ':' ? aim + 6 : "0") * 1000.0)) {
+            double from = 0.0;
+            if (aim[5] == ':')
+                sscanf(aim + 6, "%lf:%lf,%lf", &from, &ux, &uy);
+            if (t >= (uint32_t)(from * 1000.0)) {
                 ux = 0.5 + 0.38 * sin(t / 1000.0 * 1.7);   /* t: ms */
                 uy = 0.5 + 0.30 * sin(t / 1000.0 * 1.1 + 0.7);
             }
