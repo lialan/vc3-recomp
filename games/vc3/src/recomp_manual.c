@@ -88,6 +88,15 @@ extern void sub_000373B0_gen(void);
 extern void vc3_cull_frustum_build(void (*generated)(void));
 void sub_000373B0(void) { vc3_cull_frustum_build(sub_000373B0_gen); }
 
+/* The sound event queue's two sides, under one lock (vc3_sound_queue.c):
+ * on two host cores their count byte lost updates and every sound effect
+ * after that was dropped. */
+extern void sub_000ECB80_gen(void);
+extern void sub_000ED750_gen(void);
+extern void vc3_sound_queue_locked(void (*generated)(void));
+void sub_000ECB80(void) { vc3_sound_queue_locked(sub_000ECB80_gen); }  /* send an event */
+void sub_000ED750(void) { vc3_sound_queue_locked(sub_000ED750_gen); }  /* the sound thread takes them */
+
 /* ── Manual function overrides ─────────────────────────────── */
 
 /*
