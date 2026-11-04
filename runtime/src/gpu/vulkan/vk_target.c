@@ -2104,7 +2104,9 @@ VkResult ch_vk_target_recipes_start(VkDevice device,VkPipelineCache cache,const 
     pthread_mutex_unlock(&s_recipes.lock);
     return s_recipes.file?VK_SUCCESS:VK_ERROR_INITIALIZATION_FAILED;
 }
+static void async_stop(void);
 void ch_vk_target_recipes_stop(void) {
+    async_stop();
     atomic_store(&s_recipes.stop,1);
     for(unsigned i=0;i<s_recipes.threads_n;i++) pthread_join(s_recipes.threads[i],NULL);
     pthread_mutex_lock(&s_recipes.lock);
@@ -2113,6 +2115,102 @@ void ch_vk_target_recipes_stop(void) {
     s_recipes.file=NULL;free(s_recipes.list);s_recipes.list=NULL;s_recipes.count=0;
     free(s_recipes.seen);s_recipes.seen=NULL;s_recipes.seen_n=s_recipes.seen_cap=0;
     pthread_mutex_unlock(&s_recipes.lock);
+}
+/* lock held */
+static int recipe_known(uint64_t h) {
+    if(!h) h=1;
+    if(!s_recipes.seen_cap) return 0;
+    size_t k=h&(s_recipes.seen_cap-1);
+    while(s_recipes.seen[k]) {if(s_recipes.seen[k]==h) return 1;k=(k+1)&(s_recipes.seen_cap-1);}
+    return 0;
+}
+/* Pipelines first met in play are built in the background
+ * (CHIHIRO_VULKAN_ASYNC_PIPELINES=0: in the draw, as before). One that is
+ * neither among the recipes nor built yet goes to a worker, which builds it
+ * into the shared cache and records its recipe; the draw goes on without
+ * it: a fixed-function draw with the generic combiner and fetch (the draw
+ * writes their data anyway; ~1 ms, shaders long compiled), a vertex-program
+ * draw -- its microcode is its shader's specialization, there is no generic
+ * one -- is left out until it is ready: an object a moment late the first
+ * time it is ever seen, instead of the whole view frozen 0.1-1 s per
+ * pipeline (a new area of the third mission: 3.6 s). A draw counting
+ * visible samples is built here: the guest reads that count. */
+#define ASYNC_QUEUE 256
+static struct {
+    pthread_mutex_t lock;pthread_cond_t wake;
+    Recipe queue[ASYNC_QUEUE];uint64_t ids[ASYNC_QUEUE];unsigned head,count;
+    uint64_t pending[ASYNC_QUEUE];unsigned pending_n;   /* queued or building */
+    pthread_t thread;int started,stop;
+    unsigned built,generic,left_out;
+} s_async={.lock=PTHREAD_MUTEX_INITIALIZER,.wake=PTHREAD_COND_INITIALIZER};
+static void *async_worker(void *arg) {
+    (void)arg;
+    pthread_mutex_lock(&s_async.lock);
+    for(;;) {
+        while(!s_async.count && !s_async.stop) pthread_cond_wait(&s_async.wake,&s_async.lock);
+        if(s_async.stop) break;
+        Recipe r=s_async.queue[s_async.head];uint64_t id=s_async.ids[s_async.head];
+        s_async.head=(s_async.head+1)%ASYNC_QUEUE;s_async.count--;
+        pthread_mutex_unlock(&s_async.lock);
+        uint64_t start=time_ns();
+        VkResult built=recipe_build(&r);
+        double ms=(time_ns()-start)/1e6;
+        /* Known either way: one that failed is built in the draw, which
+         * reports it, rather than left out for good. */
+        pthread_mutex_lock(&s_recipes.lock);
+        if(recipe_seen(id) && built==VK_SUCCESS && s_recipes.file) {fwrite(&r,sizeof r,1,s_recipes.file);fflush(s_recipes.file);}
+        pthread_mutex_unlock(&s_recipes.lock);
+        pthread_mutex_lock(&s_async.lock);
+        for(unsigned i=0;i<s_async.pending_n;i++) if(s_async.pending[i]==id) {s_async.pending[i]=s_async.pending[--s_async.pending_n];break;}
+        unsigned n=++s_async.built;
+        if(n<=8 || n%50==0)
+            fprintf(stderr,"[Vulkan pipelines] built in the background in %.0f ms%s (%u so far; meanwhile %u draws generic, %u left out)\n",
+                ms,built==VK_SUCCESS?"":" (failed: built in the draw next)",n,s_async.generic,s_async.left_out);
+    }
+    pthread_mutex_unlock(&s_async.lock);
+    return NULL;
+}
+/* 0: build it in the draw; 1: *key is now the generic one; 2: leave the draw out */
+static int pipeline_async(const ChVkTarget *t,PipelineKey *key) {
+    static int on=-1;
+    if(on<0) {const char *e=getenv("CHIHIRO_VULKAN_ASYNC_PIPELINES");on=!e || atoi(e);}
+    if(!on || !s_recipes.cache) return 0;
+    int program=key->vertex_count!=0;
+    if(!program && !key->specialized && !key->fixed_fetch[0]) return 0;
+    uint64_t id=pipeline_identity(t,key);
+    pthread_mutex_lock(&s_recipes.lock);int known=recipe_known(id);pthread_mutex_unlock(&s_recipes.lock);
+    if(known) return 0;
+    pthread_mutex_lock(&s_async.lock);
+    int queued=0;
+    for(unsigned i=0;i<s_async.pending_n;i++) if(s_async.pending[i]==id) {queued=1;break;}
+    if(!queued) {
+        if(s_async.pending_n==ASYNC_QUEUE || s_async.count==ASYNC_QUEUE ||
+           (!s_async.started && pthread_create(&s_async.thread,NULL,async_worker,NULL))) {
+            pthread_mutex_unlock(&s_async.lock);return 0;
+        }
+        s_async.started=1;
+        unsigned at=(s_async.head+s_async.count)%ASYNC_QUEUE;
+        Recipe *r=&s_async.queue[at];memset(r,0,sizeof *r);
+        r->magic=RECIPE_MAGIC;r->version=RECIPE_VERSION;r->width=t->width;r->height=t->height;
+        r->depth_format=(uint32_t)t->depth_format;r->input_pass=(uint32_t)t->input_pass;r->key=*key;
+        s_async.ids[at]=id;s_async.count++;s_async.pending[s_async.pending_n++]=id;
+        pthread_cond_signal(&s_async.wake);
+    }
+    if(program) s_async.left_out++; else s_async.generic++;
+    pthread_mutex_unlock(&s_async.lock);
+    if(program) return 2;
+    key->specialized=0;memset(&key->program,0,sizeof key->program);key->sample_static=key->sample_types=0;
+    memset(key->fixed_fetch,0,sizeof key->fixed_fetch);
+    return 1;
+}
+static void async_stop(void) {
+    pthread_mutex_lock(&s_async.lock);
+    int started=s_async.started;s_async.stop=1;pthread_cond_broadcast(&s_async.wake);
+    pthread_mutex_unlock(&s_async.lock);
+    if(started) pthread_join(s_async.thread,NULL);
+    pthread_mutex_lock(&s_async.lock);
+    s_async.started=s_async.stop=0;s_async.count=s_async.pending_n=0;
+    pthread_mutex_unlock(&s_async.lock);
 }
 /* One driver update per draw; all backing info stays live until the call. */
 static void update_descriptors(ChVkTarget *t,const ChVkTexture *texture,
@@ -2261,16 +2359,23 @@ static VkResult draw_full(ChVkTarget *t, const float rgba[4],
      * entire key before bypassing the bounded cache scan; eviction and state
      * changes still follow the normal path. */
     PipelineResources *previous=t->active_pipeline;
-    if(previous && previous->pipeline && !memcmp(&key,&previous->key,sizeof key)) {
-        entry=previous;t->resource_stats.pipeline_consecutive_hits++;
-    }
-    /* One never-used slot suffices: all remaining slots have used==0. */
-    unsigned search_count=t->pipeline_extent<capacity?t->pipeline_extent+1:capacity;
-    for(unsigned i=0;!entry && i<search_count;i++) {
-        PipelineResources *p=&t->pipelines[i];
-        t->resource_stats.pipeline_scan_entries++;
-        if(p!=previous && p->pipeline && !memcmp(&key,&p->key,sizeof key)) {entry=p;break;}
-        if(!oldest || p->used<oldest->used) oldest=p;
+    for(int generic=0;;generic=1) {
+        if(previous && previous->pipeline && !memcmp(&key,&previous->key,sizeof key)) {
+            entry=previous;t->resource_stats.pipeline_consecutive_hits++;
+        }
+        /* One never-used slot suffices: all remaining slots have used==0. */
+        unsigned search_count=t->pipeline_extent<capacity?t->pipeline_extent+1:capacity;
+        for(unsigned i=0;!entry && i<search_count;i++) {
+            PipelineResources *p=&t->pipelines[i];
+            t->resource_stats.pipeline_scan_entries++;
+            if(p!=previous && p->pipeline && !memcmp(&key,&p->key,sizeof key)) {entry=p;break;}
+            if(!oldest || p->used<oldest->used) oldest=p;
+        }
+        if(entry || generic || samples) break;
+        int later=pipeline_async(t,&key);   /* not built yet: in the background */
+        if(later==2) return VK_SUCCESS;     /* a vertex program's: left out until then */
+        if(later!=1) break;                 /* build it here */
+        oldest=NULL;                        /* the generic key: look again */
     }
     if(entry) {t->resource_stats.pipeline_hits++;if(!key.alpha_shader) t->resource_stats.no_alpha_pipeline_hits++;
         if(key.specialized) t->resource_stats.specialized_pipeline_hits++;}

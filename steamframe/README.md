@@ -132,6 +132,16 @@ binary starts with them compiled. A cold compile in play costs 100 ms to
 1 s; `play.sh` alone is also the way to look for slow scenes (its log has
 `[stats]` every 5 s and `[immersive switch]` lines).
 
+What no harvest has met yet is built in the background
+(`CHIHIRO_VULKAN_ASYNC_PIPELINES=0`: in the draw, as before): a draw whose
+pipeline is neither recorded nor built goes on with the generic combiner and
+fetch shaders, or -- a vertex program's, which has no generic form -- is
+left out until its pipeline is ready, the first time ever. A third-mission
+run from an empty save with Mesa's shader cache off: 59-61 fps throughout,
+150 pipelines built off the draw, one 0.8 s compile left (the generic
+combiner shader itself, once per device); the same scene in play had
+stopped the view for up to 3.6 s.
+
 ## Performance defaults and switches (`env.txt`)
 
 ### Immersive VR
