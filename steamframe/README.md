@@ -211,6 +211,22 @@ real time, as fast as the pipeline allows (native 1728/eye: combat ~101 fps,
 E.S. held ~90, E.S. activation ~83). `bench-light.sh` reports the headset
 side too (`/tmp/takestat.py`: display frames per game frame, 2 at 60 fps).
 
+Where the GPU goes (combat route, native 2160, scale fixed with
+`CHIHIRO_VULKAN_IMMERSIVE_SCALE=1`, headset off, GPU timestamps): the eyes
+~4.8-5.5 ms a frame -- the scene's ~430-490 draws ~3.5-4 ms (fixed-function
+3D is ~85% of draw time: pixels, not draw count), the presented surface's
+eyes ~1.2 ms (its full clear, color and depth, ~0.8; the composite of the
+scene ~0.45), the glow buffer at half size 0.6-0.9 ms; the game's own
+640x480 surfaces ~0.3. Knobs for a weaker GPU (the Quest), each measured
+alone: foveation off 6.38 ms, the default 30/45/60 degrees 5.46,
+`VC3_XR_FOVEATION=20,35,50` 4.97 (-9%, a smaller sharp centre);
+`CHIHIRO_VULKAN_IMMERSIVE_EFFECT_DIV=4` -0.25 ms (softer glow); a lower
+Resolution per eye scales the rest. Ruled out: presenting the scene's eyes in
+place of the presented surface's (VC3 clears or reuses the scene buffer
+after compositing it, before the flip). Run to run the route's GPU time
+varies ~0.5 ms: compare within one run (split the 4320x2160 lines by draw
+count) or repeat.
+
 Game zooms (a far enemy, E.S., the death close-up: the lens narrows from
 ~45-60 to ~14 degrees) zoom the headset's world: vertices are read back
 through VC3's usual 45-degree lens, so a longer one magnifies as much (up
