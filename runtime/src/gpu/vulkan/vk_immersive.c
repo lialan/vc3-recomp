@@ -315,19 +315,30 @@ static int full_screen(ChVkImmersive *m,const Nv2aBatch *b,const Nv2aSurface *s)
 }
 /* CHIHIRO_VULKAN_IMMERSIVE_TRACE=N (diagnostic): from immersive frame N,
  * every draw of the 3 frames after a switch away from the eyes (40 such
- * frames at most): where it went and what it sampled. */
+ * frames at most): where it went and what it sampled.
+ * CHIHIRO_VULKAN_IMMERSIVE_TRACE_AT=N: every draw of frames N and N+1. */
 static void trace_draw(const ChVkImmersive *m,const Nv2aSurface *s,const Nv2aBatch *b,int is3d) {
     if(m->frames>m->trace_until || !m->trace_until) return;
     Nv2aRawExtent e;int ok=b->raw && b->raw->extent && b->raw->extent(b->raw,&e);
     const Nv2aTexture *tx=b->texture?b->texture:b->stage[0];
-    fprintf(stderr,"[imm trace] f%llu on %d into %08X %ux%u 3d %d %s w0 %g idx %u ext %.0f..%.0f x %.0f..%.0f tex %08X %ux%u fmt %02X st1 %08X blend %u %04X/%04X mask %08X\n",
+    int rt=tx && m->config.guest_target && m->config.guest_target(m->config.guest_context,tx->offset);   /* the game renders into it */
+    fprintf(stderr,"[imm trace] f%llu on %d into %08X %ux%u 3d %d %s w0 %g idx %u ext %.0f..%.0f x %.0f..%.0f tex %08X %ux%u fmt %02X rt %d st1 %08X blend %u %04X/%04X mask %08X depth %u/%04X write %u query %d\n",
         (unsigned long long)m->frames,m->on,s->color_va,s->width,s->height,is3d,
         b->raw?b->raw->kind==NV2A_RAW_FIXED?"fixed":"prog":"none",b->raw?b->raw->w0:0,b->raw?b->raw->index_count:0,
-        ok?e.x0:-1,ok?e.x1:-1,ok?e.y0:-1,ok?e.y1:-1,tx?tx->offset:0,tx?tx->width:0,tx?tx->height:0,tx?tx->color:0,
-        b->stage[1]?b->stage[1]->offset:0,b->state->blend_enable,b->state->blend_src,b->state->blend_dst,b->state->color_mask);
+        ok?e.x0:-1,ok?e.x1:-1,ok?e.y0:-1,ok?e.y1:-1,tx?tx->offset:0,tx?tx->width:0,tx?tx->height:0,tx?tx->color:0,rt,
+        b->stage[1]?b->stage[1]->offset:0,b->state->blend_enable,b->state->blend_src,b->state->blend_dst,b->state->color_mask,
+        b->state->depth_test_enable,b->state->depth_func,b->state->depth_write,b->zpass_out!=NULL);
 }
 VkResult ch_vk_immersive_draw(ChVkImmersive *m,const Nv2aSurface *s,const Nv2aBatch *b,
     const ChVkFixedGeometry *fixed,ChVkSampleResolver resolve,void *context) {
+    if(m && s && b && b->state) {
+        /* CHIHIRO_VULKAN_IMMERSIVE_TRACE_TEX=va (diagnostic): every draw of
+         * the 3 frames from the first draw sampling that texture */
+        static uint32_t trace_tex=1;
+        if(trace_tex==1) {const char *e=getenv("CHIHIRO_VULKAN_IMMERSIVE_TRACE_TEX");trace_tex=e?(uint32_t)strtoul(e,NULL,16):0;}
+        if(trace_tex && !m->trace_until && ((b->texture && b->texture->offset==trace_tex) ||
+           (b->stage[0] && b->stage[0]->offset==trace_tex))) m->trace_until=m->frames+2;
+    }
     if(m && s && b && b->state && !screen_shaped(s)) trace_draw(m,s,b,-1);
     if(!m || !s || !b || !b->state || !screen_shaped(s)) return VK_SUCCESS;
     if(b->zpass_out) return VK_SUCCESS;   /* visibility queries are the guest's */
@@ -598,6 +609,9 @@ VkResult ch_vk_immersive_flip(ChVkImmersive *m,uint32_t presented,const Vc3VrVie
         if(trace_from>=0 && now!=1 && now!=was && m->frames>=(uint64_t)trace_from && m->trace_left) {
             m->trace_until=m->frames+3;m->trace_left--;
         }
+        static long long trace_at=-2;
+        if(trace_at==-2) {const char *e=getenv("CHIHIRO_VULKAN_IMMERSIVE_TRACE_AT");trace_at=e?atoll(e):-1;}
+        if(trace_at>=0 && m->frames+1==(uint64_t)trace_at) m->trace_until=m->frames+2;
         if(m->frames<=m->trace_until && m->trace_until)
             fprintf(stderr,"[imm trace] f%llu flip presented %08X -> %s\n",(unsigned long long)m->frames,presented,what[now]);
         was=now;

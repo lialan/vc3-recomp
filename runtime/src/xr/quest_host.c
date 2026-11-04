@@ -2389,6 +2389,13 @@ static void gun_frame(XrTime t, const Frame *f)
     was_start = start;
     if (coin)
         buttons |= VC3_VR_COIN;
+    /* A test run's scripted aim (VC3_AUTOAIM, host_input.c) over the fake
+     * gun's: the fake gun stays for its drawing, but a gun held still in
+     * front hits nothing and the run never leaves its first scene. */
+    if (fake_gun && ch_env("AUTOAIM")) {
+        ux = uy = -1;
+        aim_on = 0;
+    }
     vc3_vr_aim_set(aim_on && ux >= 0, aim_x, aim_y);   /* off with the menu open (ux -1) */
     {
         static int aim_log = -1;
