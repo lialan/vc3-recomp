@@ -924,7 +924,21 @@ static void flip(void) {
         struct Surface *f=NULL;
         for(unsigned i=0;i<active->count;i++) if(active->surfaces[i].guest.color_va==presented) { f=&active->surfaces[i]; break; }
         if(!f) fatal(VK_ERROR_FEATURE_NOT_PRESENT,"unknown presented surface");
-        VkResult r=active->host.present_immersive(active->host.render_context,&f->guest,imm_eyes,imm_hud,&imm_frame);
+        /* The headset reads the HUD at the size handed over here, so it is
+         * the HUD's own. The presented surface's can be stale: immersive
+         * screen-shaped draws skip the guest surface, so a narrower draw at
+         * its address (VC3, ~5 min into mission 1: a 256-wide effect into
+         * the back buffer) resizes it and nothing sizes it back; the 640x480
+         * HUD was then read as 256-pixel rows. */
+        Nv2aSurface shown=f->guest;
+        if(imm_hud) {
+            ch_vk_target_size(imm_hud,&shown.width,&shown.height);
+            static unsigned logged;
+            if((shown.width!=f->guest.width || shown.height!=f->guest.height) && logged++<4)
+                fprintf(stderr,"[Vulkan] presented %08X is %ux%u, its HUD %ux%u: the HUD's size\n",
+                    presented,f->guest.width,f->guest.height,shown.width,shown.height);
+        }
+        VkResult r=active->host.present_immersive(active->host.render_context,&shown,imm_eyes,imm_hud,&imm_frame);
         if(r!=VK_SUCCESS && r!=VK_NOT_READY) fatal(r,"host immersive frame handoff");
     } else if((active->host.present_target || active->host.present_rgba || active->host.present_bgra) && presented) {
         struct Surface *f=NULL;
