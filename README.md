@@ -157,6 +157,10 @@ running back with each shot) with a sight of your choice: iron sights
 the optics show their reticle where the shot lands on the screen, seen
 through the glass. The controls are The House of the Dead 4 VR's: trigger
 fires; pulled with the gun off the screen, or the grip squeezed, it reloads.
+In the immersive view the gun shoots well beyond the game's own screen --
+up to 1.5 screens from its centre each way (about 50 degrees either side at
+the usual lens): the point goes to the game directly, past the light gun's
+reading, which stops at the screen's edge. Further out is off the screen.
 A / X on the gun hand is the foot pedal (so is the other hand's grip), B / Y
 on the gun hand is the CHANGE button, a thumbstick click is Start (with
 automatic coins, a coin goes in with it), and pulling the other hand's

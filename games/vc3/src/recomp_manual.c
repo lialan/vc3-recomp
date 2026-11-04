@@ -88,6 +88,12 @@ extern void sub_000373B0_gen(void);
 extern void vc3_cull_frustum_build(void (*generated)(void));
 void sub_000373B0(void) { vc3_cull_frustum_build(sub_000373B0_gen); }
 
+/* The gun's reading into the player's aim, then player 1's from the VR host,
+ * which may lie beyond the screen (vr_aim.c). */
+extern void sub_0007A160_gen(void);
+extern void vc3_gun_aim(void (*generated)(void));
+void sub_0007A160(void) { vc3_gun_aim(sub_0007A160_gen); }
+
 /* The sound event queue's two sides, under one lock (vc3_sound_queue.c):
  * on two host cores their count byte lost updates and every sound effect
  * after that was dropped. */

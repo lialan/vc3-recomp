@@ -1538,6 +1538,13 @@ static void recentre(void)
 /* The longest lens the HUD panel follows, in 640x480 pixels: VC3's usual
  * 45 x 34.5 degree view (its culling frustum), 320 / tan 22.5 degrees. */
 #define HUD_K_MAX 772.5f
+/* Immersive aim: how far from the screen's centre the gun still shoots, in
+ * screens each way (1.5: 3 screens wide and high -- at VC3's usual lens 51
+ * degrees either side, 43 up and down); beyond, the gun is off the screen
+ * (a pull reloads). The game's own reading stops at the screen's edge; the
+ * point beyond goes to the game directly (vc3_vr_aim_set, vr_aim.c). */
+#define AIM_WIDE 1.5
+extern void vc3_vr_aim_set(int on, int x, int y);
 static pthread_mutex_t s_view_lock = PTHREAD_MUTEX_INITIALIZER;
 static XrView s_pub_views[2];
 static int s_pub_ok;
@@ -2126,14 +2133,19 @@ static void gun_frame(XrTime t, const Frame *f)
     XrActiveActionSet as = { 0 };
     XrActionsSyncInfo sy = { XR_TYPE_ACTIONS_SYNC_INFO };
     double ux = -1, uy = -1;
+    int aim_on = 0, aim_x = 0, aim_y = 0;   /* immersive: the game's aim, pixels from its centre, y up */
     int buttons = 0, h, off, now[2][5], menu_btn, start, coin, on_screen = 0;
     float o[3], d[3];
     int located = 0;
 
+    static int fake_gun = -1;   /* VC3_XR_FAKE_GUN=1: test runs, nobody holding anything */
+    if (fake_gun < 0)
+        fake_gun = ch_env("XR_FAKE_GUN") && *ch_env("XR_FAKE_GUN") == '1';
     as.actionSet = s_set;
     sy.countActiveActionSets = 1;
     sy.activeActionSets = &as;
-    if (XR_FAILED(xrSyncActions(s_sess, &sy)))
+    /* (with nobody wearing the headset the sync fails: the fake gun goes on, no buttons) */
+    if (XR_FAILED(xrSyncActions(s_sess, &sy)) && !fake_gun)
         return;
     for (h = 0; h < 2; h++) {
         now[h][0] = act_float(a_trigger, h) > 0.55f;
@@ -2188,11 +2200,14 @@ static void gun_frame(XrTime t, const Frame *f)
         /* VC3_XR_FAKE_GUN=1, for a headset nobody holds: a gun in front of
          * the eyes, raised to aim through its sight, sweeping slowly */
         static int fake = -1;
-        if (fake < 0)
+        static float fake_yaw;          /* VC3_XR_FAKE_GUN_YAW=degrees: aimed that far left */
+        if (fake < 0) {
             fake = ch_env("XR_FAKE_GUN") && *ch_env("XR_FAKE_GUN") == '1';
+            fake_yaw = ch_env("XR_FAKE_GUN_YAW") ? (float)atof(ch_env("XR_FAKE_GUN_YAW")) * 0.0174533f : 0.0f;
+        }
         if (!got && fake) {
             double sec = (double)t / 1e9;
-            float yaw = (float)(0.06 * sin(sec * 0.5)), pitch = 0.0f;
+            float yaw = fake_yaw + (float)(0.06 * sin(sec * 0.5)), pitch = 0.0f;
             float sh = qo_sight_height(s_vr.sight);
             loc.pose.orientation = (XrQuaternionf){ 0, sinf(yaw / 2), 0, cosf(yaw / 2) };
             (void)pitch;
@@ -2278,10 +2293,15 @@ static void gun_frame(XrTime t, const Frame *f)
                 }
                 if (vr_project_gl(&g, v, &sx, &sy)) {
                     double gx = sx / vf->gw, gy = sy / vf->gh;
-                    if (gx >= 0 && gx <= 1 && gy >= 0 && gy <= 1) {
-                        ux = gx;
-                        uy = gy;
+                    if (fabs(gx - 0.5) <= AIM_WIDE && fabs(gy - 0.5) <= AIM_WIDE) {
+                        /* the gun's reading at the screen's nearest point; the
+                         * game's aim the true one, beyond the screen too */
+                        ux = gx < 0 ? 0 : gx > 1 ? 1 : gx;
+                        uy = gy < 0 ? 0 : gy > 1 ? 1 : gy;
                         on_screen = 1;
+                        aim_on = 1;
+                        aim_x = (int)lround((gx - 0.5) * 640.0);
+                        aim_y = (int)lround((0.5 - gy) * 480.0);
                     }
                 }
             }
@@ -2369,6 +2389,16 @@ static void gun_frame(XrTime t, const Frame *f)
     was_start = start;
     if (coin)
         buttons |= VC3_VR_COIN;
+    vc3_vr_aim_set(aim_on && ux >= 0, aim_x, aim_y);   /* off with the menu open (ux -1) */
+    {
+        static int aim_log = -1;
+        static unsigned n;
+        if (aim_log < 0)
+            aim_log = ch_env("AIM_LOG") && atoi(ch_env("AIM_LOG")) > 0;
+        if (aim_log && ++n % 120 == 0)
+            fprintf(stderr, "[aim host] located %d imm %d aim %d %d,%d ux %.3f uy %.3f\n", located,
+                    f && f->vr.imm, aim_on, aim_x, aim_y, ux, uy);
+    }
     vc3_input_vr(ux, uy, buttons);
 
     /* The other hand's thumbstick moves the screen. */
@@ -2912,18 +2942,20 @@ static void xr_frame(void)
              * eyes level at the anchor, facing its yaw -- what a player looking
              * straight ahead sees, not wherever a headset on a table points */
             static int fake_head = -1;
-            if (fake_head < 0)
+            static float fake_yaw;      /* VC3_XR_FAKE_YAW=degrees: turned that far left */
+            if (fake_head < 0) {
                 fake_head = ch_env("XR_FAKE_HEAD") && *ch_env("XR_FAKE_HEAD") == '1';
+                fake_yaw = ch_env("XR_FAKE_YAW") ? (float)atof(ch_env("XR_FAKE_YAW")) * 0.0174533f : 0.0f;
+            }
             if (fake_head) {
                 const XrVector3f *a = &s_views[0].pose.position, *b = &s_views[1].pose.position;
-                const float right[3] = { 1, 0, 0 };
+                const float right[3] = { 1, 0, 0 }, yaw = s_anchor_yaw + fake_yaw;
                 float half = 0.5f * sqrtf((b->x - a->x) * (b->x - a->x) + (b->y - a->y) * (b->y - a->y)
                                           + (b->z - a->z) * (b->z - a->z)), r[3];
-                yaw_rot(s_anchor_yaw, right, r);
+                yaw_rot(yaw, right, r);
                 for (int e = 0; e < 2; e++) {
                     const float side = e ? half : -half;
-                    s_views[e].pose.orientation = (XrQuaternionf){ 0, sinf(s_anchor_yaw * .5f), 0,
-                                                                   cosf(s_anchor_yaw * .5f) };
+                    s_views[e].pose.orientation = (XrQuaternionf){ 0, sinf(yaw * .5f), 0, cosf(yaw * .5f) };
                     s_views[e].pose.position = (XrVector3f){ s_anchor_p[0] + side * r[0], s_anchor_p[1],
                                                              s_anchor_p[2] + side * r[2] };
                 }
@@ -2972,7 +3004,10 @@ static void xr_frame(void)
         if (!s_overlay_ok)
             fprintf(stderr, "[xr] no overlay: the aim dot is drawn into the picture\n");
     }
-    if (s_state == XR_SESSION_STATE_FOCUSED)
+    static int fake_gun = -1;   /* VC3_XR_FAKE_GUN=1: test runs, whose session is only VISIBLE */
+    if (fake_gun < 0)
+        fake_gun = ch_env("XR_FAKE_GUN") && *ch_env("XR_FAKE_GUN") == '1';
+    if (s_state == XR_SESSION_STATE_FOCUSED || (fake_gun && s_state == XR_SESSION_STATE_VISIBLE))
         gun_frame(fs.predictedDisplayTime, f);
     else
         s_qo.gun_valid = 0;
