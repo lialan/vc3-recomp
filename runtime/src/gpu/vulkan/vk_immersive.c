@@ -39,6 +39,7 @@ struct ChVkImmersive {
     Nv2aFixedState last_ff; float last_aa[2]; int last_valid,last_ok; VrGameProj last;
     int zoom_normalise; float zoom_max;   /* CHIHIRO_VULKAN_IMMERSIVE_ZOOM: 0 the true projection, 1 the OpenGL renderer's zoom_proj, 2 (default) follow zooms in */
     int half_effects;     /* CHIHIRO_VULKAN_IMMERSIVE_HALF_EFFECTS=0: every surface's eyes at native size */
+    uint32_t effect_div;  /* CHIHIRO_VULKAN_IMMERSIVE_EFFECT_DIV: effect buffers' divisor each way (2; 4 a quarter) */
     uint64_t guest_eye_samples;
     int log; uint64_t frames,world_batches,hud_batches,flat_batches,skipped_batches;
     /* Dynamic resolution: the eyes drawn at k_levels[level] of their size. */
@@ -150,7 +151,7 @@ static VkResult eyes(ChVkImmersive *m,struct ImmSurface *f) {
     if(f->eyes) return VK_SUCCESS;
     /* A new surface not on screen starts as an effect buffer (half size):
      * full-size eyes made only to be halved at the flip cost a rebuild. */
-    if(!f->div) f->div=m->half_effects && !shown(m,f->va)?2:1;
+    if(!f->div) f->div=m->half_effects && !shown(m,f->va)?m->effect_div:1;
     uint32_t w=m->config.eye_width*2/f->div,h=m->config.eye_height/f->div;
     size_t bytes=(size_t)w*h*4;
     f->pixels=malloc(bytes); if(!f->pixels) return VK_ERROR_OUT_OF_HOST_MEMORY;
@@ -214,6 +215,8 @@ VkResult ch_vk_immersive_create(const ChVkImmersiveConfig *config,ChVkImmersive 
     m->zoom_max=e?(float)atof(e):0.0f;
     e=getenv("CHIHIRO_VULKAN_IMMERSIVE_HALF_EFFECTS");
     m->half_effects=!e || atoi(e);
+    e=getenv("CHIHIRO_VULKAN_IMMERSIVE_EFFECT_DIV");
+    m->effect_div=e && (atoi(e)==4 || atoi(e)==2)?(uint32_t)atoi(e):2;
     m->dynamic=1;m->calm_need=6;
     e=getenv("CHIHIRO_VULKAN_IMMERSIVE_SCALE");
     if(e && atof(e)>0) {
@@ -471,8 +474,8 @@ static void dump_ppm_target(ChVkTarget *t,const char *path) {
 /* CHIHIRO_VULKAN_IMMERSIVE_DUMP=dir (every CHIHIRO_VULKAN_IMMERSIVE_DUMP_EVERY
  * immersive frames, 300 by default, from immersive frame
  * CHIHIRO_VULKAN_IMMERSIVE_DUMP_FROM on): the scene surface's eyes and the
- * guest's own picture of it, the same frame. */
-static void dump_scene(ChVkImmersive *m,struct ImmSurface *scene) {
+ * guest's own picture of it, the same frame, and the eyes the headset gets. */
+static void dump_scene(ChVkImmersive *m,struct ImmSurface *scene,struct ImmSurface *shown) {
     static const char *dir;static unsigned every,n;static unsigned long long from;
     if(!dir) {dir=getenv("CHIHIRO_VULKAN_IMMERSIVE_DUMP");if(!dir) dir="";
         const char *e=getenv("CHIHIRO_VULKAN_IMMERSIVE_DUMP_EVERY");every=e && atoi(e)>0?(unsigned)atoi(e):300;
@@ -483,6 +486,7 @@ static void dump_scene(ChVkImmersive *m,struct ImmSurface *scene) {
     snprintf(path,sizeof path,"%s/scene-%05llu-eyes.ppm",dir,(unsigned long long)m->frames);dump_ppm_target(scene->eyes,path);
     if(guest) {snprintf(path,sizeof path,"%s/scene-%05llu-flat.ppm",dir,(unsigned long long)m->frames);dump_ppm_target(guest,path);}
     if(m->hud && m->hud_used) {snprintf(path,sizeof path,"%s/scene-%05llu-hud.ppm",dir,(unsigned long long)m->frames);dump_ppm_target(m->hud,path);}
+    if(shown && shown->eyes) {snprintf(path,sizeof path,"%s/scene-%05llu-shown.ppm",dir,(unsigned long long)m->frames);dump_ppm_target(shown->eyes,path);}
 }
 int ch_vk_immersive_guest_draw(ChVkImmersive *m,ChVkTarget *t,const Nv2aSurface *s,const Nv2aBatch *b,
     const ChVkFixedGeometry *fixed,ChVkSampleResolver resolve,void *context,void *pixels,VkDeviceSize bytes,VkResult *result) {
@@ -510,7 +514,6 @@ VkResult ch_vk_immersive_flip(ChVkImmersive *m,uint32_t presented,const Vc3VrVie
         if(f->va==presented) shown_f=f;
     }
     if(best) zoom_note(m,m->projection.kx);
-    if(m->on) dump_scene(m,scene);
     /* What the headset gets: VC3 draws its scene off-screen and composites
      * it onto the presented surface with one full-screen draw; only a few
      * effects go there as 3D (none, some frames) -- eyes composited from
@@ -537,15 +540,17 @@ VkResult ch_vk_immersive_flip(ChVkImmersive *m,uint32_t presented,const Vc3VrVie
         if(shown_f && shown_f->eyes && shown_f->div<2 && (shown_f->world || shown_f->composite)) src=shown_f;
         else if(scene && scene->eyes && scene->div<2) src=scene;
     }
+    if(m->on) dump_scene(m,scene,src);
     int hud=(repeat?m->last_hud:m->hud_used) && m->hud;
     /* Only a presented picture repeats: the scene buffer may be half redrawn. */
-    m->last_src=repeat || (src && src==shown_f)?src:NULL;m->last_hud=hud;m->repeats=repeat?m->repeats+1:0;
+    int presented_src=src && src==shown_f;
+    m->last_src=repeat || presented_src?src:NULL;m->last_hud=hud;m->repeats=repeat?m->repeats+1:0;
     if(src) {
         out->view=m->view;out->projection=zoomed(m,&m->projection,src->width);out->projection_ok=1;
         out->guest_width=src->width;out->guest_height=src->height;
         out->eye_width=m->config.eye_width;out->eye_height=m->config.eye_height;
         out->scale=k_levels[m->level];
-        out->hud=hud;
+        out->hud=hud;out->repeat=repeat;
         *eyes_out=src->eyes;*hud_out=hud?m->hud:NULL;
         if(m->log) {   /* a frame with no HUD drops the HUD layer: where its 2D went */
             static unsigned with,without,shown_lines;
@@ -575,7 +580,7 @@ VkResult ch_vk_immersive_flip(ChVkImmersive *m,uint32_t presented,const Vc3VrVie
     }
     {   /* every switch between the eyes and the screen, and why */
         static int was=-1;
-        int now=repeat?3:src==shown_f && src?1:src?2:0;
+        int now=repeat?3:presented_src?1:src?2:0;
         static const char *const what[]={"screen","eyes","scene behind 2D","the last picture again"};
         if(m->log && now!=was)
             fprintf(stderr,"[immersive switch] frame %llu -> %s: on %d presented %08X (3D %u, composited %u, eyes %d) total 3D %u projection %d\n",
@@ -620,7 +625,7 @@ VkResult ch_vk_immersive_flip(ChVkImmersive *m,uint32_t presented,const Vc3VrVie
         if(f->va==presented || shown(m,f->va)) f->last_shown=m->frames;
         if(!f->eyes) continue;
         /* Resize: effect-only for ~2 s -> half size; a scene or shown -> full. */
-        uint32_t want=m->half_effects && m->frames-f->last_3d>120 && m->frames-f->last_shown>120?2:1;
+        uint32_t want=m->half_effects && m->frames-f->last_3d>120 && m->frames-f->last_shown>120?m->effect_div:1;
         if(want!=f->div) {
             VkResult r=ch_vk_target_finish(f->eyes);if(r!=VK_SUCCESS) return r;
             if(m->config.textures) ch_vk_texture_cache_forget_source(m->config.textures,f->eyes);

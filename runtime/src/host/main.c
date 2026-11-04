@@ -234,6 +234,10 @@ static size_t s_xbe_size;
 
 /* Runs on the thread the toolkit's window starts (or directly, headless):
  * the guest registers are thread-local, so the whole boot belongs here. */
+/* Once the dispatch table is built, before the first guest instruction: a
+ * game patches its entries here (VC3: vc3_cri_trap.c). */
+__attribute__((weak)) void chihiro_game_dispatch_ready(void) {}
+
 static int guest_main(void)
 {
     install_fault_handler();
@@ -265,6 +269,7 @@ static int guest_main(void)
     g_esp = XBOX_STACK_TOP;
     if (!recomp_dispatch_init())
         fprintf(stderr, "[BOOT] flat dispatch unavailable; using binary search\n");
+    chihiro_game_dispatch_ready();
     xbox_WatchdogStart();
 
     printf("entry 0x%08X, esp 0x%08X\n", chihiro_profile()->entry, g_esp);

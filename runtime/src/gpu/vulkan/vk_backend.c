@@ -949,7 +949,10 @@ static void flip(void) {
             if(r!=VK_SUCCESS) fatal(r,"immersive flip");
         }
     }
-    if(imm_eyes && presented && active->host.present_immersive) {
+    if(imm_eyes && presented && active->host.present_immersive && imm_frame.repeat) {
+        /* The same picture again (a frame spread over flips): the headset
+         * keeps the one it has -- no second copy of the eyes. */
+    } else if(imm_eyes && presented && active->host.present_immersive) {
         struct Surface *f=NULL;
         for(unsigned i=0;i<active->count;i++) if(active->surfaces[i].guest.color_va==presented) { f=&active->surfaces[i]; break; }
         if(!f) fatal(VK_ERROR_FEATURE_NOT_PRESENT,"unknown presented surface");

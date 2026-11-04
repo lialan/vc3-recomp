@@ -29,6 +29,7 @@ typedef struct {
     uint32_t eye_width,eye_height;       /* each eye; the target is 2x wide */
     float scale;    /* dynamic resolution: the fraction of each eye's half drawn
                        (left eye from the top-left, right eye from the top-right) */
+    int repeat;     /* the last flip's picture again: nothing new to hand over */
 } ChVkImmFrame;
 typedef struct {
     VkPhysicalDevice physical; VkDevice device; VkQueue queue; uint32_t family;

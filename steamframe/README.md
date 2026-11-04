@@ -22,11 +22,16 @@ SteamOS's `libopenxr_loader.a` is an empty stub: link the Steam Runtime
 loader (`libopenxr_loader.so.1` and its `libjsoncpp.so.26`, e.g. from the
 HOTD4 Frame package) and ship both in `lib/` beside the game.
 
+With a pipeline seed from `harvest.sh` (below), add
+`-DCHIHIRO_VULKAN_PIPELINE_CACHE_SEEDS=$PWD/games/vc3/pipeline-cache/steamframe/turnip-seed.cache`
+to the `build-xr` line: the binary carries the harvested pipelines compiled
+(2.4 MB compressed; `[Vulkan pipeline cache] packaged_bytes=...` at start).
+
 ## Install
 
 `~/Games/VC3/`: `vc3` (VR), `vc3-flat`, `lib/`, `launch.sh` (VR) and
-`launch-flat.sh` from this folder. Add `launch.sh` to Steam as a non-Steam
-game. `env.txt` holds extra options.
+`launch-flat.sh` from this folder, and the harvest's `pipelines.recipes`.
+Add `launch.sh` to Steam as a non-Steam game. `env.txt` holds extra options.
 
 Game files: copy your own game folder (`vc3.xbe` and `media/`, see the main
 README's "Game files") to the Frame; none is in this repository. With ssh
@@ -178,8 +183,13 @@ compositor idle it held every frame, so measure with it running (below). What ge
   (`CHIHIRO_VULKAN_IMMERSIVE_ZPASS=0`: the flat draw and its real count).
 - **A slow frame spread over several flips stays in the eyes**: a flip that
   drew nothing on the presented surface shows the last picture again
-  (`[immersive switch] ... the last picture again`); dropping to the screen
-  there drew the next frame flat as well, slower still.
+  (`[immersive switch] ... the last picture again`), without handing the
+  headset a second copy; dropping to the screen there drew the next frame
+  flat as well, slower still.
+- Effect buffers (the glow VC3 adds back onto its scene) get eyes at half
+  the size each way; `CHIHIRO_VULKAN_IMMERSIVE_EFFECT_DIV=4` a quarter:
+  ~0.25 ms less GPU a frame in combat at native 2160 (0.88 -> 0.64 ms for
+  that buffer), a softer glow -- an option for a weaker GPU (the Quest).
 - **Eye images sampled in place** (`CHIHIRO_VULKAN_IMMERSIVE_LEND=0`: copied
   first, up to four 24 MB copies an E.S. frame, ~2.7 ms of GPU).
 - Texture cache sized for eye snapshots; the culling frustum widened to 140
