@@ -102,7 +102,8 @@ void ch_vk_target_defer_color_readback(ChVkTarget *,int enabled);
  * images must remain alive and immutable until finish. Default callers retain
  * synchronous semantics. */
 VkResult ch_vk_target_batching(ChVkTarget *,int enabled);
-#define CH_VK_MAX_BATCH_DRAWS 256u
+#define CH_VK_MAX_BATCH_DRAWS 512u
+#define CH_VK_DEFAULT_BATCH_DRAWS 256u
 /* Set before the first draw/pipeline. Zero selects the shared default (256);
  * 1..256 bounds descriptor reservations and pending draw/texture lifetimes. */
 VkResult ch_vk_target_batch_limit(ChVkTarget *,uint32_t draws);

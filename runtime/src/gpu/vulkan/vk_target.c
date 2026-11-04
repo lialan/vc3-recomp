@@ -368,7 +368,7 @@ static void retire_samples(ChVkTarget *t) {retire_retired(t->retired,&t->retired
 uint32_t ch_vk_target_pending(const ChVkTarget *t) {return t?t->pending:0;}
 VkResult ch_vk_target_batch_limit(ChVkTarget *t,uint32_t draws) {
     if(!t || t->failed || t->resource_stats.pipeline_builds || draws>BATCH_DRAWS) return VK_ERROR_INITIALIZATION_FAILED;
-    t->batch_limit=draws?draws:BATCH_DRAWS;return VK_SUCCESS;
+    t->batch_limit=draws?draws:CH_VK_DEFAULT_BATCH_DRAWS;return VK_SUCCESS;
 }
 VkResult ch_vk_target_batching(ChVkTarget *t,int enabled) {
     if(!t || t->failed || (enabled && !t->batch_enabled && t->resource_stats.pipeline_builds)) return VK_ERROR_INITIALIZATION_FAILED;
@@ -487,7 +487,7 @@ static VkResult create_depth(VkPhysicalDevice physical,VkDevice device,VkQueue q
         return VK_ERROR_INITIALIZATION_FAILED;
     ChVkTarget *t=calloc(1,sizeof(*t));
     if(!t) return VK_ERROR_OUT_OF_HOST_MEMORY;
-    t->batch_limit=BATCH_DRAWS;
+    t->batch_limit=CH_VK_DEFAULT_BATCH_DRAWS;
     const char *async_upload=getenv("CHIHIRO_VULKAN_ASYNC_DEPTH_UPLOADS");
     t->async_depth_uploads=!async_upload || atoi(async_upload);
     const char *async_copy=getenv("CHIHIRO_VULKAN_ASYNC_DEPTH_COPIES");

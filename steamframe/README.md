@@ -241,7 +241,7 @@ cost +60% (20 us a draw) and the other targets twice as much: each eye
 surface's batch ends 4-6 times a frame where another samples it (scene ->
 glow -> composite -> trail), and every end stores and reloads whole images.
 For the Quest that is the work: fewer of those ends, then load/store ops.
-Done so far, both `vk_target.c`:
+Done so far, in `vk_target.c` and `vk_immersive.c`:
 - A clear that opens a batch, full or color-only (the glow buffers), is
   the render pass's own clear (load op CLEAR) rather than one drawn inside
   it (`CHIHIRO_VULKAN_PASS_CLEAR=0`: as before): mission 2 12.70 -> 12.35
@@ -258,6 +258,12 @@ Done so far, both `vk_target.c`:
   frame 5.6 -> 4.4 (full-size eyes), 4.75 -> 3.1 (glow). Direct rendering
   (the Frame's own), three pairs: no difference beyond run-to-run noise
   (13.6 vs 13.2 us an eye draw, runs 13.0-14.1).
+- The eyes' batches hold up to 512 draws (were 256; the game's own
+  surfaces stay at 64): the scene's ~500 eye draws a frame ended a batch at
+  the limit 1.4 times a frame, now 0.4. Two pairs each: tiled 19.06 ->
+  17.67 us an eye draw (-7%), the Frame's direct rendering 12.98 -> 12.51
+  (-3.5%); fps unchanged, ~20 MB more memory
+  (`CHIHIRO_VULKAN_IMMERSIVE_BATCH=256`: as before).
 
 Ruled out: leaving out the corners of each eye's picture that the lenses
 never show (XR_KHR_visibility_mask: 7% of a picture on the Frame) -- no

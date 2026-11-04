@@ -344,7 +344,7 @@ static VkResult attach(ChVkBackendConfig config)
             return VK_ERROR_INITIALIZATION_FAILED;
         config.batch_draw_limit=(uint32_t)value;
     } else config.batch_draw_limit=64; /* with the batch ring the GPU starts on a frame's draws while the rest are recorded */
-    fprintf(stderr,"[Vulkan] command batch draw limit: %u\n",config.batch_draw_limit?config.batch_draw_limit:CH_VK_MAX_BATCH_DRAWS);
+    fprintf(stderr,"[Vulkan] command batch draw limit: %u\n",config.batch_draw_limit?config.batch_draw_limit:CH_VK_DEFAULT_BATCH_DRAWS);
     const char *depth=ch_env("VULKAN_RESIDENT_DEPTH");
     config.resident_depth=depth?!strcmp(depth,"1"):config.gpu_depth_pack;
     const char *depth_copy=ch_env("VULKAN_DEPTH_GPU_COPY");

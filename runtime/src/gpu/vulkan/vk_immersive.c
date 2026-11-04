@@ -193,10 +193,12 @@ VkResult ch_vk_immersive_create(const ChVkImmersiveConfig *config,ChVkImmersive 
     ChVkImmersive *m=calloc(1,sizeof *m); if(!m) return VK_ERROR_OUT_OF_HOST_MEMORY;
     m->config=*config;
     /* Each batch is a render pass, and on a tiler each pass loads and stores
-     * the whole eye image: the eyes take the largest batches (diagnostic
-     * override CHIHIRO_VULKAN_IMMERSIVE_BATCH). */
+     * the whole eye image: the eyes take the largest batches, 512 draws
+     * (mission 2's first area, ~500 eye draws a frame: 1.4 -> 0.4 batch
+     * ends a frame at the limit, tiled -7% GPU, the Frame's direct rendering
+     * -3.5%, against 256; diagnostic override CHIHIRO_VULKAN_IMMERSIVE_BATCH). */
     {const char *b=getenv("CHIHIRO_VULKAN_IMMERSIVE_BATCH");
-     m->config.batch_limit=b && atoi(b)>0 && atoi(b)<=256?(uint32_t)atoi(b):256;}
+     m->config.batch_limit=b && atoi(b)>0 && atoi(b)<=(int)CH_VK_MAX_BATCH_DRAWS?(uint32_t)atoi(b):512;}
     const char *e=getenv("CHIHIRO_VULKAN_IMMERSIVE_LOG");
     m->log=e?atoi(e):0;
     /* 2 (follow) by default: a game zoom in (a far enemy, E.S., the death
