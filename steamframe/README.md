@@ -227,6 +227,24 @@ after compositing it, before the flip). Run to run the route's GPU time
 varies ~0.5 ms: compare within one run (split the 4320x2160 lines by draw
 count) or repeat.
 
+The heaviest scene measured is mission 2's first area (`stage2a`; the left
+mission on Mission Select): 390-850 eye draws a frame, 7-10.6 ms of GPU at
+native 2160 (`AUTOAIM=sweep:26:0.2,0.5 CHIHIRO_VULKAN_PROFILE=1
+CHIHIRO_VULKAN_GPU_TIMESTAMPS=1 CHIHIRO_VULKAN_IMMERSIVE_SCALE=1 play.sh m2
+120`, the 4320x2160 lines summed per frame from 45 s on). Its cost follows
+pixels, not draws: ~13 us a draw at full scale, 6.45 at 0.7 (half the
+pixels), so almost nothing per draw beyond its pixels; and not shading:
+`VC3_XR_FOVEATION=10,20,30` takes only 8% off. What is left is raster,
+depth and colour traffic -- overdraw. Rendered in tiles (`TU_DEBUG=gmem`
+here; Qualcomm's own driver, the Quest's, usually tiles) the eyes
+cost +60% (20 us a draw) and the other targets twice as much: each eye
+surface's batch ends 4-6 times a frame where another samples it (scene ->
+glow -> composite -> trail), and every end stores and reloads whole images.
+For the Quest that is the work: fewer of those ends, then load/store ops.
+Ruled out: leaving out the corners of each eye's picture that the lenses
+never show (XR_KHR_visibility_mask: 7% of a picture on the Frame) -- no
+measurable change. Run to run the same route varies ~5%.
+
 Game zooms (a far enemy, E.S., the death close-up: the lens narrows from
 ~45-60 to ~14 degrees) zoom the headset's world: vertices are read back
 through VC3's usual 45-degree lens, so a longer one magnifies as much (up
