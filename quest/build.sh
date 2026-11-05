@@ -74,9 +74,29 @@ fi
 SEEDS_GIVEN=OFF
 [ -n "${CHIHIRO_VULKAN_PIPELINE_CACHE_SEEDS:-}${PACKAGED_SEEDS:-}" ] && SEEDS_GIVEN=ON
 PIPELINE_ARGS+=("-DCHIHIRO_VULKAN_REQUIRE_PIPELINE_CACHE_SEEDS=${CHIHIRO_VULKAN_REQUIRE_PIPELINE_CACHE_SEEDS:-$SEEDS_GIVEN}")
-if [ -n "${CHIHIRO_VULKAN_SPIRV_OPT_DIR:-}" ]; then
-    PIPELINE_ARGS+=("-DCHIHIRO_VULKAN_SPIRV_OPT_DIR=$CHIHIRO_VULKAN_SPIRV_OPT_DIR")
+# Shaders specialized on the CPU (runtime/src/gpu/vulkan/vk_spirv_specialize.cpp):
+# Qualcomm's compiler does not fold specialization constants, so the headset
+# ran the generic vertex-program and combiner shaders -- Silent Scope's draws
+# cost 20-45 us each on its GPU. SPIRV-Tools for the headset is built once
+# from the NDK's own copy into build-quest-spirv-tools (ndk-build, a few
+# minutes); CHIHIRO_VULKAN_SPIRV_OPT_DIR names another (include/, lib/), and
+# set empty builds without.
+if [ "${CHIHIRO_VULKAN_SPIRV_OPT_DIR+x}" != x ]; then
+    SPV=$ROOT/build-quest-spirv-tools
+    SPV_SRC=$NDK/sources/third_party/shaderc/third_party/spirv-tools
+    if [ ! -f "$SPV/lib/libSPIRV-Tools-opt.a" ]; then
+        [ -f "$SPV_SRC/Android.mk" ] || { echo "no SPIRV-Tools in the NDK at $SPV_SRC"; exit 1; }
+        mkdir -p "$SPV/jni" "$SPV/lib"
+        echo "include $SPV_SRC/Android.mk" > "$SPV/jni/Android.mk"
+        printf 'APP_ABI := arm64-v8a\nAPP_PLATFORM := android-29\nAPP_STL := c++_static\nAPP_MODULES := SPIRV-Tools SPIRV-Tools-opt\n' > "$SPV/jni/Application.mk"
+        echo "building SPIRV-Tools for the headset (once)"
+        (cd "$SPV" && "$NDK/ndk-build" NDK_PROJECT_PATH=. -j"$(getconf _NPROCESSORS_ONLN)" >/dev/null)
+        cp "$SPV/obj/local/arm64-v8a/libSPIRV-Tools.a" "$SPV/obj/local/arm64-v8a/libSPIRV-Tools-opt.a" "$SPV/lib/"
+    fi
+    ln -sfn "$SPV_SRC/include" "$SPV/include"
+    CHIHIRO_VULKAN_SPIRV_OPT_DIR=$SPV
 fi
+PIPELINE_ARGS+=("-DCHIHIRO_VULKAN_SPIRV_OPT_DIR=$CHIHIRO_VULKAN_SPIRV_OPT_DIR")
 # CHIHIRO_RENDERER, else the game's RENDERER (game.conf), else the build's default
 R=${CHIHIRO_RENDERER:-${RENDERER:-}}
 if [ -n "$R" ]; then
