@@ -108,7 +108,9 @@ static VkResult lens_read(ChVkTarget *target,const QoFrame *f,const float model[
     state.color_mask=0x00010101;
     VkResult r=ch_vk_target_draw_texture_read(target,NULL,v,N+1,idx,N*3,&state,(const ChVkTexture *)f->lens_tex,pixels,bytes);
     if(r!=VK_SUCCESS) return r;
-    state.color_mask=0x01000000; state.depth_write=0;
+    /* Alpha 1 over the whole disc with no depth test: it cannot depend on the colour pass's depth
+     * matching. Anything nearer is the opaque gun, whose alpha is 1 already. */
+    state.color_mask=0x01000000; state.depth_test_enable=0; state.depth_write=0;
     return ch_vk_target_draw_state_read(target,NULL,v,N+1,idx,N*3,&state,pixels,bytes);
 }
 

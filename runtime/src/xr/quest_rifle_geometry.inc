@@ -24,10 +24,10 @@ static const Box RIFLE_BODY[] = {
     { { 0, -0.012f, -0.140f }, { 0.012f, 0.018f, 0.045f }, DARK },                 /* the magazine */
     { { 0, 0, -0.360f }, { 0.009f, 0.009f, 0.160f }, STEEL },                      /* the barrel: z -0.52 .. -0.20 */
     { { 0, 0, RIFLE_MUZZLE_Z + 0.015f }, { 0.014f, 0.014f, 0.015f }, DARK },       /* the muzzle brake */
-    { { 0, -0.002f, 0.300f }, { 0.020f, 0.050f, 0.230f }, RIFLE_WOOD },            /* the stock: z 0.07 .. 0.53 */
+    { { 0, -0.017f, 0.300f }, { 0.020f, 0.050f, 0.230f }, RIFLE_WOOD },            /* the stock: z 0.07 .. 0.53 */
     { { 0, -0.060f, 0.520f }, { 0.021f, 0.035f, 0.010f }, DARK },                  /* the butt pad */
     { { 0, -0.060f, -0.280f }, { 0.012f, 0.014f, 0.140f }, DARK },                 /* the bipod stowed under the barrel */
 };
 #define RIFLE_RECEIVER (RIFLE_BODY[1])
 /* The scope picture's lens: a disc on the rear bell's back face. */
-static const float RIFLE_LENS_C[3] = { 0, RIFLE_SCOPE_Y, 0.0705f };
+static const float RIFLE_LENS_C[3] = { 0, RIFLE_SCOPE_Y, 0.071f };

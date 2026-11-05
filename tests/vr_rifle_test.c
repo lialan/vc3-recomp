@@ -168,6 +168,22 @@ static void rifle_lens_on_scope_line(void)
     CHECK(RIFLE_LENS_R <= bell->h[0]);
 }
 
+/* The lens disc (plane z = RIFLE_LENS_C[2], radius RIFLE_LENS_R) must not
+ * touch any rifle box: no box spans its plane within reach of the disc. */
+static int lens_hits(const Box *b)
+{
+    if (RIFLE_LENS_C[2] > b->c[2] + b->h[2] || RIFLE_LENS_C[2] < b->c[2] - b->h[2]) return 0;
+    float dx = fmaxf(fabsf(RIFLE_LENS_C[0] - b->c[0]) - b->h[0], 0);
+    float dy = fmaxf(fabsf(RIFLE_LENS_C[1] - b->c[1]) - b->h[1], 0);
+    return dx * dx + dy * dy < RIFLE_LENS_R * RIFLE_LENS_R;
+}
+
+static void rifle_lens_unobstructed(void)
+{
+    for (unsigned i = 0; i < sizeof RIFLE_BODY / sizeof *RIFLE_BODY; i++) CHECK(!lens_hits(&RIFLE_BODY[i]));
+    for (unsigned i = 0; i < sizeof RIFLE_SCOPE / sizeof *RIFLE_SCOPE; i++) CHECK(!lens_hits(&RIFLE_SCOPE[i]));
+}
+
 static void rifle_fits_hand(void)
 {
     float zmin = 1e9f, zmax = -1e9f;
@@ -185,6 +201,7 @@ static void rifle_fits_hand(void)
 int main(void)
 {
     rifle_lens_on_scope_line();
+    rifle_lens_unobstructed();
     rifle_fits_hand();
     aim_angles_basic();
     aim_angles_poles_and_behind();
