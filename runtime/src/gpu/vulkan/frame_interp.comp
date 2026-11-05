@@ -1,0 +1,118 @@
+#version 450
+// Frame interpolation (vk_interp.c): the OpenGL renderer's in-between frame
+// (gl_backend.c, "Display frame interpolation"), the same passes in
+// compute. A is the earlier frame, B the later, each an RGBA8 image with
+// mipmaps (1, 1/2, 1/4, 1/8) sampled with hardware filtering; luma at a
+// level is the luma of that level's colour (luma is linear: the same as a
+// luma pyramid). The made frame, at time t, goes to OUT (RGBA8 words, red
+// in the low byte), after A and B's own words in the same buffer.
+layout(local_size_x=64) in;
+layout(std430,binding=0) buffer Img {uint img[];};      // A, B, OUT: n words each
+layout(binding=1) uniform sampler2D frameA;
+layout(binding=2) uniform sampler2D frameB;
+layout(std430,binding=3) buffer Field {vec4 field[];};  // two fields, ping-pong: vector, error
+layout(std430,binding=4) buffer Sel {vec4 sel[];};      // per pixel: vector, weight
+layout(std430,binding=5) buffer Stats {uint stats[];};  // [0]: final block errors, x65536
+layout(push_constant) uniform P {
+    uint pass; int w,h,fw,fh,level,win,range,coarse,src,dst;
+    float t,lambda,zbias,lo,hi,cut;
+} p;
+const vec3 LUMA=vec3(.299,.587,.114);
+int n() {return p.w*p.h;}
+vec2 size() {return vec2(p.w,p.h);}
+vec3 rgb(uint v) {return vec3(v&255u,(v>>8)&255u,(v>>16)&255u)/255.;}
+uint pack(vec3 c) {uvec3 u=uvec3(clamp(c,0.,1.)*255.+.5);return u.r|(u.g<<8)|(u.b<<16)|0xff000000u;}
+// At a continuous pixel position (centres at +0.5), edges clamped.
+vec3 A(vec2 q) {return textureLod(frameA,q/size(),0.).rgb;}
+vec3 B(vec2 q) {return textureLod(frameB,q/size(),0.).rgb;}
+float cost(vec2 c,vec2 v,float s,float l) {
+    vec2 h=.5*v;float sum=0.;
+    for(int j=-p.win;j<p.win;j++) for(int i=-p.win;i<p.win;i++) {
+        vec2 q=c+(vec2(i,j)+.5)*s;
+        sum+=abs(dot(textureLod(frameA,(q-h)/size(),l).rgb,LUMA)-dot(textureLod(frameB,(q+h)/size(),l).rgb,LUMA));
+    }
+    return sum/float(4*p.win*p.win);
+}
+float perr(vec2 q0,vec2 v) {
+    vec2 da=-p.t*v,db=(1.-p.t)*v;vec3 e=vec3(0);
+    for(int j=-1;j<=1;j++) for(int i=-1;i<=1;i++) {
+        vec2 q=q0+vec2(i,j);
+        e+=abs(A(q+da)-B(q+db));
+    }
+    return (e.r+e.g+e.b)/9.;
+}
+void main() {
+    int id=int(gl_GlobalInvocationID.x);
+    if(p.pass==2u) {            // block search, one invocation per 8x8 block
+        if(id>=p.fw*p.fh) return;
+        ivec2 bc=ivec2(id%p.fw,id/p.fw);vec2 c=(vec2(bc)+.5)*8.;
+        float l=float(p.level),s=float(1<<p.level);
+        float raw0=cost(c,vec2(0),s,l),best=raw0-p.zbias,braw=raw0;vec2 bv=vec2(0);
+        // Still (best <= 0): no vector can do better than zero, whose cost
+        // is never negative -- the same answer without the search.
+        if(best<=0.) {
+            field[p.dst*p.fw*p.fh+id]=vec4(0,0,raw0,0);
+            if(p.level==0) atomicAdd(stats[0],uint(raw0*65536.));
+            return;
+        }
+        vec2 cand[5];int nc=1;cand[0]=vec2(0);
+        if(p.coarse==0) {
+            ivec2 hi=ivec2(p.fw,p.fh)-1;int o=p.src*p.fw*p.fh;
+            cand[0]=field[o+bc.y*p.fw+bc.x].xy;
+            ivec2 nb[4]=ivec2[4](ivec2(-1,0),ivec2(1,0),ivec2(0,-1),ivec2(0,1));
+            for(int k=0;k<4;k++) {ivec2 q=clamp(bc+nb[k],ivec2(0),hi);cand[k+1]=field[o+q.y*p.fw+q.x].xy;}
+            nc=5;
+        }
+        for(int k=0;k<nc;k++) {
+            if(k>0 && cand[k]==cand[0]) continue;
+            for(int dy=-p.range;dy<=p.range;dy++) for(int dx=-p.range;dx<=p.range;dx++) {
+                vec2 v=clamp(cand[k]+vec2(dx,dy)*s,vec2(-128),vec2(128));
+                if(v==vec2(0)) continue;
+                float r=cost(c,v,s,l),e=r+p.lambda*length(v);
+                if(e<best) {best=e;braw=r;bv=v;}
+            }
+        }
+        field[p.dst*p.fw*p.fh+id]=vec4(bv,braw,0);
+        if(p.level==0) atomicAdd(stats[0],uint(braw*65536.));
+    } else if(p.pass==3u) {     // per pixel: the vector to use, and how far to trust it
+        if(id>=n()) return;
+        vec2 q=vec2(id%p.w,id/p.w)+.5;
+        ivec2 bc=clamp(ivec2(q)/8,ivec2(0),ivec2(p.fw,p.fh)-1);int o=p.src*p.fw*p.fh;
+        float best=perr(q,vec2(0))-p.zbias;vec2 bv=vec2(0);
+        if(best<=0.) {sel[id]=vec4(0,0,1.-smoothstep(p.lo,p.hi,best+p.zbias),0);return;}   // still, as above
+        for(int j=-1;j<=1;j++) for(int i=-1;i<=1;i++) {
+            ivec2 b=clamp(bc+ivec2(i,j),ivec2(0),ivec2(p.fw,p.fh)-1);
+            vec2 v=field[o+b.y*p.fw+b.x].xy;
+            if(v==vec2(0)) continue;
+            float e=perr(q,v);
+            if(e<best) {best=e;bv=v;}
+        }
+        // and one pixel either way: an overlay creeping by none of the blocks' vectors
+        for(int k=0;k<4;k++) {
+            vec2 v=vec2(k==0?1.:k==1?-1.:0.,k==2?1.:k==3?-1.:0.);
+            float e=perr(q,v);
+            if(e<best) {best=e;bv=v;}
+        }
+        if(bv==vec2(0)) best+=p.zbias;
+        sel[id]=vec4(bv,1.-smoothstep(p.lo,p.hi,best),0);
+    } else if(p.pass==4u) {     // the made frame
+        if(id>=n()) return;
+        vec2 q=vec2(id%p.w,id/p.w)+.5;
+        uint wa=img[id],wb=img[n()+id];
+        vec3 a0=rgb(wa),b0=rgb(wb);uint nearw=p.t<.5?wa:wb;vec3 near0=p.t<.5?a0:b0,far0=p.t<.5?b0:a0;
+        float mean=float(stats[0])/65536./float(p.fw*p.fh);
+        if(mean>p.cut || all(lessThan(abs(a0-b0),vec3(1.5/255.)))) {img[2*n()+id]=nearw|0xff000000u;return;}
+        vec4 s=sel[id];vec2 v=s.xy;
+        vec3 a=v==vec2(0)?a0:A(q-p.t*v),b=v==vec2(0)?b0:B(q+(1.-p.t)*v);
+        vec3 r=mix(near0,mix(a,b,p.t),s.z);
+        // A thin black overlay over moving content (Silent Scope's
+        // crosshair over the scope's panning view) is matched away: both
+        // frames' background lines up through it. Where the nearer frame
+        // has it black and the made pixel is not, the nearer frame's: the
+        // overlay steps at the real frames' rate instead of vanishing (a
+        // dark moving object's leading edge steps a little early).
+        float ln=dot(near0,LUMA);
+        if(ln<.08 && dot(r,LUMA)>ln+.15) r=near0;
+        img[2*n()+id]=pack(r);
+    }
+}

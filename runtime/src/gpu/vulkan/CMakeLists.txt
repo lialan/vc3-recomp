@@ -382,6 +382,15 @@ add_custom_command(OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/color_pack_spv.h"
         "${CMAKE_CURRENT_BINARY_DIR}/color_pack.spv" "${CMAKE_CURRENT_BINARY_DIR}/color_pack_spv.h" color_pack_spv
     DEPENDS "${CMAKE_CURRENT_BINARY_DIR}/color_pack.spv" embed_binary_spirv.py VERBATIM)
 target_sources(chihiro_vulkan PRIVATE vk_color_pack.c "${CMAKE_CURRENT_BINARY_DIR}/color_pack_spv.h")
+# Display frame interpolation (vk_interp.c): one compute shader, five passes.
+add_custom_command(OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/frame_interp.spv"
+    COMMAND "${CHIHIRO_GLSLC}" --target-env=vulkan1.0 -O "${CMAKE_CURRENT_SOURCE_DIR}/frame_interp.comp" -o "${CMAKE_CURRENT_BINARY_DIR}/frame_interp.spv"
+    DEPENDS frame_interp.comp VERBATIM)
+add_custom_command(OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/frame_interp_spv.h"
+    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/embed_binary_spirv.py"
+        "${CMAKE_CURRENT_BINARY_DIR}/frame_interp.spv" "${CMAKE_CURRENT_BINARY_DIR}/frame_interp_spv.h" frame_interp_spv
+    DEPENDS "${CMAKE_CURRENT_BINARY_DIR}/frame_interp.spv" embed_binary_spirv.py VERBATIM)
+target_sources(chihiro_vulkan PRIVATE vk_interp.c "${CMAKE_CURRENT_BINARY_DIR}/frame_interp_spv.h")
 
 add_custom_command(OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/depth_read.spv"
     COMMAND "${CHIHIRO_GLSLC}" --target-env=vulkan1.0 -O "${CMAKE_CURRENT_SOURCE_DIR}/depth_read.comp" -o "${CMAKE_CURRENT_BINARY_DIR}/depth_read.spv"

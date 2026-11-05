@@ -7,7 +7,10 @@
  *
  *   fps     60 (default) or 120: at 120 one motion-interpolated frame goes
  *           between each pair of real ones. Any multiple of 60 up to 240
- *           works the same way, with fps / 60 - 1 in-between frames.
+ *           works the same way, with fps / 60 - 1 in-between frames. The
+ *           Vulkan renderer counts from the title's own rate: Silent Scope
+ *           presents every other vblank, so at 60 it gets one made frame
+ *           between each pair of its own (gpu/vulkan/vk_interp.h).
  *   scale   1 (default) to 4: internal resolution, 640x480 times scale.
  *   stereo  0 (default; 1 on the Quest): the 3D view in stereo, each eye
  *           its own picture with depth (gl_backend.c).

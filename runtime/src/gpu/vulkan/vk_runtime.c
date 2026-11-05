@@ -8,6 +8,7 @@
 #include "vk_device_features.h"
 #include "vk_state.h"
 #include "vk_pipeline_cache_file.h"
+#include "vk_interp.h"
 #include "chihiro/ch_env.h"
 #include "xbox_memory_layout.h"
 #include <stdio.h>
@@ -24,6 +25,7 @@ static int has_host_config;
 static struct {
     VkInstance instance;
     VkDevice device;
+    VkPhysicalDevice physical;VkQueue queue;uint32_t family;   /* the desktop device (interpolation) */
     ChVkBackend *backend;
     VkPipelineCache pipeline_cache;
     VkDevice cache_device;
@@ -217,6 +219,83 @@ static const void *pillarbox(const Nv2aSurface *surface,const void *rgba,int bgr
     *width=tw;
     return wide;
 }
+/* Display frame interpolation (vk_interp.h): a title presenting every
+ * other vblank (Silent Scope: 30 fps) is shown at the display's rate (the
+ * fps setting, 60 by default) with frames made between its own, as the
+ * OpenGL renderer does above 60. Made per flip: the display's rate times
+ * the swap's interval over 60, less the real one -- 1 for Silent Scope at
+ * 60, none for VC3. A real frame reaches the window one made frame later
+ * (~17 ms at 60). Only between consecutive flips of one size: after a gap
+ * the frame kept is not the one before. CHIHIRO_VULKAN_INTERP=0: off. */
+#define INTERP_MAX 3
+extern int vc3_fps_get(void);
+extern uint32_t nv2a_pb_exec_swap_interval(void);
+static struct {
+    ChVkInterp *p;int failed,logged;
+    unsigned char *prev,*mid;size_t capacity;
+    uint32_t w,h;uint64_t at,presents;
+} interp;
+static int interp_count(void)
+{
+    static int off=-1;
+    if(off<0) {const char *e=ch_env("VULKAN_INTERP");off=e && !strcmp(e,"0");}
+    uint32_t interval=nv2a_pb_exec_swap_interval();
+    if(off || interval<1 || interval>4) return 0;
+    int n=vc3_fps_get()*(int)interval/60-1;
+    return n<0?0:n>INTERP_MAX?INTERP_MAX:n;
+}
+static int interpolate(const void *rgba,uint32_t w,uint32_t h,const void **planes)
+{
+    size_t bytes=(size_t)w*h*4;
+    int n=interp_count(),made=0;
+    interp.presents++;
+    if(n<1) return 0;
+    if(!interp.p && !interp.failed) {
+        VkResult r=runtime.physical?ch_vk_interp_create(runtime.physical,runtime.device,runtime.queue,runtime.family,
+            runtime.pipeline_cache,&interp.p):VK_ERROR_INITIALIZATION_FAILED;
+        if(r!=VK_SUCCESS) {interp.failed=1;fprintf(stderr,"[Vulkan] frame interpolation unavailable (VkResult=%d): real frames only\n",r);return 0;}
+    }
+    if(!interp.p) return 0;
+    if(bytes*(1+INTERP_MAX)>interp.capacity) {
+        void *a=realloc(interp.prev,bytes),*b=realloc(interp.mid,bytes*INTERP_MAX);
+        if(a) interp.prev=a;
+        if(b) interp.mid=b;
+        if(!a || !b) return 0;
+        interp.capacity=bytes*(1+INTERP_MAX);interp.at=0;
+    }
+    if(interp.at && interp.at+1==interp.presents && interp.w==w && interp.h==h) {
+        static uint64_t ns,count;
+        struct timespec t0,t1;clock_gettime(CLOCK_MONOTONIC,&t0);
+        for(int i=0;i<n;i++) {
+            unsigned char *out=interp.mid+bytes*(size_t)i;
+            VkResult r=ch_vk_interp_make(interp.p,interp.prev,rgba,w,h,(float)(i+1)/(float)(n+1),out);
+            if(r!=VK_SUCCESS) {fprintf(stderr,"[Vulkan] frame interpolation failed (VkResult=%d)\n",r);break;}
+            planes[made++]=out;
+        }
+        clock_gettime(CLOCK_MONOTONIC,&t1);
+        ns+=(uint64_t)(t1.tv_sec-t0.tv_sec)*1000000000u+(uint64_t)(t1.tv_nsec-t0.tv_nsec);count+=made;
+        if(made && !interp.logged++)
+            fprintf(stderr,"[Vulkan] frame interpolation: %d made per flip (display %d fps, swap interval %u)\n",
+                n,vc3_fps_get(),nv2a_pb_exec_swap_interval());
+        if(count && interp.presents%300==0)
+            fprintf(stderr,"[Vulkan] frame interpolation: %llu made, %.2f ms each\n",(unsigned long long)count,ns/1e6/count);
+        /* CHIHIRO_VULKAN_INTERP_DUMP=dir (diagnostic): every 150th, the
+         * earlier frame, the made one and the later, as PPMs. */
+        const char *dir=ch_env("VULKAN_INTERP_DUMP");
+        if(dir && made && interp.presents%150==0) {
+            const unsigned char *img[3]={interp.prev,planes[0],rgba};
+            for(int k=0;k<3;k++) {
+                char path[512];snprintf(path,sizeof path,"%s/interp-%06llu-%d.ppm",dir,(unsigned long long)interp.presents,k);
+                FILE *f=fopen(path,"wb");if(!f) continue;
+                fprintf(f,"P6\n%u %u\n255\n",w,h);
+                for(size_t i=0;i<(size_t)w*h;i++) fwrite(img[k]+i*4,1,3,f);
+                fclose(f);
+            }
+        }
+    }
+    memcpy(interp.prev,rgba,bytes);interp.w=w;interp.h=h;interp.at=interp.presents;
+    return made;
+}
 static VkResult present_pixels(void *unused,const Nv2aSurface *surface,const void *rgba,size_t bytes,int bgra)
 {
     (void)unused;
@@ -234,21 +313,27 @@ static VkResult present_pixels(void *unused,const Nv2aSurface *surface,const voi
         }
         surface=&shaped;
     }
-    if(!has_host_config && !bgra) {
-        if(bytes>runtime.capacity) {
-            void *p=realloc(runtime.argb,bytes);
-            if(!p) return VK_ERROR_OUT_OF_HOST_MEMORY;
-            runtime.argb=p;runtime.capacity=bytes;
+    if(!has_host_config) {
+        /* The frames made between the last one and this (interpolate), then
+         * this one: the window spreads them over the flip interval. */
+        const void *planes[INTERP_MAX+1];
+        int n=interpolate(rgba,surface->width,surface->height,planes);
+        planes[n++]=rgba;
+        if(!bgra) {
+            size_t need=count*4*(size_t)n;
+            if(need>runtime.capacity) {
+                void *p=realloc(runtime.argb,need);
+                if(!p) return VK_ERROR_OUT_OF_HOST_MEMORY;
+                runtime.argb=p;runtime.capacity=need;
+            }
+            for(int k=0;k<n;k++) {
+                const unsigned char *src=planes[k];uint32_t *dst=runtime.argb+count*(size_t)k;
+                for(size_t i=0;i<count;i++)
+                    dst[i]=((uint32_t)src[4*i+3]<<24)|((uint32_t)src[4*i]<<16)|((uint32_t)src[4*i+1]<<8)|src[4*i+2];
+                planes[k]=dst;
+            }
         }
-        const unsigned char *src=rgba;
-        for(size_t i=0;i<count;i++)
-            runtime.argb[i]=((uint32_t)src[4*i+3]<<24)|((uint32_t)src[4*i]<<16)
-                |((uint32_t)src[4*i+1]<<8)|src[4*i+2];
-        const void *planes[]={runtime.argb};
-        xbox_FramebufferWindowPresentFrames(planes,1,surface->width,surface->height,surface->width*4,4);
-    } else if(!has_host_config) {
-        const void *planes[]={rgba};
-        xbox_FramebufferWindowPresentFrames(planes,1,surface->width,surface->height,surface->width*4,4);
+        xbox_FramebufferWindowPresentFrames(planes,n,surface->width,surface->height,surface->width*4,4);
     } else if(host_config.present_rgba) {
         VkResult result=host_config.present_rgba(host_config.render_context,surface,rgba,bytes);
         if(result!=VK_SUCCESS) return result;
@@ -574,6 +659,7 @@ int ch_vk_runtime_start(void)
     if(result!=VK_SUCCESS) goto fail;
     VkQueue queue;
     vkGetDeviceQueue(runtime.device,family,0,&queue);
+    runtime.physical=physical;runtime.queue=queue;runtime.family=family;
     ChVkBackendConfig config={.physical=physical,.device=runtime.device,.queue=queue,.family=family,
         .guest_base=(void *)xbox_GetMemoryOffset(),.guest_bytes=(size_t)0x80000000u+g_xbox_total_ram,
         .decode=nv2a_backend_decode_texture,.precise_queries=enabled.occlusionQueryPrecise,
@@ -593,6 +679,8 @@ void ch_vk_runtime_stop(void)
 {
     ch_vk_target_recipes_stop();
     ch_vk_backend_destroy(runtime.backend);
+    ch_vk_interp_destroy(interp.p);interp.p=NULL;
+    free(interp.prev);free(interp.mid);
     save_pipeline_cache();
     if(runtime.pipeline_cache) vkDestroyPipelineCache(runtime.cache_device,runtime.pipeline_cache,NULL);
     free(runtime.cache_path);
