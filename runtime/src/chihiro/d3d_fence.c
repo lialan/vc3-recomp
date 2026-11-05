@@ -1,7 +1,8 @@
 /*
- * D3D_BlockOnTime (0x10CAC0) for the push-buffer executor.
+ * D3D_BlockOnTime for the push-buffer executor, for any game that links the
+ * XDK's D3D (the profile's d3d block: VC3 0x10CAC0, Silent Scope 0xFC580).
  *
- * VC3 links the XDK's D3D statically. Its fence wait spins until the GPU's
+ * The games link the XDK's D3D statically. Its fence wait spins until the GPU's
  * semaphore (*[device+0x30]) passes a fence time in the ring written at
  * [device+0x2C]. With RECOMP_PB_EXEC the executor is that GPU: it writes the
  * semaphore on BACK_END_WRITE_SEMAPHORE_RELEASE once it is told where. This
@@ -9,6 +10,12 @@
  * (docs/technical/d3d8ltcg-device-context.md, "When Something Does Read the
  * Pushbuffer"): keep the real semaphore, kick off first when the fence is the
  * newest, and wait for it with a bound.
+ *
+ * XDK 5558's (Silent Scope's) also has a "GPU far behind" path: it patches a
+ * software method (NO_OPERATION 5) into the fence's block and sleeps on an
+ * event the GPU's interrupt for that method sets. Nothing delivers that
+ * interrupt, so the original slept for good once the GPU fell 9 KB behind;
+ * this wait polls the semaphore instead.
  *
  * stdcall: BlockOnTime(uint32_t time, uint32_t flags), ret 8.
  */
@@ -23,6 +30,7 @@
 #include "chihiro/chihiro_profile.h"
 
 void nv2a_pb_set_semaphore_target(uint32_t guest_va);
+void nv2a_pb_set_semaphore_resolver(uint32_t (*resolve)(void));
 
 /* g_pDevice, KickOff and its return address: the profile's d3d block */
 #define DEV_WRITE_TIME   0x2C          /* newest fence time */
@@ -49,7 +57,25 @@ static void fence_stats(int slept, uint64_t ns)
     }
 }
 
-void vc3_d3d_block_on_time(void)
+/* The semaphore D3D reads GPU progress from (*[device+0x30]), for the
+ * executor's first release: D3D's ring-space wait reads it too, and in
+ * XDK 5558 (Silent Scope) it does so before any BlockOnTime has named it
+ * -- with those releases dropped, the wait never ended. 0 until the device
+ * exists (the release is then dropped, as before). */
+static uint32_t d3d_semaphore_va(void)
+{
+    const ChihiroProfile *gp = chihiro_profile();
+    uint32_t dev = gp->d3d.device_ptr ? MEM32(gp->d3d.device_ptr) : 0;
+    return dev ? MEM32(dev + DEV_SEMAPHORE) : 0;
+}
+
+void chihiro_d3d_init(void)
+{
+    if (chihiro_profile()->d3d.device_ptr)
+        nv2a_pb_set_semaphore_resolver(d3d_semaphore_va);
+}
+
+void chihiro_d3d_block_on_time(void)
 {
     static uint32_t s_sem_va;
     static int s_timeouts;

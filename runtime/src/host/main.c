@@ -43,6 +43,8 @@
 extern void xbe_entry_point(void);
 extern void xbox_path_init(const char *game_dir, const char *save_dir);
 extern void chihiro_init(const char *save_dir);
+extern void xbox_OhciInit(void);                 /* toolkit src/usb/ohci.c */
+extern void chihiro_d3d_init(void);              /* chihiro/d3d_fence.c */
 extern void vc3_gl_backend_register(void);   /* src/gpu/gl_backend.c */
 #if defined(CHIHIRO_RENDERER_VULKAN)
 #include "gpu/vulkan/vk_runtime.h"
@@ -258,7 +260,9 @@ static int guest_main(void)
     xbox_kernel_init();
     xbox_path_init(s_game_dir, s_save_dir);
     xbox_kernel_bridge_init();
+    xbox_OhciInit();        /* USB controllers: only with RECOMP_USB (retail titles) */
     chihiro_init(s_save_dir);
+    chihiro_d3d_init();     /* D3D's semaphore, from the profile's device pointer */
 #if defined(CHIHIRO_RENDERER_VULKAN)
     if (!ch_vk_runtime_start())
         return 1; /* No guest execution and no fallback after Vulkan failure. */
@@ -373,8 +377,9 @@ int main(int argc, char **argv)
 
     if (!dir || !realpath(dir, game_dir)) {
         fprintf(stderr, "usage: %s <game_dir>   (or set %s_GAME_DIR)\n"
-                        "game_dir must contain %s and media/\n",
-                argv[0], ch_env_prefix(), gp->xbe);
+                        "game_dir must contain %s%s\n",
+                argv[0], ch_env_prefix(), gp->xbe,
+                gp->platform == CHIHIRO_PLATFORM_CHIHIRO ? " and media/" : "");
         return 2;
     }
     if (save)
@@ -394,14 +399,38 @@ int main(int argc, char **argv)
      * RMS 1-3.4k from the attract onwards, RECOMP_AUDIO_WAV capture). */
     setenv("RECOMP_AC97_READY", "1", 0);
 
-    /* The boot-time memory probe (0x34F60) allocates and frees contiguous
-     * blocks of growing size up to 256 MB. Without reclaim the frees are
-     * dropped and D3D's 9 MB framebuffer request no longer fits. */
-    setenv("RECOMP_HEAP_RECLAIM", "1", 0);
-    /* Chihiro drives a VGA monitor; VC3's modes (640x480p by default, see
-     * chihiro_dip_switches) are looked up in the VGA rows of D3D's mode
-     * table, so an HDTV pack fails device creation. */
-    setenv("RECOMP_AV_PACK", "vga", 0);
+    if (gp->platform == CHIHIRO_PLATFORM_CHIHIRO) {
+        /* The boot-time memory probe (VC3: 0x34F60) allocates and frees
+         * contiguous blocks of growing size up to 256 MB. Without reclaim
+         * the frees are dropped and D3D's 9 MB framebuffer request no
+         * longer fits. */
+        setenv("RECOMP_HEAP_RECLAIM", "1", 0);
+        /* Chihiro drives a VGA monitor; VC3's modes (640x480p by default,
+         * see chihiro_dip_switches) are looked up in the VGA rows of D3D's
+         * mode table, so an HDTV pack fails device creation. */
+        setenv("RECOMP_AV_PACK", "vga", 0);
+    } else {
+        /* A retail title reads its controller through XAPI's USB driver,
+         * statically linked: the toolkit's OHCI model and Controller S
+         * (xbox_OhciInit in guest_main), fed by SDL's game controllers. */
+        setenv("RECOMP_USB", "1", 0);
+        /* Walk the pushbuffer as the DMA engine does: JUMP/CALL/RETURN and
+         * ring wraps followed, GET published as it goes, each kick's marker
+         * latched in PGRAPH 0x400B10. XDK 5558 D3D (Silent Scope) spins in
+         * its ring-space check (0xFC300) until that latch matches the
+         * semaphore, and the segment scan VC3 runs on lost the commands
+         * around a ring wrap at a stage load: their semaphore releases never
+         * landed and D3D waited for good. The walk's "GPU far behind" path
+         * (D3D sleeping on a software-method interrupt) is out of the way:
+         * the game's D3D_BlockOnTime is the runtime's polling one. */
+        setenv("RECOMP_PB_WALK", "dma", 0);
+        /* One CPU at DISPATCH_LEVEL, as on the console: XAPI's
+         * XGetDeviceChanges raises IRQL to read the USB driver's state
+         * atomically against its DPCs. Without the gate the title saw a pad
+         * arrive before its device node was ready, XInputOpen failed
+         * (ERROR_DEVICE_NOT_CONNECTED) and it never asked again. */
+        setenv("RECOMP_DISPATCH_GATE", "1", 0);
+    }
     /* D3D is linked into the XBE, so frames exist only as NV2A pushbuffer:
      * the toolkit's executor runs it and answers D3D's fences. */
     setenv("RECOMP_PB_EXEC", "1", 0);
@@ -461,8 +490,9 @@ int main(int argc, char **argv)
         for (i = 1; res && i < 4 && gp->modes[i].fb_size; i++)
             if (gp->modes[i].res && !strcmp(res, gp->modes[i].res))
                 m = &gp->modes[i];
-        setenv("RECOMP_FB_SIZE", m->fb_size, 0);
-        setenv("RECOMP_WINDOW_SCALE", m->window_scale, 0);
+        /* No modes (a retail title picks its own): 640x480 shown at 2x */
+        setenv("RECOMP_FB_SIZE", m->fb_size ? m->fb_size : "640x480", 0);
+        setenv("RECOMP_WINDOW_SCALE", m->window_scale ? m->window_scale : "2", 0);
     }
 
     snprintf(xbe_path, sizeof(xbe_path), "%s/%s", game_dir, gp->xbe);

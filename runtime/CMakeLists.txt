@@ -19,6 +19,7 @@ set(rt_sources
     src/chihiro/d3d_fence.c
     src/host/host_input.c
     src/host/display_settings.c
+    src/host/recomp_diag.c
     )
 if(CHIHIRO_RENDERER STREQUAL "vulkan")
     list(APPEND rt_sources src/gpu/vulkan/vk_runtime.c)

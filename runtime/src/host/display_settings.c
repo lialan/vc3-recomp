@@ -17,7 +17,8 @@
  *
  * Each comes from, first that applies: VC3_FPS / VC3_SCALE / VC3_ASPECT,
  * the "fps=" / "scale=" / "aspect=" line of
- * ~/Library/Application Support/VC3/settings (VC3_CONFIG_DIR moves the
+ * ~/Library/Application Support/<prefix>/settings (the profile's env
+ * prefix: VC3 for Virtua Cop 3; VC3_CONFIG_DIR moves the
  * folder), else the default. The Display menu (and F10, for the rate)
  * changes them while the game runs and saves them to that file, so the app
  * keeps the choice; an environment variable still wins at the next launch.
@@ -52,8 +53,8 @@ static void settings_path(char *buf, size_t n, int dir_only)
     if (dir && *dir)
         snprintf(buf, n, "%s%s", dir, dir_only ? "" : "/settings");
     else
-        snprintf(buf, n, "%s/Library/Application Support/VC3%s",
-                 getenv("HOME") ? getenv("HOME") : ".",
+        snprintf(buf, n, "%s/Library/Application Support/%s%s",
+                 getenv("HOME") ? getenv("HOME") : ".", ch_env_prefix(),
                  dir_only ? "" : "/settings");
 }
 

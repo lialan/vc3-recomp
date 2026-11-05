@@ -29,8 +29,17 @@ typedef struct {
     const char *window_scale;   /* RECOMP_WINDOW_SCALE */
 } ChihiroDisplayMode;
 
+/* What the game was made for. A retail Xbox title has no baseboard and
+ * reaches its controller through USB (the toolkit's OHCI model); the
+ * Chihiro-only blocks below (xpp, modes' DIP values, jvs, aim) stay 0. */
+enum {
+    CHIHIRO_PLATFORM_CHIHIRO = 0,   /* a Sega Chihiro game (the default) */
+    CHIHIRO_PLATFORM_XBOX = 1,      /* a retail Xbox title */
+};
+
 typedef struct ChihiroProfile {
     const char *id;             /* games/<id> */
+    int platform;               /* CHIHIRO_PLATFORM_* */
     const char *title;          /* logs, the window, the Quest's menus */
     const char *xbe;            /* the game's XBE in its folder ("vc3.xbe") */
     uint32_t entry;             /* the XBE entry point, as lifted */
