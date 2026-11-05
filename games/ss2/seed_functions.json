@@ -1,0 +1,7 @@
+[
+ {
+  "start": "0x00177858",
+  "observed": true,
+  "note": "XPP (USB) indirect-call target observed at runtime ([ICALL] Failed to resolve): reached only through a pointer after SET_CONFIGURATION; unresolved, the pad was reset and re-enumerated forever."
+ }
+]
