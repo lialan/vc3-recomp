@@ -38,7 +38,7 @@ static void yaw_dir(double a, float d[3]) { d[0] = (float)sin(a); d[1] = 0; d[2]
 
 static void steady_passes_first_and_still(void)
 {
-    VrSteady s = {{0}, {0}, 0};
+    VrSteady s = {{0}, {0}, {0}, 0};
     const float d[3] = {0.6f, 0.0f, -0.8f};
     float o[3];
     vr_steady(&s, d, DT, 1.0f, o);
@@ -50,7 +50,7 @@ static void steady_passes_first_and_still(void)
 /* peak |yaw| of the output over the last second of a 0.2 deg, 8 Hz wobble */
 static double wobble_out(float zoom, double *in_amp)
 {
-    VrSteady s = {{0}, {0}, 0};
+    VrSteady s = {{0}, {0}, {0}, 0};
     double peak = 0, ipeak = 0;
     float d[3], o[3];
     for (int n = 0; n < 144; n++) {
@@ -78,7 +78,7 @@ static void steady_smooths_tremor_more_at_zoom(void)
 
 static void steady_follows_fast_swing(void)
 {
-    VrSteady s = {{0}, {0}, 0};
+    VrSteady s = {{0}, {0}, {0}, 0};
     float d[3], o[3], y, p;
     double a = 0;
     for (int n = 0; n < 36; n++) {   /* 0.5 s */
@@ -89,6 +89,50 @@ static void steady_follows_fast_swing(void)
     vr_aim_angles(o, &y, &p);
     printf("sweep lag: %.3f deg\n", (a - y) / DEG);
     CHECK((a - y) / DEG < 3.0);
+}
+
+static void steady_ignores_bad_dt(void)
+{
+    VrSteady a = {{0}, {0}, {0}, 0}, b = {{0}, {0}, {0}, 0};
+    float d[3], o1[3], o2[3], held[3];
+    const float bad[2] = {0.0f, NAN};
+    for (int n = 0; n < 10; n++) {
+        yaw_dir(n * 0.01, d);
+        vr_steady(&a, d, DT, 1.0f, o1);
+        vr_steady(&b, d, DT, 1.0f, o2);
+    }
+    yaw_dir(0.5, d);
+    for (int k = 0; k < 2; k++) {
+        vr_steady(&a, d, bad[k], 1.0f, held);
+        for (int i = 0; i < 3; i++) NEAR(held[i], o1[i], 1e-6);
+    }
+    vr_steady(&a, d, -1.0f, 1.0f, held);
+    for (int i = 0; i < 3; i++) NEAR(held[i], o1[i], 1e-6);
+    vr_steady(&a, d, DT, 1.0f, o1);
+    vr_steady(&b, d, DT, 1.0f, o2);
+    for (int i = 0; i < 3; i++) { CHECK(isfinite(o1[i])); NEAR(o1[i], o2[i], 0); }
+}
+
+static void steady_ignores_nonfinite_dir(void)
+{
+    VrSteady a = {{0}, {0}, {0}, 0}, b = {{0}, {0}, {0}, 0};
+    float d[3], o1[3], o2[3];
+    const float nan3[3] = {NAN, 0, -1}, inf3[3] = {0, INFINITY, -1};
+    vr_steady(&a, nan3, DT, 1.0f, o1);   /* first call, bad: (0,0,-1) */
+    NEAR(o1[0], 0, 0); NEAR(o1[1], 0, 0); NEAR(o1[2], -1, 0);
+    for (int n = 0; n < 10; n++) {
+        yaw_dir(n * 0.01, d);
+        vr_steady(&a, d, DT, 1.0f, o1);
+        vr_steady(&b, d, DT, 1.0f, o2);
+    }
+    vr_steady(&a, nan3, DT, 1.0f, d);
+    for (int i = 0; i < 3; i++) NEAR(d[i], o1[i], 1e-6);
+    vr_steady(&a, inf3, DT, 1.0f, d);
+    for (int i = 0; i < 3; i++) NEAR(d[i], o1[i], 1e-6);
+    yaw_dir(0.2, d);
+    vr_steady(&a, d, DT, 1.0f, o1);
+    vr_steady(&b, d, DT, 1.0f, o2);
+    for (int i = 0; i < 3; i++) { CHECK(isfinite(o1[i])); NEAR(o1[i], o2[i], 0); }
 }
 
 static void zoom_step_range(void)
@@ -110,6 +154,8 @@ int main(void)
     steady_passes_first_and_still();
     steady_smooths_tremor_more_at_zoom();
     steady_follows_fast_swing();
+    steady_ignores_bad_dt();
+    steady_ignores_nonfinite_dir();
     zoom_step_range();
     if (fails) { printf("%d failed\n", fails); return 1; }
     printf("all passed\n");

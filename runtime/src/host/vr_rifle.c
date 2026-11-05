@@ -17,23 +17,34 @@ static float lp_alpha(float cutoff, float dt)
     return 1.0f / (1.0f + tau / dt);
 }
 
-/* Constants: min_cutoff 1.2/sqrt(zoom) Hz, beta 1.1, d_cutoff 1 Hz. beta is 1.1,
- * not the plan's 0.6: at 0.6 a 90 deg/s sweep lagged 3.85 deg (bound 3). */
+/* Constants: min_cutoff 1.2/sqrt(zoom) Hz, beta 3.7, d_cutoff 1 Hz. beta is 3.7,
+ * not the plan's 0.6: with the standard derivative (new raw - previous raw) the
+ * speed estimate is smaller than the plan's variant, and 0.6 let a 90 deg/s
+ * sweep lag 7.7 deg (bound 3). 3.7 is the smallest tenth that passes. */
 void vr_steady(VrSteady *s, const float dir[3], float dt, float zoom, float out[3])
 {
-    const float beta = 1.1f, d_cutoff = 1.0f;
+    const float beta = 3.7f, d_cutoff = 1.0f;
+    int finite = isfinite(dir[0]) && isfinite(dir[1]) && isfinite(dir[2]);
+    if (!finite || !(dt > 0) || !isfinite(dt)) {   /* bad input: hold, state untouched */
+        float m = s->init ? sqrtf(s->x[0] * s->x[0] + s->x[1] * s->x[1] + s->x[2] * s->x[2]) : 0;
+        for (int i = 0; i < 3; i++)
+            out[i] = s->init ? (m > 0 ? s->x[i] / m : s->x[i]) : finite ? dir[i] : (i == 2 ? -1.0f : 0.0f);
+        return;
+    }
+    zoom = zoom >= 0.5f ? (zoom > 4.0f ? 4.0f : zoom) : 0.5f;
     float min_cutoff = 1.2f / sqrtf(zoom);
     float u[3] = {dir[0], dir[1], dir[2]};
     float n = sqrtf(u[0] * u[0] + u[1] * u[1] + u[2] * u[2]);
     if (n > 0) for (int i = 0; i < 3; i++) u[i] /= n;
     if (!s->init) {
-        for (int i = 0; i < 3; i++) { s->x[i] = u[i]; s->dx[i] = 0; out[i] = dir[i]; }
+        for (int i = 0; i < 3; i++) { s->x[i] = s->prev[i] = u[i]; s->dx[i] = 0; out[i] = dir[i]; }
         s->init = 1;
         return;
     }
     float ad = lp_alpha(d_cutoff, dt);
     for (int i = 0; i < 3; i++) {
-        float raw = (u[i] - s->x[i]) / dt;
+        float raw = (u[i] - s->prev[i]) / dt;   /* standard one-euro: new raw - previous raw */
+        s->prev[i] = u[i];
         s->dx[i] += ad * (raw - s->dx[i]);
         s->x[i] += lp_alpha(min_cutoff + beta * fabsf(s->dx[i]), dt) * (u[i] - s->x[i]);
     }
