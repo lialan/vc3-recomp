@@ -13,6 +13,7 @@ extern void ss1_diag_start(void);   /* ss1_diag.c: SS1_DIAG=1 */
 extern void sub_000FC4D0(void);     /* D3D: insert a fence, kick unless flags & 2; lifted */
 extern void ss1_vr_rifle(const ChVrRifle *r);   /* vr_rifle.c */
 extern void ss1_vr_cull(float half_angle_rad);
+extern int ss1_vr_lens_aim(VrLensAim *out);
 extern void ss1_vr_rifle_test(void);            /* SS1_VR_RIFLE_TEST */
 
 static void ss1_boot(void)
@@ -62,6 +63,7 @@ static const ChihiroProfile k_ss1 = {
         .hud_tile_count = 5,
         .rifle = ss1_vr_rifle,
         .cull = ss1_vr_cull,
+        .lens_aim = ss1_vr_lens_aim,
     },
     .gpu = {
         /* Game units per metre in the immersive view. The scene's clip w

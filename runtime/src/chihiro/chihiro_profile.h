@@ -136,6 +136,9 @@ typedef struct ChihiroProfile {
         void (*aim_screen)(int on, int x, int y);   /* the gun's point beyond the screen's edge (NULL: none) */
         void (*cull)(float half_angle_rad);         /* widen the CPU culling to this half angle; 0: the game's own */
         void (*rifle)(const ChVrRifle *r);          /* the rifle's pose and zoom, each frame (NULL: none) */
+        /* What the lens picture handed over now was drawn with (vr_view.h),
+         * asked by the renderer at each flip with one; 0: not known (NULL: none) */
+        int (*lens_aim)(VrLensAim *out);
     } vr;
 
     /* Hooks (NULL: none) */

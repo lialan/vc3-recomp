@@ -50,13 +50,36 @@
  * surface object at [0x1ED214]); its first run publishes the surface's
  * address for the renderer (vc3_vr_lens_surface_set).
  *
+ * The lens at the display's rate (the host reprojects the picture: vr_rifle.h
+ * vr_lens_crop). With the rifle on, the scope is drawn guard() times wider
+ * than the lens shows (0x1ADFC8 divided by it: the magnification the lens
+ * shows stays the player's), so the host can shift its crop by how far the
+ * rifle has turned since. Each scope pass's aim (the angle words it drew
+ * with), focal length (from 0x1CEA0D4, which sub_000744B0 hands its camera:
+ * SCOPE_PROJ) and guard go to the renderer with the picture
+ * (ss1_vr_lens_aim, the profile's vr.lens_aim).
+ * The renderer runs behind the game -- the push buffer is drawn on threads
+ * of its own, often while the game is in its next frame -- so each aim is
+ * tagged with a D3D fence inserted right after its pass (0xFC4D0, no kick):
+ * the renderer's flip comes after that fence's release in the push buffer
+ * and picks the newest aim whose fence the GPU's semaphore has passed.
+ * The game's reticle (sub_00035A20: model [0x1DB24F0 + 2 type] 570 units
+ * ahead, drawn in the scope pass) would move with the shifted picture: with
+ * the rifle on it is not drawn, and the host draws a crosshair at the lens's
+ * centre. Left as they are, moving by the small aim delta only: the scope
+ * pass's text (sub_000359B0: WAIT, NOW RELOADING) and sub_00035BD0's arrow
+ * (model [0x1DB251A] 850 units ahead, turned from the aim toward the target
+ * object [0x1DB394C]; not an aim mark).
+ *
  * SS1_VR_RIFLE_TEST=yaw_deg,pitch_deg,zoom: a rifle held still, set once at
  * boot (test only). SS1_AIM_LOG=1: the aim and the shot direction relative
  * to the main camera, once a second.
  */
 #include <math.h>
+#include <pthread.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "recomp_types.h"
@@ -72,6 +95,33 @@
 #define SCOPE_SURF  0x1ED214u       /* the scope target's D3D surface object */
 #define MAIN_CAM    0x1CEB084u      /* 3x3 int16, rows the camera's axes */
 #define SCOPE_CAM   0x1CEB204u
+#define SCOPE_FOCAL 0x1CEA0D4u      /* the scope camera block's focal length */
+#define SCOPE_W     256.0f          /* its target's width (sub_000743D0) */
+/* The scope's projection, in its target's pixels, is SCOPE_PROJ times its
+ * camera block's focal length (which only the culling reads as pixels):
+ * every 3D draw into the target has position rows (c188, c191) with
+ * |x row| / |w row| = |y row| / |w row| = 4509.7, 9019.3, 18038.6, 36077.3
+ * at zoom 0.5, 1, 2, 4 (guard 1.5) against 98.93, 197.87, 395.73, 791.47
+ * there -- 45.583 each time, and through stage 1 (measured on the Mac). At
+ * zoom 1 the scope sees 1.1 degrees across: 13529 pixels a radian. */
+#define SCOPE_PROJ  45.583f
+#define DEVICE      0x105D28u       /* g_pDevice (game.c's d3d block) */
+#define DEV_TIME    0x2Cu           /* the next fence's time */
+#define DEV_SEM     0x30u           /* -> the GPU's progress: the last fence time released */
+
+/* The scope drawn this many times wider than the lens shows (above): 1.5,
+ * or SS1_VR_LENS_GUARD=g (1..4). With it the lens can follow the rifle
+ * (g - 1) * 0.54 / zoom degrees ahead of the newest picture. */
+static float guard(void)
+{
+    static float g;
+    if (!g) {
+        const char *e = ch_env("VR_LENS_GUARD");
+        const float v = e ? (float)atof(e) : 1.5f;
+        g = v >= 1.0f && v <= 4.0f ? v : 1.5f;
+    }
+    return g;
+}
 
 /* The game's yaw and pitch for the rifle's right and up (measured, above). */
 #define YAW_RIGHT   (-1)
@@ -82,6 +132,13 @@
 static uint64_t s_rifle;
 static float s_cull_half;
 static int64_t s_scope_frame = -1;  /* the frame the scope pass last ran */
+static uint64_t s_frame_rifle;      /* the rifle the game's frame aims with (its aim step's) */
+
+/* The last few scope passes' aims, each with the fence after it (above) */
+#define MARKS 8
+static struct { uint32_t time; VrLensAim aim; } s_marks[MARKS];
+static unsigned s_mark_n;
+static pthread_mutex_t s_mark_lock = PTHREAD_MUTEX_INITIALIZER;
 
 static int16_t game_angle(float rad)
 {
@@ -141,6 +198,7 @@ void ss1_vr_aim(void)
     static uint32_t logged = ~0u;
     const uint64_t v = __atomic_load_n(&s_rifle, __ATOMIC_RELAXED);
     const uint32_t frame = MEM32(FRAME);
+    s_frame_rifle = v;
     if (v) {
         MEM16(AIM_YAW) = (uint16_t)v;
         MEM16(AIM_PITCH) = (uint16_t)(v >> 16);
@@ -183,12 +241,70 @@ static void shot_log(void)
             MEMF(0x1CEA0D4u));
 }
 
+/* After a scope pass drawn with the rifle on: a fence (D3D's own fence
+ * insert, flags 2: no kick) and the pass's aim, tagged with its time. */
+extern void sub_000FC4D0(void);
+static void lens_mark(float focal)
+{
+    const uint32_t dev = MEM32(DEVICE);
+    if (!dev || !(focal > 0))
+        return;
+    const uint32_t time = MEM32(dev + DEV_TIME);    /* the time the fence releases */
+    PUSH32(g_esp, 2);
+    PUSH32(g_esp, 0x00059E0Au);                     /* (the scope pass's own return) */
+    sub_000FC4D0();                                 /* ret 4 */
+    const float unit = (float)(6.283185307179586 / 65536.0);
+    const VrLensAim a = { YAW_RIGHT * (int16_t)MEM16(AIM_YAW) * unit, PITCH_UP * (int16_t)MEM16(AIM_PITCH) * unit,
+                          focal * SCOPE_PROJ / SCOPE_W, guard() };
+    pthread_mutex_lock(&s_mark_lock);
+    s_marks[s_mark_n % MARKS].time = time;
+    s_marks[s_mark_n % MARKS].aim = a;
+    s_mark_n++;
+    pthread_mutex_unlock(&s_mark_lock);
+}
+
+/* The renderer, at the flip that hands a lens picture over (the profile's
+ * vr.lens_aim): the newest marked pass the GPU's progress has passed. */
+int ss1_vr_lens_aim(VrLensAim *out)
+{
+    static unsigned flips, ahead, logged;
+    const uint32_t dev = MEM32(DEVICE);
+    const uint32_t sem = dev ? MEM32(dev + DEV_SEM) : 0;
+    int found = 0, newer = 0;
+    if (!sem)
+        return 0;
+    const uint32_t done = MEM32(sem);
+    pthread_mutex_lock(&s_mark_lock);
+    for (unsigned k = 1; k <= MARKS && k <= s_mark_n; k++) {
+        const unsigned i = (s_mark_n - k) % MARKS;
+        if ((int32_t)(done - s_marks[i].time) >= 0) {
+            *out = s_marks[i].aim;
+            found = 1;
+            break;
+        }
+        newer = 1;
+    }
+    pthread_mutex_unlock(&s_mark_lock);
+    /* SS1_AIM_LOG: how often the game had queued a newer pass already */
+    flips++;
+    ahead += found && newer;
+    if (aim_log() && flips % 300 == 0 && logged++ < 20)
+        fprintf(stderr, "[ss1 lens] %u of %u flips: the game had queued a newer scope pass%s; this one's aim "
+                "yaw %.3f pitch %.3f deg, focal %.3f, guard %.2f\n", ahead, flips, found ? "" : " (none passed yet)",
+                found ? out->yaw * 57.29578f : 0.0f, found ? out->pitch * 57.29578f : 0.0f,
+                found ? out->focal : 0.0f, found ? out->guard : 0.0f);
+    return found;
+}
+
 /* sub_000744B0: the scope pass */
 void ss1_vr_scope_pass(void (*generated)(void))
 {
     static int published;
+    const float focal = MEMF(SCOPE_FOCAL);          /* what it hands its camera */
     generated();
     s_scope_frame = MEM32(FRAME);
+    if (s_frame_rifle)
+        lens_mark(focal);
     if (!published) {
         const uint32_t surf = MEM32(SCOPE_SURF);
         if (surf) {
@@ -205,7 +321,8 @@ void ss1_vr_scope_pass(void (*generated)(void))
         shot_log();
 }
 
-/* What sub_00075F40 writes besides drawing, the zoom factor times zoom */
+/* What sub_00075F40 writes besides drawing, the zoom factor times zoom
+ * over the guard band (the scope's focal length from the next frame on) */
 static void circle_writes(float zoom)
 {
     float k = MEMF(ONE);
@@ -219,7 +336,7 @@ static void circle_writes(float zoom)
         const double s = n ? (double)n * MEMF(0x156390u) : (double)MEMF(0x156390u);
         k = (float)(MEMF(ONE) / s);
     }
-    MEMF(ZOOM_K) = k * zoom;
+    MEMF(ZOOM_K) = k * zoom / guard();
     MEM32(0x1CEA13Cu) = 1;
 }
 
@@ -250,6 +367,17 @@ void ss1_vr_marks(void (*generated)(void))
     if (MEM32(0x1CEA0A0u) != 1 && (MEM32(0x1CEA0A4u) || MEM32(0x1CEA0B0u)))
         circle_writes(rifle_zoom(v));
     g_esp += 4;   /* ret */
+}
+
+/* sub_00035A20 (cdecl, the reticle's type): the scope's reticle, not drawn
+ * while the rifle aims (above) */
+void ss1_vr_reticle(void (*generated)(void))
+{
+    if (!s_frame_rifle) {
+        generated();
+        return;
+    }
+    g_esp += 4;   /* ret: the caller drops the argument */
 }
 
 void ss1_vr_rifle_test(void)
