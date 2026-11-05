@@ -1228,7 +1228,8 @@ static VkResult record_batch(ChVkTarget *t,VkBuffer geometry,VkDeviceSize index_
     VkDeviceSize vertex_offset=t->vertex_offset;
     vkCmdBindVertexBuffers(t->command,0,1,&geometry,&vertex_offset);
     vkCmdBindIndexBuffer(t->command,geometry,index_offset,VK_INDEX_TYPE_UINT16);
-    vkCmdDrawIndexed(t->command,index_count,t->fixed && t->fixed->imm_mode?2:1,0,0,0);
+    /* Immersive modes 1 and 2 draw one instance per eye; flat 16:9 (3) one. */
+    vkCmdDrawIndexed(t->command,index_count,t->fixed && t->fixed->imm_mode && t->fixed->imm_mode!=3u?2:1,0,0,0);
     if(t->draw_pool[t->slot] && t->draw_n[t->slot]<BATCH_DRAWS) {
         uint32_t i=++t->draw_n[t->slot];
         const PipelineKey *key=&t->active_pipeline->key;
@@ -1350,7 +1351,7 @@ static VkResult render_read(ChVkTarget *t, const float rgba[4], uint32_t clear_f
         vkCmdBindVertexBuffers(t->command,0,1,&geometry,&offset);
         vkCmdBindIndexBuffer(t->command,geometry,index_offset,VK_INDEX_TYPE_UINT16);
         if(t->count_requested) vkCmdBeginQuery(t->command,t->queries,0,VK_QUERY_CONTROL_PRECISE_BIT);
-        vkCmdDrawIndexed(t->command,index_count,t->fixed && t->fixed->imm_mode?2:1,0,0,0);
+        vkCmdDrawIndexed(t->command,index_count,t->fixed && t->fixed->imm_mode && t->fixed->imm_mode!=3u?2:1,0,0,0);
         if(t->count_requested) vkCmdEndQuery(t->command,t->queries,0);
         if(t->quantized_depth==4 && ((clear_flags&2) ||
            (t->active_pipeline->key.depth.depthTestEnable && t->active_pipeline->key.depth.depthWriteEnable)))

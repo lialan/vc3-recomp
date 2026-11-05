@@ -243,6 +243,7 @@ static VkResult draw_decoded(ChVkTarget *t, const Nv2aSurface *s,
         params->imm_mode=imm?imm->mode:0;params->imm_sbs=imm?imm->sbs:0;
         params->imm_scale=imm && imm->scale>0?imm->scale:1.f;
         if(imm && imm->mode==1) {memcpy(params->imm_gp,imm->gp,sizeof params->imm_gp);memcpy(params->imm_vp,imm->vp,sizeof params->imm_vp);}
+        if(imm && imm->mode==3) params->imm_gp[0]=imm->gp[0];   /* flat 16:9: the x offset */
     }
     if(rc) for(unsigned st=0;st<4;st++) {
         uint32_t mode=(rc->stage_program>>(st*5))&31;
@@ -507,8 +508,8 @@ VkResult ch_vk_nv2a_draw_fixed_resolved_read(ChVkTarget *t,const Nv2aSurface *s,
 VkResult ch_vk_nv2a_draw_immersive_read(ChVkTarget *t,const Nv2aSurface *s,const Nv2aBatch *b,
     const ChVkFixedGeometry *fixed,const ChVkImmDraw *imm,ChVkDecodeTexture decode,ChVkSampleResolver resolve,
     void *context,void *pixels,VkDeviceSize bytes) {
-    if(!t || !fixed || !fixed->vertices || !fixed->indices || !b || !b->raw || !imm || imm->mode>2 || (!imm->mode && !imm->sbs) ||
-       (imm->mode && b->zpass_out))
+    if(!t || !fixed || !fixed->vertices || !fixed->indices || !b || !b->raw || !imm || imm->mode>3 || (!imm->mode && !imm->sbs) ||
+       (imm->mode && b->zpass_out) || (imm->mode==3 && !isfinite(imm->gp[0])))
         return VK_ERROR_INITIALIZATION_FAILED;
     if(imm->mode==1) {
         for(unsigned i=0;i<5;i++) if(!isfinite(imm->gp[i])) return VK_ERROR_INITIALIZATION_FAILED;

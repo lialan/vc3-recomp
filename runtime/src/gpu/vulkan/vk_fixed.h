@@ -15,8 +15,9 @@ typedef struct {
     uint32_t near_z,fog_enable,fog_mode;
     float vp_off_z,fog_param[2];
     /* Immersive VR (vk_immersive.h): 0 the guest surface as drawn; 1 a 3D
-     * draw re-projected through each eye, 2 a flat 2D draw in each eye.
-     * Non-zero draws two instances, one per eye, side by side in one
+     * draw re-projected through each eye, 2 a flat 2D draw in each eye;
+     * 3 flat 16:9 (vk_wide.c): one instance, clip x times imm_scale plus
+     * imm_gp[0]. 1 and 2 draw two instances, one per eye, side by side in one
      * target. imm_gp: the game's projection kx, ky, cx, cy, 1/pz (surface
      * pixels); imm_vp: per eye, game camera (GL view space) to the eye's
      * GL clip space, column-major. Before attribute_format: fixed-function

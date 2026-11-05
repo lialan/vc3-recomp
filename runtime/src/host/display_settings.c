@@ -13,7 +13,10 @@
  *           its own picture with depth (gl_backend.c).
  *   aspect  4:3 (default) or 16:9: at 16:9 the 3D view extends to the
  *           sides (hor+) and the HUD moves to the screen edges; movies
- *           and menus stay 4:3 (gl_backend.c, surf_xform).
+ *           and menus stay 4:3 (gl_backend.c, surf_xform). The Vulkan
+ *           renderer's 16:9 keeps the game's 4:3 picture, HUD included,
+ *           unchanged in the middle (gpu/vulkan/vk_wide.h); a game may
+ *           widen its culling and aim to match (games/ss1/src/wide.c).
  *
  * Each comes from, first that applies: VC3_FPS / VC3_SCALE / VC3_ASPECT,
  * the "fps=" / "scale=" / "aspect=" line of

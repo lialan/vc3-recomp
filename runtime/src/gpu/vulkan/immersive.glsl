@@ -1,3 +1,4 @@
+// Immersive VR (modes 1, 2) and flat 16:9 (mode 3, below).
 // Immersive VR: one draw, two instances, the eyes side by side in one target
 // (instance = eye). Mode 1, 3D: the game-camera position back from the
 // vertex's screen position s (surface pixels) and w through the game's own
@@ -56,6 +57,14 @@ vec4 ch_imm_position(vec3 s,float w,vec4 guest_clip,out float side,out float low
     uint mode=params.p.imm_mode;
     int eye=gl_InstanceIndex&1;
     vec4 c=guest_clip;
+    // Mode 3, flat 16:9 (vk_wide.c): one instance into a wider target; clip
+    // x times imm_scale plus imm_gp[0] (the guest's picture 1:1 in the
+    // middle, the view continuing to the sides; or 1, 0: stretched).
+    if(mode==3u) {
+        side=1.;low=1.;
+        c.x=c.x*params.p.imm_scale+params.p.imm_gp[0]*c.w;
+        return c;
+    }
     if(mode==1u) {
         float ipz=params.p.imm_gp[4],ez=w*ipz;
         vec3 v=vec3((s.x-params.p.imm_gp[2])/params.p.imm_gp[0]*ez,

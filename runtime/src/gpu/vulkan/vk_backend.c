@@ -4,6 +4,7 @@
 #include "vk_guest_layout.h"
 #include "vk_texture_cache.h"
 #include "vk_depth_resident.h"
+#include "vk_wide.h"
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
@@ -19,7 +20,7 @@ typedef struct {uint64_t pipeline_ns,batch_wait_ns,batch_gpu_ns,upload_wait_ns;
     uint64_t batch_submit_ns,batch_record_ns,batch_retire_ns,batch_submissions,batch_draws;
     uint64_t sync_render_submissions,sync_render_gpu_ns,sync_render_host_ns;
     uint64_t depth_copy_ns,depth_copy_calls;} FrameCosts;
-struct ChVkBackend { ChVkFixedScratch raw_scratch; struct {int enabled;uint64_t completion_us,completion_cpu_ns,completion_calls,prepare_us,prepare_cpu_ns;uint64_t draw_cpu_ns,clear_cpu_ns,flip_cpu_ns,trim_cpu_ns,eye_us,eye_cpu_ns,surface_flushes;uint64_t draw_us,clear_us,flip_us,trim_us,surface_us,coherence_us,imports_us,raster_us,store_us,texture_uploads;FrameCosts retired,previous;} costs; VkPipelineCache pipeline_cache; struct {int enabled;uint64_t start,n,surface,coherence,imports,draw,store,no_color,flushes,depth_flushes,paired_flushes;} profile; struct {int enabled;uint64_t previous,us[120];unsigned count;} frame_profile; ChVkBackendConfig host; ChVkTextureCache *textures; ChVkDepthResident *zeta; ChVkImmersive *imm; uint64_t raw_compact_batches,raw_snapshot_bytes,raw_expanded_bytes; uint64_t color_snapshot_copy_bytes_saved,unchanged_color_draws,unchanged_depth_draws,early_color_reads,clear_color_imports_avoided,clear_color_bytes_avoided; uint64_t frames,raw_draws,raw_programs,raw_program_vertices,raw_declined,color_clock,cpu_batches,cpu_vertices,cpu_texels,cpu_texture_us,cpu_color_pixels,cpu_color_us,cpu_depth_pixels; struct Surface surfaces[MAX_SURFACES]; unsigned count; };
+struct ChVkBackend { ChVkFixedScratch raw_scratch; struct {int enabled;uint64_t completion_us,completion_cpu_ns,completion_calls,prepare_us,prepare_cpu_ns;uint64_t draw_cpu_ns,clear_cpu_ns,flip_cpu_ns,trim_cpu_ns,eye_us,eye_cpu_ns,surface_flushes;uint64_t draw_us,clear_us,flip_us,trim_us,surface_us,coherence_us,imports_us,raster_us,store_us,texture_uploads;FrameCosts retired,previous;} costs; VkPipelineCache pipeline_cache; struct {int enabled;uint64_t start,n,surface,coherence,imports,draw,store,no_color,flushes,depth_flushes,paired_flushes;} profile; struct {int enabled;uint64_t previous,us[120];unsigned count;} frame_profile; ChVkBackendConfig host; ChVkTextureCache *textures; ChVkDepthResident *zeta; ChVkImmersive *imm; ChVkWide *wide; int wide_on; uint64_t raw_compact_batches,raw_snapshot_bytes,raw_expanded_bytes; uint64_t color_snapshot_copy_bytes_saved,unchanged_color_draws,unchanged_depth_draws,early_color_reads,clear_color_imports_avoided,clear_color_bytes_avoided; uint64_t frames,raw_draws,raw_programs,raw_program_vertices,raw_declined,color_clock,cpu_batches,cpu_vertices,cpu_texels,cpu_texture_us,cpu_color_pixels,cpu_color_us,cpu_depth_pixels; struct Surface surfaces[MAX_SURFACES]; unsigned count; };
 static ChVkBackend *active;
 static int imm_skip_guest=-1;
 static int skip_guest(void) {
@@ -720,6 +721,10 @@ static void clear(const Nv2aSurface *s,const Nv2aRenderState *rs,uint32_t flags,
         VkResult r=ch_vk_immersive_clear(active->imm,s,rs,flags,argb,zs);
         if(r!=VK_SUCCESS) fatal(r,"immersive clear");
     }
+    if(active->wide && active->wide_on) {
+        VkResult r=ch_vk_wide_clear(active->wide,s,rs,flags,argb,zs);
+        if(r!=VK_SUCCESS) fatal(r,"wide clear");
+    }
     if(active->host.render_clear) {
         VkResult r=active->host.render_clear(active->host.render_context,s,rs,flags,argb,zs);
         if(r!=VK_SUCCESS) fatal(r,"host clear routing");
@@ -822,6 +827,10 @@ static void draw_batch(const Nv2aSurface *s,const Nv2aBatch *b,const ChVkFixedGe
     if(active->imm) {
         VkResult r=ch_vk_immersive_draw(active->imm,s,b,fixed,active->textures?resolve_sample:NULL,active);
         if(r!=VK_SUCCESS) fatal(r,"immersive draw");
+    }
+    if(active->wide && active->wide_on) {
+        VkResult r=ch_vk_wide_draw(active->wide,s,b,fixed,active->textures?resolve_sample:NULL,active);
+        if(r!=VK_SUCCESS) fatal(r,"wide draw");
     }
     /* Read once: getenv scans the environment, and this runs per draw. */
     static int zpass_log=-1;
@@ -1010,6 +1019,27 @@ static void flip(void) {
             if(r!=VK_SUCCESS) fatal(r,"immersive flip");
         }
     }
+    /* Flat 16:9 (vk_wide.h): the frame just drawn went to the wide copies
+     * too; the presented surface's is what the host shows. The setting is
+     * read here, so a switch takes effect from the next frame. */
+    const void *wide_px=NULL;uint32_t wide_w=0,wide_h=0;
+    if(active->host.wide_view && active->host.present_rgba && active->host.raw_fixed) {
+        int on=active->host.wide_view(active->host.render_context)!=0;
+        if(on && !active->wide) {
+            ChVkWideConfig wc={.physical=active->host.physical,.device=active->host.device,.queue=active->host.queue,
+                .family=active->host.family,.pipeline_cache=active->pipeline_cache,.batch_limit=active->host.batch_draw_limit,
+                .decode=decode_cpu_texture,.textures=active->textures};
+            VkResult r=ch_vk_wide_create(&wc,&active->wide);
+            if(r!=VK_SUCCESS) fatal(r,"wide view creation");
+            fprintf(stderr,"[Vulkan] 16:9 view: on\n");
+        }
+        if(active->wide) {
+            VkResult r=ch_vk_wide_flip(active->wide,active->wide_on?presented:0,&wide_px,&wide_w,&wide_h);
+            if(r!=VK_SUCCESS && r!=VK_NOT_READY) fatal(r,"wide flip");
+            if(r!=VK_SUCCESS) wide_px=NULL;
+        }
+        active->wide_on=on && active->wide;
+    }
     if(imm_eyes && presented && active->host.present_immersive && imm_frame.repeat) {
         /* The same picture again (a frame spread over flips): the headset
          * keeps the one it has -- no second copy of the eyes. */
@@ -1033,6 +1063,11 @@ static void flip(void) {
         }
         VkResult r=active->host.present_immersive(active->host.render_context,&shown,imm_eyes,imm_hud,&imm_frame);
         if(r!=VK_SUCCESS && r!=VK_NOT_READY) fatal(r,"host immersive frame handoff");
+    } else if(wide_px && presented) {
+        Nv2aSurface shown;memset(&shown,0,sizeof shown);
+        shown.color_va=presented;shown.width=wide_w;shown.height=wide_h;shown.pitch=wide_w*4;shown.bytes_per_pixel=4;
+        VkResult r=active->host.present_rgba(active->host.render_context,&shown,wide_px,(size_t)wide_w*wide_h*4);
+        if(r!=VK_SUCCESS) fatal(r,"host wide frame handoff");
     } else if((active->host.present_target || active->host.present_rgba || active->host.present_bgra) && presented) {
         struct Surface *f=NULL;
         for(unsigned i=0;i<active->count;i++) if(active->surfaces[i].guest.color_va==presented) { f=&active->surfaces[i]; break; }
@@ -1185,7 +1220,8 @@ VkResult ch_vk_backend_attach(ChVkBackend *b) {
     callbacks.draw_raw=(b->host.observe_raw || b->host.raw_fixed)?locked_draw_raw:NULL;
     /* Native Vulkan transforms/clips on the GPU and never reads CPU extents.
      * Keep legacy metadata for observer/routing configurations. */
-    callbacks.raw_no_extent=b->host.raw_fixed && !b->host.observe_raw && !b->host.render_draw && !b->host.immersive_view;
+    callbacks.raw_no_extent=b->host.raw_fixed && !b->host.observe_raw && !b->host.render_draw && !b->host.immersive_view &&
+        !b->host.wide_view;   /* 16:9 tells full-screen 2D (stretched) from the rest by its extent */
     callbacks.flush=(b->host.resident_color || b->host.resident_depth)?locked_flush:NULL;
     active=b; nv2a_backend_register(&callbacks); return VK_SUCCESS;
 }
@@ -1200,6 +1236,7 @@ void ch_vk_backend_destroy(ChVkBackend *b) {
     for(unsigned i=0;i<b->count;i++) release_surface(&b->surfaces[i]);
     if(b->pipeline_cache && !b->host.pipeline_cache) vkDestroyPipelineCache(b->host.device,b->pipeline_cache,NULL);
     ch_vk_immersive_destroy(b->imm);
+    ch_vk_wide_destroy(b->wide);
     ch_vk_texture_cache_destroy(b->textures);
     ch_vk_fixed_scratch_release(&b->raw_scratch);
     ch_vk_depth_resident_destroy(b->zeta);

@@ -189,11 +189,51 @@ static VkResult present_immersive(void *unused,const Nv2aSurface *surface,ChVkTa
     return r;
 }
 
+/* The display's 4:3 / 16:9 setting (host/display_settings.c): 16:9 draws
+ * the game's 4:3 picture unchanged with the view continuing to the sides
+ * (vk_wide.h). The window takes each frame's shape at its height; at 16:9 a
+ * frame without a wide picture (a non-screen surface, the first frame) is
+ * put in the middle of a 16:9 one, so the window keeps its shape. */
+extern int vc3_wide_get(void);
+extern void xbox_FramebufferWindowSetPicture(uint32_t,uint32_t);
+static int wide_view(void *unused) {(void)unused;return vc3_wide_get();}
+static const void *pillarbox(const Nv2aSurface *surface,const void *rgba,int bgra,uint32_t *width)
+{
+    static unsigned char *wide;static size_t capacity;
+    uint32_t w=surface->width,h=surface->height,tw=((h*16+8)/9+1)&~1u;
+    *width=w;
+    if(has_host_config || !vc3_wide_get() || (uint64_t)w*9>=(uint64_t)h*16) return rgba;
+    size_t need=(size_t)tw*h*4;
+    if(need>capacity) {void *p=realloc(wide,need);if(!p) return rgba;wide=p;capacity=need;}
+    (void)bgra;
+    const uint32_t black=0xff000000u;   /* opaque black in RGBA and BGRA byte order alike */
+    uint32_t off=(tw-w)/2;
+    for(uint32_t y=0;y<h;y++) {
+        uint32_t *row=(uint32_t *)(wide+(size_t)y*tw*4);
+        for(uint32_t x=0;x<off;x++) row[x]=black;
+        memcpy(row+off,(const unsigned char *)rgba+(size_t)y*w*4,(size_t)w*4);
+        for(uint32_t x=off+w;x<tw;x++) row[x]=black;
+    }
+    *width=tw;
+    return wide;
+}
 static VkResult present_pixels(void *unused,const Nv2aSurface *surface,const void *rgba,size_t bytes,int bgra)
 {
     (void)unused;
     size_t count=(size_t)surface->width*surface->height;
     if(bytes!=count*4) return VK_ERROR_INITIALIZATION_FAILED;
+    Nv2aSurface shaped=*surface;
+    if(!has_host_config) {
+        uint32_t w;
+        rgba=pillarbox(surface,rgba,bgra,&w);
+        shaped.width=w;count=(size_t)w*surface->height;
+        static uint32_t picture_w,picture_h;
+        if(w!=picture_w || surface->height!=picture_h) {
+            xbox_FramebufferWindowSetPicture(w,surface->height);
+            picture_w=w;picture_h=surface->height;
+        }
+        surface=&shaped;
+    }
     if(!has_host_config && !bgra) {
         if(bytes>runtime.capacity) {
             void *p=realloc(runtime.argb,bytes);
@@ -538,7 +578,7 @@ int ch_vk_runtime_start(void)
         .guest_base=(void *)xbox_GetMemoryOffset(),.guest_bytes=(size_t)0x80000000u+g_xbox_total_ram,
         .decode=nv2a_backend_decode_texture,.precise_queries=enabled.occlusionQueryPrecise,
         .raw_fixed=enabled.shaderClipDistance && enabled.depthClamp,
-        .present_rgba=present,.fatal=fatal};
+        .present_rgba=present,.fatal=fatal,.wide_view=wide_view};
     result=attach(config);
     if(result!=VK_SUCCESS) goto fail;
     fprintf(stderr,"[Vulkan] direct NV2A backend on %s; OpenGL excluded from this build\n",properties.deviceName);
