@@ -35,8 +35,11 @@ typedef struct {
      * this frame -- lens_w x lens_h RGBA8, straight, at lens_offset of the
      * mailbox slot's buffer (set by the publish); show it opaque: its alpha
      * is whatever the game wrote (Silent Scope's X8R8G8B8 target: a fifth
-     * of it below 1). 0: none (the game skipped its pass, or has no lens). */
+     * of it below 1). 0: none (the game skipped its pass, or has no lens).
+     * Drawn lens_scale times the guest surface's size (config). */
     int lens; uint32_t lens_w,lens_h; VkDeviceSize lens_offset;
+    /* What it was drawn with (config.lens_aim's; guard 0: not known) */
+    VrLensAim lens_aim;
 } ChVkImmFrame;
 typedef struct {
     VkPhysicalDevice physical; VkDevice device; VkQueue queue; uint32_t family;
@@ -50,6 +53,13 @@ typedef struct {
     void *guest_context;
     float lens_k;   /* the game's usual lens, pixels at 640 wide (0: 772.5) */
     uint32_t (*lens_surface)(void);   /* the lens picture's guest surface, read at each flip (NULL/0: none) */
+    /* What the lens picture handed over at this flip was drawn with (the
+     * game's; vr_view.h), asked at the flip; 0: not known (NULL: none) */
+    int (*lens_aim)(VrLensAim *);
+    /* The lens picture drawn this many times the guest surface's size (a
+     * host-only copy every clear and draw into it goes to as well, as the
+     * 16:9 copies); <= 1: the guest's own target */
+    float lens_scale;
     /* The game's projection for 3D program batches when no fixed-function
      * batch gives one (Silent Scope draws all its 3D with vertex programs),
      * at 640x480 (kx 0: none: such batches are 3D only after a fixed one) */

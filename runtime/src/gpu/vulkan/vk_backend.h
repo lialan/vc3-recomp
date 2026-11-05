@@ -113,6 +113,8 @@ typedef struct {
     uint32_t immersive_eye_width,immersive_eye_height;
     float immersive_lens_k;   /* the game's usual lens, pixels at 640 wide (0: 772.5) */
     uint32_t (*immersive_lens)(void);   /* the lens picture's guest surface (vr_view.h; NULL/0: none) */
+    int (*immersive_lens_aim)(VrLensAim *);   /* ChVkImmersiveConfig.lens_aim */
+    float immersive_lens_scale;               /* ChVkImmersiveConfig.lens_scale */
     VrGameProj immersive_program_projection;   /* ChVkImmersiveConfig.program_projection */
     /* Flat 16:9 (vk_wide.h), optional; requires raw_fixed and present_rgba.
      * At each flip, non-zero to draw wide from then on: the presented

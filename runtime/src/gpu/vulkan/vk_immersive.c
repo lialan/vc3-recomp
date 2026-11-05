@@ -48,6 +48,10 @@ struct ChVkImmersive {
     /* The lens picture: its surface (read at each flip), drawn into since
      * the last flip; the log's count of frames handed over with it, a second */
     uint32_t lens_va; int lens_drawn; unsigned lens_fresh,lens_frames; uint64_t lens_log_ns;
+    /* Its copy at config.lens_scale (lens_copy()): drawn into this frame;
+     * draws without prepared GPU geometry, not copied (counted) */
+    ChVkTarget *lens_copy; unsigned char *lens_pixels; uint32_t lens_w,lens_h; int lens_copied;
+    uint64_t lens_skipped;
 };
 /* Dynamic resolution levels (fraction of each eye's width and height). A
  * scene heavier than the GPU's 16.7 ms (VC3's later areas at native 2160 on
@@ -191,6 +195,35 @@ static VkResult hud(ChVkImmersive *m,const Nv2aSurface *s) {
     }
     return VK_SUCCESS;
 }
+/* The lens picture at config.lens_scale: a host-only copy of the lens
+ * surface that its clears and draws go to as well while immersive (as the
+ * 16:9 copies, vk_wide.c: the guest's clip position as drawn, mode 3, into
+ * the bigger target), handed to the host instead of the guest's target.
+ * The guest's own is still drawn: the game samples it. NULL: not wanted
+ * (scale <= 1, not the lens surface, not immersive). */
+static int lens_copied_surface(const ChVkImmersive *m,const Nv2aSurface *s) {
+    return m && m->on && s && s->width && s->height && m->lens_va && s->color_va==m->lens_va &&
+        m->config.lens_scale>1.0f && m->config.lens_scale<=4.0f;
+}
+static VkResult lens_copy(ChVkImmersive *m,const Nv2aSurface *s) {
+    const uint32_t w=(uint32_t)lroundf(s->width*m->config.lens_scale),h=(uint32_t)lroundf(s->height*m->config.lens_scale);
+    if(m->lens_copy && m->lens_w==w && m->lens_h==h) return VK_SUCCESS;
+    if(m->lens_copy) {
+        VkResult r=ch_vk_target_finish(m->lens_copy);if(r!=VK_SUCCESS) return r;
+        if(m->config.textures) ch_vk_texture_cache_forget_source(m->config.textures,m->lens_copy);
+        ch_vk_target_destroy(m->lens_copy);m->lens_copy=NULL;free(m->lens_pixels);m->lens_pixels=NULL;
+    }
+    m->lens_pixels=malloc((size_t)w*h*4); if(!m->lens_pixels) return VK_ERROR_OUT_OF_HOST_MEMORY;
+    VkResult r=ch_vk_target_create_depth(m->config.physical,m->config.device,m->config.queue,m->config.family,
+        w,h,VK_FORMAT_D24_UNORM_S8_UINT,&m->lens_copy);
+    if(r==VK_ERROR_FORMAT_NOT_SUPPORTED) r=ch_vk_target_create(m->config.physical,m->config.device,
+        m->config.queue,m->config.family,w,h,&m->lens_copy);
+    if(r==VK_SUCCESS) r=configure(m,m->lens_copy,m->lens_pixels,(size_t)w*h*4);
+    if(r!=VK_SUCCESS) return r;
+    m->lens_w=w;m->lens_h=h;
+    fprintf(stderr,"[immersive] lens surface %08X %ux%u drawn at %ux%u\n",s->color_va,s->width,s->height,w,h);
+    return VK_SUCCESS;
+}
 VkResult ch_vk_immersive_create(const ChVkImmersiveConfig *config,ChVkImmersive **out) {
     if(!out) return VK_ERROR_INITIALIZATION_FAILED;
     *out=NULL;
@@ -237,11 +270,18 @@ VkResult ch_vk_immersive_create(const ChVkImmersiveConfig *config,ChVkImmersive 
 void ch_vk_immersive_destroy(ChVkImmersive *m) {
     if(!m) return;
     for(unsigned i=0;i<m->count;i++) {ch_vk_target_destroy(m->surfaces[i].eyes);free(m->surfaces[i].pixels);}
-    ch_vk_target_destroy(m->hud);free(m->hud_pixels);free(m);
+    ch_vk_target_destroy(m->hud);free(m->hud_pixels);
+    ch_vk_target_destroy(m->lens_copy);free(m->lens_pixels);free(m);
 }
 int ch_vk_immersive_on(const ChVkImmersive *m) { return m && m->on; }
 VkResult ch_vk_immersive_clear(ChVkImmersive *m,const Nv2aSurface *s,const Nv2aRenderState *rs,
     uint32_t flags,uint32_t argb,uint32_t zs) {
+    if(rs && lens_copied_surface(m,s)) {   /* a clear rectangle: the same part of the copy */
+        VkResult r=lens_copy(m,s);
+        if(r==VK_SUCCESS) r=ch_vk_nv2a_clear_panel_read(m->lens_copy,s,rs,flags,argb,zs,m->lens_pixels,(size_t)m->lens_w*m->lens_h*4);
+        if(r!=VK_SUCCESS) return r;
+        m->lens_copied=1;
+    }
     if(!m || !m->on || !screen_shaped(s) || !rs) return VK_SUCCESS;
     struct ImmSurface *f=find(m,s); if(!f) return VK_SUCCESS;
     VkResult r=eyes(m,f); if(r!=VK_SUCCESS) return r;
@@ -346,6 +386,18 @@ static void trace_draw(const ChVkImmersive *m,const Nv2aSurface *s,const Nv2aBat
 VkResult ch_vk_immersive_draw(ChVkImmersive *m,const Nv2aSurface *s,const Nv2aBatch *b,
     const ChVkFixedGeometry *fixed,ChVkSampleResolver resolve,void *context) {
     if(m && s && m->lens_va && s->color_va==m->lens_va) m->lens_drawn=1;
+    if(b && b->state && b->raw && lens_copied_surface(m,s)) {
+        if(!fixed) m->lens_skipped++;
+        else {
+            VkResult r=lens_copy(m,s);if(r!=VK_SUCCESS) return r;
+            Nv2aBatch copy=*b;copy.zpass_out=NULL;
+            const ChVkImmDraw imm={.mode=3,.scale=1};   /* the clip position as drawn */
+            r=ch_vk_nv2a_draw_immersive_read(m->lens_copy,s,&copy,fixed,&imm,m->config.decode,resolve,context,
+                m->lens_pixels,(size_t)m->lens_w*m->lens_h*4);
+            if(r!=VK_SUCCESS) return r;
+            m->lens_copied=1;
+        }
+    }
     if(m && s && b && b->state) {
         /* CHIHIRO_VULKAN_IMMERSIVE_TRACE_TEX=va (diagnostic): every draw of
          * the 3 frames from the first draw sampling that texture */
@@ -624,19 +676,31 @@ VkResult ch_vk_immersive_flip(ChVkImmersive *m,uint32_t presented,const Vc3VrVie
      * into it since the last flip: a frame without (Silent Scope's stage
      * intro, its continue screen: no scope pass) has none, and the host
      * shows dark glass rather than the last picture. */
-    ChVkTarget *lens=src && !repeat && m->lens_drawn && m->config.guest_target?
-        m->config.guest_target(m->config.guest_context,m->lens_va):NULL;
-    if(lens) {out->lens=1;ch_vk_target_size(lens,&out->lens_w,&out->lens_h);*lens_out=lens;}
+    ChVkTarget *lens=!src || repeat || !m->lens_drawn?NULL:m->lens_copied?m->lens_copy:
+        m->config.guest_target?m->config.guest_target(m->config.guest_context,m->lens_va):NULL;
+    if(lens) {
+        out->lens=1;ch_vk_target_size(lens,&out->lens_w,&out->lens_h);*lens_out=lens;
+        /* the aim it was drawn with: the game's, as the flip comes in the
+         * push buffer (after this frame's lens draws, before the next's) */
+        if(!m->config.lens_aim || !m->config.lens_aim(&out->lens_aim)) memset(&out->lens_aim,0,sizeof out->lens_aim);
+    }
     if(m->log && src && !repeat) {
         m->lens_frames++;m->lens_fresh+=out->lens;
         uint64_t now=mono_ns();
         if(now-m->lens_log_ns>=1000000000ull) {
-            fprintf(stderr,"[immersive] frame %llu lens %08X: fresh in %u of %u frames\n",
-                (unsigned long long)m->frames,m->lens_va,m->lens_fresh,m->lens_frames);
+            fprintf(stderr,"[immersive] frame %llu lens %08X: fresh in %u of %u frames (%ux%u, %llu draws not copied); "
+                "drawn at yaw %.3f pitch %.3f deg, focal %.3f, guard %.2f\n",
+                (unsigned long long)m->frames,m->lens_va,m->lens_fresh,m->lens_frames,out->lens_w,out->lens_h,
+                (unsigned long long)m->lens_skipped,out->lens_aim.yaw*57.29578f,out->lens_aim.pitch*57.29578f,
+                out->lens_aim.focal,out->lens_aim.guard);
             m->lens_log_ns=now;m->lens_fresh=m->lens_frames=0;
         }
     }
-    m->lens_drawn=0;
+    if(m->lens_copy) {   /* as the HUD below: its work submitted, or finished when unused */
+        VkResult r=m->lens_copied?ch_vk_target_submit(m->lens_copy):ch_vk_target_finish(m->lens_copy);
+        if(r!=VK_SUCCESS) return r;
+    }
+    m->lens_drawn=m->lens_copied=0;
     m->lens_va=m->config.lens_surface?m->config.lens_surface():0;
     {   /* every switch between the eyes and the screen, and why */
         static int was=-1;

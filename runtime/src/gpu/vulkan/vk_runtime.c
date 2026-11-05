@@ -643,6 +643,14 @@ static VkResult attach(ChVkBackendConfig config)
     if(config.present_target) config.present_target=present_target;
     if(config.present_immersive && has_host_config) config.present_immersive=present_immersive;
     if(!config.immersive_lens) config.immersive_lens=vc3_vr_lens_surface;
+    if(!config.immersive_lens_aim) config.immersive_lens_aim=chihiro_profile()->vr.lens_aim;
+    /* The lens picture twice the game's size each way while immersive (on
+     * the rifle's much bigger lens the game's 256 looked soft);
+     * CHIHIRO_VULKAN_LENS_SCALE=k (1: the game's own) */
+    if(!(config.immersive_lens_scale>0)) {
+        const char *e=ch_env("VULKAN_LENS_SCALE");
+        config.immersive_lens_scale=e && atof(e)>=1 && atof(e)<=4?(float)atof(e):2.0f;
+    }
     if(!has_host_config || !host_config.present_rgba) config.present_bgra=present_bgra;
     if(!config.fatal) config.fatal=fatal;
     const char *cache_path=ch_env("VULKAN_PIPELINE_CACHE");
