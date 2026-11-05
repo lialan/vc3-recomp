@@ -25,10 +25,10 @@ VkResult ch_vk_gpu_frame_wait(const ChVkGpuFrame *f) {
     if(!f || !f->ready) return VK_SUCCESS;
     return vkWaitForFences(f->ready_device,1,&f->ready,VK_TRUE,5000000000ULL);
 }
-/* Records copies into slot i's command buffer and submits it; the caller
- * holds the slot. */
-static VkResult async_copy(ChVkGpuMailbox *b,unsigned i,ChVkTarget *first,VkDeviceSize first_offset,
-    ChVkTarget *second,VkDeviceSize second_offset) {
+/* Records copies of n targets (the first required) into slot i's command
+ * buffer, each at its offset, and submits it; the caller holds the slot. */
+static VkResult async_copy(ChVkGpuMailbox *b,unsigned i,unsigned n,ChVkTarget *const *targets,const VkDeviceSize *offsets) {
+    ChVkTarget *first=targets[0];
     VkDevice device=ch_vk_target_device(first);VkResult r;
     if(!b->pool) {
         VkCommandPoolCreateInfo pi={.sType=VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
@@ -52,8 +52,9 @@ static VkResult async_copy(ChVkGpuMailbox *b,unsigned i,ChVkTarget *first,VkDevi
     r=vkResetCommandBuffer(c,0);if(r!=VK_SUCCESS) return r;
     VkCommandBufferBeginInfo begin={.sType=VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,.flags=VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT};
     r=vkBeginCommandBuffer(c,&begin);if(r!=VK_SUCCESS) return r;
-    r=ch_vk_target_record_copy_to_buffer(first,c,b->buffers[i],first_offset,b->capacity);
-    if(r==VK_SUCCESS && second) r=ch_vk_target_record_copy_to_buffer(second,c,b->buffers[i],second_offset,b->capacity);
+    r=VK_SUCCESS;
+    for(unsigned k=0;k<n && r==VK_SUCCESS;k++)
+        if(targets[k]) r=ch_vk_target_record_copy_to_buffer(targets[k],c,b->buffers[i],offsets[k],b->capacity);
     VkResult e=vkEndCommandBuffer(c);if(r==VK_SUCCESS) r=e;
     if(r!=VK_SUCCESS) return r;
     VkSubmitInfo submit={.sType=VK_STRUCTURE_TYPE_SUBMIT_INFO,.commandBufferCount=1,.pCommandBuffers=&c};
@@ -89,7 +90,7 @@ VkResult ch_vk_gpu_mailbox_publish(void *context,const Nv2aSurface *surface,ChVk
     b->slots[i].held=1;
     pthread_mutex_unlock(&b->lock);
     VkResult r;
-    if(b->buffers[i]) r=async_copy(b,i,target,0,NULL,0);
+    if(b->buffers[i]) r=async_copy(b,i,1,&target,(const VkDeviceSize[]){0});
     else {
         if(b->slots[i].w!=w || b->slots[i].h!=h) {
             ch_vk_texture_destroy(b->slots[i].image);b->slots[i].image=NULL;
@@ -170,18 +171,23 @@ VkResult ch_vk_gpu_mailbox_destroy(ChVkGpuMailbox *b) {
     pthread_mutex_destroy(&b->lock);free(b);return VK_SUCCESS;
 }
 VkResult ch_vk_gpu_mailbox_publish_immersive(ChVkGpuMailbox *b,const Nv2aSurface *surface,ChVkTarget *eyes,
-    ChVkTarget *hud,const ChVkImmFrame *info) {
+    ChVkTarget *hud,ChVkTarget *lens,const ChVkImmFrame *info) {
     if(!b || !surface || !eyes || !info) return VK_ERROR_INITIALIZATION_FAILED;
     if(!b->buffers[0]) return VK_ERROR_FEATURE_NOT_PRESENT;
     uint32_t w,h;ch_vk_target_size(eyes,&w,&h);
     if(w!=info->eye_width*2 || h!=info->eye_height) return VK_ERROR_INITIALIZATION_FAILED;
-    VkDeviceSize hud_offset=((VkDeviceSize)w*h*4+255)&~(VkDeviceSize)255;
+    VkDeviceSize hud_offset=((VkDeviceSize)w*h*4+255)&~(VkDeviceSize)255,lens_offset=hud_offset;
+    if(hud) {uint32_t hw,hh;ch_vk_target_size(hud,&hw,&hh);lens_offset=(hud_offset+(VkDeviceSize)hw*hh*4+255)&~(VkDeviceSize)255;}
+    uint32_t lw=0,lh=0;
+    if(lens && info->lens) ch_vk_target_size(lens,&lw,&lh);
+    if(!lw || !lh || lens_offset+(VkDeviceSize)lw*lh*4>b->capacity) lens=NULL;   /* none, or no room */
     pthread_mutex_lock(&b->lock);
     unsigned i=0;for(;i<CH_VK_GPU_MAILBOX_SLOTS && b->slots[i].held;i++);
     if(i==CH_VK_GPU_MAILBOX_SLOTS || b->sequence==UINT64_MAX) {pthread_mutex_unlock(&b->lock);return i==CH_VK_GPU_MAILBOX_SLOTS?VK_NOT_READY:VK_ERROR_TOO_MANY_OBJECTS;}
     b->slots[i].held=1;
     pthread_mutex_unlock(&b->lock);
-    VkResult r=async_copy(b,i,eyes,0,hud,hud_offset);
+    ChVkTarget *const targets[3]={eyes,hud,lens};
+    VkResult r=async_copy(b,i,3,targets,(const VkDeviceSize[]){0,hud_offset,lens_offset});
     pthread_mutex_lock(&b->lock);
     if(r==VK_SUCCESS) {
         if(b->waiting==b->depth) {
@@ -193,6 +199,7 @@ VkResult ch_vk_gpu_mailbox_publish_immersive(ChVkGpuMailbox *b,const Nv2aSurface
             .immersive=1,.imm=*info,.hud_offset=hud_offset,.ready_device=b->device,.ready=b->copy[i].fence,
             .due_ns=b->due?b->due():0};
         frame.imm.hud=hud!=NULL;
+        frame.imm.lens=lens!=NULL;frame.imm.lens_w=lens?lw:0;frame.imm.lens_h=lens?lh:0;frame.imm.lens_offset=lens?lens_offset:0;
         b->pending[b->waiting++]=frame;
     } else b->slots[i].held=0;
     pthread_mutex_unlock(&b->lock);

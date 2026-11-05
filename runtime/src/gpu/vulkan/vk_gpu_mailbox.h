@@ -11,7 +11,8 @@ typedef struct {
     unsigned slot;
     /* An immersive frame (bridge mode only): the slot's buffer holds the
      * eyes, side by side (eye_w*2 x eye_h RGBA8), then from hud_offset the
-     * HUD (surface size, premultiplied) when imm.hud. */
+     * HUD (surface size, premultiplied) when imm.hud, then from
+     * imm.lens_offset the lens picture when imm.lens. */
     int immersive;
     ChVkImmFrame imm;
     VkDeviceSize hud_offset;
@@ -53,10 +54,12 @@ void ch_vk_gpu_mailbox_set_queue(ChVkGpuMailbox *,unsigned depth);
 /* Source must contain current pixels, including any guest CPU edits.
  * VK_NOT_READY means all slots are held: keep the previously displayed frame. */
 VkResult ch_vk_gpu_mailbox_publish(void *,const Nv2aSurface *,ChVkTarget *);
-/* An immersive frame: eyes and HUD into a slot's shared buffer (bridge mode;
- * FEATURE_NOT_PRESENT otherwise). VK_NOT_READY as for publish. */
+/* An immersive frame: eyes, HUD and lens picture (NULL: none; as info->lens)
+ * into a slot's shared buffer (bridge mode; FEATURE_NOT_PRESENT otherwise).
+ * A lens picture that does not fit the slot is left out (imm.lens 0).
+ * VK_NOT_READY as for publish. */
 VkResult ch_vk_gpu_mailbox_publish_immersive(ChVkGpuMailbox *,const Nv2aSurface *,ChVkTarget *eyes,
-    ChVkTarget *hud,const ChVkImmFrame *);
+    ChVkTarget *hud,ChVkTarget *lens,const ChVkImmFrame *);
 VkResult ch_vk_gpu_mailbox_take(ChVkGpuMailbox *,ChVkGpuFrame *);
 /* As take, but only a frame whose copy has finished (bridge mode); VK_NOT_READY
  * leaves it waiting. Never blocks on the GPU. */

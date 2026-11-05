@@ -1002,20 +1002,21 @@ static void flip(void) {
             presented=0;
         }
     }
-    ChVkTarget *imm_eyes=NULL,*imm_hud=NULL;ChVkImmFrame imm_frame;
+    ChVkTarget *imm_eyes=NULL,*imm_hud=NULL,*imm_lens=NULL;ChVkImmFrame imm_frame;
     if(active->host.immersive_view) {
         Vc3VrView next;memset(&next,0,sizeof next);
         int on=active->host.immersive_view(active->host.render_context,&next);
         if(on && !active->imm && active->pipeline_cache) {
             ChVkImmersiveConfig ic={.physical=active->host.physical,.device=active->host.device,.queue=active->host.queue,
                 .family=active->host.family,.pipeline_cache=active->pipeline_cache,.eye_width=active->host.immersive_eye_width,
-                .eye_height=active->host.immersive_eye_height,.batch_limit=active->host.batch_draw_limit,.decode=decode_cpu_texture,.textures=active->textures,.guest_target=guest_target_of,.guest_context=active,.lens_k=active->host.immersive_lens_k};
+                .eye_height=active->host.immersive_eye_height,.batch_limit=active->host.batch_draw_limit,.decode=decode_cpu_texture,.textures=active->textures,.guest_target=guest_target_of,.guest_context=active,.lens_k=active->host.immersive_lens_k,
+                .lens_surface=active->host.immersive_lens,.program_projection=active->host.immersive_program_projection};
             VkResult r=ch_vk_immersive_create(&ic,&active->imm);
             if(r!=VK_SUCCESS) fatal(r,"immersive creation");
             fprintf(stderr,"[Vulkan] immersive view: each eye %ux%u\n",ic.eye_width,ic.eye_height);
         }
         if(active->imm) {
-            VkResult r=ch_vk_immersive_flip(active->imm,presented,on?&next:NULL,&imm_frame,&imm_eyes,&imm_hud);
+            VkResult r=ch_vk_immersive_flip(active->imm,presented,on?&next:NULL,&imm_frame,&imm_eyes,&imm_hud,&imm_lens);
             if(r!=VK_SUCCESS) fatal(r,"immersive flip");
         }
     }
@@ -1061,7 +1062,7 @@ static void flip(void) {
                 fprintf(stderr,"[Vulkan] presented %08X is %ux%u, its HUD %ux%u: the HUD's size\n",
                     presented,f->guest.width,f->guest.height,shown.width,shown.height);
         }
-        VkResult r=active->host.present_immersive(active->host.render_context,&shown,imm_eyes,imm_hud,&imm_frame);
+        VkResult r=active->host.present_immersive(active->host.render_context,&shown,imm_eyes,imm_hud,imm_lens,&imm_frame);
         if(r!=VK_SUCCESS && r!=VK_NOT_READY) fatal(r,"host immersive frame handoff");
     } else if(wide_px && presented) {
         Nv2aSurface shown;memset(&shown,0,sizeof shown);

@@ -30,6 +30,13 @@ typedef struct {
     float scale;    /* dynamic resolution: the fraction of each eye's half drawn
                        (left eye from the top-left, right eye from the top-right) */
     int repeat;     /* the last flip's picture again: nothing new to hand over */
+    /* The lens picture (vr_view.h's lens surface: Silent Scope's scope view):
+     * 1 when the game drew into it since the last flip, and it goes with
+     * this frame -- lens_w x lens_h RGBA8, straight, at lens_offset of the
+     * mailbox slot's buffer (set by the publish); show it opaque: its alpha
+     * is whatever the game wrote (Silent Scope's X8R8G8B8 target: a fifth
+     * of it below 1). 0: none (the game skipped its pass, or has no lens). */
+    int lens; uint32_t lens_w,lens_h; VkDeviceSize lens_offset;
 } ChVkImmFrame;
 typedef struct {
     VkPhysicalDevice physical; VkDevice device; VkQueue queue; uint32_t family;
@@ -42,6 +49,11 @@ typedef struct {
     ChVkTarget *(*guest_target)(void *,uint32_t va);
     void *guest_context;
     float lens_k;   /* the game's usual lens, pixels at 640 wide (0: 772.5) */
+    uint32_t (*lens_surface)(void);   /* the lens picture's guest surface, read at each flip (NULL/0: none) */
+    /* The game's projection for 3D program batches when no fixed-function
+     * batch gives one (Silent Scope draws all its 3D with vertex programs),
+     * at 640x480 (kx 0: none: such batches are 3D only after a fixed one) */
+    VrGameProj program_projection;
 } ChVkImmersiveConfig;
 VkResult ch_vk_immersive_create(const ChVkImmersiveConfig *,ChVkImmersive **);
 void ch_vk_immersive_destroy(ChVkImmersive *);
@@ -61,7 +73,8 @@ int ch_vk_immersive_guest_draw(ChVkImmersive *,ChVkTarget *,const Nv2aSurface *,
     const ChVkFixedGeometry *,ChVkSampleResolver,void *,void *pixels,VkDeviceSize bytes,VkResult *);
 /* At the flip, after the guest's: the frame's dominant projection; whether
  * the presented surface is shown immersive (eyes/hud set, borrowed until the
- * next draw); then the next frame's view (NULL or !on: flat). */
+ * next draw; lens: the lens surface's target when out->lens); then the next
+ * frame's view (NULL or !on: flat). */
 VkResult ch_vk_immersive_flip(ChVkImmersive *,uint32_t presented,const Vc3VrView *next,
-    ChVkImmFrame *out,ChVkTarget **eyes,ChVkTarget **hud);
+    ChVkImmFrame *out,ChVkTarget **eyes,ChVkTarget **hud,ChVkTarget **lens);
 #endif

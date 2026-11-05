@@ -44,7 +44,22 @@ static const ChihiroProfile k_ss1 = {
         .panel_title = "Silent Scope - settings",
         .sdcard_dir = "/sdcard/SilentScope",
         .weapon = CH_VR_RIFLE,
-        .lens_k = 0.0f,         /* the main view's focal length: not measured yet (0: the default) */
+        /* Its 3D is all vertex programs (one program, its position matrix
+         * in c188..c191); every batch's rows give |x| / |w| = |y| / |w| =
+         * 555.0 pixels: square, 46.8 degrees high (240 / tan 23.4), as its
+         * camera block's focal length (0x1D1F980) says. The offset is the
+         * viewport's (c59). Eye depth = w: one unit is 555 of the game's
+         * (an unscaled model's w row is -1/555); the scene lies at w 0.5..10. */
+        .lens_k = 555.0f,
+        .program_proj = { 555.0f, -555.0f, 320.53125f, 240.53125f, 1.0f },
+        .hud_tiles = {          /* cut round its layout (quest_vulkan.inc's spread) */
+            {  0,  0,440,110, 0,-1},   /* total time (221-409 x 35-55) */
+            {440,  0,640,110, 1,-1},   /* score, player life (459-617 x 35-99) */
+            {  0,110,640,412, 0, 0},   /* the middle: pause menu, Press START, lines (to y 408) */
+            {  0,412,490,480, 0, 0},
+            {490,412,640,480, 1, 1},   /* credits (508-607 x 418-435) */
+        },
+        .hud_tile_count = 5,
         .rifle = ss1_vr_rifle,
         .cull = ss1_vr_cull,
     },

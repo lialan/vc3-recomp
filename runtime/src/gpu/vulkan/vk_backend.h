@@ -97,12 +97,16 @@ typedef struct {
     /* Immersive VR (vk_immersive.h), optional; requires raw_fixed. At each
      * flip, the next frame's head view (0: flat). A frame drawn immersive
      * goes to present_immersive instead of present_target: eyes, both side
-     * by side (2*immersive_eye_width x immersive_eye_height), and the HUD
-     * (NULL: none), premultiplied. Same borrowing rules as present_target. */
+     * by side (2*immersive_eye_width x immersive_eye_height), the HUD
+     * (NULL: none), premultiplied, and the lens picture (NULL: none; see
+     * ChVkImmFrame.lens). Same borrowing rules as present_target. */
     int (*immersive_view)(void *,Vc3VrView *);
-    VkResult (*present_immersive)(void *,const Nv2aSurface *,ChVkTarget *eyes,ChVkTarget *hud,const ChVkImmFrame *);
+    VkResult (*present_immersive)(void *,const Nv2aSurface *,ChVkTarget *eyes,ChVkTarget *hud,ChVkTarget *lens,
+        const ChVkImmFrame *);
     uint32_t immersive_eye_width,immersive_eye_height;
     float immersive_lens_k;   /* the game's usual lens, pixels at 640 wide (0: 772.5) */
+    uint32_t (*immersive_lens)(void);   /* the lens picture's guest surface (vr_view.h; NULL/0: none) */
+    VrGameProj immersive_program_projection;   /* ChVkImmersiveConfig.program_projection */
     /* Flat 16:9 (vk_wide.h), optional; requires raw_fixed and present_rgba.
      * At each flip, non-zero to draw wide from then on: the presented
      * surface's wide picture (its height, 16:9) goes to present_rgba at its

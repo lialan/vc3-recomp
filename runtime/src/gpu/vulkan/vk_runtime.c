@@ -9,7 +9,9 @@
 #include "vk_state.h"
 #include "vk_pipeline_cache_file.h"
 #include "vk_interp.h"
+#include "vk_gpu_mailbox.h"
 #include "chihiro/ch_env.h"
+#include "chihiro/chihiro_profile.h"
 #include "host/vr_view.h"
 #include "xbox_memory_layout.h"
 #include <stdio.h>
@@ -214,16 +216,114 @@ static VkResult present_target(void *unused,const Nv2aSurface *surface,ChVkTarge
 }
 
 /* Immersive frames keep the same frame accounting (intervals, frame limit). */
-static VkResult present_immersive(void *unused,const Nv2aSurface *surface,ChVkTarget *eyes,ChVkTarget *hud,const ChVkImmFrame *frame)
+static VkResult present_immersive(void *unused,const Nv2aSurface *surface,ChVkTarget *eyes,ChVkTarget *hud,ChVkTarget *lens,
+    const ChVkImmFrame *frame)
 {
     (void)unused;
     struct timespec a,b;clock_gettime(CLOCK_MONOTONIC,&a);
-    VkResult r=host_config.present_immersive(host_config.render_context,surface,eyes,hud,frame);
+    VkResult r=host_config.present_immersive(host_config.render_context,surface,eyes,hud,lens,frame);
     clock_gettime(CLOCK_MONOTONIC,&b);
     runtime.publish_ns=(uint64_t)(b.tv_sec-a.tv_sec)*1000000000u+(uint64_t)(b.tv_nsec-a.tv_nsec);
     if(r!=VK_SUCCESS && r!=VK_NOT_READY) return r;
     frame_completed(surface);
     return r;
+}
+
+/* CHIHIRO_IMMERSIVE_TEST (<prefix>_ too; host/vr_view_desktop.c: yaw,pitch,
+ * fov,sway): the immersive view on the desktop, to check it with no headset.
+ * As on the headset (quest_vulkan.inc), each frame goes through the GPU
+ * mailbox -- here into host-visible buffers of this device -- and the game's
+ * culling is widened (quest_host.c imm_cull: 140 degrees). With each frame
+ * dump (CHIHIRO_VULKAN_DUMP_*) the frame's eyes, HUD and lens picture are
+ * written as eyes-/hud-/lens-<frame>.ppm, from the mailbox's buffer. The
+ * window keeps its last flat picture. Unset: off. Each eye 1024x1024, or
+ * <prefix>_IMMERSIVE_TEST_SIZE=WxH. */
+static struct {
+    ChVkGpuMailbox *mailbox;VkDevice device;
+    VkBuffer buffers[CH_VK_GPU_MAILBOX_SLOTS];VkDeviceMemory memory[CH_VK_GPU_MAILBOX_SLOTS];
+    unsigned char *mapped[CH_VK_GPU_MAILBOX_SLOTS];
+} imm_test;
+static int imm_test_view(void *unused,Vc3VrView *view)
+{
+    (void)unused;
+    const int on=vc3_vr_view_latch(view);
+    if(chihiro_profile()->vr.cull) chihiro_profile()->vr.cull(on?70.0f*3.14159265f/180.0f:0.0f);
+    return on;
+}
+static void dump_rgba(const char *kind,const unsigned char *rgba,uint32_t w,uint32_t h)
+{
+    char path[4096];
+    snprintf(path,sizeof path,"%s/%s-%06llu.ppm",ch_env("VULKAN_DUMP_DIR"),kind,(unsigned long long)runtime.frames);
+    FILE *f=fopen(path,"wb");
+    if(!f) {fprintf(stderr,"[Vulkan] capture %s: %s\n",path,strerror(errno));return;}
+    fprintf(f,"P6\n%u %u\n255\n",w,h);
+    for(size_t i=0;i<(size_t)w*h;i++) fwrite(rgba+4*i,1,3,f);
+    fclose(f);
+}
+static VkResult imm_test_present(void *unused,const Nv2aSurface *surface,ChVkTarget *eyes,ChVkTarget *hud,ChVkTarget *lens,
+    const ChVkImmFrame *frame)
+{
+    (void)unused;
+    ChVkGpuFrame f;memset(&f,0,sizeof f);
+    VkResult r=ch_vk_gpu_mailbox_publish_immersive(imm_test.mailbox,surface,eyes,hud,lens,frame);
+    if(r==VK_SUCCESS) r=ch_vk_gpu_mailbox_take(imm_test.mailbox,&f);
+    if(r==VK_SUCCESS) r=ch_vk_gpu_frame_wait(&f);
+    if(r==VK_SUCCESS && capture_due()) {
+        const unsigned char *p=imm_test.mapped[f.slot];
+        dump_rgba("eyes",p,f.imm.eye_width*2,f.imm.eye_height);
+        if(f.imm.hud) dump_rgba("hud",p+f.hud_offset,f.surface.width,f.surface.height);
+        if(f.imm.lens) dump_rgba("lens",p+f.imm.lens_offset,f.imm.lens_w,f.imm.lens_h);
+        fprintf(stderr,"[Vulkan] immersive test frame %llu: eyes %ux%u, HUD %s, lens %s (%ux%u at %llu)\n",
+            (unsigned long long)runtime.frames,f.imm.eye_width,f.imm.eye_height,f.imm.hud?"yes":"no",
+            f.imm.lens?"fresh":"0",f.imm.lens_w,f.imm.lens_h,(unsigned long long)f.imm.lens_offset);
+    }
+    ch_vk_gpu_frame_release(&f);
+    if(r!=VK_SUCCESS) return r;
+    frame_completed(surface);
+    return VK_SUCCESS;
+}
+static VkResult imm_test_setup(ChVkBackendConfig *config)
+{
+    uint32_t w=1024,h=1024;
+    const char *size=ch_env("IMMERSIVE_TEST_SIZE");
+    if(size && (sscanf(size,"%ux%u",&w,&h)!=2 || w<256 || h<256 || w>4096 || h>4096)) return VK_ERROR_INITIALIZATION_FAILED;
+    const VkDeviceSize capacity=(VkDeviceSize)w*2*h*4+(VkDeviceSize)1280*960*4+(VkDeviceSize)512*512*4+512;
+    VkPhysicalDeviceMemoryProperties memory;vkGetPhysicalDeviceMemoryProperties(config->physical,&memory);
+    const VkMemoryPropertyFlags want=VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT|VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+    VkResult r=ch_vk_gpu_mailbox_create(&imm_test.mailbox);
+    imm_test.device=config->device;
+    for(unsigned i=0;r==VK_SUCCESS && i<CH_VK_GPU_MAILBOX_SLOTS;i++) {
+        VkBufferCreateInfo bi={.sType=VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,.size=capacity,.usage=VK_BUFFER_USAGE_TRANSFER_DST_BIT};
+        r=vkCreateBuffer(config->device,&bi,NULL,&imm_test.buffers[i]);
+        if(r!=VK_SUCCESS) break;
+        VkMemoryRequirements need;vkGetBufferMemoryRequirements(config->device,imm_test.buffers[i],&need);
+        uint32_t type=0;
+        while(type<memory.memoryTypeCount && (!(need.memoryTypeBits&(1u<<type)) || (memory.memoryTypes[type].propertyFlags&want)!=want)) type++;
+        if(type==memory.memoryTypeCount) {r=VK_ERROR_FEATURE_NOT_PRESENT;break;}
+        VkMemoryAllocateInfo ai={.sType=VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,.allocationSize=need.size,.memoryTypeIndex=type};
+        r=vkAllocateMemory(config->device,&ai,NULL,&imm_test.memory[i]);
+        if(r==VK_SUCCESS) r=vkBindBufferMemory(config->device,imm_test.buffers[i],imm_test.memory[i],0);
+        if(r==VK_SUCCESS) r=vkMapMemory(config->device,imm_test.memory[i],0,VK_WHOLE_SIZE,0,(void **)&imm_test.mapped[i]);
+    }
+    if(r!=VK_SUCCESS) return r;
+    ch_vk_gpu_mailbox_set_buffers(imm_test.mailbox,imm_test.buffers,capacity);
+    config->immersive_view=imm_test_view;config->present_immersive=imm_test_present;
+    config->immersive_eye_width=w;config->immersive_eye_height=h;
+    const ChihiroProfile *p=chihiro_profile();
+    config->immersive_lens_k=p->vr.lens_k;
+    config->immersive_program_projection=(VrGameProj){p->vr.program_proj.kx,p->vr.program_proj.ky,
+        p->vr.program_proj.cx,p->vr.program_proj.cy,p->vr.program_proj.inv_pz};
+    fprintf(stderr,"[Vulkan] immersive test view: each eye %ux%u, lens focal %.1f\n",w,h,config->immersive_lens_k);
+    return VK_SUCCESS;
+}
+static void imm_test_stop(void)
+{
+    if(ch_vk_gpu_mailbox_destroy(imm_test.mailbox)!=VK_SUCCESS) return;
+    for(unsigned i=0;i<CH_VK_GPU_MAILBOX_SLOTS;i++) {
+        if(imm_test.buffers[i]) vkDestroyBuffer(imm_test.device,imm_test.buffers[i],NULL);
+        if(imm_test.memory[i]) vkFreeMemory(imm_test.device,imm_test.memory[i],NULL);
+    }
+    memset(&imm_test,0,sizeof imm_test);
 }
 
 /* The display's 4:3 / 16:9 setting (host/display_settings.c): 16:9 draws
@@ -538,7 +638,8 @@ static VkResult attach(ChVkBackendConfig config)
     config.strict_texture_checks=texture_watch && !strcmp(texture_watch,"0");
     config.present_rgba=present;
     if(config.present_target) config.present_target=present_target;
-    if(config.present_immersive) config.present_immersive=present_immersive;
+    if(config.present_immersive && has_host_config) config.present_immersive=present_immersive;
+    if(!config.immersive_lens) config.immersive_lens=vc3_vr_lens_surface;
     if(!has_host_config || !host_config.present_rgba) config.present_bgra=present_bgra;
     if(!config.fatal) config.fatal=fatal;
     const char *cache_path=ch_env("VULKAN_PIPELINE_CACHE");
@@ -701,6 +802,7 @@ int ch_vk_runtime_start(void)
         .decode=nv2a_backend_decode_texture,.precise_queries=enabled.occlusionQueryPrecise,
         .raw_fixed=enabled.shaderClipDistance && enabled.depthClamp,
         .present_rgba=present,.fatal=fatal,.wide_view=wide_view};
+    if(ch_env("IMMERSIVE_TEST") && config.raw_fixed && (result=imm_test_setup(&config))!=VK_SUCCESS) goto fail;
     result=attach(config);
     if(result!=VK_SUCCESS) goto fail;
     fprintf(stderr,"[Vulkan] direct NV2A backend on %s; OpenGL excluded from this build\n",properties.deviceName);
@@ -715,6 +817,7 @@ void ch_vk_runtime_stop(void)
 {
     ch_vk_target_recipes_stop();
     ch_vk_backend_destroy(runtime.backend);
+    imm_test_stop();
     ch_vk_interp_destroy(interp.p);interp.p=NULL;
     free(interp.prev);free(interp.mid);
     save_pipeline_cache();

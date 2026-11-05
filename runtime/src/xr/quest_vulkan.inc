@@ -98,10 +98,10 @@ static int vk_imm_view(void *context,Vc3VrView *view)
     (void)context;
     return vc3_vr_view_latch(view);
 }
-/* a slot: the eyes side by side at up to VK_EYE_MAX each, and the HUD (up
- * to 1280x960) after them */
+/* a slot: the eyes side by side at up to VK_EYE_MAX each, the HUD (up to
+ * 1280x960) after them, then the lens picture (up to 512x512) */
 #define VK_EYE_MAX 2560
-#define VK_BRIDGE_CAPACITY ((VkDeviceSize)2*VK_EYE_MAX*VK_EYE_MAX*4+(VkDeviceSize)1280*960*4)
+#define VK_BRIDGE_CAPACITY ((VkDeviceSize)2*VK_EYE_MAX*VK_EYE_MAX*4+(VkDeviceSize)1280*960*4+(VkDeviceSize)512*512*4+512)
 /* Each eye's picture: the panel's native size (s_native_w; 2160 on the
  * Steam Frame, where SteamVR recommends 1728), with foveated shading
  * (vk_split_init) keeping E.S. on its vblank there. The panel's Resolution
@@ -134,7 +134,7 @@ static void vk_dump_target(const char *name,ChVkTarget *target,int opaque)
     free(px);
 }
 static VkResult vk_publish_imm(void *context,const Nv2aSurface *surface,ChVkTarget *eyes,ChVkTarget *hud,
-    const ChVkImmFrame *info)
+    ChVkTarget *lens,const ChVkImmFrame *info)
 {
     s_tid_exec=(pid_t)syscall(SYS_gettid);
     pace_game_frame();
@@ -149,7 +149,7 @@ static VkResult vk_publish_imm(void *context,const Nv2aSurface *surface,ChVkTarg
                 info->projection.inv_pz,info->guest_width,info->guest_height);
         }
     }
-    return ch_vk_gpu_mailbox_publish_immersive(context,surface,eyes,hud,info);
+    return ch_vk_gpu_mailbox_publish_immersive(context,surface,eyes,hud,lens,info);
 }
 /* The game on a VkDevice of its own (Steam Frame and Quest;
  * VC3_XR_SPLIT_DEVICE=0: off), which immersive VR needs. SteamVR (Steam
@@ -301,7 +301,10 @@ static int vk_host_init(void)
     if(s_vk_split && s_vk.raw_fixed) {
         config.immersive_view=vk_imm_view;config.present_immersive=vk_publish_imm;
         vk_imm_eye_size(&config.immersive_eye_width,&config.immersive_eye_height);
-        config.immersive_lens_k=chihiro_profile()->vr.lens_k;
+        const ChihiroProfile *p=chihiro_profile();
+        config.immersive_lens_k=p->vr.lens_k;
+        config.immersive_program_projection=(VrGameProj){p->vr.program_proj.kx,p->vr.program_proj.ky,
+            p->vr.program_proj.cx,p->vr.program_proj.cy,p->vr.program_proj.inv_pz};
     }
     return ch_vk_runtime_configure(&config);
 }

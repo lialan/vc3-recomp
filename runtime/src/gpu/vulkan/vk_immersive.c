@@ -45,6 +45,9 @@ struct ChVkImmersive {
     uint64_t late_seen,level_since_ns;   /* the GPU-late count at the window's start */
     uint64_t trace_until; unsigned trace_left;   /* CHIHIRO_VULKAN_IMMERSIVE_TRACE (diagnostic) */
     struct ImmSurface *last_src; int last_hud; unsigned repeats;   /* the picture the last flip showed */
+    /* The lens picture: its surface (read at each flip), drawn into since
+     * the last flip; the log's count of frames handed over with it, a second */
+    uint32_t lens_va; int lens_drawn; unsigned lens_fresh,lens_frames; uint64_t lens_log_ns;
 };
 /* Dynamic resolution levels (fraction of each eye's width and height). A
  * scene heavier than the GPU's 16.7 ms (VC3's later areas at native 2160 on
@@ -342,6 +345,7 @@ static void trace_draw(const ChVkImmersive *m,const Nv2aSurface *s,const Nv2aBat
 }
 VkResult ch_vk_immersive_draw(ChVkImmersive *m,const Nv2aSurface *s,const Nv2aBatch *b,
     const ChVkFixedGeometry *fixed,ChVkSampleResolver resolve,void *context) {
+    if(m && s && m->lens_va && s->color_va==m->lens_va) m->lens_drawn=1;
     if(m && s && b && b->state) {
         /* CHIHIRO_VULKAN_IMMERSIVE_TRACE_TEX=va (diagnostic): every draw of
          * the 3 frames from the first draw sampling that texture */
@@ -373,10 +377,16 @@ VkResult ch_vk_immersive_draw(ChVkImmersive *m,const Nv2aSurface *s,const Nv2aBa
             }
         } else if(b->raw->w0!=1.0f && b->raw->w0==b->raw->w0) {
             /* A program batch: its surface's newest fixed projection, else
-             * the frame's (as the OpenGL renderer does). */
+             * the frame's (as the OpenGL renderer does), else the game's
+             * own (a game with no fixed-function 3D), sized to the surface. */
             f=find(m,s);
             if(f && f->projection_ok) {g=f->projection;is3d=1;}
             else if(m->projection_ok) {g=m->projection;is3d=1;}
+            else if(m->config.program_projection.kx!=0.0f && f) {
+                const float sx=(float)s->width/640.0f,sy=(float)s->height/480.0f;
+                g=m->config.program_projection;g.kx*=sx;g.cx*=sx;g.ky*=sy;g.cy*=sy;
+                f->projection=g;f->projection_ok=1;is3d=1;
+            }
         }
     }
     if(is3d) {
@@ -533,9 +543,9 @@ int ch_vk_immersive_guest_draw(ChVkImmersive *m,ChVkTarget *t,const Nv2aSurface 
     return 1;
 }
 VkResult ch_vk_immersive_flip(ChVkImmersive *m,uint32_t presented,const Vc3VrView *next,
-    ChVkImmFrame *out,ChVkTarget **eyes_out,ChVkTarget **hud_out) {
-    if(!m || !out || !eyes_out || !hud_out) return VK_ERROR_INITIALIZATION_FAILED;
-    memset(out,0,sizeof *out);*eyes_out=*hud_out=NULL;
+    ChVkImmFrame *out,ChVkTarget **eyes_out,ChVkTarget **hud_out,ChVkTarget **lens_out) {
+    if(!m || !out || !eyes_out || !hud_out || !lens_out) return VK_ERROR_INITIALIZATION_FAILED;
+    memset(out,0,sizeof *out);*eyes_out=*hud_out=*lens_out=NULL;
     /* The frame's projection: the screen-shaped surface the most 3D went
      * into -- the scene. */
     uint32_t best=0,total=0; struct ImmSurface *shown_f=NULL,*scene=NULL;
@@ -610,6 +620,24 @@ VkResult ch_vk_immersive_flip(ChVkImmersive *m,uint32_t presented,const Vc3VrVie
             }
         }
     }
+    /* The lens picture goes with a frame handed over only when the game drew
+     * into it since the last flip: a frame without (Silent Scope's stage
+     * intro, its continue screen: no scope pass) has none, and the host
+     * shows dark glass rather than the last picture. */
+    ChVkTarget *lens=src && !repeat && m->lens_drawn && m->config.guest_target?
+        m->config.guest_target(m->config.guest_context,m->lens_va):NULL;
+    if(lens) {out->lens=1;ch_vk_target_size(lens,&out->lens_w,&out->lens_h);*lens_out=lens;}
+    if(m->log && src && !repeat) {
+        m->lens_frames++;m->lens_fresh+=out->lens;
+        uint64_t now=mono_ns();
+        if(now-m->lens_log_ns>=1000000000ull) {
+            fprintf(stderr,"[immersive] frame %llu lens %08X: fresh in %u of %u frames\n",
+                (unsigned long long)m->frames,m->lens_va,m->lens_fresh,m->lens_frames);
+            m->lens_log_ns=now;m->lens_fresh=m->lens_frames=0;
+        }
+    }
+    m->lens_drawn=0;
+    m->lens_va=m->config.lens_surface?m->config.lens_surface():0;
     {   /* every switch between the eyes and the screen, and why */
         static int was=-1;
         int now=repeat?3:presented_src?1:src?2:0;

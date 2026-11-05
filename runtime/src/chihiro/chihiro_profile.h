@@ -120,6 +120,11 @@ typedef struct ChihiroProfile {
         float sight_height[3];      /* iron, red dot, holo, metres over the bore (0: the overlay's) */
         int weapon;                 /* CH_VR_HANDGUN or CH_VR_RIFLE */
         float lens_k;               /* the main view's focal length, pixels at 640 wide (0: 772.5) */
+        /* The main view's projection for a game that draws its 3D with vertex
+         * programs only (no fixed-function batch to read one from), as the
+         * immersive view recovers it (vr_math.h VrGameProj): screen = (k e.xy
+         * / e.z + c) in 640x480 pixels, eye z = clip w * inv_pz (kx 0: none) */
+        struct { float kx, ky, cx, cy, inv_pz; } program_proj;
         /* The HUD's pieces, rectangles of its 640x480 picture, y down (count 0:
          * one quad); dx, dy: which way the piece spreads (-1..1; 0: stays) */
         struct { float x0, y0, x1, y1; signed char dx, dy; } hud_tiles[10];
