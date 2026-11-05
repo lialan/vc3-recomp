@@ -133,6 +133,7 @@ static uint64_t s_rifle;
 static float s_cull_half;
 static int64_t s_scope_frame = -1;  /* the frame the scope pass last ran */
 static uint64_t s_frame_rifle;      /* the rifle the game's frame aims with (its aim step's) */
+static int s_vr;                    /* a rifle has been handed over: a headset (or the test) */
 
 /* The last few scope passes' aims, each with the fence after it (above) */
 #define MARKS 8
@@ -159,6 +160,8 @@ void ss1_vr_rifle(const ChVrRifle *r)
             | (uint64_t)zb << 32;
     }
     __atomic_store_n(&s_rifle, v, __ATOMIC_RELAXED);
+    if (r)
+        __atomic_store_n(&s_vr, 1, __ATOMIC_RELAXED);
 }
 
 void ss1_vr_cull(float half_angle_rad)
@@ -241,10 +244,12 @@ static void shot_log(void)
             MEMF(0x1CEA0D4u));
 }
 
-/* After a scope pass drawn with the rifle on: a fence (D3D's own fence
- * insert, flags 2: no kick) and the pass's aim, tagged with its time. */
+/* After a scope pass in VR: a fence (D3D's own fence insert, flags 2: no
+ * kick) and the pass's aim, tagged with its time -- with the rifle off (the
+ * settings panel open: the game's own aim, circle and reticle), none
+ * (guard 0), so that frame's picture is shown whole. */
 extern void sub_000FC4D0(void);
-static void lens_mark(float focal)
+static void lens_mark(float focal, int rifle)
 {
     const uint32_t dev = MEM32(DEVICE);
     if (!dev || !(focal > 0))
@@ -255,7 +260,7 @@ static void lens_mark(float focal)
     sub_000FC4D0();                                 /* ret 4 */
     const float unit = (float)(6.283185307179586 / 65536.0);
     const VrLensAim a = { YAW_RIGHT * (int16_t)MEM16(AIM_YAW) * unit, PITCH_UP * (int16_t)MEM16(AIM_PITCH) * unit,
-                          focal * SCOPE_PROJ / SCOPE_W, guard() };
+                          focal * SCOPE_PROJ / SCOPE_W, rifle ? guard() : 0.0f };
     pthread_mutex_lock(&s_mark_lock);
     s_marks[s_mark_n % MARKS].time = time;
     s_marks[s_mark_n % MARKS].aim = a;
@@ -303,8 +308,8 @@ void ss1_vr_scope_pass(void (*generated)(void))
     const float focal = MEMF(SCOPE_FOCAL);          /* what it hands its camera */
     generated();
     s_scope_frame = MEM32(FRAME);
-    if (s_frame_rifle)
-        lens_mark(focal);
+    if (s_frame_rifle || __atomic_load_n(&s_vr, __ATOMIC_RELAXED))
+        lens_mark(focal, s_frame_rifle != 0);
     if (!published) {
         const uint32_t surf = MEM32(SCOPE_SURF);
         if (surf) {
