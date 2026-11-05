@@ -17,13 +17,13 @@ static float lp_alpha(float cutoff, float dt)
     return 1.0f / (1.0f + tau / dt);
 }
 
-/* Constants: min_cutoff 1.2/sqrt(zoom) Hz, beta 3.7, d_cutoff 1 Hz. beta is 3.7,
+/* Constants: min_cutoff 1.2/sqrt(zoom) Hz, beta 3.8, d_cutoff 1 Hz. beta is 3.8,
  * not the plan's 0.6: with the standard derivative (new raw - previous raw) the
  * speed estimate is smaller than the plan's variant, and 0.6 let a 90 deg/s
- * sweep lag 7.7 deg (bound 3). 3.7 is the smallest tenth that passes. */
+ * sweep lag 7.7 deg (bound 3). 3.8 keeps 0.07 deg headroom (3.7 passes by only 0.008). */
 void vr_steady(VrSteady *s, const float dir[3], float dt, float zoom, float out[3])
 {
-    const float beta = 3.7f, d_cutoff = 1.0f;
+    const float beta = 3.8f, d_cutoff = 1.0f;
     int finite = isfinite(dir[0]) && isfinite(dir[1]) && isfinite(dir[2]);
     if (!finite || !(dt > 0) || !isfinite(dt)) {   /* bad input: hold, state untouched */
         float m = s->init ? sqrtf(s->x[0] * s->x[0] + s->x[1] * s->x[1] + s->x[2] * s->x[2]) : 0;
