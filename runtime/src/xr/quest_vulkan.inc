@@ -485,6 +485,9 @@ static int vk_hud_in_overlay(void)
     return on;
 }
 static uint32_t s_vk_hud_tw,s_vk_hud_th;
+static ChVkTarget *s_vk_lens_target;   /* the rifle's lens picture, as s_vk_hud_tex */
+static ChVkTexture *s_vk_lens_tex;
+static uint32_t s_vk_lens_tw,s_vk_lens_th;
 static ChVkTexture *s_vk_hud_tex;
 static uint32_t s_vk_hud_w,s_vk_hud_h;
 static int s_vk_hud_valid;
@@ -603,6 +606,27 @@ static int vk_world_update(const Frame *f)
         }
         SEG(8,vk_xr_check(ch_vk_xr_quad_record_buffer(s_vk_hud_quad,cmd,s_vk_bridge.xr_buffer[f->gpu.slot],
             f->gpu.hud_offset),"HUD copy"));
+    }
+    /* The rifle's lens picture: the same way, into the overlay's texture. It
+     * stays as the last frame left it on display frames that bring none new;
+     * lens_fresh follows the newest game frame's lens. */
+    s_qo.lens_fresh=f->gpu.imm.lens && f->gpu.imm.lens_w && f->gpu.imm.lens_h;
+    if(s_qo.lens_fresh) {
+        const uint32_t lw=f->gpu.imm.lens_w,lh=f->gpu.imm.lens_h;
+        if(s_vk_lens_tw!=lw || s_vk_lens_th!=lh || !s_vk_lens_tex) {
+            ch_vk_texture_destroy(s_vk_lens_tex);s_vk_lens_tex=NULL;s_qo.lens_tex=NULL;
+            ch_vk_target_destroy(s_vk_lens_target);s_vk_lens_target=NULL;
+            vk_initialized_target(lw,lh,&s_vk_lens_target);
+            vk_check(ch_vk_target_snapshot_texture(s_vk_lens_target,1,&s_vk_lens_tex),"lens texture");
+            const VkSamplerCreateInfo linear={.sType=VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
+                .magFilter=VK_FILTER_LINEAR,.minFilter=VK_FILTER_LINEAR,.mipmapMode=VK_SAMPLER_MIPMAP_MODE_NEAREST,
+                .addressModeU=VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,.addressModeV=VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+                .addressModeW=VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE};
+            vk_check(ch_vk_texture_set_sampler(s_vk_lens_tex,&linear),"lens sampler");
+            s_vk_lens_tw=lw;s_vk_lens_th=lh;s_qo.lens_tex=s_vk_lens_tex;
+        }
+        vk_check(ch_vk_texture_record_from_buffer(s_vk_lens_tex,cmd,s_vk_bridge.xr_buffer[f->gpu.slot],
+            f->gpu.imm.lens_offset),"lens copy");
     }
     s_vk_host.world=(int)vk_host_submit();
     SEG(9,vk_xr_check(ch_vk_xr_swapchain_release_submitted(s_vk_world),"world release"));
@@ -740,6 +764,7 @@ static const XrCompositionLayerBaseHeader *vk_stats_layer(void)
  * (2026-11-03). Other failures stop. */
 static void vk_overlay_draw(unsigned e,const float vp[16],const float eye[3],size_t bytes)
 {
+    s_qo.weapon=chihiro_profile()->vr.weapon;
     VkResult r=ch_vk_overlay_read(s_vk_eye[e].target,&s_qo,vp,eye,qo_sight_height(s_vr.sight),s_vk_eye[e].pixels,bytes);
     if(r!=VK_ERROR_INITIALIZATION_FAILED) {vk_check(r,"overlay draw");return;}
     static unsigned refused;

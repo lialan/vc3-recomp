@@ -7,6 +7,8 @@
 #ifndef VC3_QUEST_OVERLAY_H
 #define VC3_QUEST_OVERLAY_H
 
+/* QoFrame.weapon: the profile's CH_VR_HANDGUN / CH_VR_RIFLE values */
+enum { QO_WEAPON_HANDGUN, QO_WEAPON_RIFLE };
 enum { QO_SIGHT_IRON, QO_SIGHT_RED_DOT, QO_SIGHT_HOLO, QO_SIGHT_COUNT };
 
 /* One headset frame's worth, in metres in the LOCAL space. */
@@ -18,6 +20,9 @@ typedef struct {
     int   beam, dot, flash;     /* what to draw */
     int   sight;                /* QO_SIGHT_* */
     int   show_gun;             /* 0: only the laser */
+    int   weapon;               /* QO_WEAPON_* (the profile's CH_VR_*) */
+    void *lens_tex;             /* the rifle's lens picture (ChVkTexture *; NULL: none) */
+    int   lens_fresh;           /* the picture is the latest game frame's; else dark glass */
 } QoFrame;
 
 int  qo_init(void);

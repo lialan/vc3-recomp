@@ -4,6 +4,10 @@
 #include <stdio.h>
 
 #include "vr_rifle.h"
+#include "quest_overlay.h"
+#include <string.h>
+#include "quest_gun_geometry.inc"
+#include "quest_rifle_geometry.inc"
 
 static int fails;
 #define CHECK(c) do { if (!(c)) { printf("FAIL %s:%d: %s\n", __FILE__, __LINE__, #c); fails++; } } while (0)
@@ -147,8 +151,41 @@ static void zoom_step_range(void)
     NEAR(vr_zoom_step(1.7f, 0.1f, DT), 1.7f, 0);
 }
 
+static void rifle_lens_on_scope_line(void)
+{
+    const Box *tube = &RIFLE_SCOPE[0], *bell = &RIFLE_SCOPE[2];
+    /* on the tube's axis, above the bore by the tube's height */
+    NEAR(RIFLE_LENS_C[0], tube->c[0], 1e-6);
+    NEAR(RIFLE_LENS_C[1], tube->c[1], 1e-6);
+    NEAR(RIFLE_LENS_C[1], RIFLE_SCOPE_Y, 1e-6);
+    /* at the tube's rear end: past the tube, on the rear bell's back face */
+    CHECK(RIFLE_LENS_C[2] >= tube->c[2] + tube->h[2]);
+    NEAR(RIFLE_LENS_C[2], bell->c[2] + bell->h[2], 0.002);
+    CHECK(RIFLE_LENS_C[2] >= bell->c[2] + bell->h[2]);
+    /* behind the receiver, and the disc inside the bell */
+    CHECK(RIFLE_LENS_C[2] >= RIFLE_RECEIVER.c[2] + RIFLE_RECEIVER.h[2]);
+    CHECK(RIFLE_LENS_R > 0.02 && RIFLE_LENS_R < 0.03);
+    CHECK(RIFLE_LENS_R <= bell->h[0]);
+}
+
+static void rifle_fits_hand(void)
+{
+    float zmin = 1e9f, zmax = -1e9f;
+    const Box *grip = &RIFLE_BODY[0];
+    for (unsigned i = 0; i < sizeof RIFLE_BODY / sizeof *RIFLE_BODY; i++) {
+        if (RIFLE_BODY[i].c[2] - RIFLE_BODY[i].h[2] < zmin) zmin = RIFLE_BODY[i].c[2] - RIFLE_BODY[i].h[2];
+        if (RIFLE_BODY[i].c[2] + RIFLE_BODY[i].h[2] > zmax) zmax = RIFLE_BODY[i].c[2] + RIFLE_BODY[i].h[2];
+    }
+    CHECK(zmax - zmin >= 0.9 && zmax - zmin <= 1.15);
+    NEAR(zmin, RIFLE_MUZZLE_Z, 1e-6);
+    for (int a = 0; a < 3; a++) CHECK(fabsf(grip->c[a]) <= grip->h[a] + 0.03f);
+    CHECK(sizeof RIFLE_BODY / sizeof *RIFLE_BODY + sizeof RIFLE_SCOPE / sizeof *RIFLE_SCOPE <= 64);
+}
+
 int main(void)
 {
+    rifle_lens_on_scope_line();
+    rifle_fits_hand();
     aim_angles_basic();
     aim_angles_poles_and_behind();
     steady_passes_first_and_still();
