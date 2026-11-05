@@ -55,6 +55,15 @@ int vc3_vr_screen_px(int *w, int *h);
 void vc3_vr_lens_surface_set(uint32_t va);
 uint32_t vc3_vr_lens_surface(void);
 
+/* What a lens picture was drawn with, published with it (the game's, read
+ * by the renderer at the flip that hands the picture over): the aim, in
+ * radians in the game camera's view space as ChVkRifle (yaw + right, pitch
+ * + up; the picture's camera turned by the yaw, then pitched about its
+ * turned right axis); its focal length in picture widths per unit of
+ * tangent (square pixels); how many times wider than the lens shows it was
+ * drawn (guard >= 1). guard 0: none known -- shown whole, as drawn. */
+typedef struct { float yaw, pitch, focal, guard; } VrLensAim;
+
 /* What the back end hands the host with each frame (vc3_quest_frame). */
 typedef struct {
     int imm;                  /* drawn immersive: each eye through view, HUD apart */

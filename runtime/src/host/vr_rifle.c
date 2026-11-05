@@ -58,3 +58,34 @@ float vr_zoom_step(float zoom, float stick_y, float dt)
     zoom *= powf(2.0f, stick_y * dt);
     return zoom < 0.5f ? 0.5f : zoom > 4.0f ? 4.0f : zoom;
 }
+
+/* The rifle's direction now, seen from the picture's camera: its tangent
+ * plane coordinates (right, up) through the camera's axes -- forward f, right
+ * r = (cos y, 0, sin y), up u = r x f (x right, y up, -z ahead) -- times the
+ * focal length, about the picture's centre. A direction 90 degrees or more
+ * off the camera's axis lands far out that way (and is clamped). */
+int vr_lens_crop(const VrLensAim *a, float yaw, float pitch, float out[3])
+{
+    out[0] = out[1] = out[2] = 0.5f;
+    if (!a || !isfinite(a->yaw) || !isfinite(a->pitch) || !isfinite(a->focal) || !isfinite(a->guard)
+        || !(a->focal > 0) || !(a->guard >= 1))
+        return 0;
+    const double h = 0.5 / a->guard;
+    out[2] = (float)h;
+    if (!isfinite(yaw) || !isfinite(pitch))
+        return 0;
+    const double sy = sin(a->yaw), cy = cos(a->yaw), sp = sin(a->pitch), cp = cos(a->pitch);
+    const double d[3] = { sin(yaw) * cos(pitch), sin(pitch), -cos(yaw) * cos(pitch) };
+    const double f[3] = { sy * cp, sp, -cy * cp }, r[3] = { cy, 0, sy }, u[3] = { -sy * sp, cp, cy * sp };
+    double z = d[0] * f[0] + d[1] * f[1] + d[2] * f[2];
+    double x = d[0] * r[0] + d[1] * r[1] + d[2] * r[2], y = d[0] * u[0] + d[1] * u[1] + d[2] * u[2];
+    if (z < 1e-3) {     /* at or past a right angle: far out in that direction */
+        x *= 1e3;
+        y *= 1e3;
+        z = 1;
+    }
+    const double cu = 0.5 + a->focal * x / z, cv = 0.5 - a->focal * y / z;
+    out[0] = (float)(cu < h ? h : cu > 1 - h ? 1 - h : cu);
+    out[1] = (float)(cv < h ? h : cv > 1 - h ? 1 - h : cv);
+    return cu < h - 1e-6 || cu > 1 - h + 1e-6 || cv < h - 1e-6 || cv > 1 - h + 1e-6;
+}

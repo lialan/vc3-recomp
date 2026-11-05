@@ -151,6 +151,94 @@ static void zoom_step_range(void)
     NEAR(vr_zoom_step(1.7f, 0.1f, DT), 1.7f, 0);
 }
 
+/* Silent Scope's scope at zoom 1 drawn 1.5 times wider than the lens shows:
+ * focal 296.8 px of its 256 / 1.5, in picture widths */
+#define LENS_G 1.5f
+#define LENS_F (296.8f / 256.0f / LENS_G)
+
+static void lens_crop_still(void)
+{
+    const VrLensAim a = {0.3f, -0.1f, LENS_F, LENS_G};
+    float c[3];
+    CHECK(vr_lens_crop(&a, 0.3f, -0.1f, c) == 0);
+    NEAR(c[0], 0.5, 1e-6); NEAR(c[1], 0.5, 1e-6); NEAR(c[2], 0.5 / LENS_G, 1e-6);
+}
+
+/* Turned by half the guard band (1 - 1/G) / 2 since the picture: the crop
+ * at that edge, not past it; right moves it right, up moves it up (v down). */
+static void lens_crop_half_guard(void)
+{
+    const VrLensAim a = {0, 0, LENS_F, LENS_G};
+    const double h = 0.5 / LENS_G, band = 0.5 - h, d = atan(band / LENS_F);
+    float c[3];
+    vr_lens_crop(&a, (float)d, 0, c);
+    NEAR(c[0], 1 - h, 1e-5); NEAR(c[1], 0.5, 1e-6); NEAR(c[2], h, 1e-6);
+    vr_lens_crop(&a, (float)-d, 0, c);
+    NEAR(c[0], h, 1e-5); NEAR(c[1], 0.5, 1e-6);
+    vr_lens_crop(&a, 0, (float)d, c);
+    NEAR(c[0], 0.5, 1e-6); NEAR(c[1], h, 1e-5);
+    vr_lens_crop(&a, 0, (float)-d, c);
+    NEAR(c[1], 1 - h, 1e-5);
+    /* half of that: half way (tangents add exactly about the centre) */
+    vr_lens_crop(&a, (float)atan(band / 2 / LENS_F), 0, c);
+    NEAR(c[0], 0.5 + band / 2, 1e-5);
+}
+
+/* A fast swing past the band: clamped to the edge, never outside [0, 1] */
+static void lens_crop_clamps(void)
+{
+    const VrLensAim a = {0.2f, 0.1f, LENS_F, LENS_G};
+    const float turns[6][2] = {{0.8f, 0.1f}, {-0.6f, 0.1f}, {0.2f, 0.9f}, {0.2f, -0.7f}, {1.2f, -0.9f}, {3.3f, 0.1f}};
+    float c[3];
+    for (int i = 0; i < 6; i++) {
+        CHECK(vr_lens_crop(&a, turns[i][0], turns[i][1], c) == 1);
+        for (int k = 0; k < 2; k++) {
+            CHECK(isfinite(c[k]));
+            CHECK(c[k] - c[2] >= -1e-6f && c[k] + c[2] <= 1 + 1e-6f);
+        }
+    }
+    vr_lens_crop(&a, 0.8f, 0.1f, c);
+    NEAR(c[0], 1 - 0.5 / LENS_G, 1e-6);
+    vr_lens_crop(&a, 0.2f, 0.9f, c);
+    NEAR(c[1], 0.5 / LENS_G, 1e-6);
+}
+
+/* Zoom: the focal (and so the pixels a radian) scales the offset */
+static void lens_crop_zoom_scales(void)
+{
+    const VrLensAim z1 = {0, 0, LENS_F, LENS_G}, z2 = {0, 0, 2 * LENS_F, LENS_G};
+    float c1[3], c2[3];
+    vr_lens_crop(&z1, 0.01f, -0.02f, c1);
+    vr_lens_crop(&z2, 0.01f, -0.02f, c2);
+    NEAR(c2[0] - 0.5, 2 * (c1[0] - 0.5), 1e-6);
+    NEAR(c2[1] - 0.5, 2 * (c1[1] - 0.5), 1e-6);
+    NEAR(c1[0] - 0.5, LENS_F * tan(0.01), 1e-4);
+    NEAR(c1[2], c2[2], 0);
+}
+
+/* Pitched: a yaw turn moves the picture by yaw * cos(pitch) across */
+static void lens_crop_pitched(void)
+{
+    const VrLensAim a = {0, 0.5f, LENS_F, LENS_G};
+    float c[3];
+    vr_lens_crop(&a, 0.02f, 0.5f, c);
+    NEAR(c[0] - 0.5, LENS_F * 0.02 * cos(0.5), 2e-4);
+}
+
+/* No aim known: the whole picture as drawn */
+static void lens_crop_unknown(void)
+{
+    const VrLensAim none[4] = {{0, 0, 0, 0}, {0, 0, LENS_F, 0.5f}, {NAN, 0, LENS_F, LENS_G}, {0, 0, -1, LENS_G}};
+    float c[3];
+    for (int i = 0; i < 4; i++) {
+        CHECK(vr_lens_crop(&none[i], 0.4f, 0.1f, c) == 0);
+        NEAR(c[0], 0.5, 0); NEAR(c[1], 0.5, 0); NEAR(c[2], 0.5, 0);
+    }
+    const VrLensAim a = {0, 0, LENS_F, LENS_G};
+    CHECK(vr_lens_crop(&a, NAN, 0, c) == 0);
+    NEAR(c[0], 0.5, 0); NEAR(c[2], 0.5 / LENS_G, 1e-6);
+}
+
 static void rifle_lens_on_scope_line(void)
 {
     const Box *tube = &RIFLE_SCOPE[0], *bell = &RIFLE_SCOPE[2];
@@ -211,6 +299,12 @@ int main(void)
     steady_ignores_bad_dt();
     steady_ignores_nonfinite_dir();
     zoom_step_range();
+    lens_crop_still();
+    lens_crop_half_guard();
+    lens_crop_clamps();
+    lens_crop_zoom_scales();
+    lens_crop_pitched();
+    lens_crop_unknown();
     if (fails) { printf("%d failed\n", fails); return 1; }
     printf("all passed\n");
     return 0;
