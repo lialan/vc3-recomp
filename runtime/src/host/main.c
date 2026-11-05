@@ -414,6 +414,11 @@ int main(int argc, char **argv)
          * statically linked: the toolkit's OHCI model and Controller S
          * (xbox_OhciInit in guest_main), fed by SDL's game controllers. */
         setenv("RECOMP_USB", "1", 0);
+        /* The keyboard is player 1's pad too (toolkit input/keyboard.c:
+         * arrows d-pad, Enter START, Z/X/C/V A/B/X/Y, 1/3 triggers, WASD and
+         * IJKL the sticks), merged on top of a real pad, so a Mac with no
+         * controller can play. RECOMP_KEYBOARD=0 turns it off. */
+        setenv("RECOMP_KEYBOARD", "1", 0);
         /* Walk the pushbuffer as the DMA engine does: JUMP/CALL/RETURN and
          * ring wraps followed, GET published as it goes, each kick's marker
          * latched in PGRAPH 0x400B10. XDK 5558 D3D (Silent Scope) spins in
