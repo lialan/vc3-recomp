@@ -87,7 +87,9 @@ void ch_vk_fixed_release(ChVkFixedGeometry *g) {
     if(!g) return;
     if(!(g->borrowed&1)) free(g->vertices);
     if(!(g->borrowed&2)) free(g->indices);
-    memset(g,0,sizeof *g);
+    /* Not the whole struct (its parameters are ~6 KB, and this runs per
+     * draw): released, nothing is freed twice. */
+    g->vertices=NULL;g->indices=NULL;g->borrowed=0;g->vertex_count=g->index_count=0;
 }
 static VkResult prepare_topology(const Nv2aRawGeometry *raw,ChVkFixedGeometry *out,ChVkFixedScratch *scratch) {
     if(!out) return VK_ERROR_INITIALIZATION_FAILED;
@@ -122,7 +124,7 @@ unsupported:
 
 static VkResult prepare_fixed(const Nv2aRawGeometry *raw,ChVkFixedGeometry *out,ChVkFixedScratch *scratch) {
     if(!out) return VK_ERROR_INITIALIZATION_FAILED;
-    memset(out,0,sizeof *out);
+    out->vertices=NULL;out->indices=NULL;out->borrowed=0;   /* the rest: prepare_topology */
     if(!raw || raw->kind!=NV2A_RAW_FIXED || !raw->ff) return VK_ERROR_FEATURE_NOT_PRESENT;
     VkResult r=prepare_topology(raw,out,scratch);if(r!=VK_SUCCESS) return r;
     int slot[8];ch_nv2a_fixed_roles(raw->ff,slot);
@@ -174,7 +176,7 @@ size_t ch_vk_raw_vertex_stride(const ChVkFixedParams *p) {
 }
 static VkResult prepare_program(const Nv2aRawGeometry *raw,ChVkFixedGeometry *out,ChVkFixedScratch *scratch) {
     if(!out) return VK_ERROR_INITIALIZATION_FAILED;
-    memset(out,0,sizeof *out);
+    out->vertices=NULL;out->indices=NULL;out->borrowed=0;   /* the rest: prepare_topology */
     if(!raw || raw->kind!=NV2A_RAW_PROGRAM || !raw->program || !raw->constants ||
        !raw->program_len || raw->program_start>=136 || raw->program_len>136-raw->program_start)
         return VK_ERROR_FEATURE_NOT_PRESENT;
