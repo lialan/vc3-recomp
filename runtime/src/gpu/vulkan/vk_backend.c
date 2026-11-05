@@ -956,6 +956,43 @@ static void flip(void) {
             (unsigned long long)active->cpu_color_pixels,active->cpu_color_us/1000.);
     }
     uint32_t presented=nv2a_backend_presented_va();
+    {
+        /* CHIHIRO_VULKAN_PRESENT_SCREEN=1 (a retail title's default, main.c):
+         * a flip whose presented surface is smaller than the screen surface
+         * shown before shows that screen surface again -- the console's
+         * display stays where it was. Silent Scope 2 flips ~300 times a
+         * second, many with only its 256x256 scope views drawn since the
+         * last; the toolkit's guess (the largest surface drawn) then named
+         * a scope view, and it replaced the picture. */
+        static int screen_only=-1;
+        static uint32_t screen_va;
+        static uint64_t screen_area;
+        if(screen_only<0) {const char *e=getenv("CHIHIRO_VULKAN_PRESENT_SCREEN");screen_only=e && atoi(e);}
+        /* Sizes are logical: real pixels over the anti-aliasing factor. */
+        for(unsigned i=0;screen_only && presented && i<active->count;i++) {
+            const Nv2aSurface *g=&active->surfaces[i].guest;
+            if(g->color_va!=presented) continue;
+            uint64_t area=(uint64_t)(g->width/(g->aa_sx?g->aa_sx:1))*(g->height/(g->aa_sy?g->aa_sy:1));
+            int screen_alive=0;
+            for(unsigned j=0;screen_va && j<active->count;j++) screen_alive|=active->surfaces[j].guest.color_va==screen_va;
+            if(area>=screen_area || !screen_alive) {screen_area=area;screen_va=presented;}
+            else presented=screen_va;
+            break;
+        }
+    }
+    if(presented) {
+        /* A flip before anything was drawn there (Silent Scope 3's first,
+         * at boot) names a surface this back end never made: nothing new
+         * to show. */
+        int known=0;
+        for(unsigned i=0;i<active->count && !known;i++) known=active->surfaces[i].guest.color_va==presented;
+        if(!known) {
+            static unsigned logged;
+            if(logged++<4) fprintf(stderr,"[Vulkan] flip %llu presents %08X, never drawn: nothing shown\n",
+                (unsigned long long)active->frames,presented);
+            presented=0;
+        }
+    }
     ChVkTarget *imm_eyes=NULL,*imm_hud=NULL;ChVkImmFrame imm_frame;
     if(active->host.immersive_view) {
         Vc3VrView next;memset(&next,0,sizeof next);

@@ -153,6 +153,12 @@ VkResult ch_vk_sampler_state(const Nv2aTexture *s,VkSamplerCreateInfo *out) {
             .addressModeW=VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE};
         return VK_SUCCESS;
     }
+    /* The convolution filters (min 7, mag 4: CONVOLUTION_2D_LOD0, NV2A's
+     * quincunx/Gaussian kernel, for anti-aliased and video images) are
+     * drawn linear: the nearest Vulkan has. Silent Scope 3 samples its
+     * 1280x480 boot image that way. */
+    if(min==7) min=2;
+    if(mag==4) mag=2;
     /* Point/linear filters use level zero. Filters 3-6 select the reference
      * generated chain when eligible, otherwise the reference linear fallback. */
     if(s->cube || min<1 || min>6 || (mag!=1 && mag!=2))

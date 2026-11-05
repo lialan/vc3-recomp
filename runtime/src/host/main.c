@@ -434,6 +434,19 @@ int main(int argc, char **argv)
          * (vk_backend.c): Silent Scope alternates 640x480 and 633x432 clips
          * on its back buffer every frame. */
         setenv("CHIHIRO_VULKAN_SURFACE_GROW", "1", 0);
+        /* A flip that drew only smaller surfaces (Silent Scope 2's scope
+         * views) shows the last screen surface again (vk_backend.c). */
+        setenv("CHIHIRO_VULKAN_PRESENT_SCREEN", "1", 0);
+        /* Flips complete at the vblank the swap's presentation interval
+         * asks for, as on the console. Silent Scope's games present with
+         * interval 2: 30 fps on an Xbox. Unpaced, Silent Scope 2 ran 300+
+         * fps with its game clock 4x too fast (its logic steps per frame). */
+        setenv("RECOMP_FLIP_PACING", "1", 0);
+        /* A read on an asynchronous handle returns STATUS_PENDING, as a DVD
+         * read does on the console (toolkit NtReadFile). Silent Scope 3
+         * requires GetLastError() == ERROR_IO_PENDING after its overlapped
+         * ReadFile and shows its disc-error screen otherwise. */
+        setenv("RECOMP_ASYNC_IO", "1", 0);
     }
     /* D3D is linked into the XBE, so frames exist only as NV2A pushbuffer:
      * the toolkit's executor runs it and answers D3D's fences. */
