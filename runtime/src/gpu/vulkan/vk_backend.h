@@ -121,4 +121,7 @@ VkResult ch_vk_backend_attach(ChVkBackend *backend);
 /* Detach/destroy only after executor submission is stopped and drained. */
 void ch_vk_backend_destroy(ChVkBackend *backend);
 const Nv2aBackend *ch_vk_backend_callbacks(void);
+/* The target drawn for the guest color surface at color_va (NULL: none).
+ * Only on the executor thread, e.g. from a present callback. */
+ChVkTarget *ch_vk_backend_target(ChVkBackend *backend, uint32_t color_va);
 #endif

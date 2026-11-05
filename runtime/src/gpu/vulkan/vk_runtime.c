@@ -10,6 +10,7 @@
 #include "vk_pipeline_cache_file.h"
 #include "vk_interp.h"
 #include "chihiro/ch_env.h"
+#include "host/vr_view.h"
 #include "xbox_memory_layout.h"
 #include <stdio.h>
 #include <errno.h>
@@ -152,6 +153,40 @@ static VkResult capture_pixels(const Nv2aSurface *surface,const void *rgba,int b
         fprintf(stderr,"[Vulkan] captured %s\n",path);
     }
     return VK_SUCCESS;
+}
+
+/* With each frame dump, the game's lens picture (vr_view.h; Silent Scope:
+ * its 256x256 scope target) as lens-<frame>.ppm, to check it with no
+ * headset. Nothing when the game has none (VC3); a failed dump is logged,
+ * not fatal. */
+static void capture_lens(void)
+{
+    const uint32_t va=vc3_vr_lens_surface();
+    if(!va || !capture_due()) return;
+    ChVkTarget *target=runtime.backend?ch_vk_backend_target(runtime.backend,va):NULL;
+    static int found,missing;
+    if(!target) {
+        if(!missing++) fprintf(stderr,"[Vulkan] lens surface %08X: no target\n",va);
+        return;
+    }
+    uint32_t w,h;ch_vk_target_size(target,&w,&h);
+    if(!found++) fprintf(stderr,"[Vulkan] lens surface %08X: target %ux%u\n",va,w,h);
+    size_t bytes=(size_t)w*h*4;
+    unsigned char *pixels=malloc(bytes);
+    ChVkTexture *copy=NULL;
+    VkResult r=pixels?ch_vk_target_snapshot_texture(target,1,&copy):VK_ERROR_OUT_OF_HOST_MEMORY;
+    if(r==VK_SUCCESS) r=ch_vk_texture_read_rgba(copy,pixels,bytes);
+    if(r==VK_SUCCESS) {
+        char path[4096];
+        snprintf(path,sizeof path,"%s/lens-%06llu.ppm",ch_env("VULKAN_DUMP_DIR"),(unsigned long long)runtime.frames);
+        FILE *f=fopen(path,"wb");
+        if(f) {
+            fprintf(f,"P6\n%u %u\n255\n",w,h);
+            for(size_t i=0;i<(size_t)w*h;i++) fwrite(pixels+4*i,1,3,f);
+            fclose(f);
+        }
+    } else fprintf(stderr,"[Vulkan] lens surface %08X: capture failed (VkResult=%d)\n",va,r);
+    free(pixels);ch_vk_texture_destroy(copy);
 }
 
 /* GPU-native hosts own the image handoff. Keep frame accounting and cache
@@ -340,6 +375,7 @@ static VkResult present_pixels(void *unused,const Nv2aSurface *surface,const voi
     }
     VkResult capture_result=capture_pixels(surface,rgba,bgra);
     if(capture_result!=VK_SUCCESS) return capture_result;
+    capture_lens();
     frame_completed(surface);
     return VK_SUCCESS;
 }

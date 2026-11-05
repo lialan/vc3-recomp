@@ -48,6 +48,13 @@ int vc3_vr_view_latch(Vc3VrView *v);
  * fixed scale chosen). */
 int vc3_vr_screen_px(int *w, int *h);
 
+/* The lens picture (host/vr_lens.c): the guest surface a game draws its
+ * scope view into, by address as the renderer names surfaces (0x80000000
+ * up), for the host to show on the rifle's lens; 0: none. The game sets
+ * it, the renderer reads it. */
+void vc3_vr_lens_surface_set(uint32_t va);
+uint32_t vc3_vr_lens_surface(void);
+
 /* What the back end hands the host with each frame (vc3_quest_frame). */
 typedef struct {
     int imm;                  /* drawn immersive: each eye through view, HUD apart */

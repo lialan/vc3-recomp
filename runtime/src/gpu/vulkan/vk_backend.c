@@ -1103,6 +1103,9 @@ static ChVkTarget *guest_target_of(void *context,uint32_t va) {
     for(unsigned i=0;i<b->count;i++) if(b->surfaces[i].guest.color_va==va) return b->surfaces[i].target;
     return NULL;
 }
+ChVkTarget *ch_vk_backend_target(ChVkBackend *backend,uint32_t color_va) {
+    return backend?guest_target_of(backend,color_va):NULL;
+}
 static void queue_lock(ChVkBackend *b) {
     if(b && b->host.lock_queue) b->host.lock_queue(b->host.queue_context);
 }

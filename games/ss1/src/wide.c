@@ -12,7 +12,10 @@
  *   tests against, and the secant of the horizontal half-angle from W and D.
  *   For the main view (W 640; the scope's view is 256) W and the half width
  *   grow by 854/640 and the secant follows, so objects at the new sides are
- *   drawn instead of culled. Only the cull reads these.
+ *   drawn instead of culled. Only the cull reads these. In VR the host sets
+ *   a half-angle for the headset's view (vr_rifle.c ss1_vr_cull); then W is
+ *   2 D tan(half) instead, never narrower than the game's, and 16:9 does
+ *   not apply.
  *
  *   Aim. sub_000588C0 steps the aim's yaw (0x1CEB75E, 65536 a turn; pitch
  *   0x1CEB75C) by the stick and clamps it to +-5500, the 4:3 view's edge.
@@ -26,6 +29,7 @@
 #include "recomp_types.h"
 
 extern int vc3_wide_get(void);   /* host/display_settings.c */
+extern float ss1_vr_cull_half(void);   /* vr_rifle.c: 0 unless in VR */
 
 /* The renderer's 16:9 width for a 480-line picture (vk_wide.c wide_size). */
 #define WIDE_K (854.0f / 640.0f)
@@ -39,13 +43,22 @@ extern int vc3_wide_get(void);   /* host/display_settings.c */
 void ss1_wide_camera(void (*generated)(void))
 {
     generated();
-    if (!vc3_wide_get() || MEMF(CAM_W) != 640.0f)
+    const float half = ss1_vr_cull_half();
+    const int vr = half > 0.0f && half < 1.55f;
+    if ((!vr && !vc3_wide_get()) || MEMF(CAM_W) != 640.0f)
         return;
-    const float d = MEMF(CAM_D), w = MEMF(CAM_W) * WIDE_K;
+    const float d = MEMF(CAM_D);
+    float k = WIDE_K, w = MEMF(CAM_W) * WIDE_K;
     if (!(d > 0.0f) || !isfinite(d))
         return;
+    if (vr) {
+        w = 2.0f * d * tanf(half);
+        k = w / MEMF(CAM_W);
+        if (!(k > 1.0f) || !isfinite(k))
+            return;
+    }
     MEMF(CAM_W) = w;
-    MEMF(CAM_HALF_W) = MEMF(CAM_HALF_W) * WIDE_K;
+    MEMF(CAM_HALF_W) = MEMF(CAM_HALF_W) * k;
     MEMF(CAM_SEC) = sqrtf(w * w * MEMF(CAM_QUARTER) + d * d) / d;
 }
 

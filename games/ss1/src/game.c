@@ -11,6 +11,15 @@
 
 extern void ss1_diag_start(void);   /* ss1_diag.c: SS1_DIAG=1 */
 extern void sub_000FC4D0(void);     /* D3D: insert a fence, kick unless flags & 2; lifted */
+extern void ss1_vr_rifle(const ChVrRifle *r);   /* vr_rifle.c */
+extern void ss1_vr_cull(float half_angle_rad);
+extern void ss1_vr_rifle_test(void);            /* SS1_VR_RIFLE_TEST */
+
+static void ss1_boot(void)
+{
+    ss1_diag_start();
+    ss1_vr_rifle_test();
+}
 
 static const ChihiroProfile k_ss1 = {
     .id = "ss1",
@@ -34,9 +43,13 @@ static const ChihiroProfile k_ss1 = {
         .app_name = "Silent Scope VR",
         .panel_title = "Silent Scope - settings",
         .sdcard_dir = "/sdcard/SilentScope",
+        .weapon = CH_VR_RIFLE,
+        .lens_k = 0.0f,         /* the main view's focal length: not measured yet (0: the default) */
+        .rifle = ss1_vr_rifle,
+        .cull = ss1_vr_cull,
     },
     .hooks = {
-        .on_boot = ss1_diag_start,
+        .on_boot = ss1_boot,
     },
 };
 
