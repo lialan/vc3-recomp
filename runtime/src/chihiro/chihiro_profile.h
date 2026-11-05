@@ -19,6 +19,9 @@
 #define CHIHIRO_PROFILE_H
 
 #include <stdint.h>
+#include "host/vr_rifle.h"
+
+enum { CH_VR_HANDGUN = 0, CH_VR_RIFLE = 1 };
 
 /* A display mode the DIP switches can pick: the value the switches read,
  * and the frame the toolkit's window is sized for. */
@@ -115,6 +118,15 @@ typedef struct ChihiroProfile {
         const char *panel_title;    /* the settings panel's */
         const char *sdcard_dir;     /* the game's folder on shared storage */
         float sight_height[3];      /* iron, red dot, holo, metres over the bore (0: the overlay's) */
+        int weapon;                 /* CH_VR_HANDGUN or CH_VR_RIFLE */
+        float lens_k;               /* the main view's focal length, pixels at 640 wide (0: 772.5) */
+        /* The HUD's pieces, rectangles of its 640x480 picture, y down (count 0:
+         * one quad); dx, dy: which way the piece spreads (-1..1; 0: stays) */
+        struct { float x0, y0, x1, y1; signed char dx, dy; } hud_tiles[10];
+        int hud_tile_count;
+        void (*aim_screen)(int on, int x, int y);   /* the gun's point beyond the screen's edge (NULL: none) */
+        void (*cull)(float half_angle_rad);         /* widen the CPU culling to this half angle; 0: the game's own */
+        void (*rifle)(const ChVrRifle *r);          /* the rifle's pose and zoom, each frame (NULL: none) */
     } vr;
 
     /* Hooks (NULL: none) */

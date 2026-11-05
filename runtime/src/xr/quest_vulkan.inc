@@ -301,6 +301,7 @@ static int vk_host_init(void)
     if(s_vk_split && s_vk.raw_fixed) {
         config.immersive_view=vk_imm_view;config.present_immersive=vk_publish_imm;
         vk_imm_eye_size(&config.immersive_eye_width,&config.immersive_eye_height);
+        config.immersive_lens_k=chihiro_profile()->vr.lens_k;
     }
     return ch_vk_runtime_configure(&config);
 }
@@ -755,24 +756,12 @@ static void vk_overlay_draw(unsigned e,const float vp[16],const float eye[3],siz
  * (times VC3_XR_HUD_SPREAD)
  * (at the usual lens their outer edges ~38 degrees to the side, ~26 up and
  * down), the gauge and credits down, the middle stays. The pieces tile the
- * picture: nothing is shown twice. Rectangles in VC3's 640x480 HUD, y down,
- * cut round its layout; dx, dy: which way the piece moves. */
-static const struct { short x0,y0,x1,y1; signed char dx,dy; } k_hud_pieces[]={
-    {  0,  0,200, 64,-1,-1},   /* score */
-    {200,  0,440, 64, 0, 0},
-    {440,  0,640, 64, 1,-1},   /* player 2's score */
-    {  0, 64,640,280, 0, 0},   /* the middle */
-    {218,280,430,395, 0, 0},
-    {  0,280,218,480,-1, 1},   /* magazine, weapon, lives */
-    {430,280,640,428, 1, 1},   /* player 2's */
-    {390,428,640,480, 1, 1},   /* ... and PRESS START BUTTON */
-    {218,395,430,428, 0, 1},   /* the gauge */
-    {218,428,390,480, 0, 1},   /* credits */
-};
-#define HUD_PIECES (sizeof k_hud_pieces/sizeof k_hud_pieces[0])
+ * picture: nothing is shown twice. The pieces are the profile's vr.hud_tiles
+ * (rectangles in the game's 640x480 HUD, y down, cut round its layout; dx, dy:
+ * which way the piece moves); none: the HUD is one quad. */
 #define HUD_SPREAD_X .85f
 #define HUD_SPREAD_Y .55f
-static XrCompositionLayerQuad s_vk_hud_piece[HUD_PIECES];
+static XrCompositionLayerQuad s_vk_hud_piece[10];
 /* The pieces of the HUD's quad layer (base, posed at hp, pw x ph metres) into
  * layers; 0 when it is not to be spread (then the caller shows it whole). */
 static unsigned vk_hud_pieces(const XrCompositionLayerBaseHeader *base,const XrPosef *hp,float pw,float ph,
@@ -781,10 +770,12 @@ static unsigned vk_hud_pieces(const XrCompositionLayerBaseHeader *base,const XrP
     static float spread=-1;   /* VC3_XR_HUD_SPREAD=k: k times as far out (1 by default; 0: off) */
     if(spread<0) spread=ch_env("XR_HUD_SPREAD")?(float)atof(ch_env("XR_HUD_SPREAD")):1.f;
     const uint32_t tw=s_vk_hud_tw,th=s_vk_hud_th;
-    if(!(spread>0) || !tw || tw*3!=th*4) return 0;   /* the game's 4:3 HUD only */
+    const int pieces=chihiro_profile()->vr.hud_tile_count<10?chihiro_profile()->vr.hud_tile_count:10;
+    if(!(spread>0) || !tw || tw*3!=th*4 || pieces<=0) return 0;   /* the game's 4:3 HUD only */
     const float right_unit[3]={1,0,0};float r[3];yaw_rot(s_anchor_yaw,right_unit,r);
     const float sx=(float)tw/640.f,sy=(float)th/480.f;
-    for(unsigned i=0;i<HUD_PIECES;i++) {
+    const typeof(chihiro_profile()->vr.hud_tiles[0]) *k_hud_pieces=chihiro_profile()->vr.hud_tiles;
+    for(int i=0;i<pieces;i++) {
         XrCompositionLayerQuad q=*(const XrCompositionLayerQuad *)base;
         const int32_t x0=(int32_t)(k_hud_pieces[i].x0*sx+.5f),y0=(int32_t)(k_hud_pieces[i].y0*sy+.5f);
         const int32_t x1=(int32_t)(k_hud_pieces[i].x1*sx+.5f),y1=(int32_t)(k_hud_pieces[i].y1*sy+.5f);
@@ -798,7 +789,7 @@ static unsigned vk_hud_pieces(const XrCompositionLayerBaseHeader *base,const XrP
         s_vk_hud_piece[i]=q;
         layers[i]=(const XrCompositionLayerBaseHeader *)&s_vk_hud_piece[i];
     }
-    return HUD_PIECES;
+    return (unsigned)pieces;
 }
 static unsigned vk_present(const Frame *f,const XrCompositionLayerBaseHeader **layers,XrDuration display_period)
 {

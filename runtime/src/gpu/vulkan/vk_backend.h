@@ -102,6 +102,7 @@ typedef struct {
     int (*immersive_view)(void *,Vc3VrView *);
     VkResult (*present_immersive)(void *,const Nv2aSurface *,ChVkTarget *eyes,ChVkTarget *hud,const ChVkImmFrame *);
     uint32_t immersive_eye_width,immersive_eye_height;
+    float immersive_lens_k;   /* the game's usual lens, pixels at 640 wide (0: 772.5) */
     /* Flat 16:9 (vk_wide.h), optional; requires raw_fixed and present_rgba.
      * At each flip, non-zero to draw wide from then on: the presented
      * surface's wide picture (its height, 16:9) goes to present_rgba at its

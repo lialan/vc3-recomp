@@ -41,6 +41,7 @@ typedef struct {
     /* Diagnostics (CHIHIRO_VULKAN_IMMERSIVE_DUMP=dir): a guest surface's target. */
     ChVkTarget *(*guest_target)(void *,uint32_t va);
     void *guest_context;
+    float lens_k;   /* the game's usual lens, pixels at 640 wide (0: 772.5) */
 } ChVkImmersiveConfig;
 VkResult ch_vk_immersive_create(const ChVkImmersiveConfig *,ChVkImmersive **);
 void ch_vk_immersive_destroy(ChVkImmersive *);

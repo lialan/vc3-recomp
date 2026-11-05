@@ -9,6 +9,8 @@
 #include "chihiro/chihiro_profile.h"
 #include "chihiro/chihiro.h"
 
+extern void vc3_vr_aim_set(int on, int x, int y);   /* vr_aim.c */
+extern void vc3_vr_cull_set(float half_angle_rad);   /* vr_cull.c */
 extern void sub_0010CA10(void);     /* D3D KickOff(0), lifted */
 
 /* 16:9: only a widget against the screen's side (within 5% of it) that
@@ -105,6 +107,23 @@ static const ChihiroProfile k_vc3 = {
         .panel_title = "Virtua Cop 3 - settings",
         .sdcard_dir = "/sdcard/VirtuaCop3",
         .sight_height = { 0.0285f, 0.0335f, 0.0400f },  /* quest_overlay.c's SIGHT_Y */
+        .weapon = CH_VR_HANDGUN,
+        .lens_k = 772.5f,       /* its usual 45 x 34.5 degree view (the culling frustum) */
+        .hud_tiles = {          /* cut round its layout (quest_vulkan.inc's spread) */
+            {  0,  0,200, 64,-1,-1},   /* score */
+            {200,  0,440, 64, 0, 0},
+            {440,  0,640, 64, 1,-1},   /* player 2's score */
+            {  0, 64,640,280, 0, 0},   /* the middle */
+            {218,280,430,395, 0, 0},
+            {  0,280,218,480,-1, 1},   /* magazine, weapon, lives */
+            {430,280,640,428, 1, 1},   /* player 2's */
+            {390,428,640,480, 1, 1},   /* ... and PRESS START BUTTON */
+            {218,395,430,428, 0, 1},   /* the gauge */
+            {218,428,390,480, 0, 1},   /* credits */
+        },
+        .hud_tile_count = 10,
+        .aim_screen = vc3_vr_aim_set,
+        .cull = vc3_vr_cull_set,
     },
     .hooks = {
         .launch_data = vc3_launch_data,

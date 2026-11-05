@@ -1535,16 +1535,15 @@ static void recentre(void)
 #define IMM_NEAR 0.05f                  /* metres */
 #define IMM_FAR 2000.0f
 #define HUD_DIST 5.0f                   /* the HUD panel, metres from the anchor */
-/* The longest lens the HUD panel follows, in 640x480 pixels: VC3's usual
- * 45 x 34.5 degree view (its culling frustum), 320 / tan 22.5 degrees. */
-#define HUD_K_MAX 772.5f
+/* The longest lens the HUD panel follows, in 640x480 pixels: the profile's
+ * lens_k (VC3: its usual 45 x 34.5 degree view, 320 / tan 22.5 degrees). */
+#define HUD_K_MAX (chihiro_profile()->vr.lens_k > 0.0f ? chihiro_profile()->vr.lens_k : 772.5f)
 /* Immersive aim: how far from the screen's centre the gun still shoots, in
  * screens each way (1.5: 3 screens wide and high -- at VC3's usual lens 51
  * degrees either side, 43 up and down); beyond, the gun is off the screen
  * (a pull reloads). The game's own reading stops at the screen's edge; the
- * point beyond goes to the game directly (vc3_vr_aim_set, vr_aim.c). */
+ * point beyond goes to the game directly (the profile's vr.aim_screen). */
 #define AIM_WIDE 1.5
-extern void vc3_vr_aim_set(int on, int x, int y);
 static pthread_mutex_t s_view_lock = PTHREAD_MUTEX_INITIALIZER;
 static XrView s_pub_views[2];
 static int s_pub_ok;
@@ -1580,9 +1579,8 @@ static void view_publish(void)
     pthread_mutex_unlock(&s_view_lock);
 }
 
-/* The game's CPU culling while immersive (games/vc3/src/vr_cull.c): wide
+/* The game's CPU culling while immersive (the profile's vr.cull): wide
  * enough for the head to turn. VC3_IMM_CULL_FOV: the vertical angle, degrees. */
-extern float vc3_vr_cull_half_angle;
 static void imm_cull(int on)
 {
     static float half = -1;
@@ -1591,7 +1589,8 @@ static void imm_cull(int on)
         float d = e ? (float)atof(e) : 140.0f;
         half = d >= 10.0f && d <= 175.0f ? d * 0.5f * 3.14159265f / 180.0f : 0.0f;
     }
-    vc3_vr_cull_half_angle = on ? half : 0.0f;
+    if (chihiro_profile()->vr.cull)
+        chihiro_profile()->vr.cull(on ? half : 0.0f);
 }
 
 int vc3_vr_view_latch(Vc3VrView *v)
@@ -2396,7 +2395,8 @@ static void gun_frame(XrTime t, const Frame *f)
         ux = uy = -1;
         aim_on = 0;
     }
-    vc3_vr_aim_set(aim_on && ux >= 0, aim_x, aim_y);   /* off with the menu open (ux -1) */
+    if (chihiro_profile()->vr.aim_screen)
+        chihiro_profile()->vr.aim_screen(aim_on && ux >= 0, aim_x, aim_y);   /* off with the menu open (ux -1) */
     {
         static int aim_log = -1;
         static unsigned n;

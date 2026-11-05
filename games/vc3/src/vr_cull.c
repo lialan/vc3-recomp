@@ -18,6 +18,7 @@
 
 /* Half the vertical angle (radians) to cull with; 0: the game's own. */
 float vc3_vr_cull_half_angle;
+void vc3_vr_cull_set(float half) { vc3_vr_cull_half_angle = half; }
 
 /* What the builder writes: 0x330370..0x33037F (its half-extents, which
  * other code reads -- widening them made the game drop heads, arms and

@@ -1009,7 +1009,7 @@ static void flip(void) {
         if(on && !active->imm && active->pipeline_cache) {
             ChVkImmersiveConfig ic={.physical=active->host.physical,.device=active->host.device,.queue=active->host.queue,
                 .family=active->host.family,.pipeline_cache=active->pipeline_cache,.eye_width=active->host.immersive_eye_width,
-                .eye_height=active->host.immersive_eye_height,.batch_limit=active->host.batch_draw_limit,.decode=decode_cpu_texture,.textures=active->textures,.guest_target=guest_target_of,.guest_context=active};
+                .eye_height=active->host.immersive_eye_height,.batch_limit=active->host.batch_draw_limit,.decode=decode_cpu_texture,.textures=active->textures,.guest_target=guest_target_of,.guest_context=active,.lens_k=active->host.immersive_lens_k};
             VkResult r=ch_vk_immersive_create(&ic,&active->imm);
             if(r!=VK_SUCCESS) fatal(r,"immersive creation");
             fprintf(stderr,"[Vulkan] immersive view: each eye %ux%u\n",ic.eye_width,ic.eye_height);

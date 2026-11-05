@@ -11,8 +11,6 @@
  * a frame), and growing its eyes rebuilt their pipelines (~130 ms). */
 #define IMM_SCENE_BATCHES 8u
 #define ZOOM_SLOTS 8
-/* VC3's usual lens in 640-wide pixels: its 45 x 34.5 degree culling view */
-#define IMM_ZOOM_BASE 772.5f
 /* A screen-shaped guest surface's eyes (2*eye_width x eye_height). */
 struct ImmSurface {
     uint32_t va,width,height;
@@ -262,7 +260,7 @@ static VrGameProj zoomed(const ChVkImmersive *m,const VrGameProj *g,uint32_t wid
      * (~14 degrees) -- magnifies the world by as much; never zoomed out.
      * The host's projection is this one: aim and the HUD panel follow. */
     if(m->zoom_normalise==2 && width) {
-        float k=IMM_ZOOM_BASE*(float)width/640.0f;
+        float k=(m->config.lens_k>0.0f?m->config.lens_k:772.5f)*(float)width/640.0f;   /* the game's usual lens */
         if(m->zoom_max>=1 && fabsf(g->kx)>k*m->zoom_max) k=fabsf(g->kx)/m->zoom_max;   /* magnification at most zoom_max */
         if(fabsf(g->kx)>k) {float z=k/fabsf(g->kx);o.kx*=z;o.ky*=z;}
     }
