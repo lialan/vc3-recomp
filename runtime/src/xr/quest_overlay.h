@@ -23,6 +23,9 @@ typedef struct {
     int   weapon;               /* QO_WEAPON_* (the profile's CH_VR_*) */
     void *lens_tex;             /* the rifle's lens picture (ChVkTexture *; NULL: none) */
     int   lens_fresh;           /* the picture is the latest game frame's; else dark glass */
+    float lens_crop[3];         /* the part of it the lens shows: centre u, v, half size (vr_lens_crop; 0: all) */
+    int   lens_cross;           /* a crosshair on the lens (the picture has no reticle of its own) */
+    float scope_scale;          /* the rifle's scope and lens (qo_scope_scale; 0: 1) */
 } QoFrame;
 
 int  qo_init(void);
@@ -31,6 +34,8 @@ int  qo_init(void);
  * axis, whatever the sight), and the muzzle is here. */
 float qo_sight_height(int sight);
 void  qo_muzzle(float out[3]);
+/* The rifle's scope, lens and all, this many times its size (<PREFIX>_XR_LENS_SCALE; 1). */
+float qo_scope_scale(void);
 
 /* Into the bound framebuffer (cleared to transparent by the caller, with a
  * depth buffer), seen through viewproj from eye (LOCAL metres). The colours

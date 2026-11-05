@@ -538,6 +538,10 @@ static int is_rifle(void)
     return chihiro_profile()->vr.weapon == CH_VR_RIFLE;
 }
 static float s_zoom = 1.0f;     /* the rifle's zoom, 0.5..4: kept across stages, 1 on Reset game */
+/* The rifle's steadied aim this display frame (as the game gets it; ok 0:
+ * not located) -- where the lens shows its picture from (vk_lens_crop) */
+static float s_rifle_yaw, s_rifle_pitch;
+static int s_rifle_aim_ok;
 /* The display's own pixels per eye (native_init): what "Native" draws. */
 static uint32_t s_native_w, s_native_h;
 /* The eyes' last immersive frame as drawn, % of their size each way: below
@@ -2226,6 +2230,9 @@ static void rifle_frame(XrTime t, const Frame *f, const float *d, int now[2][5],
         vr_aim_angles(aim, &r.yaw, &r.pitch);
         r.on = !s_menu.open;
     }
+    s_rifle_aim_ok = d != NULL;     /* where the lens's picture is cropped (vk_lens_crop) */
+    s_rifle_yaw = r.yaw;
+    s_rifle_pitch = r.pitch;
     r.zoom = s_zoom;
     if (chihiro_profile()->vr.rifle)
         chihiro_profile()->vr.rifle(&r);
@@ -2254,6 +2261,7 @@ static void rifle_release(void)
     static const RetailPadKeys none = { 0 };
     ChVrRifle r = { 0 };
     r.zoom = s_zoom;
+    s_rifle_aim_ok = 0;
     retail_pad_apply(&none);
     if (chihiro_profile()->vr.rifle)
         chihiro_profile()->vr.rifle(&r);
@@ -2340,13 +2348,15 @@ static void gun_frame(XrTime t, const Frame *f)
          * the eyes, raised to aim through its sight, sweeping slowly */
         static int fake = -1;
         static float fake_yaw;          /* VC3_XR_FAKE_GUN_YAW=degrees: aimed that far left */
+        static double fake_rate;        /* VC3_XR_FAKE_GUN_SWEEP=w: the +-0.06 rad sweep's rad/s (0.5) */
         if (fake < 0) {
             fake = ch_env("XR_FAKE_GUN") && *ch_env("XR_FAKE_GUN") == '1';
             fake_yaw = ch_env("XR_FAKE_GUN_YAW") ? (float)atof(ch_env("XR_FAKE_GUN_YAW")) * 0.0174533f : 0.0f;
+            fake_rate = ch_env("XR_FAKE_GUN_SWEEP") ? atof(ch_env("XR_FAKE_GUN_SWEEP")) : 0.5;
         }
         if (!got && fake) {
             double sec = (double)t / 1e9;
-            float yaw = fake_yaw + (float)(0.06 * sin(sec * 0.5)), pitch = 0.0f;
+            float yaw = fake_yaw + (float)(0.06 * sin(sec * fake_rate)), pitch = 0.0f;
             float sh = qo_sight_height(s_vr.sight);
             loc.pose.orientation = (XrQuaternionf){ 0, sinf(yaw / 2), 0, cosf(yaw / 2) };
             (void)pitch;

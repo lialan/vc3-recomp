@@ -34,7 +34,10 @@
 #include <GLES3/gl3.h>
 #endif
 
+#include <stdlib.h>
+
 #include "quest_overlay.h"
+#include "chihiro/ch_env.h"
 #include "chihiro/chihiro_profile.h"
 
 /* ── The gun, in boxes ────────────────────────────────────────────────── */
@@ -43,11 +46,22 @@
 #include "quest_gun_geometry.inc"
 #include "quest_rifle_geometry.inc"
 
+float qo_scope_scale(void)
+{
+    static float s;
+    if (!s) {
+        const char *e = ch_env("XR_LENS_SCALE");
+        const float v = e ? (float)atof(e) : 1.0f;
+        s = v >= 0.3f && v <= 2.0f ? v : 1.0f;
+    }
+    return s;
+}
+
 float qo_sight_height(int sight)
 {
     const float *p;
     if (chihiro_profile()->vr.weapon == CH_VR_RIFLE)
-        return RIFLE_SCOPE_Y;                   /* the scope's axis */
+        return rifle_scope_y(qo_scope_scale());  /* the scope's axis */
     if (sight < 0 || sight >= QO_SIGHT_COUNT)
         sight = 0;
     p = chihiro_profile()->vr.sight_height;     /* the game's gun, else this one */

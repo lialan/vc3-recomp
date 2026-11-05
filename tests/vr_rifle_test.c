@@ -239,37 +239,84 @@ static void lens_crop_unknown(void)
     NEAR(c[0], 0.5, 0); NEAR(c[2], 0.5 / LENS_G, 1e-6);
 }
 
+/* The scope's scales checked: the default and the play test's range */
+static const float SCALES[] = {0.5f, 1.0f, 1.5f, 2.0f};
+#define NSCALES (int)(sizeof SCALES / sizeof *SCALES)
+
 static void rifle_lens_on_scope_line(void)
 {
-    const Box *tube = &RIFLE_SCOPE[0], *bell = &RIFLE_SCOPE[2];
-    /* on the tube's axis, above the bore by the tube's height */
-    NEAR(RIFLE_LENS_C[0], tube->c[0], 1e-6);
-    NEAR(RIFLE_LENS_C[1], tube->c[1], 1e-6);
-    NEAR(RIFLE_LENS_C[1], RIFLE_SCOPE_Y, 1e-6);
-    /* at the tube's rear end: past the tube, on the rear bell's back face */
-    CHECK(RIFLE_LENS_C[2] >= tube->c[2] + tube->h[2]);
-    NEAR(RIFLE_LENS_C[2], bell->c[2] + bell->h[2], 0.002);
-    CHECK(RIFLE_LENS_C[2] >= bell->c[2] + bell->h[2]);
-    /* behind the receiver, and the disc inside the bell */
-    CHECK(RIFLE_LENS_C[2] >= RIFLE_RECEIVER.c[2] + RIFLE_RECEIVER.h[2]);
-    CHECK(RIFLE_LENS_R > 0.02 && RIFLE_LENS_R < 0.03);
-    CHECK(RIFLE_LENS_R <= bell->h[0]);
+    for (int k = 0; k < NSCALES; k++) {
+        const float s = SCALES[k];
+        Box sc[RIFLE_SCOPE_N];
+        float c[3], r;
+        rifle_scope(s, sc);
+        rifle_lens(s, c, &r);
+        const Box *tube = &sc[0], *bell = &sc[2];
+        /* on the tube's axis, the sight line's height above the bore */
+        NEAR(c[0], tube->c[0], 1e-6);
+        NEAR(c[1], tube->c[1], 1e-6);
+        NEAR(c[1], rifle_scope_y(s), 1e-6);
+        /* at the tube's rear end: past the tube, on the rear bell's back face */
+        CHECK(c[2] >= tube->c[2] + tube->h[2]);
+        NEAR(c[2], bell->c[2] + bell->h[2], 0.002);
+        CHECK(c[2] >= bell->c[2] + bell->h[2]);
+        /* behind the receiver, and the disc inside the bell */
+        CHECK(c[2] >= RIFLE_RECEIVER.c[2] + RIFLE_RECEIVER.h[2]);
+        CHECK(r <= bell->h[0] && r <= bell->h[1]);
+        NEAR(r, RIFLE_LENS_R * s, 1e-6);
+    }
+    /* 2.5 times the first rifle's 0.024 m */
+    float c[3], r;
+    rifle_lens(1, c, &r);
+    NEAR(r, 0.06, 1e-6);
 }
 
-/* The lens disc (plane z = RIFLE_LENS_C[2], radius RIFLE_LENS_R) must not
- * touch any rifle box: no box spans its plane within reach of the disc. */
-static int lens_hits(const Box *b)
+/* The lens disc (plane z = c[2], radius r) must not touch any rifle box: no
+ * box spans its plane within reach of the disc. */
+static int lens_hits(const float c[3], float r, const Box *b)
 {
-    if (RIFLE_LENS_C[2] > b->c[2] + b->h[2] || RIFLE_LENS_C[2] < b->c[2] - b->h[2]) return 0;
-    float dx = fmaxf(fabsf(RIFLE_LENS_C[0] - b->c[0]) - b->h[0], 0);
-    float dy = fmaxf(fabsf(RIFLE_LENS_C[1] - b->c[1]) - b->h[1], 0);
-    return dx * dx + dy * dy < RIFLE_LENS_R * RIFLE_LENS_R;
+    if (c[2] > b->c[2] + b->h[2] || c[2] < b->c[2] - b->h[2]) return 0;
+    float dx = fmaxf(fabsf(c[0] - b->c[0]) - b->h[0], 0);
+    float dy = fmaxf(fabsf(c[1] - b->c[1]) - b->h[1], 0);
+    return dx * dx + dy * dy < r * r;
 }
 
 static void rifle_lens_unobstructed(void)
 {
-    for (unsigned i = 0; i < sizeof RIFLE_BODY / sizeof *RIFLE_BODY; i++) CHECK(!lens_hits(&RIFLE_BODY[i]));
-    for (unsigned i = 0; i < sizeof RIFLE_SCOPE / sizeof *RIFLE_SCOPE; i++) CHECK(!lens_hits(&RIFLE_SCOPE[i]));
+    for (int k = 0; k < NSCALES; k++) {
+        Box sc[RIFLE_SCOPE_N];
+        float c[3], r;
+        rifle_scope(SCALES[k], sc);
+        rifle_lens(SCALES[k], c, &r);
+        for (unsigned i = 0; i < sizeof RIFLE_BODY / sizeof *RIFLE_BODY; i++) CHECK(!lens_hits(c, r, &RIFLE_BODY[i]));
+        for (unsigned i = 0; i < RIFLE_SCOPE_N; i++) CHECK(!lens_hits(c, r, &sc[i]));
+    }
+}
+
+static int boxes_overlap(const Box *a, const Box *b)
+{
+    for (int i = 0; i < 3; i++)
+        if (fabsf(a->c[i] - b->c[i]) >= a->h[i] + b->h[i] - 1e-6f) return 0;
+    return 1;
+}
+
+/* On the rifle's top, clear of the stock and everything else: no scope box
+ * overlaps a body box; the mounts stand on the receiver and meet the tube. */
+static void rifle_scope_on_top(void)
+{
+    for (int k = 0; k < NSCALES; k++) {
+        Box sc[RIFLE_SCOPE_N];
+        rifle_scope(SCALES[k], sc);
+        for (unsigned i = 0; i < RIFLE_SCOPE_N; i++)
+            for (unsigned j = 0; j < sizeof RIFLE_BODY / sizeof *RIFLE_BODY; j++) CHECK(!boxes_overlap(&sc[i], &RIFLE_BODY[j]));
+        for (unsigned i = 0; i < RIFLE_SCOPE_N; i++) CHECK(sc[i].c[1] - sc[i].h[1] >= RIFLE_RECEIVER_TOP - 1e-6f);
+        NEAR(RIFLE_RECEIVER.c[1] + RIFLE_RECEIVER.h[1], RIFLE_RECEIVER_TOP, 1e-6);
+        for (int m = 4; m < 6; m++) {
+            NEAR(sc[m].c[1] - sc[m].h[1], RIFLE_RECEIVER_TOP, 1e-6);
+            NEAR(sc[m].c[1] + sc[m].h[1], sc[0].c[1] - sc[0].h[1], 1e-6);
+            CHECK(sc[m].h[1] > 0);
+        }
+    }
 }
 
 static void rifle_fits_hand(void)
@@ -283,13 +330,14 @@ static void rifle_fits_hand(void)
     CHECK(zmax - zmin >= 0.9 && zmax - zmin <= 1.15);
     NEAR(zmin, RIFLE_MUZZLE_Z, 1e-6);
     for (int a = 0; a < 3; a++) CHECK(fabsf(grip->c[a]) <= grip->h[a] + 0.03f);
-    CHECK(sizeof RIFLE_BODY / sizeof *RIFLE_BODY + sizeof RIFLE_SCOPE / sizeof *RIFLE_SCOPE <= 64);
+    CHECK(sizeof RIFLE_BODY / sizeof *RIFLE_BODY + RIFLE_SCOPE_N <= 64);
 }
 
 int main(void)
 {
     rifle_lens_on_scope_line();
     rifle_lens_unobstructed();
+    rifle_scope_on_top();
     rifle_fits_hand();
     aim_angles_basic();
     aim_angles_poles_and_behind();

@@ -144,6 +144,7 @@ static VkResult vk_publish_imm(void *context,const Nv2aSurface *surface,ChVkTarg
         if(ch_env("XR_DUMP") && ++n==at) {
             vk_dump_target("eyes.ppm",eyes,1);
             if(hud) vk_dump_target("hud.ppm",hud,0);
+            if(lens && info->lens) vk_dump_target("lens.ppm",lens,1);
             fprintf(stderr,"[xr] immersive dump: projection kx %.2f ky %.2f cx %.2f cy %.2f 1/pz %.5g, guest %ux%u\n",
                 info->projection.kx,info->projection.ky,info->projection.cx,info->projection.cy,
                 info->projection.inv_pz,info->guest_width,info->guest_height);
@@ -396,7 +397,12 @@ static void vk_test_dump(const Frame *f)
     qrot(v->pose.orientation,offset,o);qrot(v->pose.orientation,ahead,a);
     QoFrame g={.gun_valid=1,.gun_q={v->pose.orientation.x,v->pose.orientation.y,v->pose.orientation.z,v->pose.orientation.w},
         .sight=s_vr.sight,.show_gun=1,.beam=s_vr.laser==LASER_ON,.dot=1,
-        .weapon=chihiro_profile()->vr.weapon};
+        .weapon=chihiro_profile()->vr.weapon,.scope_scale=qo_scope_scale(),
+        /* the rifle's lens as the last overlay frame showed it */
+        .lens_tex=s_qo.lens_tex,.lens_fresh=s_qo.lens_fresh,.lens_cross=s_qo.lens_cross,
+        .lens_crop={s_qo.lens_crop[0],s_qo.lens_crop[1],s_qo.lens_crop[2]}};
+    if(g.weapon==CH_VR_RIFLE) fprintf(stderr,"[xr] test overlay: lens %s, crop at %.4f %.4f half %.3f, crosshair %d, scope scale %.2f\n",
+        g.lens_fresh && g.lens_tex?"with a picture":"dark",g.lens_crop[0],g.lens_crop[1],g.lens_crop[2],g.lens_cross,g.scope_scale);
     for(int k=0;k<3;k++){g.gun_p[k]=eye[k]+o[k];g.end[k]=g.gun_p[k]+a[k];}
     size_t bytes=(size_t)s_vk_eye[0].w*s_vk_eye[0].h*4;
     static const float transparent[4]={0,0,0,0};
@@ -489,6 +495,42 @@ static uint32_t s_vk_hud_tw,s_vk_hud_th;
 static ChVkTarget *s_vk_lens_target;   /* the rifle's lens picture, as s_vk_hud_tex */
 static ChVkTexture *s_vk_lens_tex;
 static uint32_t s_vk_lens_tw,s_vk_lens_th;
+static VrLensAim s_vk_lens_aim;        /* what it was drawn with */
+/* The lens at the display's rate: each overlay frame shows the part of the
+ * newest picture the rifle points at now (vr_lens_crop: the picture was
+ * drawn wider than the lens shows, with the aim the game had then), with a
+ * crosshair at the lens's centre -- the game's reticle is not in a picture
+ * with an aim. Every 10 s the log says how often the turn since the picture
+ * went past its edge (clamped); VC3_XR_LENS_LOG=1: each overlay frame's crop
+ * too (the first 600). */
+static void vk_lens_crop(void)
+{
+    static unsigned frames,clamped,lines;
+    static float most;
+    static uint64_t since;
+    static int log=-1;
+    if(log<0) log=ch_env("XR_LENS_LOG") && *ch_env("XR_LENS_LOG")=='1';
+    const int known=s_qo.lens_fresh && s_vk_lens_aim.guard>=1;
+    const int c=vr_lens_crop(&s_vk_lens_aim,s_rifle_aim_ok?s_rifle_yaw:NAN,s_rifle_aim_ok?s_rifle_pitch:NAN,s_qo.lens_crop);
+    s_qo.lens_cross=known;
+    if(!known) return;
+    const float du=s_qo.lens_crop[0]-.5f,dv=s_qo.lens_crop[1]-.5f,off=sqrtf(du*du+dv*dv);
+    frames++;clamped+=c;if(off>most) most=off;
+    if(log && lines<600) {
+        lines++;
+        fprintf(stderr,"[rifle lens] picture yaw %.4f pitch %.4f deg (focal %.2f, guard %.2f), rifle yaw %.4f pitch %.4f deg"
+            " -> crop at %.4f %.4f (half %.3f)%s\n",s_vk_lens_aim.yaw*57.29578f,s_vk_lens_aim.pitch*57.29578f,
+            s_vk_lens_aim.focal,s_vk_lens_aim.guard,s_rifle_yaw*57.29578f,s_rifle_pitch*57.29578f,
+            s_qo.lens_crop[0],s_qo.lens_crop[1],s_qo.lens_crop[2],c?" clamped":"");
+    }
+    const uint64_t now=pace_now_us();
+    if(!since) since=now;
+    if(now-since>=10000000) {
+        fprintf(stderr,"[rifle lens] %u overlay frames with a picture: %u clamped (%.1f%%), largest shift %.3f of the picture"
+            " (the band: %.3f)\n",frames,clamped,frames?100.0*clamped/frames:0.0,most,.5f-s_qo.lens_crop[2]);
+        since=now;frames=clamped=0;most=0;
+    }
+}
 static ChVkTexture *s_vk_hud_tex;
 static uint32_t s_vk_hud_w,s_vk_hud_h;
 static int s_vk_hud_valid;
@@ -628,6 +670,7 @@ static int vk_world_update(const Frame *f)
         }
         vk_check(ch_vk_texture_record_from_buffer(s_vk_lens_tex,cmd,s_vk_bridge.xr_buffer[f->gpu.slot],
             f->gpu.imm.lens_offset),"lens copy");
+        s_vk_lens_aim=f->gpu.imm.lens_aim;
     }
     s_vk_host.world=(int)vk_host_submit();
     SEG(9,vk_xr_check(ch_vk_xr_swapchain_release_submitted(s_vk_world),"world release"));
@@ -766,6 +809,7 @@ static const XrCompositionLayerBaseHeader *vk_stats_layer(void)
 static void vk_overlay_draw(unsigned e,const float vp[16],const float eye[3],size_t bytes)
 {
     s_qo.weapon=chihiro_profile()->vr.weapon;
+    s_qo.scope_scale=qo_scope_scale();
     VkResult r=ch_vk_overlay_read(s_vk_eye[e].target,&s_qo,vp,eye,qo_sight_height(s_vr.sight),s_vk_eye[e].pixels,bytes);
     if(r!=VK_ERROR_INITIALIZATION_FAILED) {vk_check(r,"overlay draw");return;}
     static unsigned refused;
@@ -881,13 +925,17 @@ static unsigned vk_present(const Frame *f,const XrCompositionLayerBaseHeader **l
     const int screen=!imm && s_vk_scr_tex && vk_screen_in_eyes();
     const int hud_shown=imm && s_vk_hud_valid && vk_hud_in_overlay();
     int overlay_want=s_overlay_ok>0 && s_views_ok && (s_qo.gun_valid || eye_test || screen || hud_shown);
-    int overlay_reuse=overlay_want && !screen_new && overlay_reuse_frame(s_vk_overlay_have_last,overlay_full,s_menu.open,s_vk_overlay_frame,display_period);
+    /* the rifle's lens with a picture follows the aim every display frame (vk_lens_crop) */
+    const int lens_live=s_qo.gun_valid && s_qo.lens_fresh && chihiro_profile()->vr.weapon==CH_VR_RIFLE;
+    int overlay_reuse=overlay_want && !screen_new && overlay_reuse_frame(s_vk_overlay_have_last,overlay_full || lens_live,
+        s_menu.open,s_vk_overlay_frame,display_period);
     if(!overlay_want) s_vk_overlay_have_last=0;
     /* Diagnostics for the eye mapping: EYE_TEST tints the left eye's overlay
      * red and the right eye's blue; SWAP_EYES draws each eye's overlay from
      * the other view (the image still goes to the same layer slot). */
     if(overlay_want && !overlay_reuse) {
         VkCommandBuffer ocmd=VK_NULL_HANDLE;int recorded[2]={0,0};
+        if(s_qo.gun_valid && chihiro_profile()->vr.weapon==CH_VR_RIFLE) vk_lens_crop();
         for(unsigned e=0;e<2;e++) {
             const XrView *v=&s_views[swap_eyes?1-e:e];
             float vp[16],eye[3]={v->pose.position.x,v->pose.position.y,v->pose.position.z};
