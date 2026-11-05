@@ -63,6 +63,16 @@ static const ChihiroProfile k_ss1 = {
         .rifle = ss1_vr_rifle,
         .cull = ss1_vr_cull,
     },
+    .gpu = {
+        /* Game units per metre in the immersive view. The scene's clip w
+         * is in units where the street crossing the sniper looks down on
+         * lies at w 10 and a car (4.5 m) is 45 px long at the 555 px lens:
+         * about 55 m for the car, ~130 m for the crossing, so ~0.08 w per
+         * metre. An estimate from the picture (cars, lanes), not a game
+         * constant; unset it was 1, which put the whole city a few
+         * metres away and exaggerated the stereo. */
+        .units_per_m = 0.08f,
+    },
     .hooks = {
         .on_boot = ss1_boot,
     },

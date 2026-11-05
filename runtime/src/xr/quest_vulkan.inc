@@ -395,7 +395,8 @@ static void vk_test_dump(const Frame *f)
     float o[3],a[3],vp[16],eye[3]={v->pose.position.x,v->pose.position.y,v->pose.position.z};
     qrot(v->pose.orientation,offset,o);qrot(v->pose.orientation,ahead,a);
     QoFrame g={.gun_valid=1,.gun_q={v->pose.orientation.x,v->pose.orientation.y,v->pose.orientation.z,v->pose.orientation.w},
-        .sight=s_vr.sight,.show_gun=1,.beam=s_vr.laser==LASER_ON,.dot=1};
+        .sight=s_vr.sight,.show_gun=1,.beam=s_vr.laser==LASER_ON,.dot=1,
+        .weapon=chihiro_profile()->vr.weapon};
     for(int k=0;k<3;k++){g.gun_p[k]=eye[k]+o[k];g.end[k]=g.gun_p[k]+a[k];}
     size_t bytes=(size_t)s_vk_eye[0].w*s_vk_eye[0].h*4;
     static const float transparent[4]={0,0,0,0};
