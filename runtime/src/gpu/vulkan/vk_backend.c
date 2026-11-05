@@ -291,6 +291,23 @@ static struct Surface *surface(const Nv2aSurface *s,const Nv2aRenderState *rs) {
         unsigned last=--active->count;
         if(i!=last) {active->surfaces[i]=active->surfaces[last];memset(&active->surfaces[last],0,sizeof active->surfaces[last]);}
     }
+    /* CHIHIRO_VULKAN_SURFACE_GROW=1 (a retail title's default, main.c): a clip
+     * smaller than the target this surface already has, on the same storage,
+     * draws into that target. A clip is not the surface: its coordinates are
+     * the surface's own, from color_va. Silent Scope clears its back buffer
+     * at 640x480 and draws at a 633x432 clip, every frame: resized each way,
+     * the target was written back, rebuilt and re-read twice a frame, with
+     * its pipelines (11 ms of pipeline creation a frame, 22 fps). */
+    static int grow=-1;
+    if(grow<0) {const char *e=getenv("CHIHIRO_VULKAN_SURFACE_GROW");grow=e && atoi(e);}
+    if(grow && f && (s->width<f->guest.width || s->height<f->guest.height) &&
+       s->width<=f->guest.width && s->height<=f->guest.height &&
+       f->guest.pitch==s->pitch && f->guest.bytes_per_pixel==s->bytes_per_pixel &&
+       f->guest.aa_sx==s->aa_sx && f->guest.aa_sy==s->aa_sy &&
+       f->state.surface_format==rs->surface_format) {
+        f->state=*rs;
+        return f;
+    }
     if(f && f->guest.width==s->width && f->guest.height==s->height &&
        f->guest.pitch==s->pitch && f->guest.bytes_per_pixel==s->bytes_per_pixel) {
         if(f->resident && f->state.surface_format!=rs->surface_format) {
@@ -690,6 +707,7 @@ static void clear(const Nv2aSurface *s,const Nv2aRenderState *rs,uint32_t flags,
     uint64_t cpu=active->costs.enabled?thread_cpu_ns():0;
     uint64_t start=active->costs.enabled?now_us():0;
     struct Surface *f=surface(s,rs);
+    s=&f->guest;    /* the target's extent: larger than this clip under SURFACE_GROW */
     int full_color=ch_vk_nv2a_clear_color_full(s,rs,flags);
     if(f->resident && full_color &&
        !active->host.guest_color_changed && !active->host.render_clear)
@@ -759,6 +777,7 @@ static void draw_batch(const Nv2aSurface *s,const Nv2aBatch *b,const ChVkFixedGe
     uint64_t t[6]={0};
     if(active->profile.enabled) t[0]=now_us();
     struct Surface *f=surface(s,b->state);
+    s=&f->guest;    /* the target's extent: larger than this clip under SURFACE_GROW */
     if(active->profile.enabled) t[1]=now_us();
     int color_write=!!(b->state->color_mask&0x01010101);
     /* A depth/stencil-only pass cannot consume or overwrite destination
@@ -804,7 +823,10 @@ static void draw_batch(const Nv2aSurface *s,const Nv2aBatch *b,const ChVkFixedGe
         VkResult r=ch_vk_immersive_draw(active->imm,s,b,fixed,active->textures?resolve_sample:NULL,active);
         if(r!=VK_SUCCESS) fatal(r,"immersive draw");
     }
-    if(getenv("CHIHIRO_VULKAN_ZPASS_LOG") && (uint64_t)s->width*3!=(uint64_t)s->height*4) {
+    /* Read once: getenv scans the environment, and this runs per draw. */
+    static int zpass_log=-1;
+    if(zpass_log<0) zpass_log=getenv("CHIHIRO_VULKAN_ZPASS_LOG")!=NULL;
+    if(zpass_log && (uint64_t)s->width*3!=(uint64_t)s->height*4) {
         for(unsigned k=0;k<5;k++) {
             const Nv2aTexture *tx=k<4?b->stage[k]:b->texture;
             if(!tx) continue;
@@ -818,7 +840,7 @@ static void draw_batch(const Nv2aSurface *s,const Nv2aBatch *b,const ChVkFixedGe
             }
         }
     }
-    if(b->zpass_out && getenv("CHIHIRO_VULKAN_ZPASS_LOG")) {
+    if(b->zpass_out && zpass_log) {
         static uint64_t n;Nv2aRawExtent e;int ok=b->raw && b->raw->extent && b->raw->extent(b->raw,&e);
         if(n++%7==0) fprintf(stderr,"[zpass] frame %llu surface %08X %ux%u raw %d w0 %.2f extent %.0f..%.0f x %.0f..%.0f depth %u/%04X mask %08X result %u\n",
             (unsigned long long)active->frames,s->color_va,s->width,s->height,b->raw?(int)b->raw->kind:-1,b->raw?b->raw->w0:0,

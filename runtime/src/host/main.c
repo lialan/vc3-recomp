@@ -430,6 +430,10 @@ int main(int argc, char **argv)
          * arrive before its device node was ready, XInputOpen failed
          * (ERROR_DEVICE_NOT_CONNECTED) and it never asked again. */
         setenv("RECOMP_DISPATCH_GATE", "1", 0);
+        /* A smaller clip on a surface draws into its existing target
+         * (vk_backend.c): Silent Scope alternates 640x480 and 633x432 clips
+         * on its back buffer every frame. */
+        setenv("CHIHIRO_VULKAN_SURFACE_GROW", "1", 0);
     }
     /* D3D is linked into the XBE, so frames exist only as NV2A pushbuffer:
      * the toolkit's executor runs it and answers D3D's fences. */

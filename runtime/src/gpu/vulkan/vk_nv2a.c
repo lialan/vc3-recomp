@@ -122,8 +122,11 @@ static VkResult draw_decoded(ChVkTarget *t, const Nv2aSurface *s,
     if(!fixed && (b->raw || (b->ext && !b->rc) || (b->rc && !b->ext)))
         return VK_ERROR_FEATURE_NOT_PRESENT;
     for(unsigned i=0;i<4;i++) if(!b->rc && b->stage[i] && (i!=0 || b->stage[i]!=b->texture)) return VK_ERROR_FEATURE_NOT_PRESENT;
-    const char *force=getenv("CHIHIRO_VULKAN_FORCE_COMBINER");
-    int modulate=!fixed && b->ext && b->stage[0] && !b->stage[0]->cube && (!force || !atoi(force))?
+    /* Switches read once: getenv scans the environment, and this runs per draw. */
+    static int force_combiner=-1,profile_on=-1;
+    if(force_combiner<0) {const char *e=getenv("CHIHIRO_VULKAN_FORCE_COMBINER");force_combiner=e && atoi(e);}
+    if(profile_on<0) {const char *e=getenv("CHIHIRO_VULKAN_PROFILE");profile_on=e && atoi(e)!=0;}
+    int modulate=!fixed && b->ext && b->stage[0] && !b->stage[0]->cube && !force_combiner?
         ch_nv2a_combiner_modulate(b->rc):0;
     /* Division before interpolation is equivalent only for a constant q.
      * Varying projective q must retain the general fragment-stage divide. */
@@ -141,8 +144,7 @@ static VkResult draw_decoded(ChVkTarget *t, const Nv2aSurface *s,
     }
     /* The initial indexed path is uint16. Do not truncate or draw a prefix. */
     if(!fixed && b->count>65535) return VK_ERROR_FEATURE_NOT_PRESENT;
-    const char *profile_env=getenv("CHIHIRO_VULKAN_PROFILE");
-    int profile=profile_env && atoi(profile_env)!=0;
+    int profile=profile_on;
     uint64_t start=profile?profile_us():0;
     if(profile) profile_rc(b->rc);
     ChVkColorVertex *v=fixed?NULL:calloc(b->count,sizeof(*v));
@@ -305,9 +307,13 @@ VkResult ch_vk_nv2a_draw_read(ChVkTarget *t, const Nv2aSurface *s,
  * loop; aliased loads retain the original scalar access order. memcpy keeps
  * unaligned guest bases/rows valid. */
 static int fast_color_io(void) {
-    const char *v=getenv("CHIHIRO_VULKAN_COLOR_FAST_IO");
-    if(!v) v=getenv("VC3_VULKAN_COLOR_FAST_IO");
-    return !v || strcmp(v,"0");
+    static int on=-1;   /* read once: called per surface copy */
+    if(on<0) {
+        const char *v=getenv("CHIHIRO_VULKAN_COLOR_FAST_IO");
+        if(!v) v=getenv("VC3_VULKAN_COLOR_FAST_IO");
+        on=!v || strcmp(v,"0");
+    }
+    return on;
 }
 static int separate_color_rows(const void *src,size_t src_pitch,const void *dst,size_t dst_pitch,uint32_t w,uint32_t h) {
     uintptr_t a=(uintptr_t)src,b=(uintptr_t)dst;
