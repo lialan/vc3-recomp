@@ -16,6 +16,15 @@
 extern void chihiro_d3d_block_on_time(void);
 void sub_000FC580(void) { chihiro_d3d_block_on_time(); }   /* D3D_BlockOnTime */
 
+/* At 16:9 (wide.c): the main view's culling and the aim's yaw limit widen
+ * with the picture. The generated bodies run as sub_X_gen. */
+extern void ss1_wide_camera(void (*generated)(void));
+extern void ss1_wide_aim(void (*generated)(void));
+extern void sub_0006D650_gen(void);
+extern void sub_000588C0_gen(void);
+void sub_0006D650(void) { ss1_wide_camera(sub_0006D650_gen); }   /* camera block -> cull */
+void sub_000588C0(void) { ss1_wide_aim(sub_000588C0_gen); }      /* aim step and clamp */
+
 /* Return a function to run instead of the given guest address, or NULL for
  * the generated dispatch table. Called on every indirect call: keep it
  * cheap. A definition above is the usual way; this is for wrappers chosen
