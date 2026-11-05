@@ -215,9 +215,10 @@ the game's profile says so; VC3 keeps its handgun and sights.
   `ACTIVITY`, `HEADSET_DIR`, `LOGTAG`).
 - Pipeline seeds for ss1 are harvested on the Quest after a real play
   session, as for VC3.
-- A Mac-side test path like VC3's fake-gun dump renders the rifle, the lens
-  and a held aim into a picture, so the overlay can be checked without the
-  headset.
+- The game-side hooks and the immersive view are checked on the Mac (a test
+  rifle held at a fixed aim, and the desktop immersive stand-in). The rifle
+  and lens overlay is checked with VC3's fake-gun dump, which exists only in
+  headset builds, so that check runs on the Quest with the user's go-ahead.
 
 ## Success looks like
 
