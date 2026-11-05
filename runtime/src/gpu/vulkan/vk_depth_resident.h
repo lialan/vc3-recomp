@@ -3,7 +3,7 @@
 #include "vk_target.h"
 #include "../guest_write_watch.h"
 typedef struct ChVkDepthResident ChVkDepthResident;
-typedef struct {uint64_t imports,writebacks,cpu_merges,binds,gpu_copies,clear_skips,clean_reuses;
+typedef struct {uint64_t imports,writebacks,cpu_merges,binds,gpu_copies,clear_skips,clean_reuses,relayouts;
     /* Index: bit1 different target image, bit0 overlapping guest storage. */
     uint64_t switches[4],dirty_switches[4];
     /* Guest transfer work only; row memcpy and CPU edit comparisons excluded. */
@@ -27,6 +27,10 @@ void ch_vk_depth_resident_multiple(ChVkDepthResident *,int enabled);
 /* Optional bounded clean-image reuse: four borrowed targets / 16 MiB of raw
  * snapshots. Release before any target destruction or external depth mutation. */
 void ch_vk_depth_resident_reuse_clean(ChVkDepthResident *,int enabled);
+/* Lazy completion (guest RAM is not the depth's copy): a target's switch
+ * between linear and swizzled storage of the same depth keeps its image
+ * rather than publishing and importing it. Default off. */
+void ch_vk_depth_resident_keep_relayout(ChVkDepthResident *,int enabled);
 /* Diagnostic synchronous roundtrip control. Default is enabled. */
 void ch_vk_depth_resident_gpu_copies(ChVkDepthResident *,int enabled);
 /* Enable before binding; full Morton packed transfers use GPU layout conversion. */

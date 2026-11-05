@@ -102,6 +102,10 @@ typedef struct ChihiroProfile {
         float stereo_depth;         /* stereo convergence, clip w (0: 8) */
         float stereo_sep;           /* separation at infinity, NDC (0: 0.04) */
         float units_per_m;          /* game units per metre, immersive (0: 1) */
+        /* Vulkan: the game never reads its rendered pixels back from memory,
+         * so its flips need not publish or wait for them (vk_backend.h
+         * lazy_flip; CHIHIRO_VULKAN_LAZY_FLIP overrides) */
+        int lazy_flip;
         int buffers;                /* the shown surfaces remembered (the game's swap chain; 0: 4) */
         float zoom_tolerance;       /* focal lengths this close are one zoom (0: 0.5) */
         /* The effect target (gl_backend.c): a run of blended layers sampling

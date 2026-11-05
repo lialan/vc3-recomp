@@ -15,7 +15,7 @@
 #include <pthread/qos.h>
 #endif
 #define MAX_SURFACES 32
-struct Surface { Nv2aSurface guest; ChVkGuestLayout layout; uint32_t zeta; Nv2aRenderState state; float *depth; uint8_t *stencil; ChVkTarget *target; unsigned char *rgba,*observed,*cpu,*raw; ChGuestWriteRange *write_range; size_t raw_span; int observed_valid,resident,color_bgra,color_fallback_reported,color_dirty,native_z24,quantized_z24; size_t bytes; uint64_t color_serial; };
+struct Surface { Nv2aSurface guest; ChVkGuestLayout layout; uint32_t zeta; Nv2aRenderState state; float *depth; uint8_t *stencil; ChVkTarget *target; unsigned char *rgba,*observed,*cpu,*raw; ChGuestWriteRange *write_range; size_t raw_span; int observed_valid,resident,color_bgra,color_fallback_reported,color_dirty,native_z24,quantized_z24,relayouts; size_t bytes; uint64_t color_serial; };
 typedef struct {uint64_t pipeline_ns,batch_wait_ns,batch_gpu_ns,upload_wait_ns;
     uint64_t batch_submit_ns,batch_record_ns,batch_retire_ns,batch_submissions,batch_draws;
     uint64_t sync_render_submissions,sync_render_gpu_ns,sync_render_host_ns;
@@ -175,7 +175,13 @@ static void release_surface(struct Surface *f) {
     free(f->depth);free(f->stencil);memset(f,0,sizeof *f);
 }
 static void color_encoding(struct Surface *f,int swizzled) {
-    int bgra=active->host.gpu_color_pack && f->resident && !active->host.guest_color_changed;
+    /* With lazy flips, an image that switches between linear and swizzled
+     * storage (layout only, surface()) converts on the CPU: the GPU
+     * conversion is per layout, and changing it ended the target's batch and
+     * waited for the GPU at every switch (Silent Scope's scope view, twice a
+     * frame); its pixels then rarely go to guest RAM at all. */
+    int bgra=active->host.gpu_color_pack && f->resident && !active->host.guest_color_changed &&
+        !(f->relayouts && active->host.lazy_flip);
     if(swizzled) {
         uint32_t wx=(f->state.surface_format>>16)&255,hy=f->state.surface_format>>24;
         bgra=bgra && active->host.gpu_morton_color && wx<=15 && hy<=15 &&
@@ -249,6 +255,31 @@ static const Nv2aSurface *narrow_surface(const Nv2aSurface *s,const Nv2aRenderSt
         s->color_va,s->width,s->height,s->pitch,copy->width,copy->height);
     return copy;
 }
+/* CHIHIRO_VULKAN_SURFACE_GROW=1 (a retail title's default, main.c): a clip
+ * smaller than the target this surface already has, on the same storage,
+ * draws into that target. A clip is not the surface: its coordinates are
+ * the surface's own, from color_va. Silent Scope clears its back buffer
+ * at 640x480 and draws at a 633x432 clip, every frame: resized each way,
+ * the target was written back, rebuilt and re-read twice a frame, with
+ * its pipelines (11 ms of pipeline creation a frame, 22 fps). */
+static int grows_into(const struct Surface *f,const Nv2aSurface *s,const Nv2aRenderState *rs) {
+    static int grow=-1;
+    if(grow<0) {const char *e=getenv("CHIHIRO_VULKAN_SURFACE_GROW");grow=e && atoi(e);}
+    return grow && (s->width<f->guest.width || s->height<f->guest.height) &&
+       s->width<=f->guest.width && s->height<=f->guest.height &&
+       f->guest.pitch==s->pitch && f->guest.bytes_per_pixel==s->bytes_per_pixel &&
+       f->guest.aa_sx==s->aa_sx && f->guest.aa_sy==s->aa_sy &&
+       f->state.surface_format==rs->surface_format;
+}
+/* The extent a clear or draw lands in, as surface() will choose it: the
+ * target's when the clip grows into it, else the clip's. */
+static const Nv2aSurface *landing(const Nv2aSurface *s,const Nv2aRenderState *rs) {
+    for(unsigned i=0;i<active->count;i++) {
+        const struct Surface *f=&active->surfaces[i];
+        if(f->guest.color_va==s->color_va) return grows_into(f,s,rs)?&f->guest:s;
+    }
+    return s;
+}
 static struct Surface *surface(const Nv2aSurface *s,const Nv2aRenderState *rs) {
     if(!active || !s || !rs) fatal(VK_ERROR_INITIALIZATION_FAILED,"surface arguments");
     ChVkGuestLayout layout;
@@ -292,20 +323,7 @@ static struct Surface *surface(const Nv2aSurface *s,const Nv2aRenderState *rs) {
         unsigned last=--active->count;
         if(i!=last) {active->surfaces[i]=active->surfaces[last];memset(&active->surfaces[last],0,sizeof active->surfaces[last]);}
     }
-    /* CHIHIRO_VULKAN_SURFACE_GROW=1 (a retail title's default, main.c): a clip
-     * smaller than the target this surface already has, on the same storage,
-     * draws into that target. A clip is not the surface: its coordinates are
-     * the surface's own, from color_va. Silent Scope clears its back buffer
-     * at 640x480 and draws at a 633x432 clip, every frame: resized each way,
-     * the target was written back, rebuilt and re-read twice a frame, with
-     * its pipelines (11 ms of pipeline creation a frame, 22 fps). */
-    static int grow=-1;
-    if(grow<0) {const char *e=getenv("CHIHIRO_VULKAN_SURFACE_GROW");grow=e && atoi(e);}
-    if(grow && f && (s->width<f->guest.width || s->height<f->guest.height) &&
-       s->width<=f->guest.width && s->height<=f->guest.height &&
-       f->guest.pitch==s->pitch && f->guest.bytes_per_pixel==s->bytes_per_pixel &&
-       f->guest.aa_sx==s->aa_sx && f->guest.aa_sy==s->aa_sy &&
-       f->state.surface_format==rs->surface_format) {
+    if(f && grows_into(f,s,rs)) {
         f->state=*rs;
         return f;
     }
@@ -320,6 +338,7 @@ static struct Surface *surface(const Nv2aSurface *s,const Nv2aRenderState *rs) {
             int layout_only=active->host.lazy_completion && active->host.present_target &&
                 ((f->state.surface_format^rs->surface_format)&~0xf00u)==0;
             if(!layout_only) {observe_guest_color(f);flush_color(f);f->observed_valid=0;}
+            else f->relayouts=1;
         }
         if(f->resident && f->raw_span!=span) {
             void *raw=realloc(f->raw,(size_t)span);
@@ -697,10 +716,11 @@ static void clear(const Nv2aSurface *s,const Nv2aRenderState *rs,uint32_t flags,
     Nv2aSurface narrowed;s=narrow_surface(s,rs,&narrowed);
     configure_render_thread();
     /* Skipped guest draws (immersive): the eyes take the clear alone. */
-    if(skip_guest() && active->imm && ch_vk_immersive_on(active->imm) && s->width &&
-       (uint64_t)s->width*3==(uint64_t)s->height*4) {
+    const Nv2aSurface *at=active->imm && ch_vk_immersive_on(active->imm)?landing(s,rs):s;
+    if(skip_guest() && active->imm && ch_vk_immersive_on(active->imm) && at->width &&
+       (uint64_t)at->width*3==(uint64_t)at->height*4) {
         uint64_t start=active->costs.enabled?now_us():0,cpu0=active->costs.enabled?thread_cpu_ns():0;
-        VkResult r=ch_vk_immersive_clear(active->imm,s,rs,flags,argb,zs);
+        VkResult r=ch_vk_immersive_clear(active->imm,at,rs,flags,argb,zs);
         if(r!=VK_SUCCESS) fatal(r,"immersive clear");
         if(active->costs.enabled) {active->costs.eye_us+=now_us()-start;active->costs.eye_cpu_ns+=thread_cpu_ns()-cpu0;}
         return;
@@ -752,27 +772,32 @@ static void draw_batch(const Nv2aSurface *s,const Nv2aBatch *b,const ChVkFixedGe
      * extent covers, the safe answer for a game culling with them; one that
      * also writes color draws into the eyes. CHIHIRO_VULKAN_IMMERSIVE_ZPASS=0:
      * the flat draw and its real count, as before. */
+    /* Screen-shaped means the target the draw lands in: Silent Scope draws
+     * its 640x480 back buffer at a 633x432 clip (SURFACE_GROW), and those
+     * draws went to the eyes and, flat, to the guest as well -- on the Quest
+     * as many draws again as the eyes (stage 1: ~4,500 a frame). */
+    const Nv2aSurface *at=active->imm && ch_vk_immersive_on(active->imm)?landing(s,b->state):s;
     if(b->zpass_out && imm_zpass_visible() && skip_guest() && fixed && active->imm &&
-       ch_vk_immersive_on(active->imm) && (uint64_t)s->width*3==(uint64_t)s->height*4) {
-        uint64_t pixels=(uint64_t)s->width*s->height;
+       ch_vk_immersive_on(active->imm) && (uint64_t)at->width*3==(uint64_t)at->height*4) {
+        uint64_t pixels=(uint64_t)at->width*at->height;
         Nv2aRawExtent e;
         if(b->raw && b->raw->extent && b->raw->extent(b->raw,&e)) {
-            float x0=fmaxf(e.x0,0),x1=fminf(e.x1,(float)s->width),y0=fmaxf(e.y0,0),y1=fminf(e.y1,(float)s->height);
+            float x0=fmaxf(e.x0,0),x1=fminf(e.x1,(float)at->width),y0=fmaxf(e.y0,0),y1=fminf(e.y1,(float)at->height);
             pixels=x1>x0 && y1>y0?(uint64_t)((x1-x0)*(y1-y0)):0;
         }
         *b->zpass_out+=(uint32_t)pixels;
         if(b->state->color_mask&0x01010101) {
             Nv2aBatch copy=*b;copy.zpass_out=NULL;
-            VkResult r=ch_vk_immersive_draw(active->imm,s,&copy,fixed,active->textures?resolve_sample:NULL,active);
+            VkResult r=ch_vk_immersive_draw(active->imm,at,&copy,fixed,active->textures?resolve_sample:NULL,active);
             if(r!=VK_SUCCESS) fatal(r,"immersive draw");
         }
         return;
     }
     {
         if(skip_guest() && fixed && active->imm && ch_vk_immersive_on(active->imm) && !b->zpass_out &&
-           (uint64_t)s->width*3==(uint64_t)s->height*4) {
+           (uint64_t)at->width*3==(uint64_t)at->height*4) {
             uint64_t start=active->costs.enabled?now_us():0,cpu0=active->costs.enabled?thread_cpu_ns():0;
-            VkResult r=ch_vk_immersive_draw(active->imm,s,b,fixed,active->textures?resolve_sample:NULL,active);
+            VkResult r=ch_vk_immersive_draw(active->imm,at,b,fixed,active->textures?resolve_sample:NULL,active);
             if(r!=VK_SUCCESS) fatal(r,"immersive draw");
             if(active->costs.enabled) {active->costs.eye_us+=now_us()-start;active->costs.eye_cpu_ns+=thread_cpu_ns()-cpu0;}
             return;
@@ -873,11 +898,10 @@ static void flip(void) {
      * waits for nothing -- pending work is submitted. (A full flush read back
      * every dirty target and waited for the whole queue every frame.) CPU
      * decoding of a target still publishes it first. Opt-in
-     * (CHIHIRO_VULKAN_LAZY_FLIP=1): on the Steam Frame frames then alternated
-     * long/short (the flush's wait had been pacing the submission thread). */
-    static int lazy_flip=-1;
-    if(lazy_flip<0) {const char *e=getenv("CHIHIRO_VULKAN_LAZY_FLIP");lazy_flip=e && atoi(e);}
-    if(lazy_flip && active->host.lazy_completion && active->host.present_target) submit_pending();
+     * (CHIHIRO_VULKAN_LAZY_FLIP=1, or the game's profile: host.lazy_flip):
+     * on the Steam Frame VC3's frames then alternated long/short (the
+     * flush's wait had been pacing the submission thread). */
+    if(active->host.lazy_flip && active->host.lazy_completion && active->host.present_target) submit_pending();
     else flush();
     if(active->costs.enabled) {active->costs.flip_us+=now_us()-start;active->costs.flip_cpu_ns+=thread_cpu_ns()-cpu;}
     active->frames++;
@@ -932,10 +956,11 @@ static void flip(void) {
         fprintf(stderr,"[Vulkan snapshot copies avoided] color_bytes=%llu depth_bytes=%llu\n",
             (unsigned long long)active->color_snapshot_copy_bytes_saved,
             (unsigned long long)stats.snapshot_copy_bytes_saved);
-        fprintf(stderr,"[Vulkan depth residency] binds=%llu imports=%llu writebacks=%llu CPU merges=%llu GPU copies=%llu clear skips=%llu clean reuses=%llu queued readbacks=%llu\n",
+        fprintf(stderr,"[Vulkan depth residency] binds=%llu imports=%llu writebacks=%llu CPU merges=%llu GPU copies=%llu clear skips=%llu clean reuses=%llu queued readbacks=%llu relayouts=%llu\n",
             (unsigned long long)stats.binds,(unsigned long long)stats.imports,
             (unsigned long long)stats.writebacks,(unsigned long long)stats.cpu_merges,(unsigned long long)stats.gpu_copies,
-            (unsigned long long)stats.clear_skips,(unsigned long long)stats.clean_reuses,(unsigned long long)stats.queued_readbacks);
+            (unsigned long long)stats.clear_skips,(unsigned long long)stats.clean_reuses,(unsigned long long)stats.queued_readbacks,
+            (unsigned long long)stats.relayouts);
         fprintf(stderr,"[Vulkan CPU resident depth] layout_pixels=%llu float_pixels=%llu (cumulative)\n",
             (unsigned long long)stats.cpu_layout_pixels,(unsigned long long)stats.cpu_float_pixels);
         fprintf(stderr,"[Vulkan depth switches] same-image disjoint/overlap=%llu/%llu different-image disjoint/overlap=%llu/%llu dirty=%llu/%llu/%llu/%llu\n",
@@ -1125,10 +1150,13 @@ static void locked_flip(void) {
 /* Lazy completion: everything recorded so far reaches the queue (later work,
  * the flip's full flush included, is ordered after it), but neither the host
  * nor the guest waits for it and dirty storage stays GPU-resident until a
- * flip, a CPU-decoded sample, a report or a surface switch publishes it. */
+ * flip, a CPU-decoded sample, a report or a surface switch publishes it.
+ * With lazy flips, a target with batches still on the GPU keeps recording
+ * instead (ch_vk_target_submit_unblocked). */
 static void submit_pending(void) {
     for(unsigned i=0;i<active->count;i++) {
-        VkResult r=ch_vk_target_submit(active->surfaces[i].target);
+        ChVkTarget *t=active->surfaces[i].target;
+        VkResult r=active->host.lazy_flip?ch_vk_target_submit_unblocked(t):ch_vk_target_submit(t);
         if(r!=VK_SUCCESS) fatal(r,"lazy completion submission");
     }
 }
@@ -1206,6 +1234,9 @@ VkResult ch_vk_backend_create(const ChVkBackendConfig *config,ChVkBackend **out)
         ch_vk_depth_resident_gpu_copies(b->zeta,!config->strict_depth_switches);
         ch_vk_depth_resident_reuse_clean(b->zeta,config->reuse_clean_depth);
         ch_vk_depth_resident_multiple(b->zeta,config->multiple_depth);
+        /* lazy completion: guest RAM is not the depth's copy (published at
+         * flushes, samples and releases), so a linear/swizzled switch keeps it */
+        ch_vk_depth_resident_keep_relayout(b->zeta,config->lazy_completion);
     }
     if(config->cache_textures) {
         ChVkTextureCacheConfig texture_config={.physical=config->physical,.device=config->device,

@@ -72,6 +72,11 @@ static const ChihiroProfile k_ss1 = {
          * constant; unset it was 1, which put the whole city a few
          * metres away and exaggerated the stereo. */
         .units_per_m = 0.08f,
+        /* It reads none of its pictures back from memory: the scope view
+         * is sampled on the GPU (and published to the lens from there).
+         * Flips that waited for the GPU to finish the frame kept the Quest
+         * at 16-18 fps in stage 1 with the GPU half idle. */
+        .lazy_flip = 1,
     },
     .hooks = {
         .on_boot = ss1_boot,

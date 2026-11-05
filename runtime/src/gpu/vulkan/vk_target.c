@@ -43,21 +43,48 @@ _Static_assert(offsetof(PipelineKey,vertex_fetch_specialized)==offsetof(Pipeline
 /* Bound descriptor/snapshot lifetimes without forcing a wait every 64 draws.
  * Queries, guest publication, resource pressure and target changes still finish. */
 #define BATCH_DRAWS CH_VK_MAX_BATCH_DRAWS
-#define RING_SLOTS 4
+#define RING_SLOTS 8
 typedef struct {ChVkTexture *image;void (*release)(void *,ChVkTexture *);void *context;int owned;} Retired;
 typedef struct {
     PipelineKey key;
     uint64_t used;
     VkDescriptorSetLayout descriptor_layout;
     VkDescriptorPool descriptor_pool;
-    /* One bank per batch slot: an in-flight batch keeps its sets. */
-    VkDescriptorSet descriptor_set,sets[RING_SLOTS][BATCH_DRAWS];
-    uint32_t set_count[RING_SLOTS],set_used;
+    /* One bank per batch slot: an in-flight batch keeps its sets. Bank k
+     * is sets[k*set_bank..], set_bank the target's batch limit (allocated
+     * with the pipeline: most of a target's slots never hold one). */
+    VkDescriptorSet descriptor_set,*sets;
+    uint32_t set_bank,set_count[RING_SLOTS],set_used;
     VkPipelineLayout pipeline_layout;
     VkPipeline pipeline;
     int has_descriptors;
     unsigned pending; /* Bit per batch slot referencing it until that slot's fence completes. */
 } PipelineResources;
+typedef struct { uint32_t alpha[3]; ChVkEffect effect; } PushState;
+/* Draw merging. A batched draw of encoded streams stays open -- its state
+ * bound, its vkCmdDrawIndexed not yet recorded -- and each following draw
+ * identical in all but its vertex data (pipeline, textures, dynamic state,
+ * parameters, indices) joins it: its streams go right after the open draw's
+ * in the arena and it becomes the next copy of its instances (the vertex
+ * shaders read copy k's streams stream_bytes*k on). Silent Scope draws its
+ * world a polygon at a time, ~4,500 draws a frame, most identical but for
+ * their vertices: per-draw GPU work (state, binning) ran 20-45 us a draw on
+ * the Quest. Anything else recorded into the batch closes it first
+ * (begin_batch_clear, finish_batch_with_copy). CHIHIRO_VULKAN_MERGE_DRAWS=0:
+ * every draw its own. */
+#define MERGE_INDICES 64u   /* small draws: a large one carries its own per-draw cost */
+typedef struct {
+    int active,mergeable;
+    uint32_t instances,copies,index_count,vertex_count;   /* instances: per copy (2: a pair of eyes) */
+    uint8_t bucket;   /* CHIHIRO_VULKAN_DRAW_TIMING's */
+    /* what a joining draw must match (copies here: the arena may be
+     * uncached, slow to read back), and where its streams go */
+    const PipelineResources *pipeline;const ChVkTexture *texture,*stages[4];
+    uint32_t stencil_reference;float blend[4];PushState push;int rc;
+    unsigned char rc_bytes[256];uint16_t indices[MERGE_INDICES];
+    size_t params_size;ChVkFixedParams params;
+    VkDeviceSize stream_bytes,stream_end;
+} OpenDraw;
 struct ChVkTarget {
     uint32_t family;
     VkPhysicalDevice physical;
@@ -141,7 +168,8 @@ struct ChVkTarget {
     uint64_t depth_uploads,depth_upload_ns,depth_upload_wait_ns;
     int count_requested;
     uint64_t samples;
-    struct { uint32_t alpha[3]; ChVkEffect effect; } push,recorded_push;
+    PushState push,recorded_push;
+    OpenDraw open;
     VkPipeline recorded_pipeline;
     VkPipelineLayout recorded_push_layout;
     float recorded_blend[4];
@@ -167,8 +195,10 @@ struct ChVkTarget {
         VkBuffer geometry;VkDeviceMemory geometry_memory;void *geometry_map;
         VkDeviceSize geometry_capacity;int geometry_coherent;
         Retired *retired;uint32_t retired_count;
-        int inflight,reason,tail_stamped;uint64_t finish_start;
+        int inflight,reason,tail_stamped;uint64_t finish_start,serial;
     } slots[RING_SLOTS];
+    uint64_t ring_serial;   /* submissions: the oldest in-flight slot */
+    int timing_on;          /* GPU timestamps: each slot's pool, made at its first use */
     int initialized;
     int failed;
     struct { const char *caller; int readback; uint64_t count,wait_ns,gpu_ns,tail_ns; } finish_reasons[32];
@@ -186,6 +216,7 @@ struct ChVkTarget {
     struct {uint32_t key[12];ChVkTexture *texture;} lent[8]; unsigned lent_count;
 };
 static VkResult finish_batch_named(ChVkTarget *,int,const char *);
+static void close_draw(ChVkTarget *);
 static void live_release(ChVkTarget *);
 static void open_pass(ChVkTarget *,uint32_t,const VkClearValue *);
 static VkResult submit_as(ChVkTarget *,const char *);
@@ -216,8 +247,8 @@ static void report_batch_timing(ChVkTarget *t,uint64_t now) {
     if(!t->batch_report_start) t->batch_report_start=now;
     if(now-t->batch_report_start<1000000000) return;
     const ChVkTargetTimingStats *s=&t->timing_stats,*b=&t->batch_report;
-    fprintf(stderr,"[Vulkan batch GPU] %ux%u draws=%llu submissions=%llu GPU %.2fms host record %.2fms finish %.2fms (submit %.2fms wait %.2fms retire %.2fms)\n",
-        t->width,t->height,(unsigned long long)(s->batch_draws-b->batch_draws),
+    fprintf(stderr,"[Vulkan batch GPU] %ux%u draws=%llu (merged %llu) submissions=%llu GPU %.2fms host record %.2fms finish %.2fms (submit %.2fms wait %.2fms retire %.2fms)\n",
+        t->width,t->height,(unsigned long long)(s->batch_draws-b->batch_draws),(unsigned long long)(s->batch_merged-b->batch_merged),
         (unsigned long long)(s->batch_submissions-b->batch_submissions),
         (s->batch_gpu_ns-b->batch_gpu_ns)/1e6,(s->batch_record_ns-b->batch_record_ns)/1e6,
         (s->batch_finish_ns-b->batch_finish_ns)/1e6,(s->batch_submit_ns-b->batch_submit_ns)/1e6,
@@ -314,6 +345,7 @@ static void destroy_pipeline(ChVkTarget *t,PipelineResources *p) {
     if(p->descriptor_pool) vkDestroyDescriptorPool(t->device,p->descriptor_pool,NULL);
     if(p->pipeline_layout) vkDestroyPipelineLayout(t->device,p->pipeline_layout,NULL);
     if(p->descriptor_layout) vkDestroyDescriptorSetLayout(t->device,p->descriptor_layout,NULL);
+    free(p->sets);
     memset(p,0,sizeof *p);
 }
 static void destroy_geometry(ChVkTarget *t) {
@@ -378,6 +410,18 @@ VkResult ch_vk_target_batching(ChVkTarget *t,int enabled) {
 VkResult ch_vk_target_retire_sample(ChVkTarget *t,ChVkTexture *image,
     void (*release)(void *,ChVkTexture *),void *context,int owned) {
     if(!image) return VK_SUCCESS;
+    /* The batch already holds this image until it retires (draws sampling
+     * the same texture -- merged ones above all): this reference goes now.
+     * A frame of merged draws filled the list, and its finish waited for the
+     * GPU every frame (Silent Scope's eyes, ~7 ms a frame on the Quest). */
+    if(t && t->pending && !owned)
+        for(uint32_t i=t->retired_count,k=0;i && k<8;i--,k++) {
+            const Retired *held=&t->retired[i-1];
+            if(held->image==image && held->release==release && held->context==context && !held->owned) {
+                if(release) release(context,image);
+                return VK_SUCCESS;
+            }
+        }
     VkResult r=VK_SUCCESS;
     if(t && t->pending && t->retired_count==t->batch_limit*5) r=finish_batch_named(t,0,__func__);
     if(t && t->pending && r==VK_SUCCESS) {
@@ -632,7 +676,10 @@ static VkResult create_depth(VkPhysicalDevice physical,VkDevice device,VkQueue q
             VkQueryPoolCreateInfo timing={.sType=VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO,
                 .queryType=VK_QUERY_TYPE_TIMESTAMP,.queryCount=3};
             TRY(vkCreateQueryPool(device,&timing,NULL,&t->timing));
-            if(t->ring) for(unsigned k=1;k<RING_SLOTS;k++) TRY(vkCreateQueryPool(device,&timing,NULL,&t->slots[k].timing));
+            /* the later ring slots' as they come into use (rotate): KosmicKrisp
+             * (the Mac) runs out of query pools with eight per target */
+            if(t->ring) for(unsigned k=1;k<RING_SLOTS/2;k++) TRY(vkCreateQueryPool(device,&timing,NULL,&t->slots[k].timing));
+            t->timing_on=1;
             const char *draws=getenv("CHIHIRO_VULKAN_DRAW_TIMING");
             if(draws && atoi(draws)) {
                 VkQueryPoolCreateInfo per_draw=timing;per_draw.queryCount=BATCH_DRAWS+2;
@@ -941,23 +988,38 @@ fail:
     retire_retired(t->slots[k].retired,&t->slots[k].retired_count);return result;
 }
 static VkResult drain_ring(ChVkTarget *t) {
-    /* Oldest first: the slot after the recording one was submitted first. */
     if(t->ring) for(unsigned i=1;i<RING_SLOTS;i++) {
         VkResult r=retire_slot(t,(t->slot+i)%RING_SLOTS);if(r!=VK_SUCCESS) return r;
     }
     return VK_SUCCESS;
 }
-/* The just-submitted batch moves to its slot; recording continues in the
- * other one once that slot's earlier batch has completed. */
+/* The just-submitted batch moves to its slot; recording continues in a free
+ * one -- the lowest, so the later slots (and their 4 MB geometry arenas) come
+ * into use only while that many batches are on the GPU at once -- or, with
+ * none free, in the oldest once its batch has completed. Eight slots: Silent
+ * Scope's scope view ends 5-7 batches a frame (its 64-draw limit, the eyes
+ * sampling it, the lens copy), and with four the fifth waited for the GPU
+ * to finish the frame before. Slots found complete are retired on the way. */
 static VkResult rotate(ChVkTarget *t) {
-    unsigned k=t->slot,n=(k+1)%RING_SLOTS;
+    unsigned k=t->slot,n=RING_SLOTS,oldest=RING_SLOTS;
     t->slots[k].command=t->command;t->slots[k].fence=t->fence;t->slots[k].timing=t->timing;
     t->slots[k].geometry=t->geometry;t->slots[k].geometry_memory=t->geometry_memory;t->slots[k].geometry_map=t->geometry_map;
     t->slots[k].geometry_capacity=t->geometry_capacity;t->slots[k].geometry_coherent=t->geometry_coherent;
     t->slots[k].retired=t->retired;t->slots[k].retired_count=t->retired_count;
     t->slots[k].reason=t->submitted_reason;t->slots[k].finish_start=t->submitted_finish_start;
-    t->slots[k].tail_stamped=t->tail_stamped;t->slots[k].inflight=1;
-    VkResult r=retire_slot(t,n);
+    t->slots[k].tail_stamped=t->tail_stamped;t->slots[k].inflight=1;t->slots[k].serial=++t->ring_serial;
+    VkResult r=VK_SUCCESS;
+    for(unsigned i=0;i<RING_SLOTS && r==VK_SUCCESS;i++) {
+        if(i==k) continue;
+        if(t->slots[i].inflight && vkGetFenceStatus(t->device,t->slots[i].fence)==VK_SUCCESS) r=retire_slot(t,i);
+        if(!t->slots[i].inflight) {if(n==RING_SLOTS) n=i;}
+        else if(oldest==RING_SLOTS || t->slots[i].serial<t->slots[oldest].serial) oldest=i;
+    }
+    if(n==RING_SLOTS) {n=oldest<RING_SLOTS?oldest:(k+1)%RING_SLOTS;if(r==VK_SUCCESS) r=retire_slot(t,n);}
+    if(t->timing_on && !t->slots[n].timing) {   /* none: that slot's batches go untimed */
+        VkQueryPoolCreateInfo timing={.sType=VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO,.queryType=VK_QUERY_TYPE_TIMESTAMP,.queryCount=3};
+        if(vkCreateQueryPool(t->device,&timing,NULL,&t->slots[n].timing)!=VK_SUCCESS) t->slots[n].timing=VK_NULL_HANDLE;
+    }
     t->slot=n;
     t->command=t->slots[n].command;t->fence=t->slots[n].fence;t->timing=t->slots[n].timing;
     t->geometry=t->slots[n].geometry;t->geometry_memory=t->slots[n].geometry_memory;t->geometry_map=t->slots[n].geometry_map;
@@ -1000,6 +1062,7 @@ static void live_release(ChVkTarget *source) {
 static VkResult finish_batch_with_copy(ChVkTarget *t,int readback,const char *caller,ChVkTarget *depth_destination,ChVkTexture *texture_destination,int defer_wait) {
     if(!t || t->failed) return VK_ERROR_INITIALIZATION_FAILED;
     VkResult result;
+    close_draw(t);
     live_release(t);
     if(t->submitted) return retire_batch(t);
     if(!t->pending) {TRY(drain_ring(t));TRY(wait_copy_source(t));return wait_upload(t);}
@@ -1076,6 +1139,16 @@ static VkResult submit_as(ChVkTarget *t,const char *why) {
     return r;
 }
 VkResult ch_vk_target_submit(ChVkTarget *t) {return submit_as(t,"lazy_completion");}
+VkResult ch_vk_target_submit_unblocked(ChVkTarget *t) {
+    /* Only while none of its batches is on the GPU: the ring's other slots
+     * stay free for the submissions that cannot wait for a better moment
+     * (batch limit, a sample of this target, the headset's copy). */
+    if(t && t->ring && t->pending && !t->submitted)
+        for(unsigned k=0;k<RING_SLOTS;k++)
+            if(k!=t->slot && t->slots[k].inflight && vkGetFenceStatus(t->device,t->slots[k].fence)==VK_NOT_READY)
+                return VK_SUCCESS;
+    return submit_as(t,"lazy_completion");
+}
 static VkResult quantize_depth(ChVkTarget *,int);
 VkResult ch_vk_target_depth_quantization(ChVkTarget *t,int mode) {
     if(!t || mode<0 || mode>5)return VK_ERROR_INITIALIZATION_FAILED;
@@ -1150,6 +1223,7 @@ static void open_pass(ChVkTarget *t,uint32_t aspects,const VkClearValue *clear) 
  * the pass itself begins at the batch's first draw or its end. */
 static VkResult begin_batch_clear(ChVkTarget *t,uint32_t aspects,const VkClearValue clear[2]) {
     VkResult result;
+    close_draw(t);   /* whatever is recorded next follows the open draw */
     TRY(retire_copy_out(t));
     if(!t->pending) {
         live_release(t);   /* new writes: a reader's samples go first */
@@ -1200,7 +1274,20 @@ static VkResult begin_batch_clear(ChVkTarget *t,uint32_t aspects,const VkClearVa
 fail:t->failed=1;return result;
 }
 static VkResult begin_batch(ChVkTarget *t) {return begin_batch_clear(t,0,NULL);}
-static VkResult record_batch(ChVkTarget *t,VkBuffer geometry,VkDeviceSize index_offset,uint32_t index_count) {
+/* The open draw's vkCmdDrawIndexed, with every copy joined to it. */
+static void close_draw(ChVkTarget *t) {
+    if(!t->open.active) return;
+    t->open.active=0;
+    if(t->failed) return;
+    vkCmdDrawIndexed(t->command,t->open.index_count,t->open.instances*t->open.copies,0,0,0);
+    if(t->draw_pool[t->slot] && t->draw_n[t->slot]<BATCH_DRAWS) {
+        uint32_t i=++t->draw_n[t->slot];
+        t->draw_meta[t->slot][i].bucket=t->open.bucket;t->draw_meta[t->slot][i].indices=t->open.index_count*t->open.copies;
+        vkCmdWriteTimestamp(t->command,VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,t->draw_pool[t->slot],i);
+    }
+}
+/* keep_open: the draw stays open (close_draw), for identical ones to join. */
+static VkResult record_batch(ChVkTarget *t,VkBuffer geometry,VkDeviceSize index_offset,uint32_t index_count,int keep_open) {
     VkResult result;
     uint64_t record_start=t->timing?time_ns():0;
     TRY(begin_batch(t));
@@ -1229,14 +1316,12 @@ static VkResult record_batch(ChVkTarget *t,VkBuffer geometry,VkDeviceSize index_
     vkCmdBindVertexBuffers(t->command,0,1,&geometry,&vertex_offset);
     vkCmdBindIndexBuffer(t->command,geometry,index_offset,VK_INDEX_TYPE_UINT16);
     /* Immersive modes 1 and 2 draw one instance per eye; flat 16:9 (3) one. */
-    vkCmdDrawIndexed(t->command,index_count,t->fixed && t->fixed->imm_mode && t->fixed->imm_mode!=3u?2:1,0,0,0);
-    if(t->draw_pool[t->slot] && t->draw_n[t->slot]<BATCH_DRAWS) {
-        uint32_t i=++t->draw_n[t->slot];
-        const PipelineKey *key=&t->active_pipeline->key;
-        unsigned v=!key->fixed?2:key->vertex_count?1:0,f=key->shader&3,e=t->fixed?t->fixed->imm_mode&3:0;
-        t->draw_meta[t->slot][i].bucket=(uint8_t)(v<<4|f<<2|e);t->draw_meta[t->slot][i].indices=index_count;
-        vkCmdWriteTimestamp(t->command,VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,t->draw_pool[t->slot],i);
-    }
+    const PipelineKey *key=&t->active_pipeline->key;
+    unsigned v=!key->fixed?2:key->vertex_count?1:0,f=key->shader&3,e=t->fixed?t->fixed->imm_mode&3:0;
+    OpenDraw *o=&t->open;
+    o->active=1;o->mergeable=0;o->copies=1;o->index_count=index_count;o->bucket=(uint8_t)(v<<4|f<<2|e);
+    o->instances=t->fixed && t->fixed->imm_mode && t->fixed->imm_mode!=3u?2:1;
+    if(!keep_open) close_draw(t);
     if(t->quantized_depth && t->quantized_depth!=5 && t->active_pipeline->key.depth.depthTestEnable &&
        t->active_pipeline->key.depth.depthWriteEnable) {
         /* Quantization helpers bind their own graphics state/push layout. */
@@ -2021,7 +2106,10 @@ static VkResult create_pipeline(ChVkTarget *t,const PipelineKey *key) {
         VkDescriptorSetAllocateInfo alloc={.sType=VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
             .descriptorPool=t->active_pipeline->descriptor_pool,.descriptorSetCount=1,.pSetLayouts=&t->active_pipeline->descriptor_layout};
         TRY(vkAllocateDescriptorSets(t->device,&alloc,&t->active_pipeline->descriptor_set));
-        t->active_pipeline->sets[t->slot][0]=t->active_pipeline->descriptor_set;
+        t->active_pipeline->set_bank=t->batch_enabled?t->batch_limit:1;
+        t->active_pipeline->sets=calloc((size_t)RING_SLOTS*t->active_pipeline->set_bank,sizeof *t->active_pipeline->sets);
+        if(!t->active_pipeline->sets) {result=VK_ERROR_OUT_OF_HOST_MEMORY;goto fail;}
+        t->active_pipeline->sets[t->slot*t->active_pipeline->set_bank]=t->active_pipeline->descriptor_set;
         for(unsigned k=0;k<RING_SLOTS;k++) t->active_pipeline->set_count[k]=0;
         t->active_pipeline->set_count[t->slot]=1;
     }
@@ -2314,6 +2402,36 @@ static void update_descriptors(ChVkTarget *t,const ChVkTexture *texture,
     }
     if(n) vkUpdateDescriptorSets(t->device,n,writes,0,NULL);
 }
+static int merging_on(void) {
+    static int on=-1;
+    if(on<0) {const char *e=getenv("CHIHIRO_VULKAN_MERGE_DRAWS");on=!e || atoi(e)!=0;}
+    return on;
+}
+/* The combiner's uniform block as a draw has it: the combiner, the fog
+ * color, and which stages have an image (1; 3 a cube). */
+static void rc_block(unsigned char out[256],const Nv2aCombiner *rc,uint32_t fog_color,const ChVkTexture *const stage_images[4]) {
+    memset(out,0,256);memcpy(out,rc,sizeof(*rc));
+    const float fog[4]={((fog_color>>16)&255)/255.f,((fog_color>>8)&255)/255.f,(fog_color&255)/255.f,(fog_color>>24)/255.f};
+    memcpy(out+224,fog,sizeof fog);
+    uint32_t on[4];
+    for(unsigned i=0;i<4;i++) on[i]=stage_images && stage_images[i]?(ch_vk_texture_is_cube(stage_images[i])?3:1):0;
+    memcpy(out+240,on,sizeof on);
+}
+/* A draw joining the open one (OpenDraw): its streams after the last copy's. */
+static VkResult merge_draw(ChVkTarget *t,const void *vertices,VkDeviceSize bytes) {
+    OpenDraw *o=&t->open;
+    memcpy((char *)t->geometry_map+o->stream_end,vertices,(size_t)bytes);
+    if(!t->geometry_coherent) {
+        VkDeviceSize atom=t->noncoherent_atom,first=o->stream_end/atom*atom,last=(o->stream_end+bytes+atom-1)/atom*atom;
+        VkMappedMemoryRange flush={.sType=VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE,.memory=t->geometry_memory,
+            .offset=first,.size=last<=t->geometry_capacity?last-first:VK_WHOLE_SIZE};
+        VkResult r=vkFlushMappedMemoryRanges(t->device,1,&flush);
+        if(r!=VK_SUCCESS) {t->failed=1;return r;}
+    }
+    o->copies++;o->stream_end+=bytes;t->geometry_used=o->stream_end;
+    if(t->timing) {t->timing_stats.batch_draws++;t->timing_stats.batch_merged++;}
+    return VK_SUCCESS;
+}
 static VkResult draw_full(ChVkTarget *t, const float rgba[4],
     const void *vertices, uint32_t vertex_count,
     const uint16_t *indices, uint32_t index_count, const Nv2aRenderState *state,
@@ -2473,10 +2591,31 @@ static VkResult draw_full(ChVkTarget *t, const float rgba[4],
         if(!key.alpha_shader) t->resource_stats.no_alpha_pipeline_builds++;
         if(key.specialized) t->resource_stats.specialized_pipeline_builds++;
     }
+    /* A draw identical to the open one in all but its vertices joins it as
+     * further instances (merge_draw); otherwise this one may be joined:
+     * its indices go before its vertex streams, so later copies follow them. */
+    unsigned char rc_bytes[256];
+    if(rc) rc_block(rc_bytes,rc,fog_color,stage_images);
+    int mergeable=batched && fixed && fixed->stream_bytes && index_count<=MERGE_INDICES &&
+        (!t->quantized_depth || t->quantized_depth==5) && merging_on();
+    if(mergeable && t->open.active && t->open.mergeable) {
+        const OpenDraw *o=&t->open;
+        int joins=o->pipeline==entry && o->texture==texture && o->vertex_count==vertex_count &&
+            o->index_count==index_count && o->stencil_reference==t->stencil_reference &&
+            !memcmp(o->blend,constants,sizeof o->blend) && !memcmp(&o->push,&t->push,sizeof o->push) &&
+            o->rc==(rc!=NULL) && (!rc || !memcmp(o->rc_bytes,rc_bytes,sizeof rc_bytes)) &&
+            !memcmp(o->stages,stage_images?stage_images:(const ChVkTexture *const[4]){0},sizeof o->stages) &&
+            o->stream_bytes==vertex_bytes && t->geometry_used==o->stream_end &&
+            o->stream_end+vertex_bytes<=t->geometry_capacity &&
+            o->params_size==ch_vk_raw_params_size(fixed) && !memcmp(&o->params,fixed,o->params_size) &&
+            !memcmp(o->indices,indices,(size_t)index_count*sizeof(*indices));
+        if(joins) return merge_draw(t,vertices,vertex_bytes);
+    }
     memcpy(t->blend_constants,constants,sizeof constants);
     t->active_pipeline=entry;entry->used=++t->pipeline_clock;
     VkDeviceSize header=t->fixed?(256+ch_vk_raw_params_size(t->fixed)+255)/256*256:t->rc?256:0;
-    VkDeviceSize payload=header+vertex_bytes+(VkDeviceSize)index_count*sizeof(*indices);
+    VkDeviceSize index_bytes=(VkDeviceSize)index_count*sizeof(*indices);
+    VkDeviceSize payload=mergeable?(header+index_bytes+255)/256*256+vertex_bytes:header+vertex_bytes+index_bytes;
     VkDeviceSize base=t->pending?(t->geometry_used+255)/256*256:0;
     if(base>UINT64_MAX-payload) {result=VK_ERROR_OUT_OF_HOST_MEMORY;goto fail;}
     /* Only a batch with geometry in the arena is ended by it: in the ring, one
@@ -2493,30 +2632,23 @@ static VkResult draw_full(ChVkTarget *t, const float rgba[4],
         if(entry->set_used==entry->set_count[t->slot]) {
             VkDescriptorSetAllocateInfo alloc={.sType=VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
                 .descriptorPool=entry->descriptor_pool,.descriptorSetCount=1,.pSetLayouts=&entry->descriptor_layout};
-            TRY(vkAllocateDescriptorSets(t->device,&alloc,&entry->sets[t->slot][entry->set_count[t->slot]]));entry->set_count[t->slot]++;
+            TRY(vkAllocateDescriptorSets(t->device,&alloc,&entry->sets[t->slot*entry->set_bank+entry->set_count[t->slot]]));entry->set_count[t->slot]++;
         }
-        entry->descriptor_set=entry->sets[t->slot][entry->set_used++];
+        entry->descriptor_set=entry->sets[t->slot*entry->set_bank+entry->set_used++];
     }
-    t->vertex_offset=base+header;
-    VkDeviceSize offset=t->vertex_offset+vertex_bytes;
-    VkDeviceSize size=offset+(VkDeviceSize)index_count*sizeof(*indices);
+    VkDeviceSize offset,size;   /* the indices; the end of the draw's geometry */
+    if(mergeable) {offset=base+header;t->vertex_offset=(offset+index_bytes+255)/256*256;size=t->vertex_offset+vertex_bytes;}
+    else {t->vertex_offset=base+header;offset=t->vertex_offset+vertex_bytes;size=offset+index_bytes;}
     if(size>SIZE_MAX) return VK_ERROR_OUT_OF_HOST_MEMORY;
     TRY(reserve_geometry(t,size));
     VkBuffer buffer=t->geometry;
     void *mapped=t->geometry_map;
-    if(rc) {
-        memset((char *)mapped+base,0,256); memcpy((char *)mapped+base,rc,sizeof(*rc));
-        float *fog=(float *)((char *)mapped+base+224);
-        fog[0]=((fog_color>>16)&255)/255.f; fog[1]=((fog_color>>8)&255)/255.f;
-        fog[2]=(fog_color&255)/255.f; fog[3]=(fog_color>>24)/255.f;
-        uint32_t *on=(uint32_t *)((char *)mapped+base+240);
-        for(unsigned i=0;i<4;i++) on[i]=stage_images && stage_images[i]?
-            (ch_vk_texture_is_cube(stage_images[i])?3:1):0;
-    }
+    if(rc) memcpy((char *)mapped+base,rc_bytes,sizeof rc_bytes);
     if(fixed) memcpy((char *)mapped+base+256,fixed,ch_vk_raw_params_size(fixed));
-    update_descriptors(t,texture,buffer,base,vertex_bytes);
+    /* a draw that may be joined reads its streams up to the arena's end */
+    update_descriptors(t,texture,buffer,base,mergeable?t->geometry_capacity-t->vertex_offset:vertex_bytes);
     memcpy((char *)mapped+t->vertex_offset,vertices,(size_t)vertex_bytes);
-    memcpy((char *)mapped+offset,indices,(size_t)(size-offset));
+    memcpy((char *)mapped+offset,indices,(size_t)index_bytes);
     if(!t->geometry_coherent) {
         VkDeviceSize atom=t->noncoherent_atom;
         VkDeviceSize first=base/atom*atom;
@@ -2529,7 +2661,17 @@ static VkResult draw_full(ChVkTarget *t, const float rgba[4],
         TRY(vkFlushMappedMemoryRanges(t->device,1,&flush));
     }
     if(batched) {
-        result=record_batch(t,buffer,offset,index_count);t->geometry_used=size;
+        result=record_batch(t,buffer,offset,index_count,mergeable);t->geometry_used=size;
+        if(result==VK_SUCCESS && mergeable) {
+            OpenDraw *o=&t->open;
+            o->mergeable=1;o->pipeline=entry;o->texture=texture;o->vertex_count=vertex_count;
+            o->stencil_reference=t->stencil_reference;memcpy(o->blend,constants,sizeof o->blend);o->push=t->push;
+            o->rc=rc!=NULL;if(rc) memcpy(o->rc_bytes,rc_bytes,sizeof rc_bytes);
+            memcpy(o->indices,indices,(size_t)index_bytes);
+            o->params_size=ch_vk_raw_params_size(fixed);memcpy(&o->params,fixed,o->params_size);
+            if(stage_images) memcpy(o->stages,stage_images,sizeof o->stages); else memset(o->stages,0,sizeof o->stages);
+            o->stream_bytes=vertex_bytes;o->stream_end=size;
+        }
     } else result=render_read(t,rgba,rgba?7:0,1.0f,0,buffer,offset,index_count,pixels,bytes);
     if(result==VK_SUCCESS && samples) *samples=(uint32_t)t->samples;
 fail:

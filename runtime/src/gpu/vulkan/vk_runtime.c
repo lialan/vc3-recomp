@@ -547,6 +547,9 @@ static VkResult attach(ChVkBackendConfig config)
      * =0 waits and publishes at every completion again. */
     config.lazy_completion=!lazy || atoi(lazy)!=0;
     if(config.lazy_completion) fprintf(stderr,"[Vulkan] lazy guest completion: enabled\n");
+    const char *lazy_flip=ch_env("VULKAN_LAZY_FLIP");
+    config.lazy_flip=lazy_flip?atoi(lazy_flip)!=0:chihiro_profile()->gpu.lazy_flip;
+    if(config.lazy_flip) fprintf(stderr,"[Vulkan] lazy flips: enabled\n");
     const char *entries=ch_env("VULKAN_TEXTURE_CACHE_ENTRIES");
     if(entries) {
         char *end;errno=0;unsigned long value=strtoul(entries,&end,10);

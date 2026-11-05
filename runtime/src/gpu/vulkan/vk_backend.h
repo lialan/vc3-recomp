@@ -57,6 +57,13 @@ typedef struct {
      * already complete. Flips, CPU-decoded sampling and surface switches still
      * publish. Ignored with render routing hooks. */
     int lazy_completion;
+    /* With lazy completion and a GPU presenter, flips publish nothing and wait
+     * for nothing either (vk_backend.c flip()), and frames pipeline: a guest
+     * completion submits a target only while none of its batches is on the
+     * GPU, and a surface switching between linear and swizzled storage
+     * converts its colors on the CPU. CHIHIRO_VULKAN_LAZY_FLIP, else the
+     * game's profile (gpu.lazy_flip). */
+    int lazy_flip;
     /* Guest completions and flips publish resident color but leave dirty
      * resident depth on the GPU, as the OpenGL renderer always does. Depth
      * still reaches guest RAM before CPU-decoded sampling and on owner

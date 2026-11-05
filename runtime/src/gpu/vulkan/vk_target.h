@@ -62,6 +62,7 @@ typedef struct {
     int available; /* Profile enabled, timestamps enabled and queue support */
     uint64_t sync_render_submissions,sync_render_gpu_ns,sync_render_host_ns;
     uint64_t batch_submissions,batch_draws,batch_gpu_ns,batch_record_ns;
+    uint64_t batch_merged;   /* of batch_draws, joined to the one before (draw merging) */
     uint64_t batch_finish_ns,batch_submit_ns,batch_wait_ns,batch_retire_ns;
     uint64_t depth_upload_wait_ns;
     uint64_t depth_copy_ns,depth_copy_calls;
@@ -112,6 +113,12 @@ VkResult ch_vk_target_finish(ChVkTarget *);
  * before it next records, reads or copies; later queue work is ordered after
  * it. Nothing is published to guest memory. */
 VkResult ch_vk_target_submit(ChVkTarget *);
+/* The same, while none of the target's batches is on the GPU; otherwise
+ * the batch stays open and goes at its limit or its next use. Silent Scope
+ * completes ~15 guest fences a frame, and each one ended its scope view's
+ * batch: the ring filled, and the fifth of a frame waited for the GPU to
+ * finish the frame before (Quest: ~9-15 ms a frame of the render thread). */
+VkResult ch_vk_target_submit_unblocked(ChVkTarget *);
 uint32_t ch_vk_target_pending(const ChVkTarget *);
 /* Transfer one immutable sampled-image lease to the completion boundary.
  * owned selects destruction; borrowed cache leases invoke release if non-NULL.

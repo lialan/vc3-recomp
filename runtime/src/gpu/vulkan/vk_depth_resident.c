@@ -14,7 +14,7 @@ struct DepthImage {
     ChGuestWriteWatch *watch;ChGuestWriteRange *write_range;
     Nv2aSurface surface;Nv2aRenderState state;ChVkGuestLayout layout;
     float *depth;uint8_t *stencil,*raw,*edits;uint32_t *words;
-    int dirty,gpu_copies,packed,gpu_layout,morton;
+    int dirty,gpu_copies,packed,gpu_layout,morton,keep_relayout;
     int reuse_clean;unsigned clean_next;size_t clean_bytes;struct CleanDepth clean[CLEAN_DEPTH_SLOTS];
     ChVkDepthResidentStats stats;
 };
@@ -187,6 +187,26 @@ static VkResult bind_depth(DepthImage *d,ChVkTarget *target,
        d->surface.width==surface->width && d->surface.height==surface->height &&
        d->state.zeta_pitch==state->zeta_pitch &&
         (d->state.surface_format&0xffffff00u)==(state->surface_format&0xffffff00u);
+    /* keep_relayout (lazy completion): a switch between linear and swizzled
+     * storage of the depth this target holds keeps its GPU image, as the
+     * color does (vk_backend.c surface()): guest RAM is not its copy, and is
+     * written in the new layout when published. Silent Scope clears its
+     * scope view's depth linear and draws it swizzled, every frame: each
+     * switch read the depth back, waited for the GPU and imported it again
+     * (~4.7 ms a frame on the Quest). Morton transfers are only ever turned
+     * off here (turning them on would end the target's batch). */
+    if(!same && d->keep_relayout && d->target==target && d->state.zeta_va==state->zeta_va &&
+       d->surface.width==surface->width && d->surface.height==surface->height &&
+       d->state.zeta_pitch==state->zeta_pitch && d->layout.span==layout.span &&
+       !((d->state.surface_format^state->surface_format)&0xfffff000u)) {
+        if(!overwrite) {r=observe(d);if(r!=VK_SUCCESS) return r;}   /* CPU edits so far, as they were written */
+        uint32_t wx=(state->surface_format>>16)&255,hy=state->surface_format>>24;
+        int morton=d->morton && layout.swizzled && wx<=15 && hy<=15 &&
+            surface->width==(1u<<wx) && surface->height==(1u<<hy);
+        if(morton!=d->morton) {r=ch_vk_target_depth_morton(target,morton);if(r!=VK_SUCCESS) return r;}
+        d->morton=morton;d->surface=*surface;d->state=*state;d->layout=layout;
+        d->stats.relayouts++;same=1;   /* the same view now: cleared, or bound as it is */
+    }
     if(same && overwrite) {
         invalidate_clean_target(d,target);
         /* The following full clear supersedes every logical pixel, including
@@ -301,6 +321,7 @@ void ch_vk_depth_resident_multiple(ChVkDepthResident *d,int enabled) {
 }
 void ch_vk_depth_resident_gpu_layout(ChVkDepthResident *d,int e) {if(d) for(unsigned i=0;i<4;i++) if(d->image[i]) single_gpu_layout(d->image[i],e);}
 void ch_vk_depth_resident_gpu_copies(ChVkDepthResident *d,int e) {if(d) for(unsigned i=0;i<4;i++) if(d->image[i]) single_gpu_copies(d->image[i],e);}
+void ch_vk_depth_resident_keep_relayout(ChVkDepthResident *d,int e) {if(d) for(unsigned i=0;i<4;i++) if(d->image[i]) d->image[i]->keep_relayout=!!e;}
 void ch_vk_depth_resident_write_watch(ChVkDepthResident *d,ChGuestWriteWatch *w) {if(d) for(unsigned i=0;i<4;i++) if(d->image[i]) single_write_watch(d->image[i],w);}
 void ch_vk_depth_resident_reuse_clean(ChVkDepthResident *d,int e) {if(d && !d->multiple) for(unsigned i=0;i<4;i++) if(d->image[i]) single_reuse_clean(d->image[i],e);}
 VkResult ch_vk_depth_resident_packed(ChVkDepthResident *d,int e) {
@@ -368,7 +389,7 @@ static VkResult pool_bind(ChVkDepthResident *d,ChVkTarget *target,const Nv2aSurf
     if(!d->image[slot]) {
         r=single_create(base->guest,base->bytes,&d->image[slot]);if(r!=VK_SUCCESS)return r;
         DepthImage *image=d->image[slot];image->watch=base->watch;image->packed=base->packed;
-        image->gpu_layout=base->gpu_layout;image->gpu_copies=base->gpu_copies;
+        image->gpu_layout=base->gpu_layout;image->gpu_copies=base->gpu_copies;image->keep_relayout=base->keep_relayout;
         /* Clean caches are not combined with dirty pooling: a dormant clean
          * entry in another owner could otherwise refer to a modified target. */
     }
@@ -466,7 +487,7 @@ void ch_vk_depth_resident_stats(const ChVkDepthResident *d,ChVkDepthResidentStat
     for(unsigned i=0;i<4;i++) if(d->image[i]) {
         ChVkDepthResidentStats s;single_stats(d->image[i],&s);
 #define SUM(field) out->field+=s.field
-        SUM(imports);SUM(writebacks);SUM(cpu_merges);SUM(binds);SUM(gpu_copies);SUM(clear_skips);SUM(clean_reuses);SUM(cpu_layout_pixels);SUM(cpu_float_pixels);SUM(queued_readbacks);SUM(snapshot_copy_bytes_saved);
+        SUM(imports);SUM(writebacks);SUM(cpu_merges);SUM(binds);SUM(gpu_copies);SUM(clear_skips);SUM(clean_reuses);SUM(cpu_layout_pixels);SUM(cpu_float_pixels);SUM(queued_readbacks);SUM(snapshot_copy_bytes_saved);SUM(relayouts);
 #undef SUM
         for(unsigned j=0;j<4;j++){out->switches[j]+=s.switches[j];out->dirty_switches[j]+=s.dirty_switches[j];}
     }

@@ -10,7 +10,10 @@ uvec4 ch_stream_attribute(uint slot,uint legacy_stride) {
     }
     uint format=CH_ATTRIBUTE_FORMAT(slot),kind=format&255u,size=(format>>8)&255u;
     uint bytes=kind==0u?16u:(kind==1u || kind==7u)?4u:(kind==2u || kind==6u)?size*2u:kind==5u?size:size*4u;
-    uint offset=params.p.attribute_offset[slot]+uint(gl_VertexIndex)*params.p.attribute_stride[slot];
+    // Merged draws (vk_target.c): instance k -- k/2 with a pair of eyes --
+    // reads the k-th copy of the streams, stream_bytes apart.
+    uint copy=uint(gl_InstanceIndex)>>(params.p.imm_mode==1u || params.p.imm_mode==2u?1u:0u);
+    uint offset=params.p.attribute_offset[slot]+uint(gl_VertexIndex)*params.p.attribute_stride[slot]+copy*params.p.stream_bytes;
     uint at=offset>>2u,shift=(offset&3u)*8u;
     uvec4 value=uvec4(0u,0u,0u,0x3f800000u);
     for(uint i=0u;i<4u;i++) if(i*4u<bytes) {
