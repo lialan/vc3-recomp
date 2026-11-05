@@ -77,8 +77,10 @@ PIPELINE_ARGS+=("-DCHIHIRO_VULKAN_REQUIRE_PIPELINE_CACHE_SEEDS=${CHIHIRO_VULKAN_
 if [ -n "${CHIHIRO_VULKAN_SPIRV_OPT_DIR:-}" ]; then
     PIPELINE_ARGS+=("-DCHIHIRO_VULKAN_SPIRV_OPT_DIR=$CHIHIRO_VULKAN_SPIRV_OPT_DIR")
 fi
-if [ -n "${CHIHIRO_RENDERER:-}" ]; then
-    PIPELINE_ARGS+=("-DCHIHIRO_RENDERER=$CHIHIRO_RENDERER")
+# CHIHIRO_RENDERER, else the game's RENDERER (game.conf), else the build's default
+R=${CHIHIRO_RENDERER:-${RENDERER:-}}
+if [ -n "$R" ]; then
+    PIPELINE_ARGS+=("-DCHIHIRO_RENDERER=$R")
 fi
 
 # one game per build tree (its libmain.so); vc3's is build-quest
