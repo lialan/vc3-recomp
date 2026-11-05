@@ -41,10 +41,13 @@
 
 /* Gun space: x right, y up, -z along the barrel; the bore on the aim ray. */
 #include "quest_gun_geometry.inc"
+#include "quest_rifle_geometry.inc"
 
 float qo_sight_height(int sight)
 {
     const float *p;
+    if (chihiro_profile()->vr.weapon == CH_VR_RIFLE)
+        return RIFLE_SCOPE_Y;                   /* the scope's axis */
     if (sight < 0 || sight >= QO_SIGHT_COUNT)
         sight = 0;
     p = chihiro_profile()->vr.sight_height;     /* the game's gun, else this one */

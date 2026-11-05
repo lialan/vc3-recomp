@@ -96,6 +96,7 @@
 #include "host_input.h"
 #include "quest_menu.h"
 #include "quest_overlay.h"
+#include "retail_pad.h"
 #include "vr_math.h"
 #include "vr_view.h"
 #include "chihiro/ch_env.h"
@@ -528,6 +529,15 @@ static struct {
     int eye;            /* Vulkan: each eye's picture n x n, 0 native (default); at the next start */
 } s_vr = { QO_SIGHT_RED_DOT, LASER_DOT, 1, 0, 1, 1, 120, 0, 1, 1, 0 };
 static int s_eye_boot;  /* s_vr.eye this run was started with */
+/* The rifle (the profile's weapon; Silent Scope, a retail title on an Xbox
+ * pad): always immersive, its gun always shown (the lens is its only
+ * sight), no sight, laser, coin or arcade-button rows (menu_rows), its own
+ * controls (rifle_frame). */
+static int is_rifle(void)
+{
+    return chihiro_profile()->vr.weapon == CH_VR_RIFLE;
+}
+static float s_zoom = 1.0f;     /* the rifle's zoom, 0.5..4: kept across stages, 1 on Reset game */
 /* The display's own pixels per eye (native_init): what "Native" draws. */
 static uint32_t s_native_w, s_native_h;
 /* The eyes' last immersive frame as drawn, % of their size each way: below
@@ -577,6 +587,10 @@ static void screen_load(void)
     if ((v = vc3_setting_get("vr_eye=")))
         s_vr.eye = atoi(v) >= 256 ? atoi(v) : 0;        /* "native": 0 */
     s_eye_boot = s_vr.eye;
+    if (is_rifle()) {           /* and no rows to change them */
+        s_vr.immersive = 1;
+        s_vr.show_gun = 1;
+    }
 }
 
 static void screen_save(void)
@@ -1830,6 +1844,20 @@ static const int s_rows[] = { M_SCREEN, M_DETAIL, M_REFRESH, M_SIGHT, M_LASER, M
                               M_SERVICE, M_RESET, M_CLOSE };
 #endif
 #define MENU_ROWS ((int)(sizeof s_rows / sizeof s_rows[0]))
+/* The rows shown, n of them: the rifle's without Screen, Sight, Laser, Gun
+ * model, the coins and the arcade buttons. */
+static int menu_rows(int rows[MENU_ROWS])
+{
+    int i, n = 0;
+    for (i = 0; i < MENU_ROWS; i++) {
+        int m = s_rows[i];
+        if (is_rifle() && (m == M_SCREEN || m == M_SIGHT || m == M_LASER || m == M_GUN || m == M_COINS
+                           || m == M_COIN || m == M_TEST || m == M_SERVICE))
+            continue;
+        rows[n++] = m;
+    }
+    return n;
+}
 static struct {
     int open, hover, dirty;
     float c[3], right[3], up[3], n[3], hw, hh;  /* where it hangs, LOCAL metres */
@@ -1865,6 +1893,35 @@ static void controls_items(XmItem *it)
     snprintf(it[4].value, 40, "%s", s_vr.auto_coins ? "Start (with a coin)" : "Start");
     it[8].label = held[0];
     it[9].label = held[1];
+}
+
+/* The rifle's controls page (rifle_frame): the gun hand fires, zooms and
+ * answers the game's menus; the other hand's buttons are as above. */
+#define RIFLE_CTRL_ROWS 10
+static void rifle_controls_items(XmItem *it)
+{
+    static char held[2][24];
+    const int right = s_gun == HAND_R;
+    static const char *const label[RIFLE_CTRL_ROWS] = {
+        "Trigger", "Thumbstick up/down", NULL, "Stick click (either)", "Left menu button",
+        "Other hand trigger", NULL, NULL, "Other hand stick", "Back" };
+    static const char *const value[RIFLE_CTRL_ROWS] = {
+        "Fire", "Zoom (menus: move)", "Confirm / Back", "Start", "Settings panel",
+        "Gun to that hand", "Recentre view", "Settings panel", "Screen distance, size", "" };
+    int i;
+    snprintf(held[0], sizeof held[0], "Other hand %s, held", right ? "X" : "A");
+    snprintf(held[1], sizeof held[1], "Other hand %s, held", right ? "Y" : "B");
+    for (i = 0; i < RIFLE_CTRL_ROWS; i++) {
+        it[i].label = label[i];
+        snprintf(it[i].value, 40, "%s", value[i]);
+    }
+    it[2].label = right ? "A / B" : "X / Y";
+    it[6].label = held[0];
+    it[7].label = held[1];
+}
+static int ctrl_rows(void)
+{
+    return is_rifle() ? RIFLE_CTRL_ROWS : CTRL_ROWS;
 }
 
 static void menu_items(XmItem *it)
@@ -1954,13 +2011,17 @@ static void menu_paint(void)
     XmItem it[M_COUNT], shown[M_COUNT];
     int i;
     if (s_menu.page) {
-        controls_items(shown);
-        xm_paint(img, "Controls", shown, CTRL_ROWS, s_menu.hover, "Point at Back, pull the trigger.");
+        if (is_rifle())
+            rifle_controls_items(shown);
+        else
+            controls_items(shown);
+        xm_paint(img, "Controls", shown, ctrl_rows(), s_menu.hover, "Point at Back, pull the trigger.");
     } else {
+        int rows[MENU_ROWS], n = menu_rows(rows);
         menu_items(it);
-        for (i = 0; i < MENU_ROWS; i++)
-            shown[i] = it[s_rows[i]];
-        xm_paint(img, chihiro_profile()->vr.panel_title, shown, MENU_ROWS, s_menu.hover,
+        for (i = 0; i < n; i++)
+            shown[i] = it[rows[i]];
+        xm_paint(img, chihiro_profile()->vr.panel_title, shown, n, s_menu.hover,
                  "Point, pull the trigger. Menu button: close.");
     }
     dump_ppm("panel.ppm", img, XM_W, XM_H);
@@ -2101,6 +2162,7 @@ static void menu_choose(int item)
             s_menu.reset_armed = 1;
             break;
         }
+        s_zoom = 1.0f;
         vr_save();
         vc3_quest_restart();
         break;
@@ -2123,6 +2185,67 @@ static float s_hit_u = -1, s_hit_v = -1;
 static QoFrame s_qo;
 static XrTime s_shot_t;
 
+/* ── The rifle ────────────────────────────────────────────────────────────
+ * The profile's weapon (Silent Scope: a retail title on an Xbox pad). Its
+ * shot leaves the game's camera, so only the rifle's direction counts: in
+ * the anchor's frame, which the immersive view makes the game camera's GL
+ * view space, steadied, to the game as yaw and pitch every frame (the
+ * profile's vr.rifle; off while the panel is open). The gun hand's trigger
+ * is the pad's right trigger (fire), its A / B (X / Y) the pad's A / B, a
+ * stick click either hand Start; its thumbstick up/down zooms while the
+ * scope picture is up (the newest immersive frame brought one), else is
+ * the d-pad, as left/right always is (retail_pad.c). The grip does
+ * nothing: the game reloads by itself. The other hand is as for VC3
+ * (gun_frame). d: the rifle's direction (LOCAL), NULL when not located. */
+static void rifle_frame(XrTime t, const Frame *f, const float *d, int now[2][5], int was[2][5])
+{
+    static VrSteady steady;
+    static XrTime last_t;
+    ChVrRifle r = { 0 };
+    RetailPadKeys keys;
+    float sticks[2][2], st[2], dt = (float)((double)(t - last_t) / 1e9);
+    int h, buttons = 0;
+    const int scope_on = f && f->vr.imm && s_qo.lens_fresh;
+    if (!last_t || !(dt > 0.0f))
+        dt = 1.0f / 72.0f;      /* the first frame: a display frame's worth */
+    if (dt > 0.1f)
+        dt = 0.1f;              /* back from a pause: no leap in the zoom */
+    last_t = t;
+    for (h = 0; h < 2; h++) {
+        XrVector2f v = act_vec2(a_stick_xy, h);
+        sticks[h][0] = v.x;
+        sticks[h][1] = v.y;
+    }
+    retail_pad_stick(s_gun, sticks, st);
+    if (scope_on && !s_menu.open)
+        s_zoom = vr_zoom_step(s_zoom, st[1], dt);
+    if (d) {
+        float ld[3], aim[3];
+        yaw_rot(-s_anchor_yaw, d, ld);
+        vr_steady(&steady, ld, dt, s_zoom, aim);
+        vr_aim_angles(aim, &r.yaw, &r.pitch);
+        r.on = !s_menu.open;
+    }
+    r.zoom = s_zoom;
+    if (chihiro_profile()->vr.rifle)
+        chihiro_profile()->vr.rifle(&r);
+
+    if (now[s_gun][0])
+        buttons |= RETAIL_PAD_TRIGGER;
+    if (now[s_gun][1])
+        buttons |= RETAIL_PAD_A;
+    if (now[s_gun][2])
+        buttons |= RETAIL_PAD_B;
+    if (now[0][3] || now[1][3])
+        buttons |= RETAIL_PAD_START;
+    if (s_menu.open)
+        buttons |= RETAIL_PAD_PANEL;
+    retail_pad_map(buttons, st[0], st[1], scope_on, &keys);
+    retail_pad_apply(&keys);
+    if (keys.rt && !was[s_gun][0])
+        rumble(s_gun, 0.8f, 25);
+}
+
 static void gun_frame(XrTime t, const Frame *f)
 {
     static int was[2][5], was_menu, was_start;
@@ -2136,6 +2259,7 @@ static void gun_frame(XrTime t, const Frame *f)
     int buttons = 0, h, off, now[2][5], menu_btn, start, coin, on_screen = 0;
     float o[3], d[3];
     int located = 0;
+    const int rifle = is_rifle();
 
     static int fake_gun = -1;   /* VC3_XR_FAKE_GUN=1: test runs, nobody holding anything */
     if (fake_gun < 0)
@@ -2320,11 +2444,14 @@ static void gun_frame(XrTime t, const Frame *f)
                              || (s_vr.laser == LASER_DOT && s_vr.sight == QO_SIGHT_IRON));
     s_qo.sight = s_vr.sight;
     s_qo.show_gun = s_vr.show_gun;
+    if (rifle)                  /* the lens is its sight */
+        s_qo.beam = s_qo.dot = 0;
 
     if (s_menu.open) {          /* the gun points at the panel; the game sees nothing */
         float u, v, hit[3];
+        int rows[MENU_ROWS], nrows = menu_rows(rows);
         int on = located && menu_hit(o, d, &u, &v, hit);
-        int row = on ? xm_row_at(u, v, s_menu.page ? CTRL_ROWS : MENU_ROWS) : -1;
+        int row = on ? xm_row_at(u, v, s_menu.page ? ctrl_rows() : nrows) : -1;
         if (row != s_menu.hover) {
             s_menu.hover = row;
             s_menu.dirty = 1;
@@ -2333,19 +2460,19 @@ static void gun_frame(XrTime t, const Frame *f)
             memcpy(s_qo.end, hit, sizeof hit);
         s_qo.beam = 1;
         s_qo.dot = on;
-        if (now[s_gun][0] && !was[s_gun][0] && s_menu.page && row == CTRL_ROWS - 1) {
+        if (now[s_gun][0] && !was[s_gun][0] && s_menu.page && row == ctrl_rows() - 1) {
             s_menu.page = 0;            /* Back */
             s_menu.hover = -1;
             s_menu.dirty = 1;
             rumble(s_gun, 0.25f, 15);
         } else if (now[s_gun][0] && !was[s_gun][0] && !s_menu.page && row >= 0) {
-            menu_choose(s_rows[row]);
+            menu_choose(rows[row]);
             rumble(s_gun, 0.25f, 15);
         }
         if (s_menu.dirty)
             menu_paint();
         ux = uy = -1;
-    } else {
+    } else if (!rifle) {
         /* Trigger: a shot; with the gun off the screen, a reload. Grip too. */
         if (now[s_gun][0])
             buttons |= ux < 0 ? VC3_VR_RELOAD : VC3_VR_FIRE;
@@ -2406,7 +2533,10 @@ static void gun_frame(XrTime t, const Frame *f)
             fprintf(stderr, "[aim host] located %d imm %d aim %d %d,%d ux %.3f uy %.3f\n", located,
                     f && f->vr.imm, aim_on, aim_x, aim_y, ux, uy);
     }
-    vc3_input_vr(ux, uy, buttons);
+    if (rifle)
+        rifle_frame(t, f, located ? d : NULL, now, was);
+    else
+        vc3_input_vr(ux, uy, buttons);
 
     /* The other hand's thumbstick moves the screen. */
     {

@@ -27,7 +27,8 @@ typedef struct {
 
 int  qo_init(void);
 /* Gun space (x right, y up, -z the barrel; origin the aim pose): the line the
- * sight looks along lies this far above the bore, and the muzzle is here. */
+ * sight looks along lies this far above the bore (the rifle's: its scope's
+ * axis, whatever the sight), and the muzzle is here. */
 float qo_sight_height(int sight);
 void  qo_muzzle(float out[3]);
 

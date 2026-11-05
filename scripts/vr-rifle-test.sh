@@ -12,3 +12,4 @@ run() {  # run <test.c> [more sources...], paths relative to the repo root
     "$bin"
 }
 run tests/vr_rifle_test.c runtime/src/host/vr_rifle.c
+run tests/retail_pad_test.c runtime/src/host/retail_pad.c
