@@ -20,6 +20,7 @@ set(rt_sources
     src/host/host_input.c
     src/host/display_settings.c
     src/host/recomp_diag.c
+    src/host/vr_rifle.c
     )
 if(CHIHIRO_RENDERER STREQUAL "vulkan")
     list(APPEND rt_sources src/gpu/vulkan/vk_runtime.c)
