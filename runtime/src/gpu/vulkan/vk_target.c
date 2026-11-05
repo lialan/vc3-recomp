@@ -2101,6 +2101,8 @@ fail:
     if(pass) vkDestroyRenderPass(device,pass,NULL);
     return result;
 }
+static int spawn_compiler(pthread_t *thread,void *(*run)(void *));
+
 static void *recipe_worker(void *arg) {
     (void)arg;
     for(;;) {
@@ -2145,7 +2147,7 @@ VkResult ch_vk_target_recipes_start(VkDevice device,VkPipelineCache cache,const 
     if(!s_recipes.count) threads=0;
     s_recipes.threads_n=0;
     for(unsigned i=0;i<threads;i++) {
-        if(pthread_create(&s_recipes.threads[i],NULL,recipe_worker,NULL)) break;
+        if(spawn_compiler(&s_recipes.threads[i],recipe_worker)) break;
         s_recipes.threads_n++;
     }
     fprintf(stderr,"[Vulkan pipelines] %zu recipes from %s%s, precompiling on %u threads\n",s_recipes.count,path,
@@ -2192,6 +2194,20 @@ static struct {
     pthread_t thread;int started,stop;
     unsigned built,generic,left_out;
 } s_async={.lock=PTHREAD_MUTEX_INITIALIZER,.wake=PTHREAD_COND_INITIALIZER};
+/* A pipeline compiler's thread. Its stack is 16 MB, not the default (512 KB
+ * on macOS): MoltenVK translates SPIR-V to MSL in SPIRV-Cross on the calling
+ * thread, recursing through the control flow graph, and on the generic
+ * vertex-program shader that overflowed 512 KB (Silent Scope, stage 1). */
+static int spawn_compiler(pthread_t *thread,void *(*run)(void *)) {
+    pthread_attr_t attr;
+    int r;
+    if(pthread_attr_init(&attr)) return pthread_create(thread,NULL,run,NULL);
+    pthread_attr_setstacksize(&attr,16u<<20);
+    r=pthread_create(thread,&attr,run,NULL);
+    pthread_attr_destroy(&attr);
+    return r;
+}
+
 static void *async_worker(void *arg) {
     (void)arg;
     pthread_mutex_lock(&s_async.lock);
@@ -2234,7 +2250,7 @@ static int pipeline_async(const ChVkTarget *t,PipelineKey *key) {
     for(unsigned i=0;i<s_async.pending_n;i++) if(s_async.pending[i]==id) {queued=1;break;}
     if(!queued) {
         if(s_async.pending_n==ASYNC_QUEUE || s_async.count==ASYNC_QUEUE ||
-           (!s_async.started && pthread_create(&s_async.thread,NULL,async_worker,NULL))) {
+           (!s_async.started && spawn_compiler(&s_async.thread,async_worker))) {
             pthread_mutex_unlock(&s_async.lock);return 0;
         }
         s_async.started=1;

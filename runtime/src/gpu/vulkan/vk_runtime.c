@@ -456,6 +456,25 @@ int ch_vk_runtime_start(void)
     VkApplicationInfo app={.sType=VK_STRUCTURE_TYPE_APPLICATION_INFO,
         .pApplicationName="Chihiro direct Vulkan",.apiVersion=VK_API_VERSION_1_0};
     VkInstanceCreateInfo info={.sType=VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,.pApplicationInfo=&app};
+#if defined(__APPLE__)
+    /* MoltenVK is a portability implementation: the loader lists it only for
+     * an instance that asks for portability devices. (KosmicKrisp is a
+     * conformant driver and is listed either way.) */
+    const char *instance_extensions[1];
+    {
+        uint32_t n=0;
+        VkExtensionProperties *p=NULL;
+        if(vkEnumerateInstanceExtensionProperties(NULL,&n,NULL)==VK_SUCCESS && n && (p=calloc(n,sizeof *p)) &&
+           vkEnumerateInstanceExtensionProperties(NULL,&n,p)==VK_SUCCESS)
+            for(uint32_t i=0;i<n;i++) if(!strcmp(p[i].extensionName,"VK_KHR_portability_enumeration")) {
+                instance_extensions[0]="VK_KHR_portability_enumeration";
+                info.enabledExtensionCount=1;info.ppEnabledExtensionNames=instance_extensions;
+                info.flags|=0x00000001u;   /* VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR */
+                break;
+            }
+        free(p);
+    }
+#endif
     result=vkCreateInstance(&info,NULL,&runtime.instance);
     if(result!=VK_SUCCESS) goto fail;
     uint32_t count=0;
@@ -490,9 +509,24 @@ int ch_vk_runtime_start(void)
     float priority=1;
     VkDeviceQueueCreateInfo queue_info={.sType=VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
         .queueFamilyIndex=family,.queueCount=1,.pQueuePriorities=&priority};
-    const char *device_extensions[4];uint32_t device_extension_count=0;ChVkShaderFeatures shader_features;
+    const char *device_extensions[5];uint32_t device_extension_count=0;ChVkShaderFeatures shader_features;
     int ubo_layout=ch_vk_shader_features(physical,&shader_features,device_extensions,&device_extension_count,4);
     if(!ubo_layout) {enabled.shaderClipDistance=VK_FALSE;}   /* no GPU transforms (raw_fixed) */
+#if defined(__APPLE__)
+    {
+        /* A portability device (MoltenVK) must be created with its subset
+         * extension enabled. */
+        uint32_t n=0;
+        VkExtensionProperties *p=NULL;
+        if(vkEnumerateDeviceExtensionProperties(physical,NULL,&n,NULL)==VK_SUCCESS && n && (p=calloc(n,sizeof *p)) &&
+           vkEnumerateDeviceExtensionProperties(physical,NULL,&n,p)==VK_SUCCESS)
+            for(uint32_t i=0;i<n;i++) if(!strcmp(p[i].extensionName,"VK_KHR_portability_subset")) {
+                device_extensions[device_extension_count++]="VK_KHR_portability_subset";
+                break;
+            }
+        free(p);
+    }
+#endif
     VkDeviceCreateInfo device_info={.sType=VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,.pNext=&shader_features.ubo_layout,
         .queueCreateInfoCount=1,.pQueueCreateInfos=&queue_info,.pEnabledFeatures=&enabled,
         .enabledExtensionCount=device_extension_count,.ppEnabledExtensionNames=device_extensions};
