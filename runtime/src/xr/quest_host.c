@@ -2246,6 +2246,19 @@ static void rifle_frame(XrTime t, const Frame *f, const float *d, int now[2][5],
         rumble(s_gun, 0.8f, 25);
 }
 
+/* No controllers to read (the session not focused, or the sync failed):
+ * every pad key released and the rifle off, its zoom kept for when they
+ * come back -- the game runs on meanwhile. */
+static void rifle_release(void)
+{
+    static const RetailPadKeys none = { 0 };
+    ChVrRifle r = { 0 };
+    r.zoom = s_zoom;
+    retail_pad_apply(&none);
+    if (chihiro_profile()->vr.rifle)
+        chihiro_profile()->vr.rifle(&r);
+}
+
 static void gun_frame(XrTime t, const Frame *f)
 {
     static int was[2][5], was_menu, was_start;
@@ -2268,8 +2281,11 @@ static void gun_frame(XrTime t, const Frame *f)
     sy.countActiveActionSets = 1;
     sy.activeActionSets = &as;
     /* (with nobody wearing the headset the sync fails: the fake gun goes on, no buttons) */
-    if (XR_FAILED(xrSyncActions(s_sess, &sy)) && !fake_gun)
+    if (XR_FAILED(xrSyncActions(s_sess, &sy)) && !fake_gun) {
+        if (rifle)
+            rifle_release();
         return;
+    }
     for (h = 0; h < 2; h++) {
         now[h][0] = act_float(a_trigger, h) > 0.55f;
         now[h][1] = act_bool(a_lower, h);
@@ -3146,8 +3162,11 @@ static void xr_frame(void)
         fake_gun = ch_env("XR_FAKE_GUN") && *ch_env("XR_FAKE_GUN") == '1';
     if (s_state == XR_SESSION_STATE_FOCUSED || (fake_gun && s_state == XR_SESSION_STATE_VISIBLE))
         gun_frame(fs.predictedDisplayTime, f);
-    else
+    else {
         s_qo.gun_valid = 0;
+        if (is_rifle())
+            rifle_release();
+    }
 #ifdef CHIHIRO_RENDERER_VULKAN
     vk_test_dump(f);
 #endif

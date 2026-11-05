@@ -141,6 +141,28 @@ static void apply_presses_on_change(void)
     s_ncalls = 0;
     retail_pad_apply(&none);
     CHECK(s_ncalls == 2);
+    /* everything held, then all released (the headset losing focus): each
+     * key released exactly once, and nothing more after */
+    for (int i = 0; i < n; i++)
+        *(int *)((char *)&k + want[i].off) = 1;
+    s_ncalls = 0;
+    retail_pad_apply(&k);
+    CHECK(s_ncalls == n);
+    s_ncalls = 0;
+    retail_pad_apply(&none);
+    CHECK(s_ncalls == n);
+    for (int i = 0; i < n; i++) {
+        int seen = 0;
+        for (int c = 0; c < s_ncalls && c < 64; c++)
+            if (s_calls[c].vk == want[i].vk) {
+                seen++;
+                CHECK(s_calls[c].down == 0);
+            }
+        CHECK(seen == 1);
+    }
+    s_ncalls = 0;
+    retail_pad_apply(&none);
+    CHECK(s_ncalls == 0);
 }
 
 int main(void)
