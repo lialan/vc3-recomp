@@ -15,21 +15,14 @@ shareable goes into the runtime.
 
 ## What we have (checked 2026-11-06)
 
-**Game files.** The NAS has only MAME's arcade set: `roms/hotd3/gdx-0001.chd`
-(the encrypted GD-ROM; its SHA-1 matches MAME's) and `hotd3.zip` (80 bytes of
-security-chip data, `317-0348-com.data`). There's no decrypted repack like
-VC3's and no Xbox retail copy. The image is decrypted the way MAME's DIMM board
-does it:
-
-1. `chdman extractcd` (Homebrew `rom-tools`) unpacks the tracks; track 3
-   starts at sector 45000.
-2. The chip data names `BFN.BIN`, which points to `HOD3AC_S.BIN` (374 MB), and
-   gives its DES key.
-3. Decrypting that file 8 bytes at a time with MAME's DES code
-   (`naomigd.cpp`) gives a FATX volume. Its FAT is sized for a 512 MB volume,
-   so the data starts at 0x11000.
-
-The result is in `~/Downloads/VR/HOTD3/extracted/`: 36 files, 356 MB.
+**Game files.** The one source is the same place VC3's files came from: the
+Batocera v43 image on the NAS (`LGL TPN Batocera v43_final.img`, user data
+partition, `roms/chihiro/House Of the Dead 3.squashfs`, 331 MB, SHA-1
+`fa565ee9…7cdc`), the "Xbox-compatible" repack. It's copied to
+`~/Downloads/VR/HOTD3/rom/` and unpacked with `unsquashfs` to
+`~/Downloads/VR/HOTD3/extracted/`: 36 files, 356 MB. No other version is used.
+(MAME's `gdx-0001` disc, decrypted, gives byte-identical files; it was checked
+once and deleted.)
 
 | File | What it is |
 |---|---|
@@ -49,7 +42,7 @@ ADJUSTMENT, and TDATA/UDATA storage.
 
 **Known differences from VC3:**
 - The game reads `d:\firmware.bin` and `d:\firmware2.bin` (baseboard
-  firmware), which this disc image lacks; VC3's repack had them. The runtime
+  firmware), which this repack lacks; VC3's had them. The runtime
   already stubs the upload (`baseboard.c`); the file reads need stubbing too,
   or harmless stand-ins.
 - XDK 4831's D3D differs from 5028's, so the D3D fence wait, device pointer,
@@ -69,22 +62,15 @@ ADJUSTMENT, and TDATA/UDATA storage.
 - **Mac on the Vulkan back end**, the renderer the headsets use, so GPU work
   carries over.
 - Re-lift with the current lifter before every build and test. No game data,
-  decrypted images or lifted code in git.
+  repacks or lifted code in git.
 - **Git:** commit straight to `main` at each milestone, push; toolkit changes on
   the toolkit's `vc3` branch, pushed first. The Quest isn't touched.
-
-## Phase 0: reproducible game files
-
-- Add the two tools I used to the repo, `tools/chihiro_gd/gd_decrypt.cpp` (MAME's
-  DES, BSD-3, credited) and `tools/chihiro_gd/fatx_extract.py`, plus
-  `scripts/hotd3-files.sh`, which goes from the CHD and chip data to the
-  `extracted/` folder and checks the XBE's SHA-256.
-- *Done when:* a clean run of the script reproduces the same `extracted/` tree.
 
 ## Phase 1: analyse and lift
 
 1. Create `games/hotd3/`, modelled on `games/vc3/`:
-   - `game.conf`: `XBE=hod3xb.xbe`, its SHA-256, `ENV_PREFIX=HOTD3`,
+   - `game.conf`: `XBE=hod3xb.xbe`, its SHA-256 (`89a0e777…71de`, so
+     `lift.sh` refuses any other version), `ENV_PREFIX=HOTD3`,
      `GAME_DIR_DEFAULT=~/Downloads/VR/HOTD3/extracted`, `LIFT_FLAGS=--reg-cache`;
    - `src/game.c`: a Chihiro profile, starting from VC3's;
    - `src/recomp_manual.c` and an empty `seed_functions.json`.
