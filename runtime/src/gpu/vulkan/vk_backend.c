@@ -20,7 +20,7 @@ typedef struct {uint64_t pipeline_ns,batch_wait_ns,batch_gpu_ns,upload_wait_ns;
     uint64_t batch_submit_ns,batch_record_ns,batch_retire_ns,batch_submissions,batch_draws;
     uint64_t sync_render_submissions,sync_render_gpu_ns,sync_render_host_ns;
     uint64_t depth_copy_ns,depth_copy_calls;} FrameCosts;
-struct ChVkBackend { ChVkFixedScratch raw_scratch; struct {int enabled;uint64_t completion_us,completion_cpu_ns,completion_calls,prepare_us,prepare_cpu_ns;uint64_t draw_cpu_ns,clear_cpu_ns,flip_cpu_ns,trim_cpu_ns,eye_us,eye_cpu_ns,surface_flushes;uint64_t draw_us,clear_us,flip_us,trim_us,surface_us,coherence_us,imports_us,raster_us,store_us,texture_uploads;FrameCosts retired,previous;} costs; VkPipelineCache pipeline_cache; struct {int enabled;uint64_t start,n,surface,coherence,imports,draw,store,no_color,flushes,depth_flushes,paired_flushes;} profile; struct {int enabled;uint64_t previous,us[120];unsigned count;} frame_profile; ChVkBackendConfig host; ChVkTextureCache *textures; ChVkDepthResident *zeta; ChVkImmersive *imm; ChVkWide *wide; int wide_on; uint64_t raw_compact_batches,raw_snapshot_bytes,raw_expanded_bytes; uint64_t color_snapshot_copy_bytes_saved,unchanged_color_draws,unchanged_depth_draws,early_color_reads,clear_color_imports_avoided,clear_color_bytes_avoided; uint64_t frames,raw_draws,raw_programs,raw_program_vertices,raw_declined,color_clock,cpu_batches,cpu_vertices,cpu_texels,cpu_texture_us,cpu_color_pixels,cpu_color_us,cpu_depth_pixels; struct Surface surfaces[MAX_SURFACES]; unsigned count; };
+struct ChVkBackend { ChVkFixedScratch raw_scratch; struct {int enabled;uint64_t completion_us,completion_cpu_ns,completion_calls,prepare_us,prepare_cpu_ns;uint64_t draw_cpu_ns,clear_cpu_ns,flip_cpu_ns,trim_cpu_ns,eye_us,eye_cpu_ns,surface_flushes;uint64_t draw_us,clear_us,flip_us,trim_us,surface_us,coherence_us,imports_us,raster_us,store_us,texture_uploads;FrameCosts retired,previous;} costs; VkPipelineCache pipeline_cache; struct {int enabled;uint64_t start,n,surface,coherence,imports,draw,store,no_color,flushes,depth_flushes,paired_flushes;} profile; struct {int enabled;uint64_t previous,us[120];unsigned count;} frame_profile; ChVkBackendConfig host; ChVkTextureCache *textures; ChVkDepthResident *zeta; ChVkImmersive *imm; ChVkWide *wide; int wide_on; uint64_t raw_compact_batches,raw_snapshot_bytes,raw_expanded_bytes; uint64_t color_snapshot_copy_bytes_saved,unchanged_color_draws,unchanged_depth_draws,early_color_reads,clear_color_imports_avoided,clear_color_bytes_avoided; uint64_t frames,raw_draws,raw_programs,raw_program_vertices,raw_declined,color_clock,cpu_batches,cpu_vertices,cpu_texels,cpu_texture_us,cpu_color_pixels,cpu_color_us,cpu_depth_pixels; struct Surface surfaces[MAX_SURFACES]; unsigned count; uint32_t flip_big_va; uint64_t flip_big_area; };
 static ChVkBackend *active;
 static int imm_skip_guest=-1;
 static int skip_guest(void) {
@@ -712,8 +712,16 @@ static void import_depth(struct Surface *f,int overwrite) {
     if(r==VK_SUCCESS) r=ch_vk_target_write_depth_stencil(f->target,f->depth,f->stencil,f->bytes/4);
     if(r!=VK_SUCCESS) fatal(r,"guest depth import");
 }
+/* The largest target drawn or cleared since the last flip, the latest of
+ * equals (immersive draws that skip the guest surface included): which
+ * buffer a flip finished (CHIHIRO_VULKAN_PRESENT_SCREEN, in flip). */
+static void note_target(const Nv2aSurface *s) {
+    uint64_t a=(uint64_t)(s->width/(s->aa_sx?s->aa_sx:1))*(s->height/(s->aa_sy?s->aa_sy:1));
+    if(a && a>=active->flip_big_area) {active->flip_big_area=a;active->flip_big_va=s->color_va;}
+}
 static void clear(const Nv2aSurface *s,const Nv2aRenderState *rs,uint32_t flags,uint32_t argb,uint32_t zs) {
     Nv2aSurface narrowed;s=narrow_surface(s,rs,&narrowed);
+    note_target(s);
     configure_render_thread();
     /* Skipped guest draws (immersive): the eyes take the clear alone. */
     const Nv2aSurface *at=active->imm && ch_vk_immersive_on(active->imm)?landing(s,rs):s;
@@ -759,6 +767,7 @@ static void draw_batch(const Nv2aSurface *s,const Nv2aBatch *b,const ChVkFixedGe
      * still carry an unset format/pitch; no image or guest memory is touched.
      * Pending earlier work remains ordered by the normal fence/flip path. */
     if(!s->width || !s->height) return;
+    note_target(s);
     if(!fixed) {active->cpu_batches++;active->cpu_vertices+=b->count;}
     /* An immersive frame's screen-shaped surfaces only feed the eyes; their
      * own draws would go unseen, so they are not drawn (half the draws, and
@@ -996,23 +1005,44 @@ static void flip(void) {
          * shown before shows that screen surface again -- the console's
          * display stays where it was. Silent Scope 2 flips ~300 times a
          * second, many with only its 256x256 scope views drawn since the
-         * last; the toolkit's guess (the largest surface drawn) then named
-         * a scope view, and it replaced the picture. */
+         * last; the toolkit's guess (the surface last drawn) then named a
+         * scope view, and it replaced the picture.
+         * Not always the one shown before, though: Silent Scope 2 draws its
+         * frames into two back buffers in turn (801B0000, 80084000 in Story)
+         * and the scope view last, so every second flip named the scope and
+         * the previous buffer was shown again -- 15 frames a second of its
+         * 30, on the desktop and in the headset. The largest target drawn
+         * since the last flip (note_target: immersive draws that skip the
+         * guest surface count too) is the frame when it is screen-sized; the
+         * one shown before only when none was. */
         static int screen_only=-1;
         static uint32_t screen_va;
         static uint64_t screen_area;
         if(screen_only<0) {const char *e=getenv("CHIHIRO_VULKAN_PRESENT_SCREEN");screen_only=e && atoi(e);}
         /* Sizes are logical: real pixels over the anti-aliasing factor. */
+#define LOGICAL_AREA(g) ((uint64_t)((g)->width/((g)->aa_sx?(g)->aa_sx:1))*((g)->height/((g)->aa_sy?(g)->aa_sy:1)))
         for(unsigned i=0;screen_only && presented && i<active->count;i++) {
             const Nv2aSurface *g=&active->surfaces[i].guest;
             if(g->color_va!=presented) continue;
-            uint64_t area=(uint64_t)(g->width/(g->aa_sx?g->aa_sx:1))*(g->height/(g->aa_sy?g->aa_sy:1));
+            uint64_t area=LOGICAL_AREA(g);
             int screen_alive=0;
             for(unsigned j=0;screen_va && j<active->count;j++) screen_alive|=active->surfaces[j].guest.color_va==screen_va;
-            if(area>=screen_area || !screen_alive) {screen_area=area;screen_va=presented;}
-            else presented=screen_va;
+            if(area>=screen_area || !screen_alive) {screen_area=area;screen_va=presented;break;}
+            uint32_t drawn=0;
+            for(unsigned j=0;active->flip_big_va && j<active->count;j++)
+                if(active->surfaces[j].guest.color_va==active->flip_big_va && LOGICAL_AREA(&active->surfaces[j].guest)>=screen_area)
+                    drawn=active->flip_big_va;
+            if(drawn && drawn!=screen_va) {
+                static unsigned logged;
+                if(logged++<4) fprintf(stderr,"[Vulkan] flip %llu: %08X named, smaller than the screen; %08X drawn since the last flip "
+                    "shown (not %08X again)\n",(unsigned long long)active->frames,presented,drawn,screen_va);
+                screen_va=drawn;
+            }
+            presented=screen_va;
             break;
         }
+#undef LOGICAL_AREA
+        active->flip_big_va=0;active->flip_big_area=0;
     }
     if(presented) {
         /* A flip before anything was drawn there (Silent Scope 3's first,
