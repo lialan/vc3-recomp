@@ -33,8 +33,14 @@ void nv2a_pb_set_semaphore_target(uint32_t guest_va);
 void nv2a_pb_set_semaphore_resolver(uint32_t (*resolve)(void));
 
 /* g_pDevice, KickOff and its return address: the profile's d3d block */
-#define DEV_WRITE_TIME   0x2C          /* newest fence time */
-#define DEV_SEMAPHORE    0x30          /* -> GPU's progress */
+/* The device's newest fence time and its pointer to the GPU's progress: the
+ * profile's offsets, else XDK 5028's and 5558's (4831 keeps them 4 on) */
+static uint32_t dev_off(uint32_t profile_off, uint32_t fallback)
+{
+    return profile_off ? profile_off : fallback;
+}
+#define DEV_WRITE_TIME   dev_off(chihiro_profile()->d3d.dev_time, 0x2C)
+#define DEV_SEMAPHORE    dev_off(chihiro_profile()->d3d.dev_semaphore, 0x30)
 #define WAIT_BOUND_NS    250000000ull
 #define STRICT_WAIT_BOUND_NS 30000000000ull
 

@@ -76,6 +76,10 @@ typedef struct ChihiroProfile {
         uint32_t kickoff_ret;       /* the return address BlockOnTime's KickOff call pushes */
         void (*kickoff)(void);      /* KickOff(0), the lifted function */
         uint32_t xlaunch;           /* XLaunchNewImage, replaced: a relaunch */
+        /* Where the device keeps its newest fence time and its pointer to
+         * the GPU's progress (0: XDK 5028's and 5558's 0x2C and 0x30;
+         * XDK 4831 -- House of the Dead III -- keeps them at 0x30, 0x34) */
+        uint32_t dev_time, dev_semaphore;
         /* The device made without anti-aliasing (the game wraps its
          * Direct3D_CreateDevice with chihiro_d3d_create_device): it draws at
          * its own size, as the renderer's screen-shaped surfaces expect */

@@ -2,7 +2,7 @@
 """Map Chihiro hardware strings (JVS, media board, baseboard) to the functions
 that reference them, so the HLE layer knows which guest addresses to replace.
 
-Usage: find_chihiro_syms.py <vc3.xbe> <analysis/out dir> [regex]
+Usage: find_chihiro_syms.py <game.xbe> <games/<id>/analysis dir> [regex]
 """
 import json
 import re
@@ -21,9 +21,16 @@ def load_image(xbe_path):
     secs = []
     for i in range(nsec):
         off = sec_hdr - base + i * 56
-        _, va, vsize, raw, rsize = struct.unpack_from("<IIIII", data, off)
-        secs.append((va, vsize, data[raw:raw + rsize]))
+        _, va, vsize, raw, rsize, name_va = struct.unpack_from("<IIIIII", data, off)
+        name_off = name_va - base
+        name = data[name_off:data.index(b"\0", name_off)].decode("latin-1")
+        secs.append((va, vsize, data[raw:raw + rsize], name))
     return secs
+
+
+# Sections that hold data, not code: the string references are searched for
+# in every other section (.text and the libraries: D3D, XPP, ...).
+DATA_SECTIONS = {".rdata", ".data", ".data1", ".rodata", ".bss"}
 
 
 def main():
@@ -31,7 +38,7 @@ def main():
     pattern = re.compile(sys.argv[3], re.I) if len(sys.argv) > 3 else PATTERN
     secs = load_image(xbe)
     strings = {}
-    for sva, _, raw in secs:
+    for sva, _, raw, _ in secs:
         for m in re.finditer(rb"[\x20-\x7e]{4,}", raw):
             txt = m.group().decode()
             if pattern.search(txt):
@@ -43,7 +50,7 @@ def main():
     # Any 4-byte little-endian occurrence of a string address in a code
     # section counts: it also catches code the disassembler never reached.
     refs = {}  # string addr -> set of function starts (or -site for orphans)
-    code = [(va, raw) for va, _, raw in secs if va < 0x140200]
+    code = [(va, raw) for va, _, raw, name in secs if name not in DATA_SECTIONS]
     for saddr in strings:
         needle = struct.pack("<I", saddr)
         for va, raw in code:
