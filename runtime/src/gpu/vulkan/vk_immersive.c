@@ -49,7 +49,8 @@ struct ChVkImmersive {
      * the last flip; the log's count of frames handed over with it, a second */
     uint32_t lens_va; int lens_drawn; unsigned lens_fresh,lens_frames; uint64_t lens_log_ns;
     /* Its copy at config.lens_scale (lens_copy()): drawn into this frame;
-     * draws without prepared GPU geometry, not copied (counted) */
+     * draws without prepared GPU geometry or raw geometry, not copied
+     * (counted: the log's "draws not copied") */
     ChVkTarget *lens_copy; unsigned char *lens_pixels; uint32_t lens_w,lens_h; int lens_copied;
     uint64_t lens_skipped;
 };
@@ -386,8 +387,8 @@ static void trace_draw(const ChVkImmersive *m,const Nv2aSurface *s,const Nv2aBat
 VkResult ch_vk_immersive_draw(ChVkImmersive *m,const Nv2aSurface *s,const Nv2aBatch *b,
     const ChVkFixedGeometry *fixed,ChVkSampleResolver resolve,void *context) {
     if(m && s && m->lens_va && s->color_va==m->lens_va) m->lens_drawn=1;
-    if(b && b->state && b->raw && lens_copied_surface(m,s)) {
-        if(!fixed) m->lens_skipped++;
+    if(b && b->state && lens_copied_surface(m,s)) {
+        if(!fixed || !b->raw) m->lens_skipped++;
         else {
             VkResult r=lens_copy(m,s);if(r!=VK_SUCCESS) return r;
             Nv2aBatch copy=*b;copy.zpass_out=NULL;
@@ -689,10 +690,10 @@ VkResult ch_vk_immersive_flip(ChVkImmersive *m,uint32_t presented,const Vc3VrVie
         uint64_t now=mono_ns();
         if(now-m->lens_log_ns>=1000000000ull) {
             fprintf(stderr,"[immersive] frame %llu lens %08X: fresh in %u of %u frames (%ux%u, %llu draws not copied); "
-                "drawn at yaw %.3f pitch %.3f deg, focal %.3f, guard %.2f\n",
+                "drawn at yaw %.3f pitch %.3f deg, focal %.3f, guard %.2f, follow %d\n",
                 (unsigned long long)m->frames,m->lens_va,m->lens_fresh,m->lens_frames,out->lens_w,out->lens_h,
                 (unsigned long long)m->lens_skipped,out->lens_aim.yaw*57.29578f,out->lens_aim.pitch*57.29578f,
-                out->lens_aim.focal,out->lens_aim.guard);
+                out->lens_aim.focal,out->lens_aim.guard,out->lens_aim.follow);
             m->lens_log_ns=now;m->lens_fresh=m->lens_frames=0;
         }
     }

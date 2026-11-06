@@ -26,8 +26,9 @@ float vr_zoom_step(float zoom, float stick_y, float dt);
  * picture, v down) and half size h = 0.5 / guard -- where the aim is now in
  * the picture, so the lens's centre shows it -- kept inside the picture.
  * Returns 1 when that meant clamping it to the edge. No aim known (guard
- * < 1, focal <= 0, anything not finite): the whole picture, 0; yaw or
- * pitch not finite: the centre crop, 0. */
+ * < 1, focal <= 0, anything not finite): the whole picture, 0; a picture
+ * the rifle did not aim (a->follow 0), or yaw or pitch not finite: the
+ * centre crop, 0. */
 int vr_lens_crop(const VrLensAim *a, float yaw, float pitch, float out[3]);
 
 #endif

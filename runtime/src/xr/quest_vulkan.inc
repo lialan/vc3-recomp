@@ -510,7 +510,8 @@ static void vk_lens_crop(void)
     static uint64_t since;
     static int log=-1;
     if(log<0) log=ch_env("XR_LENS_LOG") && *ch_env("XR_LENS_LOG")=='1';
-    const int known=s_qo.lens_fresh && s_vk_lens_aim.guard>=1;
+    /* the rifle aimed the picture (no reticle in it): the lens follows it */
+    const int known=s_qo.lens_fresh && s_vk_lens_aim.guard>=1 && s_vk_lens_aim.follow;
     const int c=vr_lens_crop(&s_vk_lens_aim,s_rifle_aim_ok?s_rifle_yaw:NAN,s_rifle_aim_ok?s_rifle_pitch:NAN,s_qo.lens_crop);
     s_qo.lens_cross=known;
     if(!known) return;

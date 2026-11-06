@@ -159,7 +159,7 @@ static void zoom_step_range(void)
 
 static void lens_crop_still(void)
 {
-    const VrLensAim a = {0.3f, -0.1f, LENS_F, LENS_G};
+    const VrLensAim a = {0.3f, -0.1f, LENS_F, LENS_G, 1};
     float c[3];
     CHECK(vr_lens_crop(&a, 0.3f, -0.1f, c) == 0);
     NEAR(c[0], 0.5, 1e-6); NEAR(c[1], 0.5, 1e-6); NEAR(c[2], 0.5 / LENS_G, 1e-6);
@@ -169,7 +169,7 @@ static void lens_crop_still(void)
  * at that edge, not past it; right moves it right, up moves it up (v down). */
 static void lens_crop_half_guard(void)
 {
-    const VrLensAim a = {0, 0, LENS_F, LENS_G};
+    const VrLensAim a = {0, 0, LENS_F, LENS_G, 1};
     const double h = 0.5 / LENS_G, band = 0.5 - h, d = atan(band / LENS_F);
     float c[3];
     vr_lens_crop(&a, (float)d, 0, c);
@@ -188,7 +188,7 @@ static void lens_crop_half_guard(void)
 /* A fast swing past the band: clamped to the edge, never outside [0, 1] */
 static void lens_crop_clamps(void)
 {
-    const VrLensAim a = {0.2f, 0.1f, LENS_F, LENS_G};
+    const VrLensAim a = {0.2f, 0.1f, LENS_F, LENS_G, 1};
     const float turns[6][2] = {{0.8f, 0.1f}, {-0.6f, 0.1f}, {0.2f, 0.9f}, {0.2f, -0.7f}, {1.2f, -0.9f}, {3.3f, 0.1f}};
     float c[3];
     for (int i = 0; i < 6; i++) {
@@ -207,7 +207,7 @@ static void lens_crop_clamps(void)
 /* Zoom: the focal (and so the pixels a radian) scales the offset */
 static void lens_crop_zoom_scales(void)
 {
-    const VrLensAim z1 = {0, 0, LENS_F, LENS_G}, z2 = {0, 0, 2 * LENS_F, LENS_G};
+    const VrLensAim z1 = {0, 0, LENS_F, LENS_G, 1}, z2 = {0, 0, 2 * LENS_F, LENS_G, 1};
     float c1[3], c2[3];
     vr_lens_crop(&z1, 0.002f, -0.004f, c1);
     vr_lens_crop(&z2, 0.002f, -0.004f, c2);
@@ -221,22 +221,37 @@ static void lens_crop_zoom_scales(void)
 /* Pitched: a yaw turn moves the picture by yaw * cos(pitch) across */
 static void lens_crop_pitched(void)
 {
-    const VrLensAim a = {0, 0.5f, LENS_F, LENS_G};
+    const VrLensAim a = {0, 0.5f, LENS_F, LENS_G, 1};
     float c[3];
     vr_lens_crop(&a, 0.004f, 0.5f, c);
     NEAR(c[0] - 0.5, LENS_F * 0.004 * cos(0.5), 1e-4);
 }
 
+/* A picture the game aimed (the rifle off, its reticle in the picture): its
+ * centre at the guard its focal length has -- not following the rifle,
+ * however far it points; with no guard in it (1), the whole picture */
+static void lens_crop_not_followed(void)
+{
+    const VrLensAim g = {0.1f, 0.0f, LENS_F, LENS_G, 0}, one = {0.1f, 0.0f, 3 * LENS_F, 1.0f, 0};
+    float c[3];
+    CHECK(vr_lens_crop(&g, 0.1004f, 0.0f, c) == 0);
+    NEAR(c[0], 0.5, 0); NEAR(c[1], 0.5, 0); NEAR(c[2], 0.5 / LENS_G, 1e-6);
+    CHECK(vr_lens_crop(&g, 0.9f, -0.4f, c) == 0);
+    NEAR(c[0], 0.5, 0); NEAR(c[1], 0.5, 0); NEAR(c[2], 0.5 / LENS_G, 1e-6);
+    CHECK(vr_lens_crop(&one, 0.1004f, 0.0f, c) == 0);
+    NEAR(c[0], 0.5, 0); NEAR(c[1], 0.5, 0); NEAR(c[2], 0.5, 0);
+}
+
 /* No aim known: the whole picture as drawn */
 static void lens_crop_unknown(void)
 {
-    const VrLensAim none[4] = {{0, 0, 0, 0}, {0, 0, LENS_F, 0.5f}, {NAN, 0, LENS_F, LENS_G}, {0, 0, -1, LENS_G}};
+    const VrLensAim none[4] = {{0, 0, 0, 0, 1}, {0, 0, LENS_F, 0.5f, 1}, {NAN, 0, LENS_F, LENS_G, 1}, {0, 0, -1, LENS_G, 1}};
     float c[3];
     for (int i = 0; i < 4; i++) {
         CHECK(vr_lens_crop(&none[i], 0.4f, 0.1f, c) == 0);
         NEAR(c[0], 0.5, 0); NEAR(c[1], 0.5, 0); NEAR(c[2], 0.5, 0);
     }
-    const VrLensAim a = {0, 0, LENS_F, LENS_G};
+    const VrLensAim a = {0, 0, LENS_F, LENS_G, 1};
     CHECK(vr_lens_crop(&a, NAN, 0, c) == 0);
     NEAR(c[0], 0.5, 0); NEAR(c[2], 0.5 / LENS_G, 1e-6);
 }
@@ -355,6 +370,7 @@ int main(void)
     lens_crop_zoom_scales();
     lens_crop_pitched();
     lens_crop_unknown();
+    lens_crop_not_followed();
     if (fails) { printf("%d failed\n", fails); return 1; }
     printf("all passed\n");
     return 0;

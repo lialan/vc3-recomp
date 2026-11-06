@@ -72,7 +72,7 @@ int vr_lens_crop(const VrLensAim *a, float yaw, float pitch, float out[3])
         return 0;
     const double h = 0.5 / a->guard;
     out[2] = (float)h;
-    if (!isfinite(yaw) || !isfinite(pitch))
+    if (!a->follow || !isfinite(yaw) || !isfinite(pitch))
         return 0;
     const double sy = sin(a->yaw), cy = cos(a->yaw), sp = sin(a->pitch), cp = cos(a->pitch);
     const double d[3] = { sin(yaw) * cos(pitch), sin(pitch), -cos(yaw) * cos(pitch) };

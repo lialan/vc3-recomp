@@ -71,8 +71,15 @@
  * (model [0x1DB251A] 850 units ahead, turned from the aim toward the target
  * object [0x1DB394C]; not an aim mark).
  *
- * SS1_VR_RIFLE_TEST=yaw_deg,pitch_deg,zoom: a rifle held still, set once at
- * boot (test only). SS1_AIM_LOG=1: the aim and the shot direction relative
+ * The guard published is the one in the pass's focal length: sub_00074610
+ * makes that from 0x1ADFC8 as last written, so on the frame the rifle
+ * switches on (the panel closes, the gun is located again) the scope is
+ * still drawn without the guard, and on the frame it switches off with it
+ * (ss1_vr_focal follows it through).
+ *
+ * SS1_VR_RIFLE_TEST=yaw_deg,pitch_deg,zoom[,frames]: a rifle held still, set
+ * once at boot; with frames, switched off and on every that many game
+ * frames (test only). SS1_AIM_LOG=1: the aim and the shot direction relative
  * to the main camera, once a second.
  */
 #include <math.h>
@@ -139,6 +146,14 @@ static float s_cull_half;
 static int64_t s_scope_frame = -1;  /* the frame the scope pass last ran */
 static uint64_t s_frame_rifle;      /* the rifle the game's frame aims with (its aim step's) */
 static int s_vr;                    /* a rifle has been handed over: a headset (or the test) */
+/* The guard in 0x1ADFC8 as last written (1: the game's own value), and in
+ * the scope's focal length 0x1CEA0D4 as sub_00074610 last made it from
+ * 0x1ADFC8 -- a frame or so later: on the frames the rifle switches on or
+ * off the scope is still drawn with the old one. */
+static float s_zoomk_guard = 1.0f, s_focal_guard = 1.0f;
+/* SS1_VR_RIFLE_TEST's rifle, and its on/off period in game frames (0: on) */
+static uint64_t s_test_rifle;
+static uint32_t s_test_period;
 
 /* The last few scope passes' aims, each with the fence after it (above) */
 #define MARKS 8
@@ -204,8 +219,10 @@ static int aim_log(void)
 void ss1_vr_aim(void)
 {
     static uint32_t logged = ~0u;
-    const uint64_t v = __atomic_load_n(&s_rifle, __ATOMIC_RELAXED);
     const uint32_t frame = MEM32(FRAME);
+    if (s_test_period)      /* SS1_VR_RIFLE_TEST's switching rifle */
+        __atomic_store_n(&s_rifle, (frame / s_test_period) & 1 ? 0 : s_test_rifle, __ATOMIC_RELAXED);
+    const uint64_t v = __atomic_load_n(&s_rifle, __ATOMIC_RELAXED);
     s_frame_rifle = v;
     if (v) {
         MEM16(AIM_YAW) = (uint16_t)v;
@@ -250,11 +267,12 @@ static void shot_log(void)
 }
 
 /* After a scope pass in VR: a fence (D3D's own fence insert, flags 2: no
- * kick) and the pass's aim, tagged with its time -- with the rifle off (the
- * settings panel open: the game's own aim, circle and reticle), none
- * (guard 0), so that frame's picture is shown whole. */
+ * kick) and the pass's aim, tagged with its time: the guard its focal length
+ * was made with, and whether the rifle aimed it (follow; with the rifle off
+ * -- the settings panel open, the gun not located: the game's own aim,
+ * circle and reticle -- the lens shows its centre). */
 extern void sub_000FC4D0(void);
-static void lens_mark(float focal, int rifle)
+static void lens_mark(float focal, float guard_in_focal, int rifle)
 {
     const uint32_t dev = MEM32(DEVICE);
     if (!dev || !(focal > 0))
@@ -265,7 +283,7 @@ static void lens_mark(float focal, int rifle)
     sub_000FC4D0();                                 /* ret 4 */
     const float unit = (float)(6.283185307179586 / 65536.0);
     const VrLensAim a = { YAW_RIGHT * (int16_t)MEM16(AIM_YAW) * unit, PITCH_UP * (int16_t)MEM16(AIM_PITCH) * unit,
-                          focal * SCOPE_PROJ / SCOPE_W, rifle ? guard() : 0.0f };
+                          focal * SCOPE_PROJ / SCOPE_W, guard_in_focal, rifle };
     pthread_mutex_lock(&s_mark_lock);
     s_marks[s_mark_n % MARKS].time = time;
     s_marks[s_mark_n % MARKS].aim = a;
@@ -300,9 +318,10 @@ int ss1_vr_lens_aim(VrLensAim *out)
     ahead += found && newer;
     if (aim_log() && flips % 300 == 0 && logged++ < 20)
         fprintf(stderr, "[ss1 lens] %u of %u flips: the game had queued a newer scope pass%s; this one's aim "
-                "yaw %.3f pitch %.3f deg, focal %.3f, guard %.2f\n", ahead, flips, found ? "" : " (none passed yet)",
-                found ? out->yaw * 57.29578f : 0.0f, found ? out->pitch * 57.29578f : 0.0f,
-                found ? out->focal : 0.0f, found ? out->guard : 0.0f);
+                "yaw %.3f pitch %.3f deg, focal %.3f, guard %.2f, follow %d\n", ahead, flips,
+                found ? "" : " (none passed yet)", found ? out->yaw * 57.29578f : 0.0f,
+                found ? out->pitch * 57.29578f : 0.0f, found ? out->focal : 0.0f, found ? out->guard : 0.0f,
+                found ? out->follow : 0);
     return found;
 }
 
@@ -310,11 +329,25 @@ int ss1_vr_lens_aim(VrLensAim *out)
 void ss1_vr_scope_pass(void (*generated)(void))
 {
     static int published;
-    const float focal = MEMF(SCOPE_FOCAL);          /* what it hands its camera */
+    const float focal = MEMF(SCOPE_FOCAL), g = s_focal_guard;   /* what it hands its camera */
     generated();
     s_scope_frame = MEM32(FRAME);
     if (s_frame_rifle || __atomic_load_n(&s_vr, __ATOMIC_RELAXED))
-        lens_mark(focal, s_frame_rifle != 0);
+        lens_mark(focal, g, s_frame_rifle != 0);
+    {   /* SS1_AIM_LOG: the passes round a switch of the rifle -- the guard
+         * published is the one in the focal length (focal * guard: the
+         * game's own focal length at that zoom) */
+        static int was = -1, left;
+        const int on = s_frame_rifle != 0;
+        if (on != was)
+            left = 3;
+        if (aim_log() && was >= 0 && left)
+            fprintf(stderr, "[ss1 lens guard] frame %u rifle %s: focal %.2f, guard in it %.2f (published), focal * guard"
+                    " %.2f; by the rifle alone %.2f\n", MEM32(FRAME), on ? "on" : "off", focal, g, focal * g,
+                    on ? guard() : 1.0f);
+        left -= left > 0;
+        was = on;
+    }
     if (!published) {
         const uint32_t surf = MEM32(SCOPE_SURF);
         if (surf) {
@@ -346,8 +379,19 @@ static void circle_writes(float zoom)
         const double s = n ? (double)n * MEMF(0x156390u) : (double)MEMF(0x156390u);
         k = (float)(MEMF(ONE) / s);
     }
-    MEMF(ZOOM_K) = k * zoom / guard();
+    s_zoomk_guard = guard();
+    MEMF(ZOOM_K) = k * zoom / s_zoomk_guard;
     MEM32(0x1CEA13Cu) = 1;
+}
+
+/* sub_00074610 (cdecl): a camera mode's focal length; the scope's (mode 1)
+ * from 0x1ADFC8, and with it its guard */
+void ss1_vr_focal(void (*generated)(void))
+{
+    const int scope = MEM32(0x1CEA0E0u) == 1;
+    generated();
+    if (scope)
+        s_focal_guard = s_zoomk_guard;
 }
 
 /* sub_00075F40 (cdecl, four floats): the scope circle */
@@ -355,7 +399,8 @@ void ss1_vr_circle(void (*generated)(void))
 {
     const uint64_t v = __atomic_load_n(&s_rifle, __ATOMIC_RELAXED);
     if (!v) {
-        generated();
+        generated();        /* 0x1ADFC8 the game's own */
+        s_zoomk_guard = 1.0f;
         return;
     }
     circle_writes(rifle_zoom(v));
@@ -394,9 +439,15 @@ void ss1_vr_rifle_test(void)
 {
     const char *e = ch_env("VR_RIFLE_TEST");
     float y, p, z;
-    if (!e || sscanf(e, "%f,%f,%f", &y, &p, &z) != 3)
+    unsigned period = 0;
+    if (!e || sscanf(e, "%f,%f,%f,%u", &y, &p, &z, &period) < 3)
         return;
     const ChVrRifle r = { 1, y * 0.017453292519943295f, p * 0.017453292519943295f, z };
     ss1_vr_rifle(&r);
-    fprintf(stderr, "[ss1 rifle] test rifle: yaw %.2f pitch %.2f deg, zoom %.2f\n", y, p, z);
+    s_test_rifle = __atomic_load_n(&s_rifle, __ATOMIC_RELAXED);
+    s_test_period = period;
+    fprintf(stderr, "[ss1 rifle] test rifle: yaw %.2f pitch %.2f deg, zoom %.2f", y, p, z);
+    if (period)
+        fprintf(stderr, ", on and off every %u frames", period);
+    fputc('\n', stderr);
 }

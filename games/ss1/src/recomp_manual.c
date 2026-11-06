@@ -30,13 +30,16 @@ void sub_000588C0(void) { ss1_wide_aim(sub_000588C0_gen); ss1_vr_aim(); }   /* a
 /* The VR rifle (vr_rifle.c): the scope pass publishes its picture for the
  * lens, and with the rifle on its aim; with the rifle on, the circle is not
  * drawn (its zoom factor is still written, times the rifle's zoom, over the
- * guard band), nor the aim marks while there is a scope picture, nor the
- * scope's reticle (the headset draws one). */
+ * guard band, followed into the scope's focal length), nor the aim marks
+ * while there is a scope picture, nor the scope's reticle (the headset
+ * draws one). */
 extern void ss1_vr_scope_pass(void (*generated)(void));
 extern void ss1_vr_circle(void (*generated)(void));
 extern void ss1_vr_marks(void (*generated)(void));
 extern void ss1_vr_reticle(void (*generated)(void));
+extern void ss1_vr_focal(void (*generated)(void));
 extern void sub_000744B0_gen(void);
+extern void sub_00074610_gen(void);
 extern void sub_00075F40_gen(void);
 extern void sub_00076490_gen(void);
 extern void sub_00035A20_gen(void);
@@ -44,6 +47,7 @@ void sub_000744B0(void) { ss1_vr_scope_pass(sub_000744B0_gen); }   /* scope pass
 void sub_00075F40(void) { ss1_vr_circle(sub_00075F40_gen); }       /* scope circle */
 void sub_00076490(void) { ss1_vr_marks(sub_00076490_gen); }        /* circle at the aim, aim marks */
 void sub_00035A20(void) { ss1_vr_reticle(sub_00035A20_gen); }      /* the scope's reticle */
+void sub_00074610(void) { ss1_vr_focal(sub_00074610_gen); }        /* a camera mode's focal length */
 
 /* Return a function to run instead of the given guest address, or NULL for
  * the generated dispatch table. Called on every indirect call: keep it
