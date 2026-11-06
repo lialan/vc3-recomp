@@ -2498,7 +2498,7 @@ static VkResult draw_full(ChVkTarget *t, const float rgba[4],
         return VK_ERROR_INITIALIZATION_FAILED;
     if(samples && !t->queries) return VK_ERROR_FEATURE_NOT_PRESENT;
     if(rc && texture) return VK_ERROR_FEATURE_NOT_PRESENT;
-    if(effect && (effect->kind<1 || effect->kind>2 || rc || texture)) return VK_ERROR_FEATURE_NOT_PRESENT;
+    if(effect && (effect->kind<1 || effect->kind>3 || rc || texture)) return VK_ERROR_FEATURE_NOT_PRESENT;
     if(texture && ch_vk_texture_is_cube(texture)) return VK_ERROR_FEATURE_NOT_PRESENT;
     t->effect=effect!=NULL;
     if(effect) t->push.effect=*effect; else memset(&t->push.effect,0,sizeof(t->push.effect));
@@ -2895,6 +2895,41 @@ VkResult ch_vk_target_record_copy_to_buffer(ChVkTarget *t,VkCommandBuffer comman
         .srcQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED,.dstQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED,
         .buffer=destination,.offset=offset,.size=t->bytes};
     vkCmdPipelineBarrier(command,VK_PIPELINE_STAGE_TRANSFER_BIT,VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,0,0,NULL,1,&done,0,NULL);
+    return VK_SUCCESS;
+}
+VkResult ch_vk_target_record_depth_box(ChVkTarget *t,VkCommandBuffer command,VkBuffer destination,
+    VkDeviceSize offset,uint32_t x,uint32_t y,uint32_t w,uint32_t h,int *d24) {
+    if(!t || t->failed || !t->initialized || !command || !destination || (offset&3) || !w || !h ||
+       x>=t->width || y>=t->height || w>t->width-x || h>t->height-y)
+        return VK_ERROR_INITIALIZATION_FAILED;
+    /* as the copy to a buffer: this target's recorded work first, unwaited */
+    live_release(t);
+    VkResult r=ch_vk_target_submit(t);
+    if(r!=VK_SUCCESS) return r;
+    VkImageMemoryBarrier b={.sType=VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+        .srcAccessMask=VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT|VK_ACCESS_TRANSFER_WRITE_BIT,
+        .dstAccessMask=VK_ACCESS_TRANSFER_READ_BIT,
+        .oldLayout=VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,.newLayout=VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+        .srcQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED,.dstQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED,
+        .image=t->depth,.subresourceRange={VK_IMAGE_ASPECT_DEPTH_BIT|VK_IMAGE_ASPECT_STENCIL_BIT,0,1,0,1}};
+    const VkPipelineStageFlags depth_stages=VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT|
+        VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT|VK_PIPELINE_STAGE_TRANSFER_BIT;
+    vkCmdPipelineBarrier(command,depth_stages,VK_PIPELINE_STAGE_TRANSFER_BIT,0,0,NULL,0,NULL,1,&b);
+    VkBufferImageCopy copy={.bufferOffset=offset,.imageSubresource={VK_IMAGE_ASPECT_DEPTH_BIT,0,0,1},
+        .imageOffset={(int32_t)x,(int32_t)y,0},.imageExtent={w,h,1}};
+    vkCmdCopyImageToBuffer(command,t->depth,VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,destination,1,&copy);
+    /* back as the target's batches expect it: its next pass waits for the read */
+    b.srcAccessMask=0;
+    b.dstAccessMask=VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT|VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT|
+        VK_ACCESS_TRANSFER_READ_BIT|VK_ACCESS_TRANSFER_WRITE_BIT;
+    b.oldLayout=VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;b.newLayout=VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+    vkCmdPipelineBarrier(command,VK_PIPELINE_STAGE_TRANSFER_BIT,depth_stages,0,0,NULL,0,NULL,1,&b);
+    VkBufferMemoryBarrier host={.sType=VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
+        .srcAccessMask=VK_ACCESS_TRANSFER_WRITE_BIT,.dstAccessMask=VK_ACCESS_HOST_READ_BIT,
+        .srcQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED,.dstQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED,
+        .buffer=destination,.offset=offset,.size=(VkDeviceSize)w*h*4};
+    vkCmdPipelineBarrier(command,VK_PIPELINE_STAGE_TRANSFER_BIT,VK_PIPELINE_STAGE_HOST_BIT,0,0,NULL,1,&host,0,NULL);
+    if(d24) *d24=t->depth_format==VK_FORMAT_D24_UNORM_S8_UINT;
     return VK_SUCCESS;
 }
 VkResult ch_vk_target_record_copy_to_image(ChVkTarget *t,VkCommandBuffer command,VkImage destination) {

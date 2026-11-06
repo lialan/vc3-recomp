@@ -40,6 +40,11 @@ typedef struct {
     int lens; uint32_t lens_w,lens_h; VkDeviceSize lens_offset;
     /* What it was drawn with (config.lens_aim's; guard 0: not known) */
     VrLensAim lens_aim;
+    /* Where the rifle's shot meets the scene (vr_shot.h): game units along
+     * the aim from the game camera, the newest a frame's eyes have given
+     * (a probe of the left eye's depth, read once the GPU is done with it:
+     * a frame or two before this one); 0: nothing met, or not known. */
+    float aim_hit;
 } ChVkImmFrame;
 typedef struct {
     VkPhysicalDevice physical; VkDevice device; VkQueue queue; uint32_t family;

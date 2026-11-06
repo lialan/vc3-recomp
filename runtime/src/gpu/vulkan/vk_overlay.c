@@ -279,6 +279,11 @@ static VkResult rim_read(ChVkTarget *target,const float model[16],const float vp
  * riflescope shows the far scene; a dark rim round it. Over everything drawn
  * before it: the beam runs up to its rim. */
 #define SCOPE_2D_DIST 2.0f
+/* The rifle's shot dot (QoFrame.shot_dot), degrees across: the red disc, its
+ * dark rim (on the Quest's ~15-17 texels a degree: ~5 and ~9 texels; the
+ * rim ~2 texels wide, so it shows on red and on white) */
+#define SHOT_DOT_DEG .30f
+#define SHOT_RIM_DEG .56f
 static VkResult scope_2d_read(ChVkTarget *target,const QoFrame *f,const float vp[16],const float eye[3],
     void *pixels,VkDeviceSize bytes) {
     float d[3]={f->end[0]-f->gun_p[0],f->end[1]-f->gun_p[1],f->end[2]-f->gun_p[2]};
@@ -350,6 +355,14 @@ VkResult ch_vk_overlay_read(ChVkTarget *target,const QoFrame *f,const float vp[1
     effect.color[1]=.15f; effect.color[2]=.1f; effect.color[3]=1;
     if(f->dot && qo_spot_vertices(q,eye,f->end,.006f*dist)) {
         result=effect_read(target,vp,(const float (*)[5])q,&effect,0,pixels,bytes);
+        if(result!=VK_SUCCESS) return result;
+    }
+    /* the rifle's dot where its shot lands: SHOT_DOT_DEG across at any
+     * distance, hot at its centre, in a dark rim SHOT_RIM_DEG across that
+     * keeps it seen on red and bright ground; behind the rifle (depth tested) */
+    if(f->shot_dot && qo_spot_vertices(q,eye,f->end,tanf(SHOT_RIM_DEG*.5f*.0174533f)*dist)) {
+        const ChVkEffect dot={.kind=3,.color={1,.05f,.03f,1},.shape={SHOT_DOT_DEG/SHOT_RIM_DEG,.3f},.tint={1,.82f,.72f,.85f}};
+        result=effect_read(target,vp,(const float (*)[5])q,&dot,1,pixels,bytes);
         if(result!=VK_SUCCESS) return result;
     }
     if(bare && f->scope_2d>0) {

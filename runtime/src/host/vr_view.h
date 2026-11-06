@@ -78,6 +78,9 @@ typedef struct {
     float gp[5];              /* the game's projection: kx, ky, cx, cy, 1/pz */
     int gp_ok;
     int gw, gh;               /* the game's screen, guest pixels */
+    float aim_hit;            /* where the rifle's shot meets the scene: game units
+                                 along the aim from the game camera (vr_shot.h,
+                                 a frame or two old); 0: nothing met, not known */
 } Vc3VrFrame;
 
 #endif

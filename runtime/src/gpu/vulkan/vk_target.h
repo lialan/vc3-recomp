@@ -71,7 +71,7 @@ typedef struct {
  * this snapshot; pending work is not yet included in completed GPU totals. */
 void ch_vk_target_timing_stats(const ChVkTarget *,ChVkTargetTimingStats *);
 typedef struct {
-    uint32_t kind; /* 1: soft spot/ring/flat beam; 2: sight glass/reticle */
+    uint32_t kind; /* 1: soft spot/ring/flat beam; 2: sight glass/reticle; 3: a dot in a dark rim (color.frag) */
     float color[4], shape[4], tint[4], reticle[4];
 } ChVkEffect;
 /* RGBA8 UNORM, tightly packed top-to-bottom rows. No guest memory writes. */
@@ -191,6 +191,14 @@ VkResult ch_vk_target_record_copy_to_buffer(ChVkTarget *,VkCommandBuffer command
  * memory (vk_xr_bridge.h): left in TRANSFER_SRC_OPTIMAL, released to
  * VK_QUEUE_FAMILY_EXTERNAL for that device to acquire. */
 VkResult ch_vk_target_record_copy_to_image(ChVkTarget *,VkCommandBuffer command,VkImage destination);
+/* A box of the depth (x, y, w x h texels) into a buffer of the same device
+ * at offset (4-aligned), 4 bytes a texel, rows tight: D24 in the low 24
+ * bits (*d24 1) or a float (D32). Recorded as the copy to a buffer above
+ * (the target's work submitted first, unwaited; command submitted before
+ * its next work); the depth is left as it was, and the buffer is the
+ * host's to read once command has completed. */
+VkResult ch_vk_target_record_depth_box(ChVkTarget *,VkCommandBuffer command,VkBuffer destination,
+    VkDeviceSize offset,uint32_t x,uint32_t y,uint32_t w,uint32_t h,int *d24);
 VkResult ch_vk_target_copy_to_buffer_at(ChVkTarget *,VkBuffer,VkDeviceSize offset,VkDeviceSize capacity);
 VkResult ch_vk_target_copy_to_buffer(ChVkTarget *target, VkBuffer destination, VkDeviceSize capacity);
 /* Copy initialized target to an externally acquired, same-device RGBA8 image

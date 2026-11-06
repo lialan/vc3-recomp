@@ -28,6 +28,8 @@ typedef struct {
     float scope_scale;          /* the rifle's scope and lens (qo_scope_scale; 0: 1) */
     float scope_2d;             /* the rifle's 2D scope (show_gun 0): the lens's picture on a disc
                                    this many radians in radius round the aim (end - gun_p); 0: none */
+    int   shot_dot;             /* the rifle's dot where its shot lands, at end: red, the same size
+                                   at any distance, in a dark rim; depth tested (vk_overlay.c) */
 } QoFrame;
 
 int  qo_init(void);

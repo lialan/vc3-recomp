@@ -273,9 +273,10 @@ static VkResult imm_test_present(void *unused,const Nv2aSurface *surface,ChVkTar
         dump_rgba("eyes",p,f.imm.eye_width*2,f.imm.eye_height);
         if(f.imm.hud) dump_rgba("hud",p+f.hud_offset,f.surface.width,f.surface.height);
         if(f.imm.lens) dump_rgba("lens",p+f.imm.lens_offset,f.imm.lens_w,f.imm.lens_h);
-        fprintf(stderr,"[Vulkan] immersive test frame %llu: eyes %ux%u, HUD %s, lens %s (%ux%u at %llu)\n",
+        fprintf(stderr,"[Vulkan] immersive test frame %llu: eyes %ux%u, HUD %s, lens %s (%ux%u at %llu), shot meets the scene %s %.4f\n",
             (unsigned long long)runtime.frames,f.imm.eye_width,f.imm.eye_height,f.imm.hud?"yes":"no",
-            f.imm.lens?"fresh":"0",f.imm.lens_w,f.imm.lens_h,(unsigned long long)f.imm.lens_offset);
+            f.imm.lens?"fresh":"0",f.imm.lens_w,f.imm.lens_h,(unsigned long long)f.imm.lens_offset,
+            f.imm.aim_hit>0?"at":"nowhere",f.imm.aim_hit);
     }
     ch_vk_gpu_frame_release(&f);
     if(r!=VK_SUCCESS) return r;

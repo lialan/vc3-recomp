@@ -17,3 +17,4 @@ run() {  # run <test.c> [more sources...], paths relative to the repo root
 }
 run tests/vr_rifle_test.c runtime/src/host/vr_rifle.c runtime/src/gpu/vulkan/vk_rifle_assets.S runtime/src/gpu/vulkan/vk_jpeg.c
 run tests/retail_pad_test.c runtime/src/host/retail_pad.c
+run tests/vr_shot_test.c

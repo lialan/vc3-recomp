@@ -1,5 +1,6 @@
 #include "vk_immersive.h"
 #include "vk_state.h"
+#include "../../host/vr_shot.h"
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -24,6 +25,7 @@ struct ImmSurface {
     uint32_t div;uint64_t last_3d,last_shown;size_t pixels_bytes;
     uint32_t world,drawn,flat,hud,full;    /* this frame: 3D batches; any eye work; 2D flat/HUD/full-screen */
     uint32_t composite;    /* this frame: flat draws sampling eyes (the scene drawn elsewhere, composited in) */
+    uint32_t held,held_zs; /* a depth/stencil clear held back (shot_hold): its flags (0: none), value */
 };
 struct ChVkImmersive {
     ChVkImmersiveConfig config;
@@ -53,6 +55,9 @@ struct ChVkImmersive {
      * (counted: the log's "draws not copied") */
     ChVkTarget *lens_copy; unsigned char *lens_pixels; uint32_t lens_w,lens_h; int lens_copied;
     uint64_t lens_skipped;
+    /* The rifle's shot through the eyes (shot_probe) */
+    VkCommandPool shot_pool; struct ShotProbe *shot; int shot_state;   /* 0: not made; 1: made; -1: failed */
+    float aim_hit; uint64_t aim_hit_frame; int shot_log;
 };
 /* Dynamic resolution levels (fraction of each eye's width and height). A
  * scene heavier than the GPU's 16.7 ms (VC3's later areas at native 2160 on
@@ -225,6 +230,160 @@ static VkResult lens_copy(ChVkImmersive *m,const Nv2aSurface *s) {
     fprintf(stderr,"[immersive] lens surface %08X %ux%u drawn at %ux%u\n",s->color_va,s->width,s->height,w,h);
     return VK_SUCCESS;
 }
+/* The rifle's shot (vr_shot.h): after a frame's eyes, the texels of the
+ * left eye's depth along the shot's line -- a box of at most VR_SHOT_BOX
+ * texels each way, one copy -- go to a small host-visible buffer, in a
+ * command buffer of its own behind the eyes' work on the queue. A later
+ * flip that finds its fence signalled walks them (vr_shot_march): the hit
+ * handed over with each frame (ChVkImmFrame.aim_hit) is the newest walked,
+ * a frame or two old. Nothing waits for the GPU: with all SHOT_PROBES in
+ * flight a frame has none. The aim is the one the frame's lens picture was
+ * drawn with -- the game's, so its shot's -- and only the rifle's (follow):
+ * a game with no lens picture (VC3) never makes a probe.
+ * CHIHIRO_VULKAN_SHOT_LOG=1: every probe, its walk and what it met. */
+#define SHOT_PROBES 3
+struct ShotProbe {
+    VkBuffer buffer; VkDeviceMemory memory; const void *texels;
+    VkCommandBuffer command; VkFence fence;
+    int busy,d24; uint64_t frame; ChVkTarget *eyes; VrShotPlan plan; float yaw,pitch;
+};
+static void shot_free(ChVkImmersive *m) {
+    VkDevice d=m->config.device;
+    for(int i=0;m->shot && i<SHOT_PROBES;i++) {
+        struct ShotProbe *p=&m->shot[i];
+        if(p->busy) (void)vkWaitForFences(d,1,&p->fence,VK_TRUE,UINT64_MAX);
+        if(p->fence) vkDestroyFence(d,p->fence,NULL);
+        if(p->buffer) vkDestroyBuffer(d,p->buffer,NULL);
+        if(p->memory) vkFreeMemory(d,p->memory,NULL);
+    }
+    if(m->shot_pool) vkDestroyCommandPool(d,m->shot_pool,NULL);
+    free(m->shot);m->shot=NULL;m->shot_pool=VK_NULL_HANDLE;
+}
+static int shot_init(ChVkImmersive *m) {
+    if(m->shot_state) return m->shot_state>0;
+    m->shot_state=-1;
+    VkDevice d=m->config.device;
+    m->shot=calloc(SHOT_PROBES,sizeof *m->shot);
+    const VkCommandPoolCreateInfo pool={.sType=VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
+        .flags=VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT,.queueFamilyIndex=m->config.family};
+    VkResult r=m->shot?vkCreateCommandPool(d,&pool,NULL,&m->shot_pool):VK_ERROR_OUT_OF_HOST_MEMORY;
+    VkPhysicalDeviceMemoryProperties mp;vkGetPhysicalDeviceMemoryProperties(m->config.physical,&mp);
+    for(int i=0;r==VK_SUCCESS && i<SHOT_PROBES;i++) {
+        struct ShotProbe *p=&m->shot[i];
+        const VkBufferCreateInfo bi={.sType=VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+            .size=(VkDeviceSize)VR_SHOT_BOX*VR_SHOT_BOX*4,.usage=VK_BUFFER_USAGE_TRANSFER_DST_BIT};
+        r=vkCreateBuffer(d,&bi,NULL,&p->buffer);
+        if(r!=VK_SUCCESS) break;
+        /* host-visible and coherent (read without an invalidate), cached if it can be */
+        VkMemoryRequirements need;vkGetBufferMemoryRequirements(d,p->buffer,&need);
+        uint32_t type=mp.memoryTypeCount;
+        for(int cached=1;cached>=0 && type==mp.memoryTypeCount;cached--) {
+            const VkMemoryPropertyFlags want=VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT|VK_MEMORY_PROPERTY_HOST_COHERENT_BIT|
+                (cached?VK_MEMORY_PROPERTY_HOST_CACHED_BIT:0);
+            for(uint32_t k=0;k<mp.memoryTypeCount;k++)
+                if((need.memoryTypeBits&(1u<<k)) && (mp.memoryTypes[k].propertyFlags&want)==want) {type=k;break;}
+        }
+        if(type==mp.memoryTypeCount) {r=VK_ERROR_FEATURE_NOT_PRESENT;break;}
+        const VkMemoryAllocateInfo ai={.sType=VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,.allocationSize=need.size,.memoryTypeIndex=type};
+        r=vkAllocateMemory(d,&ai,NULL,&p->memory);
+        if(r==VK_SUCCESS) r=vkBindBufferMemory(d,p->buffer,p->memory,0);
+        void *map=NULL;
+        if(r==VK_SUCCESS) r=vkMapMemory(d,p->memory,0,VK_WHOLE_SIZE,0,&map);
+        p->texels=map;
+        const VkCommandBufferAllocateInfo ci={.sType=VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+            .commandPool=m->shot_pool,.level=VK_COMMAND_BUFFER_LEVEL_PRIMARY,.commandBufferCount=1};
+        if(r==VK_SUCCESS) r=vkAllocateCommandBuffers(d,&ci,&p->command);
+        const VkFenceCreateInfo fi={.sType=VK_STRUCTURE_TYPE_FENCE_CREATE_INFO};
+        if(r==VK_SUCCESS) r=vkCreateFence(d,&fi,NULL,&p->fence);
+    }
+    if(r!=VK_SUCCESS) {
+        fprintf(stderr,"[immersive] the shot's probe: VkResult %d -- the rifle's dot stays at the laser's end\n",r);
+        shot_free(m);return 0;
+    }
+    const char *e=getenv("CHIHIRO_VULKAN_SHOT_LOG");
+    m->shot_log=e?atoi(e):0;
+    m->shot_state=1;return 1;
+}
+/* The probes the GPU has finished, oldest first (one queue: they finish in
+ * order): each one's walk, the newest frame's the hit. */
+static void shot_collect(ChVkImmersive *m) {
+    for(;;) {
+        struct ShotProbe *p=NULL;
+        for(int i=0;i<SHOT_PROBES;i++) if(m->shot[i].busy && (!p || m->shot[i].frame<p->frame)) p=&m->shot[i];
+        if(!p || vkGetFenceStatus(m->config.device,p->fence)!=VK_SUCCESS) return;
+        p->busy=0;
+        const float t=vr_shot_march(&p->plan,p->texels,p->d24);
+        if(p->frame>=m->aim_hit_frame) {m->aim_hit=t;m->aim_hit_frame=p->frame;}
+        if(m->shot_log) fprintf(stderr,"[immersive shot] frame %llu aim yaw %.3f pitch %.3f deg: box %ux%u at %d,%d, %u steps,"
+            " eye depth %.3f..%.3f -> %s %.4f (at frame %llu)\n",(unsigned long long)p->frame,p->yaw*57.29578f,p->pitch*57.29578f,
+            p->plan.w,p->plan.h,p->plan.x0,p->plan.y0,p->plan.steps,1/p->plan.g_hi,p->plan.g_lo>0?1/p->plan.g_lo:INFINITY,
+            t>0?"hit at":"nothing met",t,(unsigned long long)m->frames);
+    }
+}
+/* Silent Scope clears depth and stencil after its world, before the marks
+ * it draws without either: in the eyes, that wiped the world's depth before
+ * the flip's probe. Once the rifle has aimed (shot_state), such a clear --
+ * depth (and stencil) only, of full-size eyes already holding this frame's
+ * world -- is held back (ImmSurface.held): done before the next draw into
+ * those eyes that tests or writes depth or uses stencil, dropped when a
+ * later clear covers it, else done before that one. What the eyes show is
+ * the same, and their render pass is not split. CHIHIRO_VULKAN_SHOT_HOLD=0:
+ * never held. */
+static int shot_hold(const ChVkImmersive *m,const struct ImmSurface *f,uint32_t flags) {
+    static int on=-1;
+    if(on<0) {const char *e=getenv("CHIHIRO_VULKAN_SHOT_HOLD");on=!e || atoi(e)!=0;}
+    return on && m->shot_state>0 && f->world && f->div<2 && (flags&1) && !(flags&0xf0);
+}
+static int uses_depth(const Nv2aRenderState *st) {
+    return (st->depth_test_enable && (st->depth_func!=0x207 || st->depth_write)) || st->stencil_enable;
+}
+/* A target about to go: the probes reading it finished first. */
+static void shot_forget(ChVkImmersive *m,const ChVkTarget *eyes) {
+    for(int i=0;m->shot && i<SHOT_PROBES;i++)
+        if(m->shot[i].busy && m->shot[i].eyes==eyes)
+            (void)vkWaitForFences(m->config.device,1,&m->shot[i].fence,VK_TRUE,UINT64_MAX);
+}
+/* At a flip handing a frame over: the probes done so far, then this
+ * frame's (f: the surface whose eyes hold its scene; aim: its lens
+ * picture's, NULL: none). */
+static void shot_probe(ChVkImmersive *m,struct ImmSurface *f,const VrLensAim *aim) {
+    const int rifle=aim && aim->follow;
+    if(!m->shot_state && !rifle) return;   /* none made before the rifle first aims */
+    if(!shot_init(m)) return;
+    shot_collect(m);
+    if(!rifle || !f || !f->eyes) return;
+    struct ShotProbe *p=NULL;
+    for(int i=0;i<SHOT_PROBES && !p;i++) if(!m->shot[i].busy) p=&m->shot[i];
+    if(!p) return;
+    VrShotPlan plan;
+    if(!vr_shot_plan(m->view.vp[0],k_levels[m->level],m->config.eye_width,m->config.eye_height,aim->yaw,aim->pitch,&plan)) {
+        m->aim_hit=0;m->aim_hit_frame=m->frames;   /* the line out of the eye's view: nothing met */
+        if(m->shot_log) fprintf(stderr,"[immersive shot] frame %llu aim yaw %.3f pitch %.3f deg: out of the eye's view\n",
+            (unsigned long long)m->frames,aim->yaw*57.29578f,aim->pitch*57.29578f);
+        return;
+    }
+    const VkCommandBufferBeginInfo begin={.sType=VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+        .flags=VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT};
+    int d24=0;
+    VkResult r=vkResetFences(m->config.device,1,&p->fence);
+    if(r==VK_SUCCESS) r=vkBeginCommandBuffer(p->command,&begin);
+    if(r==VK_SUCCESS) {
+        const VkResult recorded=ch_vk_target_record_depth_box(f->eyes,p->command,p->buffer,0,
+            (uint32_t)plan.x0,(uint32_t)plan.y0,plan.w,plan.h,&d24);
+        r=vkEndCommandBuffer(p->command);
+        if(r==VK_SUCCESS) r=recorded;
+    }
+    if(r==VK_SUCCESS) {
+        const VkSubmitInfo submit={.sType=VK_STRUCTURE_TYPE_SUBMIT_INFO,.commandBufferCount=1,.pCommandBuffers=&p->command};
+        r=vkQueueSubmit(m->config.queue,1,&submit,p->fence);
+    }
+    if(r!=VK_SUCCESS) {
+        static unsigned logged;
+        if(logged++<4) fprintf(stderr,"[immersive] the shot's probe, frame %llu: VkResult %d\n",(unsigned long long)m->frames,r);
+        return;
+    }
+    p->busy=1;p->d24=d24;p->frame=m->frames;p->eyes=f->eyes;p->plan=plan;p->yaw=aim->yaw;p->pitch=aim->pitch;
+}
 VkResult ch_vk_immersive_create(const ChVkImmersiveConfig *config,ChVkImmersive **out) {
     if(!out) return VK_ERROR_INITIALIZATION_FAILED;
     *out=NULL;
@@ -272,6 +431,7 @@ VkResult ch_vk_immersive_create(const ChVkImmersiveConfig *config,ChVkImmersive 
 }
 void ch_vk_immersive_destroy(ChVkImmersive *m) {
     if(!m) return;
+    shot_free(m);
     for(unsigned i=0;i<m->count;i++) {ch_vk_target_destroy(m->surfaces[i].eyes);free(m->surfaces[i].pixels);}
     ch_vk_target_destroy(m->hud);free(m->hud_pixels);
     ch_vk_target_destroy(m->lens_copy);free(m->lens_pixels);free(m);
@@ -293,6 +453,14 @@ VkResult ch_vk_immersive_clear(ChVkImmersive *m,const Nv2aSurface *s,const Nv2aR
      * whole eye image, with the clear's color and depth. */
     Nv2aSurface extent=*s; ch_vk_target_size(f->eyes,&extent.width,&extent.height);
     f->drawn++;
+    if(f->held) {   /* one held back: this one covers it, or it goes first */
+        const uint32_t held=f->held;f->held=0;
+        if((flags&held)!=held) {
+            r=ch_vk_nv2a_clear_read(f->eyes,&extent,held,0,f->held_zs,f->pixels,(size_t)extent.width*extent.height*4);
+            if(r!=VK_SUCCESS) return r;
+        }
+    }
+    if(shot_hold(m,f,flags)) {f->held=flags;f->held_zs=zs;return VK_SUCCESS;}
     return ch_vk_nv2a_clear_read(f->eyes,&extent,flags,argb,zs,f->pixels,(size_t)extent.width*extent.height*4);
 }
 /* The game's projection as the eyes use it; with zoom_normalise, the
@@ -552,6 +720,12 @@ VkResult ch_vk_immersive_draw(ChVkImmersive *m,const Nv2aSurface *s,const Nv2aBa
             (unsigned long long)m->frames,s->color_va,tx?tx->offset:0,tx?tx->width:0,tx?tx->height:0,tx?tx->color:0,
             ok?e.x0:-1,ok?e.x1:-1,ok?e.y0:-1,ok?e.y1:-1,ok?e.u0:-1,ok?e.u1:-1,ok?e.v0:-1,ok?e.v1:-1,imm.sbs);
     }
+    if(f->held && uses_depth(copy.state)) {   /* the clear held back (shot_hold), now it counts */
+        Nv2aSurface extent=*s;ch_vk_target_size(f->eyes,&extent.width,&extent.height);
+        r=ch_vk_nv2a_clear_read(f->eyes,&extent,f->held,0,f->held_zs,f->pixels,f->pixels_bytes);
+        f->held=0;
+        if(r!=VK_SUCCESS) return r;
+    }
     f->drawn++;f->serial++;
     struct ImmResolve chain={m,resolve,context,f->eyes};
     return ch_vk_nv2a_draw_immersive_read(f->eyes,s,&copy,fixed,&imm,m->config.decode,imm_resolve,&chain,
@@ -687,6 +861,11 @@ VkResult ch_vk_immersive_flip(ChVkImmersive *m,uint32_t presented,const Vc3VrVie
          * push buffer (after this frame's lens draws, before the next's) */
         if(!m->config.lens_aim || !m->config.lens_aim(&out->lens_aim)) memset(&out->lens_aim,0,sizeof out->lens_aim);
     }
+    /* The rifle's shot through this frame's eyes -- the scene's, whose
+     * depth is the world's -- and the newest the GPU has done */
+    if(src && !repeat) shot_probe(m,scene && scene->eyes && scene->div<2?scene:src,out->lens?&out->lens_aim:NULL);
+    else if(!src) {m->aim_hit=0;m->aim_hit_frame=m->frames;}
+    if(src) out->aim_hit=m->aim_hit;
     if(m->log && src && !repeat) {
         m->lens_frames++;m->lens_fresh+=out->lens;
         uint64_t now=mono_ns();
@@ -759,7 +938,8 @@ VkResult ch_vk_immersive_flip(ChVkImmersive *m,uint32_t presented,const Vc3VrVie
         if(want!=f->div) {
             VkResult r=ch_vk_target_finish(f->eyes);if(r!=VK_SUCCESS) return r;
             if(m->config.textures) ch_vk_texture_cache_forget_source(m->config.textures,f->eyes);
-            ch_vk_target_destroy(f->eyes);f->eyes=NULL;free(f->pixels);f->pixels=NULL;
+            shot_forget(m,f->eyes);
+            ch_vk_target_destroy(f->eyes);f->eyes=NULL;free(f->pixels);f->pixels=NULL;f->held=0;
             f->div=want;f->serial=0;
             if(m->log) fprintf(stderr,"[immersive] surface %08X eyes now 1/%u size\n",f->va,want);
             continue;

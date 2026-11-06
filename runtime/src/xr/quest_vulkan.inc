@@ -419,11 +419,13 @@ static void vk_test_dump(const Frame *f)
         .lens_crop={s_qo.lens_crop[0],s_qo.lens_crop[1],s_qo.lens_crop[2]}};
     if(g.weapon==CH_VR_RIFLE) fprintf(stderr,"[xr] test overlay: lens %s, crop at %.4f %.4f half %.3f, crosshair %d, scope scale %.2f\n",
         g.lens_fresh && g.lens_tex?"with a picture":"dark",g.lens_crop[0],g.lens_crop[1],g.lens_crop[2],g.lens_cross,g.scope_scale);
-    /* the rifle's laser as rifle_along draws it: on unless Off, no dot, far out along the barrel */
+    /* the rifle's laser as rifle_along draws it: on unless Off, far out along the barrel, its
+     * shot's dot there (rifle_shot: nothing met) */
     const float reach=g.weapon==CH_VR_RIFLE?RIFLE_LASER_LEN/2.6f:1.0f;
     if(g.weapon==CH_VR_RIFLE) {   /* and with no rifle drawn, its 2D scope held up */
         g.beam=s_vr.laser!=LASER_OFF;g.dot=0;g.show_gun=s_vr.show_gun;
         g.scope_2d=!s_vr.show_gun && g.lens_fresh && g.lens_tex?scope_2d_radius():0;
+        g.shot_dot=g.beam && !(g.scope_2d>0);
     }
     for(int k=0;k<3;k++){g.gun_p[k]=eye[k]+o[k];g.end[k]=g.gun_p[k]+a[k]*reach;}
     size_t bytes=(size_t)s_vk_eye[0].w*s_vk_eye[0].h*4;

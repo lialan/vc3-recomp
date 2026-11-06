@@ -485,6 +485,7 @@ static Frame *take_frame(int *is_new,int allow)
             frame.vr.gp_ok=next.imm.projection_ok;
             frame.vr.gw=(int)next.imm.guest_width;frame.vr.gh=(int)next.imm.guest_height;
             frame.vr.hud_w=(int)next.surface.width;frame.vr.hud_h=(int)next.surface.height;
+            frame.vr.aim_hit=next.imm.aim_hit;
         }
         s_frames_in=next.sequence;
         *is_new=1;
@@ -2359,6 +2360,26 @@ static void rifle_along(const float aim[3])
     s_qo.dot = 0;
 }
 
+/* The rifle's dot where its shot lands (QoFrame.shot_dot), with its laser
+ * on. The game shoots from its camera -- the anchor -- along the aim (LOCAL,
+ * unit), and the renderer walked that ray through an eye's depth (vr_shot.h:
+ * the frame's aim_hit, game units, a game frame or two old; the direction is
+ * this display frame's): the laser ends there. Nothing met (the sky, the
+ * ray out of the eye's view), or no immersive frame: the laser's far end. A
+ * hit farther than that comes in to it (the overlay's far plane is 2 km).
+ * Not while the 2D scope is up: its crosshair marks the point, and its disc
+ * is placed by the far end. */
+static void rifle_shot(const float aim[3], const Frame *f, int scope_2d)
+{
+    const float m = (f && f->vr.imm ? f->vr.aim_hit : 0.0f) / imm_units();
+    int i;
+    s_qo.shot_dot = s_qo.beam && !scope_2d;
+    if (!s_qo.shot_dot || !(m > 0.0f) || !isfinite(m))
+        return;
+    for (i = 0; i < 3; i++)
+        s_qo.end[i] = s_anchor_p[i] + aim[i] * (m < RIFLE_LASER_LEN ? m : RIFLE_LASER_LEN);
+}
+
 static void rifle_frame(XrTime t, const Frame *f, const float *d, int now[2][5], int was[2][5])
 {
     static VrSteady steady;
@@ -2406,6 +2427,7 @@ static void rifle_frame(XrTime t, const Frame *f, const float *d, int now[2][5],
         if (!s_menu.open) {
             yaw_rot(s_anchor_yaw, aim, la);     /* back into LOCAL */
             rifle_along(la);
+            rifle_shot(la, f, scope_2d);
         }
         if (aim_log < 0)
             aim_log = ch_env("AIM_LOG") && atoi(ch_env("AIM_LOG")) > 0;
@@ -2459,6 +2481,7 @@ static void rifle_release(void)
     s_rifle_aim_ok = 0;
     s_rifle_lost = 1;
     s_qo.scope_2d = 0.0f;
+    s_qo.shot_dot = 0;
     retail_pad_apply(&none);
     if (chihiro_profile()->vr.rifle)
         chihiro_profile()->vr.rifle(&r);
@@ -2667,8 +2690,8 @@ static void gun_frame(XrTime t, const Frame *f)
                              || (s_vr.laser == LASER_DOT && s_vr.sight == QO_SIGHT_IRON));
     s_qo.sight = s_vr.sight;
     s_qo.show_gun = s_vr.show_gun;
-    if (rifle)                  /* the lens is its sight; its laser: rifle_frame */
-        s_qo.beam = s_qo.dot = 0;
+    if (rifle)                  /* the lens is its sight; its laser and dot: rifle_frame */
+        s_qo.beam = s_qo.dot = s_qo.shot_dot = 0;
 
     if (s_menu.open) {          /* the gun points at the panel; the game sees nothing */
         float u, v, hit[3];

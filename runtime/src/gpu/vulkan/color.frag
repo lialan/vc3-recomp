@@ -83,6 +83,15 @@ void main() {
             alpha.effect_shape.y>0?clamp(1-abs(d-alpha.effect_shape.x)/alpha.effect_shape.y,0,1):clamp(1-d,0,1);
         a=alpha.effect_color.a*(alpha.effect_shape.x<0?1:a*a);
         shaded=vec4(alpha.effect_color.rgb*a,a);
+    } else if(alpha.effect_kind==3) {
+        /* a dot: a disc of radius shape.x (the quad's half size 1) in
+         * effect_color, tint.rgb at its centre fading to it by shape.y, in
+         * a dark rim out to 1 (tint.a its opacity); edges a pixel soft */
+        float d=length(uv),aa=max(fwidth(d),1e-4);
+        float disc=(1-smoothstep(alpha.effect_shape.x-aa,alpha.effect_shape.x+aa,d))*alpha.effect_color.a;
+        float rim=(1-smoothstep(1-2*aa,1,d))*alpha.effect_tint.a;
+        vec3 c=mix(alpha.effect_tint.rgb,alpha.effect_color.rgb,smoothstep(0,alpha.effect_shape.y,d));
+        shaded=vec4(c*disc,disc+(1-disc)*rim);
     } else {
         /* bare glass: rounded top corners, tint, sheen and a bright rim;
          * nothing outside the outline, so the reticle is clipped to it */
