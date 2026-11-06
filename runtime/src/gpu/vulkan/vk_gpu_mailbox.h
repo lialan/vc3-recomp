@@ -16,6 +16,10 @@ typedef struct {
     int immersive;
     ChVkImmFrame imm;
     VkDeviceSize hud_offset;
+    /* The eyes in the slot's shared image instead of its buffer
+     * (ch_vk_gpu_mailbox_set_images; released to VK_QUEUE_FAMILY_EXTERNAL
+     * in TRANSFER_SRC_OPTIMAL). */
+    int eyes_image;
     /* Bridge mode: the copy into the slot's buffer is asynchronous; wait on
      * this fence (of ready_device) before reading the buffer. */
     VkDevice ready_device;
@@ -46,6 +50,10 @@ VkResult ch_vk_gpu_mailbox_create(ChVkGpuMailbox **);
  * device, capacity bytes each -- and complete; a taken frame then has no
  * image, only its slot, whose shared buffer the consumer reads. */
 void ch_vk_gpu_mailbox_set_buffers(ChVkGpuMailbox *,const VkBuffer buffers[CH_VK_GPU_MAILBOX_SLOTS],VkDeviceSize capacity);
+/* Bridge mode: an RGBA8 image per slot (width x height, the other device's
+ * memory too) that an immersive frame's eyes of that size go to instead of
+ * the slot's buffer (ChVkGpuFrame.eyes_image); NULL: none. */
+void ch_vk_gpu_mailbox_set_images(ChVkGpuMailbox *,const VkImage images[CH_VK_GPU_MAILBOX_SLOTS],uint32_t width,uint32_t height);
 /* How many finished frames may wait, taken oldest first (1, the default: only
  * the newest waits). 2 lets a frame that finishes a little late still be
  * shown, in order, instead of being replaced by the next one. A full queue

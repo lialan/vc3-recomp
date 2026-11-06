@@ -97,8 +97,105 @@ VkResult ch_vk_xr_bridge_create(VkPhysicalDevice physical, VkDevice xr, VkDevice
     return r;
 }
 
+/* The shared images' creation (identical on both devices, as an import
+ * requires). Color attachment and sampled usage as well as transfer: the
+ * driver's compressed layout is kept for such images, and the copies in and
+ * out stay compressed. */
+static VkImageCreateInfo image_info(uint32_t width, uint32_t height, const void *next) {
+    return (VkImageCreateInfo){.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO, .pNext = next,
+        .imageType = VK_IMAGE_TYPE_2D, .format = VK_FORMAT_R8G8B8A8_UNORM, .extent = {width, height, 1},
+        .mipLevels = 1, .arrayLayers = 1, .samples = VK_SAMPLE_COUNT_1_BIT, .tiling = VK_IMAGE_TILING_OPTIMAL,
+        .usage = VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT |
+                 VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+        .sharingMode = VK_SHARING_MODE_EXCLUSIVE, .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED};
+}
+static void destroy_images(ChVkXrBridge *b) {
+    for (unsigned i = 0; i < CH_VK_XR_BRIDGE_SLOTS; i++) {
+        if (b->game_image[i]) vkDestroyImage(b->game, b->game_image[i], NULL);
+        if (b->game_image_memory[i]) vkFreeMemory(b->game, b->game_image_memory[i], NULL);
+        if (b->xr_image[i]) vkDestroyImage(b->xr, b->xr_image[i], NULL);
+        if (b->xr_image_memory[i]) vkFreeMemory(b->xr, b->xr_image_memory[i], NULL);
+        b->game_image[i] = b->xr_image[i] = VK_NULL_HANDLE;
+        b->game_image_memory[i] = b->xr_image_memory[i] = VK_NULL_HANDLE;
+    }
+    b->image_w = b->image_h = 0;
+}
+VkResult ch_vk_xr_bridge_create_images(ChVkXrBridge *b, VkPhysicalDevice physical, uint32_t width, uint32_t height) {
+    if (!b || !b->xr || !b->game || !width || !height) return VK_ERROR_INITIALIZATION_FAILED;
+    PFN_vkGetMemoryFdKHR get_fd = (PFN_vkGetMemoryFdKHR)vkGetDeviceProcAddr(b->xr, "vkGetMemoryFdKHR");
+    if (!get_fd) return VK_ERROR_EXTENSION_NOT_PRESENT;
+    const VkImageCreateInfo probe = image_info(width, height, NULL);
+    VkPhysicalDeviceExternalImageFormatInfo ext_query = {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTERNAL_IMAGE_FORMAT_INFO,
+        .handleType = VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT};
+    VkPhysicalDeviceImageFormatInfo2 query = {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_IMAGE_FORMAT_INFO_2,
+        .pNext = &ext_query, .format = probe.format, .type = probe.imageType, .tiling = probe.tiling, .usage = probe.usage};
+    VkExternalImageFormatProperties ext_props = {.sType = VK_STRUCTURE_TYPE_EXTERNAL_IMAGE_FORMAT_PROPERTIES};
+    VkImageFormatProperties2 props = {.sType = VK_STRUCTURE_TYPE_IMAGE_FORMAT_PROPERTIES_2, .pNext = &ext_props};
+    VkResult r = vkGetPhysicalDeviceImageFormatProperties2(physical, &query, &props);
+    VkExternalMemoryFeatureFlags features = ext_props.externalMemoryProperties.externalMemoryFeatures;
+    if (r != VK_SUCCESS || !(features & VK_EXTERNAL_MEMORY_FEATURE_EXPORTABLE_BIT)
+        || !(features & VK_EXTERNAL_MEMORY_FEATURE_IMPORTABLE_BIT)) {
+        fprintf(stderr, "[xr bridge] opaque-fd images not offered (%d, features 0x%x): the buffers only\n",
+                (int)r, (unsigned)features);
+        return VK_ERROR_FEATURE_NOT_PRESENT;
+    }
+    const int dedicated = (features & VK_EXTERNAL_MEMORY_FEATURE_DEDICATED_ONLY_BIT) != 0;
+    VkExternalMemoryImageCreateInfo external = {.sType = VK_STRUCTURE_TYPE_EXTERNAL_MEMORY_IMAGE_CREATE_INFO,
+        .handleTypes = VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT};
+    const VkImageCreateInfo info = image_info(width, height, &external);
+    const char *step = "images";
+    for (unsigned i = 0; i < CH_VK_XR_BRIDGE_SLOTS && r == VK_SUCCESS; i++) {
+        r = vkCreateImage(b->xr, &info, NULL, &b->xr_image[i]);
+        if (r != VK_SUCCESS) break;
+        r = vkCreateImage(b->game, &info, NULL, &b->game_image[i]);
+        if (r != VK_SUCCESS) break;
+        VkMemoryRequirements req, game_req;
+        vkGetImageMemoryRequirements(b->xr, b->xr_image[i], &req);
+        vkGetImageMemoryRequirements(b->game, b->game_image[i], &game_req);
+        uint32_t type = memory_type(physical, req.memoryTypeBits & game_req.memoryTypeBits);
+        if (type == UINT32_MAX) { r = VK_ERROR_FEATURE_NOT_PRESENT; break; }
+        VkMemoryDedicatedAllocateInfo xr_dedicated = {.sType = VK_STRUCTURE_TYPE_MEMORY_DEDICATED_ALLOCATE_INFO,
+            .image = b->xr_image[i]};
+        VkExportMemoryAllocateInfo export = {.sType = VK_STRUCTURE_TYPE_EXPORT_MEMORY_ALLOCATE_INFO,
+            .pNext = dedicated ? &xr_dedicated : NULL, .handleTypes = VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT};
+        VkMemoryAllocateInfo alloc = {.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO, .pNext = &export,
+            .allocationSize = req.size > game_req.size ? req.size : game_req.size, .memoryTypeIndex = type};
+        step = "image export allocation";
+        r = vkAllocateMemory(b->xr, &alloc, NULL, &b->xr_image_memory[i]);
+        if (r != VK_SUCCESS) break;
+        r = vkBindImageMemory(b->xr, b->xr_image[i], b->xr_image_memory[i], 0);
+        if (r != VK_SUCCESS) break;
+        int fd = -1;
+        VkMemoryGetFdInfoKHR fd_info = {.sType = VK_STRUCTURE_TYPE_MEMORY_GET_FD_INFO_KHR,
+            .memory = b->xr_image_memory[i], .handleType = VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT};
+        step = "image fd export";
+        r = get_fd(b->xr, &fd_info, &fd);
+        if (r != VK_SUCCESS) break;
+        VkMemoryDedicatedAllocateInfo game_dedicated = {.sType = VK_STRUCTURE_TYPE_MEMORY_DEDICATED_ALLOCATE_INFO,
+            .image = b->game_image[i]};
+        VkImportMemoryFdInfoKHR import = {.sType = VK_STRUCTURE_TYPE_IMPORT_MEMORY_FD_INFO_KHR,
+            .pNext = dedicated ? &game_dedicated : NULL,
+            .handleType = VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT, .fd = fd};
+        alloc.pNext = &import;
+        step = "image import";
+        r = vkAllocateMemory(b->game, &alloc, NULL, &b->game_image_memory[i]);
+        if (r != VK_SUCCESS) { close(fd); break; }
+        step = "image import bind";
+        r = vkBindImageMemory(b->game, b->game_image[i], b->game_image_memory[i], 0);
+    }
+    if (r != VK_SUCCESS) {
+        fprintf(stderr, "[xr bridge] %s failed: %d: the buffers only\n", step, (int)r);
+        destroy_images(b);
+        return r;
+    }
+    b->image_w = width; b->image_h = height;
+    fprintf(stderr, "[xr bridge] shared images %ux%u%s\n", width, height, dedicated ? " (dedicated)" : "");
+    return VK_SUCCESS;
+}
+
 void ch_vk_xr_bridge_destroy(ChVkXrBridge *b) {
     if (!b) return;
+    destroy_images(b);
     for (unsigned i = 0; i < CH_VK_XR_BRIDGE_SLOTS; i++) {
         if (b->game_buffer[i]) vkDestroyBuffer(b->game, b->game_buffer[i], NULL);
         if (b->game_memory[i]) vkFreeMemory(b->game, b->game_memory[i], NULL);

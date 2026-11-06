@@ -1892,6 +1892,56 @@ static void cpu_specialize_note(unsigned stage,int ok,size_t in,size_t out) {
 #endif
 /* A pipeline from its key alone (and the target's size: the viewport is
  * static) -- what a target builds, and what the recipes precompile. */
+/* CHIHIRO_VULKAN_PIPELINE_STATS=1 (diagnostic; the device must enable
+ * VK_KHR_pipeline_executable_properties, as the Quest's game device does
+ * then): each new pipeline's per-stage driver statistics -- registers,
+ * instructions, waves -- in the log, the first 300. */
+static int pipeline_stats_on(void) {
+    static int on=-1;
+    if(on<0) {const char *e=getenv("CHIHIRO_VULKAN_PIPELINE_STATS");on=e && atoi(e)!=0;}
+    return on;
+}
+static void pipeline_stats(VkDevice device,VkPipeline pipeline,const PipelineKey *key) {
+    static _Atomic unsigned logged;
+    if(!pipeline_stats_on() || logged>=300) return;
+    PFN_vkGetPipelineExecutablePropertiesKHR props=(PFN_vkGetPipelineExecutablePropertiesKHR)
+        vkGetDeviceProcAddr(device,"vkGetPipelineExecutablePropertiesKHR");
+    PFN_vkGetPipelineExecutableStatisticsKHR stats=(PFN_vkGetPipelineExecutableStatisticsKHR)
+        vkGetDeviceProcAddr(device,"vkGetPipelineExecutableStatisticsKHR");
+    if(!props || !stats) return;
+    VkPipelineInfoKHR pi={.sType=VK_STRUCTURE_TYPE_PIPELINE_INFO_KHR,.pipeline=pipeline};
+    VkPipelineExecutablePropertiesKHR p[4];uint32_t n=4;
+    for(unsigned i=0;i<4;i++) p[i]=(VkPipelineExecutablePropertiesKHR){.sType=VK_STRUCTURE_TYPE_PIPELINE_EXECUTABLE_PROPERTIES_KHR};
+    static pthread_mutex_t lock=PTHREAD_MUTEX_INITIALIZER;   /* the driver's queries from one thread at a time */
+    pthread_mutex_lock(&lock);
+    if(props(device,&pi,&n,p)<0 || !n) {pthread_mutex_unlock(&lock);return;}
+    const unsigned id=++logged;
+    fprintf(stderr,"[pipeline stats] #%u: %u executables:",id,n);
+    for(uint32_t e=0;e<n;e++) fprintf(stderr," [%s / %s / subgroup %u]",p[e].name,p[e].description,p[e].subgroupSize);
+    fputc('\n',stderr);fflush(stderr);
+    static int max_e=-1;   /* CHIHIRO_VULKAN_PIPELINE_STATS=k (k>1): executables 0..k-2 only */
+    if(max_e<0) max_e=atoi(getenv("CHIHIRO_VULKAN_PIPELINE_STATS"))>1?atoi(getenv("CHIHIRO_VULKAN_PIPELINE_STATS"))-1:99;
+    for(uint32_t e=0;e<n && (int)e<max_e;e++) {
+        if(!p[e].name[0] || !p[e].subgroupSize) continue;   /* the Adreno driver lists blank ones, and crashed on them */
+        VkPipelineExecutableInfoKHR ei={.sType=VK_STRUCTURE_TYPE_PIPELINE_EXECUTABLE_INFO_KHR,.pipeline=pipeline,.executableIndex=e};
+        VkPipelineExecutableStatisticKHR s[40];uint32_t m=0;
+        if(stats(device,&ei,&m,NULL)<0 || !m) continue;
+        if(m>40) m=40;
+        for(unsigned i=0;i<m;i++) s[i]=(VkPipelineExecutableStatisticKHR){.sType=VK_STRUCTURE_TYPE_PIPELINE_EXECUTABLE_STATISTIC_KHR};
+        if(stats(device,&ei,&m,s)<0) continue;
+        fprintf(stderr,"[pipeline stats] #%u vp %u fixed %u shader %u specialized %u: %s:",id,key->vertex_count,key->fixed,
+            key->shader,key->specialized,p[e].name);
+        for(uint32_t i=0;i<m;i++) {
+            const VkPipelineExecutableStatisticKHR *t=&s[i];
+            if(t->format==VK_PIPELINE_EXECUTABLE_STATISTIC_FORMAT_BOOL32_KHR) fprintf(stderr," %s=%u",t->name,t->value.b32);
+            else if(t->format==VK_PIPELINE_EXECUTABLE_STATISTIC_FORMAT_INT64_KHR) fprintf(stderr," %s=%lld",t->name,(long long)t->value.i64);
+            else if(t->format==VK_PIPELINE_EXECUTABLE_STATISTIC_FORMAT_UINT64_KHR) fprintf(stderr," %s=%llu",t->name,(unsigned long long)t->value.u64);
+            else fprintf(stderr," %s=%g",t->name,t->value.f64);
+        }
+        fputc('\n',stderr);fflush(stderr);
+    }
+    pthread_mutex_unlock(&lock);
+}
 static VkResult pipeline_build(VkDevice device,VkPipelineCache cache,VkRenderPass pass,VkPipelineLayout layout,
     const PipelineKey *key,uint32_t width,uint32_t height,int may_specialize,VkPipeline *out) {
     VkResult result=VK_SUCCESS;
@@ -2023,7 +2073,11 @@ static VkResult pipeline_build(VkDevice device,VkPipelineCache cache,VkRenderPas
     VkPipelineFragmentShadingRateStateCreateInfoKHR fsr={.sType=VK_STRUCTURE_TYPE_PIPELINE_FRAGMENT_SHADING_RATE_STATE_CREATE_INFO_KHR,
         .fragmentSize={1,1},.combinerOps={VK_FRAGMENT_SHADING_RATE_COMBINER_OP_KEEP_KHR,VK_FRAGMENT_SHADING_RATE_COMBINER_OP_REPLACE_KHR}};
     if(target_foveated(device,width)) pipeline.pNext=&fsr;
+    /* statistics: compiled here, not served from the cache (the driver
+     * crashed querying a cached pipeline's) */
+    if(pipeline_stats_on()) {pipeline.flags|=VK_PIPELINE_CREATE_CAPTURE_STATISTICS_BIT_KHR;cache=VK_NULL_HANDLE;}
     TRY(vkCreateGraphicsPipelines(device,cache,1,&pipeline,NULL,out));
+    pipeline_stats(device,*out,key);
 fail:
     if(vert) vkDestroyShaderModule(device,vert,NULL);
     if(frag) vkDestroyShaderModule(device,frag,NULL);
@@ -2598,6 +2652,49 @@ static VkResult draw_full(ChVkTarget *t, const float rgba[4],
     if(rc) rc_block(rc_bytes,rc,fog_color,stage_images);
     int mergeable=batched && fixed && fixed->stream_bytes && index_count<=MERGE_INDICES &&
         (!t->quantized_depth || t->quantized_depth==5) && merging_on();
+    {   /* CHIHIRO_VULKAN_MERGE_LOG=1 (diagnostic): on targets wider than 1500
+         * (eyes), why a draw does not join the one before, every 20000 draws:
+         * the first difference found, and for parameters the fields that differ */
+        static int log=-1;static unsigned long long why[16],fields[8],n;
+        if(log<0) {const char *e=getenv("CHIHIRO_VULKAN_MERGE_LOG");log=e && atoi(e)!=0;}
+        if(log && t->width>1500) {
+            const OpenDraw *o=&t->open;int k=0;
+            if(!mergeable) k=1;
+            else if(!o->active || !o->mergeable) k=2;
+            else if(o->pipeline!=entry) k=3;
+            else if(o->texture!=texture || memcmp(o->stages,stage_images?stage_images:(const ChVkTexture *const[4]){0},sizeof o->stages)) k=4;
+            else if(o->vertex_count!=vertex_count || o->index_count!=index_count) k=5;
+            else if(o->stencil_reference!=t->stencil_reference || memcmp(o->blend,constants,sizeof o->blend) || memcmp(&o->push,&t->push,sizeof o->push)) k=6;
+            else if(o->rc!=(rc!=NULL) || (rc && memcmp(o->rc_bytes,rc_bytes,sizeof rc_bytes))) k=7;
+            else if(o->params_size!=ch_vk_raw_params_size(fixed) || memcmp(&o->params,fixed,o->params_size)) {
+                k=8;
+                const ChVkFixedParams *p=&o->params,*q=fixed;
+                if(memcmp(p->constants,q->constants,sizeof p->constants)) fields[0]++;
+                if(memcmp(&p->state,&q->state,sizeof p->state)) fields[1]++;
+                if(memcmp(p->attribute_offset,q->attribute_offset,sizeof p->attribute_offset) || p->stream_bytes!=q->stream_bytes) fields[2]++;
+                if(memcmp(p->texture,q->texture,sizeof p->texture) || memcmp(p->stage_scale,q->stage_scale,sizeof p->stage_scale) ||
+                   memcmp(p->uv_scale0,q->uv_scale0,sizeof p->uv_scale0)) fields[3]++;
+                if(memcmp(p->imm_gp,q->imm_gp,sizeof p->imm_gp) || memcmp(p->imm_vp,q->imm_vp,sizeof p->imm_vp) || p->imm_sbs!=q->imm_sbs) fields[4]++;
+                if(p->fog_enable!=q->fog_enable || memcmp(p->fog_param,q->fog_param,sizeof p->fog_param)) fields[5]++;
+                {   /* how many constants differ */
+                    unsigned d=0;for(unsigned c=0;c<192;c++) d+=memcmp(p->constants[c],q->constants[c],16)!=0;
+                    fields[6]+=d;fields[7]+=d!=0;
+                }
+            }
+            else if(memcmp(o->indices,indices,(size_t)index_count*sizeof(*indices))) k=9;
+            else if(!(t->geometry_used==o->stream_end && o->stream_end+vertex_bytes<=t->geometry_capacity)) k=10;
+            else k=0;
+            why[k]++;
+            if(++n%20000==0) {
+                static const char *const names[]={"joins","not mergeable","nothing open","pipeline","texture","counts",
+                    "blend/stencil/push","combiner","params","indices","arena"};
+                fprintf(stderr,"[merge why] %ux%u, %llu draws:",t->width,t->height,n);
+                for(int i=0;i<11;i++) if(why[i]) fprintf(stderr," %s %.1f%%",names[i],100.0*why[i]/n);
+                fprintf(stderr," | params: constants %llu state %llu streams %llu textures %llu imm %llu fog %llu; constants differing per draw %.1f\n",
+                    fields[0],fields[1],fields[2],fields[3],fields[4],fields[5],fields[7]?(double)fields[6]/fields[7]:0.0);
+            }
+        }
+    }
     if(mergeable && t->open.active && t->open.mergeable) {
         const OpenDraw *o=&t->open;
         int joins=o->pipeline==entry && o->texture==texture && o->vertex_count==vertex_count &&
@@ -2774,6 +2871,7 @@ VkResult ch_vk_target_draw_texture_read(ChVkTarget *t, const float rgba[4],
 }
 
 VkDevice ch_vk_target_device(const ChVkTarget *t) { return t?t->device:VK_NULL_HANDLE; }
+VkPhysicalDevice ch_vk_target_physical(const ChVkTarget *t) { return t?t->physical:VK_NULL_HANDLE; }
 VkQueue ch_vk_target_queue(const ChVkTarget *t) { return t?t->queue:VK_NULL_HANDLE; }
 uint32_t ch_vk_target_family(const ChVkTarget *t) { return t?t->family:0; }
 VkResult ch_vk_target_record_copy_to_buffer(ChVkTarget *t,VkCommandBuffer command,VkBuffer destination,
@@ -2797,6 +2895,35 @@ VkResult ch_vk_target_record_copy_to_buffer(ChVkTarget *t,VkCommandBuffer comman
         .srcQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED,.dstQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED,
         .buffer=destination,.offset=offset,.size=t->bytes};
     vkCmdPipelineBarrier(command,VK_PIPELINE_STAGE_TRANSFER_BIT,VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,0,0,NULL,1,&done,0,NULL);
+    return VK_SUCCESS;
+}
+VkResult ch_vk_target_record_copy_to_image(ChVkTarget *t,VkCommandBuffer command,VkImage destination) {
+    if(!t || t->failed || !t->initialized || !command || !destination || destination==t->image)
+        return VK_ERROR_INITIALIZATION_FAILED;
+    /* as the copy to a buffer: this target's recorded work first, unwaited */
+    live_release(t);
+    VkResult r=ch_vk_target_submit(t);
+    if(r!=VK_SUCCESS) return r;
+    if(t->layout!=VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL) return VK_ERROR_FEATURE_NOT_PRESENT;
+    VkMemoryBarrier ready={.sType=VK_STRUCTURE_TYPE_MEMORY_BARRIER,
+        .srcAccessMask=VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT|VK_ACCESS_TRANSFER_WRITE_BIT,
+        .dstAccessMask=VK_ACCESS_TRANSFER_READ_BIT};
+    /* the destination's old contents are not kept: all of it is copied over */
+    VkImageMemoryBarrier dst={.sType=VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+        .dstAccessMask=VK_ACCESS_TRANSFER_WRITE_BIT,.oldLayout=VK_IMAGE_LAYOUT_UNDEFINED,
+        .newLayout=VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+        .srcQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED,.dstQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED,
+        .image=destination,.subresourceRange={VK_IMAGE_ASPECT_COLOR_BIT,0,1,0,1}};
+    vkCmdPipelineBarrier(command,VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,VK_PIPELINE_STAGE_TRANSFER_BIT,0,1,&ready,0,NULL,1,&dst);
+    VkImageCopy copy={.srcSubresource={VK_IMAGE_ASPECT_COLOR_BIT,0,0,1},
+        .dstSubresource={VK_IMAGE_ASPECT_COLOR_BIT,0,0,1},.extent={t->width,t->height,1}};
+    vkCmdCopyImage(command,t->image,VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,destination,VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,1,&copy);
+    /* released to the other device (vk_xr_swapchain.c acquires it), ready to
+     * be copied from */
+    dst.srcAccessMask=VK_ACCESS_TRANSFER_WRITE_BIT;dst.dstAccessMask=0;
+    dst.oldLayout=VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;dst.newLayout=VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+    dst.srcQueueFamilyIndex=t->family;dst.dstQueueFamilyIndex=VK_QUEUE_FAMILY_EXTERNAL;
+    vkCmdPipelineBarrier(command,VK_PIPELINE_STAGE_TRANSFER_BIT,VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,0,0,NULL,0,NULL,1,&dst);
     return VK_SUCCESS;
 }
 static int ring_inflight(const ChVkTarget *t) {

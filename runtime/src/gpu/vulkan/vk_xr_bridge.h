@@ -15,8 +15,18 @@ typedef struct {
     VkDeviceSize capacity;
     VkBuffer xr_buffer[CH_VK_XR_BRIDGE_SLOTS], game_buffer[CH_VK_XR_BRIDGE_SLOTS];
     VkDeviceMemory xr_memory[CH_VK_XR_BRIDGE_SLOTS], game_memory[CH_VK_XR_BRIDGE_SLOTS];
+    /* ch_vk_xr_bridge_create_images: an RGBA8 image per slot, image_w x
+     * image_h, the same memory on both devices (none: image_w 0). The eyes
+     * cross in them image to image: through the buffers both copies went to
+     * and from linear memory -- 2.5 + 1.8 ms of GPU a frame on the Quest,
+     * against ~0.8 ms for one image-to-image copy. */
+    VkImage xr_image[CH_VK_XR_BRIDGE_SLOTS], game_image[CH_VK_XR_BRIDGE_SLOTS];
+    VkDeviceMemory xr_image_memory[CH_VK_XR_BRIDGE_SLOTS], game_image_memory[CH_VK_XR_BRIDGE_SLOTS];
+    uint32_t image_w, image_h;
 } ChVkXrBridge;
 VkResult ch_vk_xr_bridge_create(VkPhysicalDevice physical, VkDevice xr, VkDevice game,
                                 VkDeviceSize capacity, ChVkXrBridge *out);
+/* The shared images (after create); on failure none, the buffers kept. */
+VkResult ch_vk_xr_bridge_create_images(ChVkXrBridge *b, VkPhysicalDevice physical, uint32_t width, uint32_t height);
 void ch_vk_xr_bridge_destroy(ChVkXrBridge *b);
 #endif

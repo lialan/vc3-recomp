@@ -230,6 +230,16 @@ static void vk_split_init(VkDevice *device,VkQueue *queue)
     }
     VkDeviceCreateInfo dc={.sType=VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,.pNext=&shader_features.ubo_layout,.queueCreateInfoCount=1,.pQueueCreateInfos=&q,
         .pEnabledFeatures=&want,.enabledExtensionCount=ext_count,.ppEnabledExtensionNames=ext};
+    /* CHIHIRO_VULKAN_PIPELINE_STATS=1 (diagnostic, vk_target.c): the driver's
+     * per-pipeline statistics */
+    VkPhysicalDevicePipelineExecutablePropertiesFeaturesKHR pipeline_info={
+        .sType=VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PIPELINE_EXECUTABLE_PROPERTIES_FEATURES_KHR,.pipelineExecutableInfo=VK_TRUE};
+    if(getenv("CHIHIRO_VULKAN_PIPELINE_STATS") && atoi(getenv("CHIHIRO_VULKAN_PIPELINE_STATS")) && ext_count<8 &&
+       ch_vk_device_has_extension(s_vk.physical,VK_KHR_PIPELINE_EXECUTABLE_PROPERTIES_EXTENSION_NAME)) {
+        ext[ext_count++]=VK_KHR_PIPELINE_EXECUTABLE_PROPERTIES_EXTENSION_NAME;dc.enabledExtensionCount=ext_count;
+        pipeline_info.pNext=(void *)dc.pNext;dc.pNext=&pipeline_info;
+        fprintf(stderr,"[quest Vulkan] pipeline statistics on\n");
+    }
     VkDevice game;VkResult r=vkCreateDevice(s_vk.physical,&dc,NULL,&game);
     if(r!=VK_SUCCESS && gp.globalPriority) {
         fprintf(stderr,"[quest Vulkan] game priority refused (%d): the default\n",(int)r);
@@ -302,6 +312,10 @@ static int vk_host_init(void)
     if(s_vk_split && s_vk.raw_fixed) {
         config.immersive_view=vk_imm_view;config.present_immersive=vk_publish_imm;
         vk_imm_eye_size(&config.immersive_eye_width,&config.immersive_eye_height);
+        /* the eyes cross image to image (vk_xr_bridge.h); without, the buffers */
+        if(ch_vk_xr_bridge_create_images(&s_vk_bridge,s_vk.physical,config.immersive_eye_width*2,
+               config.immersive_eye_height)==VK_SUCCESS)
+            ch_vk_gpu_mailbox_set_images(s_vk_frames,s_vk_bridge.game_image,s_vk_bridge.image_w,s_vk_bridge.image_h);
         const ChihiroProfile *p=chihiro_profile();
         config.immersive_lens_k=p->vr.lens_k;
         config.immersive_scale=p->vr.render_scale;
@@ -555,12 +569,42 @@ static uint64_t s_vk_seg[12];   /* world, clear, HUD, gun, swapchain copy, settl
 static struct {
     VkCommandPool pool;VkCommandBuffer cmd[VK_HOST_CMDS];VkFence fence[VK_HOST_CMDS];
     int busy[VK_HOST_CMDS];unsigned next;int world;   /* world: the last world copy's slot, -1 none */
+    /* CHIHIRO_VULKAN_MAILBOX_TIMING=1 (diagnostic): the world copies' GPU
+     * time on the headset's device, averaged in the log every 60 */
+    VkQueryPool timing;int timed[VK_HOST_CMDS];float period;double ms;unsigned n;
 } s_vk_host={.world=-1};
 static void vk_host_wait(unsigned i)
 {
     if(!s_vk_host.busy[i]) return;
     vk_check(vkWaitForFences(s_vk.device,1,&s_vk_host.fence[i],VK_TRUE,5000000000ULL),"host command wait");
     s_vk_host.busy[i]=0;
+    if(s_vk_host.timed[i]) {
+        uint64_t t[2];s_vk_host.timed[i]=0;
+        if(vkGetQueryPoolResults(s_vk.device,s_vk_host.timing,2*i,2,sizeof t,t,sizeof t[0],VK_QUERY_RESULT_64_BIT)==VK_SUCCESS) {
+            s_vk_host.ms+=(double)(t[1]-t[0])*s_vk_host.period/1e6;
+            if(++s_vk_host.n==60) {
+                fprintf(stderr,"[xr] world copies: %.3f ms of GPU each (60 frames)\n",s_vk_host.ms/s_vk_host.n);
+                s_vk_host.ms=0;s_vk_host.n=0;
+            }
+        }
+    }
+}
+/* the world copy's timestamps (MAILBOX_TIMING): at its start, at its end */
+static void vk_host_stamp(VkCommandBuffer cmd,int end)
+{
+    static int on=-1;
+    if(on<0) {
+        const char *e=getenv("CHIHIRO_VULKAN_MAILBOX_TIMING");on=e && atoi(e)!=0;
+        if(on) {
+            VkPhysicalDeviceProperties p;vkGetPhysicalDeviceProperties(s_vk.physical,&p);s_vk_host.period=p.limits.timestampPeriod;
+            VkQueryPoolCreateInfo qi={.sType=VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO,.queryType=VK_QUERY_TYPE_TIMESTAMP,.queryCount=2*VK_HOST_CMDS};
+            if(vkCreateQueryPool(s_vk.device,&qi,NULL,&s_vk_host.timing)!=VK_SUCCESS) on=0;
+        }
+    }
+    if(!on) return;
+    unsigned i=s_vk_host.next%VK_HOST_CMDS;
+    if(!end) {vkCmdResetQueryPool(cmd,s_vk_host.timing,2*i,2);vkCmdWriteTimestamp(cmd,VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,s_vk_host.timing,2*i);}
+    else {vkCmdWriteTimestamp(cmd,VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,s_vk_host.timing,2*i+1);s_vk_host.timed[i]=1;}
 }
 static VkCommandBuffer vk_host_begin(void)
 {
@@ -618,7 +662,10 @@ static int vk_world_update(const Frame *f)
     (void)result;
     SEG(6,vk_xr_check(ch_vk_xr_swapchain_wait(s_vk_world,XR_INFINITE_DURATION,&index,&image),"world acquire"));
     VkCommandBuffer cmd=vk_host_begin();
-    SEG(7,vk_xr_check(ch_vk_xr_swapchain_record_buffer(s_vk_world,cmd,s_vk_bridge.xr_buffer[f->gpu.slot],0),"world copy"));
+    vk_host_stamp(cmd,0);
+    if(f->gpu.eyes_image && s_vk_bridge.image_w==w && s_vk_bridge.image_h==h)
+        SEG(7,vk_xr_check(ch_vk_xr_swapchain_record_image(s_vk_world,cmd,s_vk_bridge.xr_image[f->gpu.slot],s_vk.family),"world copy"));
+    else SEG(7,vk_xr_check(ch_vk_xr_swapchain_record_buffer(s_vk_world,cmd,s_vk_bridge.xr_buffer[f->gpu.slot],0),"world copy"));
     s_vk_world_scale=f->gpu.imm.scale>0 && f->gpu.imm.scale<=1?f->gpu.imm.scale:1;
     s_drawn_pct=(int)(s_vk_world_scale*100+.5f);
     /* The HUD: a quad layer of its own at the game's 640x480, between the
@@ -679,6 +726,7 @@ static int vk_world_update(const Frame *f)
             f->gpu.imm.lens_offset),"lens copy");
         s_vk_lens_aim=f->gpu.imm.lens_aim;
     }
+    vk_host_stamp(cmd,1);
     s_vk_host.world=(int)vk_host_submit();
     SEG(9,vk_xr_check(ch_vk_xr_swapchain_release_submitted(s_vk_world),"world release"));
     if(s_vk_hud_valid && !vk_hud_in_overlay()) vk_xr_check(ch_vk_xr_quad_release_submitted(s_vk_hud_quad),"HUD release");
@@ -957,7 +1005,11 @@ static unsigned vk_present(const Frame *f,const XrCompositionLayerBaseHeader **l
                 vk_check(ch_vk_target_clear_read(s_vk_eye[e].target,transparent,s_vk_eye[e].pixels,bytes),"overlay first clear");
                 cleared[e]=1;
             }
-            SEG(1,vk_check(ch_vk_target_clear_aspects_read(s_vk_eye[e].target,1,eye_test?tint[e]:transparent,0,0,s_vk_eye[e].pixels,bytes),"overlay clear"));
+            /* colour, depth and stencil at once: the pass then begins with
+             * all three cleared and loads nothing (a colour-only clear left
+             * the tiler loading the old depth every overlay frame: 64 ms of
+             * GPU a second at 120 Hz on the Quest) */
+            SEG(1,vk_check(ch_vk_target_clear_aspects_read(s_vk_eye[e].target,7,eye_test?tint[e]:transparent,1,0,s_vk_eye[e].pixels,bytes),"overlay clear"));
             if(screen) vk_screen_draw(s_vk_eye[e].target,vp,s_vk_eye[e].pixels,bytes);
             if(hud_shown) SEG(2,vk_hud_draw(f,s_vk_eye[e].target,vp,s_vk_eye[e].pixels,bytes));
             if(s_qo.gun_valid) SEG(3,vk_overlay_draw(e,vp,eye,bytes));

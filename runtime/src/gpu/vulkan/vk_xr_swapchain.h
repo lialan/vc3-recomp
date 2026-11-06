@@ -38,5 +38,9 @@ XrResult ch_vk_xr_swapchain_settle(ChVkXrSwapchain *s);
  * into the waited image (left COLOR_ATTACHMENT_OPTIMAL), and release an
  * image whose writes the caller has submitted. */
 XrResult ch_vk_xr_swapchain_record_buffer(ChVkXrSwapchain *s,VkCommandBuffer command,VkBuffer buffer,VkDeviceSize offset);
+/* The same from an RGBA8 image of the swapchain's size that another device
+ * copied into and released (ch_vk_target_record_copy_to_image), acquired
+ * here for queue family `family`. */
+XrResult ch_vk_xr_swapchain_record_image(ChVkXrSwapchain *s,VkCommandBuffer command,VkImage source,uint32_t family);
 XrResult ch_vk_xr_swapchain_release_submitted(ChVkXrSwapchain *s);
 #endif

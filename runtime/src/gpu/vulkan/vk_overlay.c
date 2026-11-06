@@ -80,7 +80,9 @@ void ch_vk_overlay_prepare(ChVkTarget *target,int weapon) {
     if(target && weapon==QO_WEAPON_RIFLE) (void)m700_ready(target);
 }
 /* The M700 and its scope, opaque and depth-tested, into target (its depth
- * cleared first, as the box gun's). */
+ * cleared by the caller, as for the box gun: the headset loop clears all of
+ * the target as its pass begins; a clear here was a full-target clear inside
+ * the pass, every tile of it, 120 times a second). */
 static VkResult m700_read(ChVkTarget *target,const QoFrame *f,const float vp[16],void *pixels,VkDeviceSize bytes) {
     ChVkColorVertex *sv=s_m700.v+s_m700.m.nv;
     const float s=scope_scale(f);
@@ -96,10 +98,8 @@ static VkResult m700_read(ChVkTarget *target,const QoFrame *f,const float vp[16]
        !rifle_shade(&s_m700_scope.p[0][0],&s_m700_scope.n[0][0],&s_m700_scope.c[0][0],s_m700_scope.nv,mvp,model,
            (float *)(void *)sv,stride,col))
         return VK_ERROR_INITIALIZATION_FAILED;
-    VkResult result=ch_vk_target_clear_aspects_read(target,2,NULL,1,0,pixels,bytes);
-    if(result!=VK_SUCCESS) return result;
     const Nv2aRenderState state={.color_mask=0x01010101,.depth_test_enable=1,.depth_write=1,.depth_func=0x201};
-    result=ch_vk_target_draw_texture_read(target,NULL,s_m700.v,(uint32_t)s_m700.m.nv,s_m700.m.idx,(uint32_t)s_m700.m.ni,
+    VkResult result=ch_vk_target_draw_texture_read(target,NULL,s_m700.v,(uint32_t)s_m700.m.nv,s_m700.m.idx,(uint32_t)s_m700.m.ni,
         &state,s_m700.tex,pixels,bytes);
     if(result!=VK_SUCCESS) return result;
     return ch_vk_target_draw_state_read(target,NULL,sv,(uint32_t)s_m700_scope.nv,s_m700_scope.idx,(uint32_t)s_m700_scope.ni,
@@ -145,10 +145,8 @@ VkResult ch_vk_overlay_gun_read(ChVkTarget *target,const QoFrame *f,const float 
         for(unsigned k=0;k<3;k++) vertices[i].rgba[k]=v[6+k]*diffuse+spec;
         vertices[i].rgba[3]=1; indices[i]=(uint16_t)i;
     }
-    result=ch_vk_target_clear_aspects_read(target,2,NULL,1,0,pixels,bytes);
-    if(result!=VK_SUCCESS) goto done;
     const Nv2aRenderState state={.color_mask=0x01010101,.depth_test_enable=1,.depth_write=1,.depth_func=0x201};
-    result=ch_vk_target_draw_state_read(target,NULL,vertices,(uint32_t)gun_verts,indices,(uint32_t)gun_verts,&state,pixels,bytes);
+    result=ch_vk_target_draw_state_read(target,NULL,vertices,(uint32_t)gun_verts,indices,(uint32_t)gun_verts,&state,pixels,bytes);   /* depth: the caller's clear */
 done:
     free(vertices); free(indices); return result;
 }

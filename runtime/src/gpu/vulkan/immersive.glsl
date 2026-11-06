@@ -69,10 +69,14 @@ vec4 ch_imm_position(vec3 s,float w,vec4 guest_clip,out float side,out float low
         float ipz=params.p.imm_gp[4],ez=w*ipz;
         vec3 v=vec3((s.x-params.p.imm_gp[2])/params.p.imm_gp[0]*ez,
                     (s.y-params.p.imm_gp[3])/params.p.imm_gp[1]*ez,-w*abs(ipz));
+        // both eyes' matrices at fixed places, then the instance's: a
+        // matrix indexed by the instance was read from memory per vertex
         mat4 m;
-        for(int k=0;k<4;k++)
-            m[k]=vec4(params.p.imm_vp[eye][k*4],params.p.imm_vp[eye][k*4+1],
-                      params.p.imm_vp[eye][k*4+2],params.p.imm_vp[eye][k*4+3]);
+        for(int k=0;k<4;k++) {
+            vec4 l=vec4(params.p.imm_vp[0][k*4],params.p.imm_vp[0][k*4+1],params.p.imm_vp[0][k*4+2],params.p.imm_vp[0][k*4+3]);
+            vec4 r=vec4(params.p.imm_vp[1][k*4],params.p.imm_vp[1][k*4+1],params.p.imm_vp[1][k*4+2],params.p.imm_vp[1][k*4+3]);
+            m[k]=eye==0?l:r;
+        }
         c=m*vec4(v,1);
         // The surfaces hold the picture top row first: screen y down.
         c.y=-c.y;

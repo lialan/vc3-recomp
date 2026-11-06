@@ -187,6 +187,10 @@ uint32_t ch_vk_target_family(const ChVkTarget *);
  * records the color copy into command, a buffer of the caller's for the same
  * queue, submitted after this call and before the target's next work. */
 VkResult ch_vk_target_record_copy_to_buffer(ChVkTarget *,VkCommandBuffer command,VkBuffer,VkDeviceSize offset,VkDeviceSize capacity);
+/* The same into an RGBA8 image of the target's size on another device's
+ * memory (vk_xr_bridge.h): left in TRANSFER_SRC_OPTIMAL, released to
+ * VK_QUEUE_FAMILY_EXTERNAL for that device to acquire. */
+VkResult ch_vk_target_record_copy_to_image(ChVkTarget *,VkCommandBuffer command,VkImage destination);
 VkResult ch_vk_target_copy_to_buffer_at(ChVkTarget *,VkBuffer,VkDeviceSize offset,VkDeviceSize capacity);
 VkResult ch_vk_target_copy_to_buffer(ChVkTarget *target, VkBuffer destination, VkDeviceSize capacity);
 /* Copy initialized target to an externally acquired, same-device RGBA8 image
@@ -197,6 +201,7 @@ VkResult ch_vk_target_export_image(ChVkTarget *target, VkImage destination,
     void *verification_rgba, VkDeviceSize verification_bytes);
 VkFence ch_vk_target_completion_fence(const ChVkTarget *target);
 VkDevice ch_vk_target_device(const ChVkTarget *target);
+VkPhysicalDevice ch_vk_target_physical(const ChVkTarget *target);
 /* Fragment-combiner path accepts NONE, projective 2D/3D, noncube mode 3
  * and PASSTHRU (0..4). Stage images must belong to the same device. xy[6..9] specular, [10] fog,
  * [11..26] four stage coordinates. Guest adapter supplies these from ext. */
