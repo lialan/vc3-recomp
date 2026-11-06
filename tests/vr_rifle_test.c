@@ -350,8 +350,273 @@ static void rifle_fits_hand(void)
     CHECK(sizeof RIFLE_BODY / sizeof *RIFLE_BODY + RIFLE_SCOPE_N <= 64);
 }
 
+/* ── Scope sensitivity (vr_sens_step), the eye at the lens, the gun drawn along the aim ── */
+
+#define LEASH (float)(4.0 * DEG)
+
+/* the angle between two directions (any lengths), radians */
+static double angle3(const float a[3], const float b[3])
+{
+    double c[3] = { (double)a[1] * b[2] - (double)a[2] * b[1], (double)a[2] * b[0] - (double)a[0] * b[2],
+                    (double)a[0] * b[1] - (double)a[1] * b[0] };
+    return atan2(sqrt(c[0] * c[0] + c[1] * c[1] + c[2] * c[2]),
+                 (double)a[0] * b[0] + (double)a[1] * b[1] + (double)a[2] * b[2]);
+}
+
+/* yaw y (+ right), pitch p (+ up), past +-90 degrees over the pole */
+static void dir_yp(double y, double p, float d[3])
+{
+    d[0] = (float)(sin(y) * cos(p));
+    d[1] = (float)sin(p);
+    d[2] = (float)(-cos(y) * cos(p));
+}
+
+static void sens_gain_one_is_identity(void)
+{
+    VrSens a = {{0}, {0}, 0}, b = {{0}, {0}, 0};
+    float h[3], oa[3], ob[3];
+    double worst = 0;
+    for (int n = 0; n < 288; n++) {     /* 4 s of a wide, quick wander */
+        dir_yp(0.6 * sin(2 * PI * 0.7 * n * DT), 0.4 * sin(2 * PI * 0.45 * n * DT), h);
+        vr_sens_step(&a, h, 1, 1.0f, LEASH, DT, oa);    /* engaged at 100% */
+        vr_sens_step(&b, h, 0, 0.35f, LEASH, DT, ob);   /* not engaged: the gain does nothing */
+        if (angle3(oa, h) > worst) worst = angle3(oa, h);
+        if (angle3(ob, h) > worst) worst = angle3(ob, h);
+        for (int i = 0; i < 3; i++) CHECK(isfinite(oa[i]) && isfinite(ob[i]));
+    }
+    printf("sens gain 1 / disengaged: worst %.2e deg off the hand\n", worst / DEG);
+    CHECK(worst < 1e-5);
+}
+
+/* Gain 0.5: a 1 degree hand move gives 0.5 -- level, and across the zenith
+ * (no yaw/pitch anywhere: the same along any great circle) */
+static void sens_halves_small_moves(void)
+{
+    const double base[2][2] = {{0.2, 0}, {0, 89.5 * DEG}};     /* yaw, pitch to start at */
+    const double step[2][2] = {{0.1 * DEG, 0}, {0, 0.1 * DEG}}; /* 10 frames of this each */
+    for (int c = 0; c < 2; c++) {
+        VrSens s = {{0}, {0}, 0};
+        float h0[3], h[3], o0[3], o[3];
+        dir_yp(base[c][0], base[c][1], h0);
+        vr_sens_step(&s, h0, 1, 0.5f, LEASH, DT, o0);
+        for (int i = 0; i < 3; i++) NEAR(o0[i], h0[i], 1e-6);
+        for (int k = 1; k <= 10; k++) {
+            dir_yp(base[c][0] + k * step[c][0], base[c][1] + k * step[c][1], h);
+            vr_sens_step(&s, h, 1, 0.5f, LEASH, DT, o);
+        }
+        NEAR(angle3(h0, h) / DEG, 1.0, 1e-4);
+        NEAR(angle3(o0, o) / DEG, 0.5, 1e-3);
+        NEAR(angle3(o, h) / DEG, 0.5, 1e-3);
+        NEAR(angle3(o0, o) + angle3(o, h), angle3(h0, h), 1e-6);   /* on the hand's path */
+        if (c == 1) {   /* from 89.5 up, half a degree on: at the zenith, still on x = 0 */
+            NEAR(o[0], 0, 1e-6);
+            NEAR(o[1], 1, 1e-6);
+        }
+    }
+}
+
+/* Gain 0.35, a 20 degree sweep: the aim never more than the leash off the
+ * hand, and dragged along by it once there */
+static void sens_leash_caps_offset(void)
+{
+    VrSens s = {{0}, {0}, 0};
+    float h[3], o[3], o0[3];
+    double worst = 0;
+    dir_yp(0, 0, h);
+    vr_sens_step(&s, h, 1, 0.35f, LEASH, DT, o0);
+    for (int n = 1; n <= 36; n++) {    /* 20 degrees in 0.5 s */
+        dir_yp(20.0 * DEG * n / 36, 0, h);
+        vr_sens_step(&s, h, 1, 0.35f, LEASH, DT, o);
+        if (angle3(o, h) > worst) worst = angle3(o, h);
+    }
+    printf("sens leash: worst offset %.4f deg (leash %.1f), the aim moved %.3f deg\n", worst / DEG, LEASH / DEG,
+           angle3(o0, o) / DEG);
+    CHECK(worst <= LEASH + 1e-3);
+    NEAR(angle3(o, h), LEASH, 1e-4);
+    NEAR(angle3(o0, o) / DEG, 16.0, 1e-2);
+    dir_yp(20.0 * DEG + PI / 2, 0.3, h);   /* a jump, a quarter turn in a frame */
+    vr_sens_step(&s, h, 1, 0.35f, LEASH, DT, o);
+    CHECK(angle3(o, h) <= LEASH + 1e-3);
+}
+
+/* the offset the leash test leaves, then not engaged for t seconds (the
+ * hand still, or sweeping on at 40 deg/s): the offset after it, and after
+ * the first frame */
+static double sens_after(double t, int sweep, double *first)
+{
+    VrSens s = {{0}, {0}, 0};
+    float h[3], o[3];
+    double a = 0;
+    for (int n = 0; n <= 36; n++) {
+        a = 20.0 * DEG * n / 36;
+        dir_yp(a, 0, h);
+        vr_sens_step(&s, h, 1, 0.35f, LEASH, DT, o);
+    }
+    for (int n = 1; n * DT <= t + 1e-6; n++) {
+        if (sweep) a += 40.0 * DEG * DT;
+        dir_yp(a, 0, h);
+        vr_sens_step(&s, h, 0, 0.35f, LEASH, DT, o);
+        if (n == 1) *first = angle3(o, h);
+    }
+    return angle3(o, h);
+}
+
+static void sens_disengage_returns_to_hand(void)
+{
+    double first, still = sens_after(0.3, 0, &first), moving = sens_after(0.3, 1, &first);
+    double at25 = sens_after(0.25, 0, &first);
+    printf("sens disengaged: offset %.2f deg after one frame, %.5f deg at 0.25 s, %.5f at 0.3 s (%.5f sweeping)\n",
+           first / DEG, at25 / DEG, still / DEG, moving / DEG);
+    CHECK(still / DEG < 0.05);
+    CHECK(moving / DEG < 0.05);
+    CHECK(at25 / DEG < 0.05);
+    /* no jump: about a time constant of 0.08 s, not a snap */
+    CHECK(first > 0.6 * LEASH && first < 0.95 * LEASH);
+}
+
+static void sens_ignores_bad_input(void)
+{
+    VrSens a = {{0}, {0}, 0}, b = {{0}, {0}, 0}, c = {{0}, {0}, 0};
+    float h[3], oa[3], ob[3], held[3];
+    const float bad_dt[4] = {0.0f, -1.0f, NAN, INFINITY};
+    const float bad_h[3][3] = {{NAN, 0, -1}, {0, INFINITY, -1}, {0, 0, 0}};
+    vr_sens_step(&c, bad_h[0], 1, 0.5f, LEASH, DT, held);   /* nothing yet: straight ahead */
+    NEAR(held[0], 0, 0); NEAR(held[1], 0, 0); NEAR(held[2], -1, 0);
+    dir_yp(0.3, 0.1, h);
+    vr_sens_step(&c, h, 1, 0.5f, LEASH, 0.0f, held);        /* a first hand, bad dt: the hand */
+    for (int i = 0; i < 3; i++) NEAR(held[i], h[i], 1e-6);
+    for (int n = 0; n < 20; n++) {
+        dir_yp(0.01 * n, 0.005 * n, h);
+        vr_sens_step(&a, h, 1, 0.5f, LEASH, DT, oa);
+        vr_sens_step(&b, h, 1, 0.5f, LEASH, DT, ob);
+    }
+    dir_yp(0.5, 0.2, h);
+    for (int k = 0; k < 4; k++) {       /* bad dt: the aim held, nothing learnt */
+        vr_sens_step(&a, h, 1, 0.5f, LEASH, bad_dt[k], held);
+        for (int i = 0; i < 3; i++) NEAR(held[i], oa[i], 0);
+    }
+    for (int k = 0; k < 3; k++) {       /* no hand: the same */
+        vr_sens_step(&a, bad_h[k], 1, 0.5f, LEASH, DT, held);
+        for (int i = 0; i < 3; i++) NEAR(held[i], oa[i], 0);
+    }
+    vr_sens_step(&a, h, 1, 0.5f, LEASH, DT, oa);
+    vr_sens_step(&b, h, 1, 0.5f, LEASH, DT, ob);
+    for (int i = 0; i < 3; i++) { CHECK(isfinite(oa[i])); NEAR(oa[i], ob[i], 0); }
+    /* a gain or leash not a number: still a unit direction near the hand */
+    vr_sens_step(&a, h, 1, NAN, NAN, DT, oa);
+    for (int i = 0; i < 3; i++) CHECK(isfinite(oa[i]));
+    NEAR(oa[0] * oa[0] + oa[1] * oa[1] + oa[2] * oa[2], 1, 1e-5);
+    CHECK(angle3(oa, h) <= LEASH + 1e-3);
+}
+
+static void eye_on_lens_cases(void)
+{
+    const float lens[3] = {0.1f, 1.2f, -0.3f}, fwd[3] = {0, 0, -1}, fwd3[3] = {0, 0, -3};
+    const float A = (float)(25 * DEG), D = 0.45f;
+    float p[3], f[3];
+#define AT(dx, dy, dz) (p[0] = lens[0] + (dx), p[1] = lens[1] + (dy), p[2] = lens[2] + (dz), p)
+    CHECK(vr_eye_on_lens(AT(0, 0, 0.2f), fwd, lens, A, D) == 1);        /* behind it, looking in */
+    CHECK(vr_eye_on_lens(AT(0.032f, 0, 0.15f), fwd, lens, A, D) == 1);  /* an eye beside the axis */
+    CHECK(vr_eye_on_lens(AT(0, 0, 0.44f), fwd3, lens, A, D) == 1);      /* any length of forward */
+    CHECK(vr_eye_on_lens(AT(0, 0, 0.46f), fwd, lens, A, D) == 0);       /* too far */
+    CHECK(vr_eye_on_lens(AT(0, 0, -0.2f), fwd, lens, A, D) == 0);       /* past it: the lens behind the head */
+    f[0] = 0; f[1] = 0; f[2] = 1;
+    CHECK(vr_eye_on_lens(AT(0, 0, 0.2f), f, lens, A, D) == 0);          /* turned away */
+    dir_yp(40 * DEG, 0, f);
+    CHECK(vr_eye_on_lens(AT(0, 0, 0.2f), f, lens, A, D) == 0);          /* turned 40 degrees aside */
+    dir_yp(0, -20 * DEG, f);
+    CHECK(vr_eye_on_lens(AT(0, 0, 0.2f), f, lens, A, D) == 1);          /* looking 20 degrees down at it */
+    CHECK(vr_eye_on_lens(AT(0.2f, 0, 0.1f), fwd, lens, A, D) == 0);     /* beside it, looking ahead */
+    f[0] = NAN; f[1] = 0; f[2] = -1;
+    CHECK(vr_eye_on_lens(AT(0, 0, 0.2f), f, lens, A, D) == 0);
+    f[0] = 0; f[1] = 0; f[2] = 0;
+    CHECK(vr_eye_on_lens(AT(0, 0, 0.2f), f, lens, A, D) == 0);
+    CHECK(vr_eye_on_lens(AT(0, NAN, 0.2f), fwd, lens, A, D) == 0);
+#undef AT
+}
+
+/* q (x y z w) applied to v */
+static void qrot4(const float q[4], const float v[3], float o[3])
+{
+    double tx = 2 * ((double)q[1] * v[2] - (double)q[2] * v[1]);
+    double ty = 2 * ((double)q[2] * v[0] - (double)q[0] * v[2]);
+    double tz = 2 * ((double)q[0] * v[1] - (double)q[1] * v[0]);
+    o[0] = (float)(v[0] + q[3] * tx + (q[1] * tz - q[2] * ty));
+    o[1] = (float)(v[1] + q[3] * ty + (q[2] * tx - q[0] * tz));
+    o[2] = (float)(v[2] + q[3] * tz + (q[0] * ty - q[1] * tx));
+}
+
+/* a gun rolled about its barrel, pitched, then turned: its barrel along
+ * dir_yp(yaw, pitch) */
+static void gun_q(double yaw, double pitch, double roll, float q[4])
+{
+    const double cy = cos(yaw / 2), sy = -sin(yaw / 2), cp = cos(pitch / 2), sp = sin(pitch / 2);
+    const double cr = cos(roll / 2), sr = sin(roll / 2);
+    /* q = Ry(-yaw) * Rx(pitch) * Rz(roll) (+ yaw to the right, as dir_yp) */
+    double x = cy * sp, y = sy * cp, z = -sy * sp, w = cy * cp;    /* Ry * Rx */
+    q[0] = (float)(x * cr + y * sr);
+    q[1] = (float)(y * cr - x * sr);
+    q[2] = (float)(z * cr + w * sr);
+    q[3] = (float)(w * cr - z * sr);
+}
+
+/* The drawn gun along the final aim: its barrel exactly the aim, its up
+ * turned no more than the barrel was (the shortest turn), at the poles too */
+static void gun_along_cases(void)
+{
+    static const float barrel[3] = {0, 0, -1}, upv[3] = {0, 1, 0};
+    const double guns[4][3] = {{0, 0, 0}, {0.4, -0.2, 0.5}, {-1.0, 89.9 * DEG, 0.3}, {2.5, -89.95 * DEG, -1.2}};
+    const double aims[4][2] = {{0.03, 0.01}, {0.45, -0.24}, {-1.0 + PI, 89.9 * DEG}, {2.5, -89.0 * DEG}};
+    for (int k = 0; k < 4; k++) {
+        float q[4], o[4], b0[3], b1[3], u0[3], u1[3], aim[3];
+        gun_q(guns[k][0], guns[k][1], guns[k][2], q);
+        dir_yp(aims[k][0], aims[k][1], aim);
+        vr_gun_along(q, aim, o);
+        NEAR(o[0] * o[0] + o[1] * o[1] + o[2] * o[2] + o[3] * o[3], 1, 1e-6);
+        qrot4(q, barrel, b0); qrot4(o, barrel, b1);
+        qrot4(q, upv, u0); qrot4(o, upv, u1);
+        CHECK(angle3(b1, aim) < 1e-5);
+        CHECK(angle3(u0, u1) <= angle3(b0, aim) + 1e-5);
+        NEAR(b1[0] * u1[0] + b1[1] * u1[1] + b1[2] * u1[2], 0, 1e-5);
+    }
+    {   /* the aim opposite the barrel: a half turn about the gun's own up */
+        float q[4], o[4], b[3], u0[3], u1[3], aim[3];
+        gun_q(0.3, 0.2, 0.4, q);
+        qrot4(q, barrel, b);
+        for (int i = 0; i < 3; i++) aim[i] = -b[i];
+        vr_gun_along(q, aim, o);
+        qrot4(o, barrel, b); qrot4(q, upv, u0); qrot4(o, upv, u1);
+        CHECK(angle3(b, aim) < 1e-5);
+        CHECK(angle3(u0, u1) < 1e-5);
+        for (int i = 0; i < 4; i++) CHECK(isfinite(o[i]));
+    }
+    {   /* nothing to go by: q as it is (normalised) */
+        float q[4], q2[4], o[4];
+        const float nan3[3] = {NAN, 0, -1}, zero[3] = {0, 0, 0}, ahead[3] = {0, 0, -1};
+        gun_q(0.3, 0.2, 0.4, q);
+        vr_gun_along(q, nan3, o);
+        for (int i = 0; i < 4; i++) NEAR(o[i], q[i], 1e-6);
+        vr_gun_along(q, zero, o);
+        for (int i = 0; i < 4; i++) NEAR(o[i], q[i], 1e-6);
+        for (int i = 0; i < 4; i++) q2[i] = 2 * q[i];
+        vr_gun_along(q2, zero, o);
+        for (int i = 0; i < 4; i++) NEAR(o[i], q[i], 1e-6);
+        q2[3] = NAN;                    /* not a rotation: as it is */
+        vr_gun_along(q2, ahead, o);
+        for (int i = 0; i < 3; i++) NEAR(o[i], q2[i], 0);
+        CHECK(isnan(o[3]));
+    }
+}
+
 int main(void)
 {
+    sens_gain_one_is_identity();
+    sens_halves_small_moves();
+    sens_leash_caps_offset();
+    sens_disengage_returns_to_hand();
+    sens_ignores_bad_input();
+    eye_on_lens_cases();
+    gun_along_cases();
     rifle_lens_on_scope_line();
     rifle_lens_unobstructed();
     rifle_scope_on_top();

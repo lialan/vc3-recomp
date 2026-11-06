@@ -72,7 +72,13 @@ void qo_muzzle(float out[3])
 {
     out[0] = 0;
     out[1] = 0;
-    out[2] = MUZZLE_Z;
+    out[2] = chihiro_profile()->vr.weapon == CH_VR_RIFLE ? RIFLE_MUZZLE_Z : MUZZLE_Z;
+}
+
+void qo_lens_centre(float out[3])
+{
+    float r;
+    rifle_lens(qo_scope_scale(), out, &r);
 }
 
 /* ── GL ───────────────────────────────────────────────────────────────── */

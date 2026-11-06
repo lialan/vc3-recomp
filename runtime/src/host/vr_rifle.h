@@ -31,4 +31,22 @@ float vr_zoom_step(float zoom, float stick_y, float dt);
  * centre crop, 0. */
 int vr_lens_crop(const VrLensAim *a, float yaw, float pitch, float out[3]);
 
+/* Scope sensitivity: the aim follows the hand's rotation scaled by gain while
+ * engaged, never more than leash radians from the hand; disengaged, it turns
+ * with the hand and the offset decays to zero (time constant 0.08 s, plus
+ * 2.5 deg/s: a 4 degree offset is gone in 0.24 s). Rotations between
+ * successive unit vectors (axis and angle), no yaw/pitch. Unit vectors in
+ * (any length is normalised); the first hand starts it and is the output.
+ * Bad dt or no hand (not finite, zero): the held aim (none yet: straight
+ * ahead), the state untouched. A gain not in 0..1: 1; a leash not >= 0: 0. */
+typedef struct { float aim[3], last[3]; int n; } VrSens;
+void vr_sens_step(VrSens *s, const float hand[3], int engaged, float gain, float leash, float dt, float out[3]);
+/* Is the head looking into the lens: within max_dist of its centre and facing it within max_angle (radians). */
+int vr_eye_on_lens(const float head_p[3], const float head_fwd[3], const float lens_c[3], float max_angle, float max_dist);
+/* The gun's orientation q (x y z w) turned by the shortest rotation taking
+ * its barrel (-z) onto dir: the gun drawn along dir, its roll kept. dir
+ * opposite the barrel: a half turn about the gun's own up (+y). dir not
+ * finite or zero: q normalised; q not a rotation (not finite or zero): q. */
+void vr_gun_along(const float q[4], const float dir[3], float out[4]);
+
 #endif

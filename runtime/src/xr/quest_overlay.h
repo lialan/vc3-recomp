@@ -31,11 +31,13 @@ typedef struct {
 int  qo_init(void);
 /* Gun space (x right, y up, -z the barrel; origin the aim pose): the line the
  * sight looks along lies this far above the bore (the rifle's: its scope's
- * axis, whatever the sight), and the muzzle is here. */
+ * axis, whatever the sight), and the muzzle is here (the rifle's for it). */
 float qo_sight_height(int sight);
 void  qo_muzzle(float out[3]);
 /* The rifle's scope, lens and all, this many times its size (<PREFIX>_XR_LENS_SCALE; 1). */
 float qo_scope_scale(void);
+/* The rifle's lens's centre in gun space, as the overlay draws it (rifle_lens at qo_scope_scale). */
+void  qo_lens_centre(float out[3]);
 
 /* Into the bound framebuffer (cleared to transparent by the caller, with a
  * depth buffer), seen through viewproj from eye (LOCAL metres). The colours

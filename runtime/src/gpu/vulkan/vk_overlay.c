@@ -194,8 +194,9 @@ VkResult ch_vk_overlay_read(ChVkTarget *target,const QoFrame *f,const float vp[1
         if(result!=VK_SUCCESS) return result;
     }
     ChVkEffect effect={.kind=1,.color={1,.12f,.08f,.85f}};
+    /* the rifle's beam behind its scope and lens (depth tested): not across the lens's picture */
     if(f->beam && qo_beam_vertices(q,eye,muzzle,f->end,.0015f)) {
-        result=effect_read(target,vp,(const float (*)[5])q,&effect,0,pixels,bytes);
+        result=effect_read(target,vp,(const float (*)[5])q,&effect,rifle,pixels,bytes);
         if(result!=VK_SUCCESS) return result;
     }
     float d[3]={f->end[0]-eye[0],f->end[1]-eye[1],f->end[2]-eye[2]};

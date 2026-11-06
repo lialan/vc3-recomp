@@ -1,4 +1,5 @@
-/* vr_rifle.c - the VR rifle's maths: aim angles, one-euro steadying, zoom. */
+/* vr_rifle.c - the VR rifle's maths: aim angles, one-euro steadying, zoom,
+ * the lens's crop, scope sensitivity, the gun drawn along the aim. */
 #include "vr_rifle.h"
 
 #include <math.h>
@@ -88,4 +89,161 @@ int vr_lens_crop(const VrLensAim *a, float yaw, float pitch, float out[3])
     out[0] = (float)(cu < h ? h : cu > 1 - h ? 1 - h : cu);
     out[1] = (float)(cv < h ? h : cv > 1 - h ? 1 - h : cv);
     return cu < h - 1e-6 || cu > 1 - h + 1e-6 || cv < h - 1e-6 || cv > 1 - h + 1e-6;
+}
+
+/* ── Scope sensitivity ────────────────────────────────────────────────── */
+
+#define SENS_TAU 0.08                           /* s: the offset's decay, disengaged */
+#define SENS_RATE (2.5 * 0.0174532925199433)    /* rad/s on top of it: 4 degrees gone in 0.24 s */
+
+/* v as a unit vector (double); 0 if it is not finite or about zero */
+static int unit3(const float v[3], double o[3])
+{
+    double n;
+    if (!isfinite(v[0]) || !isfinite(v[1]) || !isfinite(v[2]))
+        return 0;
+    n = sqrt((double)v[0] * v[0] + (double)v[1] * v[1] + (double)v[2] * v[2]);
+    if (!(n > 1e-6))
+        return 0;
+    for (int i = 0; i < 3; i++) o[i] = v[i] / n;
+    return 1;
+}
+
+/* The shortest turn taking unit a to unit b: its unit axis (ax) and angle.
+ * The same: 0; opposite: pi -- about an axis perpendicular to a. */
+static double turn_axis(const double a[3], const double b[3], double ax[3])
+{
+    double c[3] = { a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0] };
+    double s = sqrt(c[0] * c[0] + c[1] * c[1] + c[2] * c[2]), d = a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+    if (s > 1e-12) {
+        for (int i = 0; i < 3; i++) ax[i] = c[i] / s;
+        return atan2(s, d);
+    }
+    /* parallel: a crossed with the axis it leans on least */
+    const int k = fabs(a[0]) <= fabs(a[1]) && fabs(a[0]) <= fabs(a[2]) ? 0 : fabs(a[1]) <= fabs(a[2]) ? 1 : 2;
+    const double e[3] = { k == 0, k == 1, k == 2 };
+    c[0] = a[1] * e[2] - a[2] * e[1];
+    c[1] = a[2] * e[0] - a[0] * e[2];
+    c[2] = a[0] * e[1] - a[1] * e[0];
+    s = sqrt(c[0] * c[0] + c[1] * c[1] + c[2] * c[2]);
+    for (int i = 0; i < 3; i++) ax[i] = c[i] / s;
+    return d > 0 ? 0 : 3.14159265358979323846;
+}
+
+/* v turned by ang about the unit axis ax (Rodrigues); o may be v */
+static void turn(const double v[3], const double ax[3], double ang, double o[3])
+{
+    const double c = cos(ang), s = sin(ang), k = (ax[0] * v[0] + ax[1] * v[1] + ax[2] * v[2]) * (1 - c);
+    const double x[3] = { ax[1] * v[2] - ax[2] * v[1], ax[2] * v[0] - ax[0] * v[2], ax[0] * v[1] - ax[1] * v[0] };
+    double r[3];
+    for (int i = 0; i < 3; i++) r[i] = v[i] * c + x[i] * s + ax[i] * k;
+    for (int i = 0; i < 3; i++) o[i] = r[i];
+}
+
+/* The aim turns by the hand's turn since the last frame (gain of it while
+ * engaged, all of it otherwise); then its offset from the hand -- an axis
+ * and an angle -- decays (disengaged) and is held to the leash, the aim
+ * rebuilt from the hand at that angle. */
+void vr_sens_step(VrSens *s, const float hand[3], int engaged, float gain, float leash, float dt, float out[3])
+{
+    double h[3], a[3], l[3], ax[3], ang, off;
+    if (!unit3(hand, h)) {      /* no hand: the held aim, else straight ahead */
+        for (int i = 0; i < 3; i++) out[i] = s->n ? s->aim[i] : (i == 2 ? -1.0f : 0.0f);
+        return;
+    }
+    if (!s->n) {                /* the first: the hand */
+        for (int i = 0; i < 3; i++) s->aim[i] = s->last[i] = out[i] = (float)h[i];
+        s->n = 1;
+        return;
+    }
+    if (!(dt > 0) || !isfinite(dt)) {   /* hold, nothing learnt */
+        for (int i = 0; i < 3; i++) out[i] = s->aim[i];
+        return;
+    }
+    if (!(gain >= 0 && gain <= 1))
+        gain = 1;
+    if (!(leash >= 0))
+        leash = 0;
+    if (!unit3(s->aim, a) || !unit3(s->last, l))       /* (they were unit when stored) */
+        for (int i = 0; i < 3; i++) a[i] = l[i] = h[i];
+    ang = turn_axis(l, h, ax);
+    turn(a, ax, engaged ? gain * ang : ang, a);
+    off = turn_axis(h, a, ax);
+    if (!engaged) {
+        off = (off + SENS_RATE * SENS_TAU) * exp(-dt / SENS_TAU) - SENS_RATE * SENS_TAU;
+        if (off < 0)
+            off = 0;
+    }
+    if (off > leash)
+        off = leash;
+    turn(h, ax, off, a);
+    for (int i = 0; i < 3; i++) {
+        s->aim[i] = out[i] = (float)a[i];
+        s->last[i] = (float)h[i];
+    }
+}
+
+int vr_eye_on_lens(const float head_p[3], const float head_fwd[3], const float lens_c[3], float max_angle, float max_dist)
+{
+    double v[3], f[3], dist;
+    for (int i = 0; i < 3; i++) {
+        if (!isfinite(head_p[i]) || !isfinite(lens_c[i]))
+            return 0;
+        v[i] = (double)lens_c[i] - head_p[i];
+    }
+    if (!unit3(head_fwd, f))
+        return 0;
+    dist = sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]);
+    if (!(dist <= max_dist))
+        return 0;
+    if (dist < 1e-6)            /* at the lens */
+        return 1;
+    return (v[0] * f[0] + v[1] * f[1] + v[2] * f[2]) / dist >= cos((double)max_angle);
+}
+
+/* r * q: q's turn, then r's (quaternions x y z w) */
+static void qmul(const double r[4], const double q[4], double o[4])
+{
+    o[0] = r[3] * q[0] + r[0] * q[3] + r[1] * q[2] - r[2] * q[1];
+    o[1] = r[3] * q[1] - r[0] * q[2] + r[1] * q[3] + r[2] * q[0];
+    o[2] = r[3] * q[2] + r[0] * q[1] - r[1] * q[0] + r[2] * q[3];
+    o[3] = r[3] * q[3] - r[0] * q[0] - r[1] * q[1] - r[2] * q[2];
+}
+
+/* The turn from the barrel b to d as a quaternion: (b x d, 1 + b.d)
+ * normalised -- half their angle, about their common perpendicular. */
+void vr_gun_along(const float q[4], const float dir[3], float out[4])
+{
+    double g[4], d[3], b[3], r[4], o[4], n = 0;
+    for (int i = 0; i < 4; i++) {
+        out[i] = q[i];
+        if (!isfinite(q[i]))
+            return;
+        n += (double)q[i] * q[i];
+    }
+    n = sqrt(n);
+    if (!(n > 1e-6))
+        return;
+    for (int i = 0; i < 4; i++) out[i] = (float)(g[i] = q[i] / n);
+    if (!unit3(dir, d))
+        return;
+    /* the barrel: -z turned by g */
+    b[0] = -2 * (g[0] * g[2] + g[1] * g[3]);
+    b[1] = -2 * (g[1] * g[2] - g[0] * g[3]);
+    b[2] = -(1 - 2 * (g[0] * g[0] + g[1] * g[1]));
+    r[0] = b[1] * d[2] - b[2] * d[1];
+    r[1] = b[2] * d[0] - b[0] * d[2];
+    r[2] = b[0] * d[1] - b[1] * d[0];
+    r[3] = 1 + b[0] * d[0] + b[1] * d[1] + b[2] * d[2];
+    if (r[3] < 1e-9) {          /* opposite: a half turn about the gun's up, +y turned by g */
+        r[0] = 2 * (g[0] * g[1] - g[2] * g[3]);
+        r[1] = 1 - 2 * (g[0] * g[0] + g[2] * g[2]);
+        r[2] = 2 * (g[1] * g[2] + g[0] * g[3]);
+        r[3] = 0;
+    }
+    n = sqrt(r[0] * r[0] + r[1] * r[1] + r[2] * r[2] + r[3] * r[3]);
+    for (int i = 0; i < 4; i++) r[i] /= n;
+    qmul(r, g, o);
+    n = sqrt(o[0] * o[0] + o[1] * o[1] + o[2] * o[2] + o[3] * o[3]);
+    for (int i = 0; i < 4; i++) out[i] = (float)(o[i] / n);
 }
