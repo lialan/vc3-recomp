@@ -8,19 +8,11 @@
 #include <stddef.h>
 
 #include "chihiro/chihiro_profile.h"
+#include "host/scope_game.h"
 
 extern void ss1_diag_start(void);   /* ss1_diag.c: SS1_DIAG=1 */
 extern void sub_000FC4D0(void);     /* D3D: insert a fence, kick unless flags & 2; lifted */
-extern void ss1_vr_rifle(const ChVrRifle *r);   /* vr_rifle.c */
-extern void ss1_vr_cull(float half_angle_rad);
-extern int ss1_vr_lens_aim(VrLensAim *out);
-extern void ss1_vr_rifle_test(void);            /* SS1_VR_RIFLE_TEST */
-
-static void ss1_boot(void)
-{
-    ss1_diag_start();
-    ss1_vr_rifle_test();
-}
+extern const ChScopeGame ss1_scope;             /* scope.c */
 
 static const ChihiroProfile k_ss1 = {
     .id = "ss1",
@@ -62,9 +54,9 @@ static const ChihiroProfile k_ss1 = {
             {490,412,640,480, 1, 1},   /* credits (508-607 x 418-435) */
         },
         .hud_tile_count = 5,
-        .rifle = ss1_vr_rifle,
-        .cull = ss1_vr_cull,
-        .lens_aim = ss1_vr_lens_aim,
+        .rifle = ch_scope_vr_rifle,     /* the shared scope game (host/scope_game.h) */
+        .cull = ch_scope_vr_cull,
+        .lens_aim = ch_scope_lens_aim,
     },
     .gpu = {
         /* Game units per metre in the immersive view. The scene's clip w
@@ -81,8 +73,9 @@ static const ChihiroProfile k_ss1 = {
          * at 16-18 fps in stage 1 with the GPU half idle. */
         .lazy_flip = 1,
     },
+    .scope = &ss1_scope,
     .hooks = {
-        .on_boot = ss1_boot,
+        .on_boot = ss1_diag_start,
     },
 };
 

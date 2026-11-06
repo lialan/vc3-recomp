@@ -16,6 +16,7 @@
 #include "chihiro.h"
 #include "chihiro/ch_env.h"
 #include "chihiro/chihiro_profile.h"
+#include "host/scope_game.h"
 
 static char s_save_dir[1024];
 
@@ -56,6 +57,8 @@ void chihiro_init(const char *save_dir)
     snprintf(s_save_dir, sizeof(s_save_dir), "%s", save_dir);
     fprintf(stderr, "[CHIHIRO] HLE init, save dir %s\n", s_save_dir);
     chihiro_set_launch_data();
+    if (chihiro_profile()->scope)
+        ch_scope_boot();     /* host/scope_game.h: the test rifle */
     if (chihiro_profile()->hooks.on_boot)
         chihiro_profile()->hooks.on_boot();
 }

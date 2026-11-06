@@ -154,3 +154,28 @@ out:
     g_eax = 0;
     g_esp += 12;                     /* return address + 2 args */
 }
+
+/* A fence in the push buffer here, not kicked off: D3D's own insert (the
+ * profile's kickoff with flags 2; XDK 5558: insert a fence, kick unless
+ * flags & 2). Returns its time -- the GPU has drawn everything pushed
+ * before it once chihiro_d3d_progress() reaches it, in ring order
+ * ((int32_t)(progress - time) >= 0) -- or 0 with no device yet. */
+uint32_t chihiro_d3d_fence(void)
+{
+    const ChihiroProfile *gp = chihiro_profile();
+    const uint32_t dev = gp->d3d.device_ptr ? MEM32(gp->d3d.device_ptr) : 0;
+    if (!dev || !gp->d3d.kickoff)
+        return 0;
+    const uint32_t time = MEM32(dev + DEV_WRITE_TIME);    /* the time this fence releases */
+    PUSH32(g_esp, 2);
+    PUSH32(g_esp, gp->d3d.kickoff_ret);
+    gp->d3d.kickoff();               /* ret 4 */
+    return time;
+}
+
+/* The GPU's progress: the last fence time it released (0: no device yet) */
+uint32_t chihiro_d3d_progress(void)
+{
+    const uint32_t sem = d3d_semaphore_va();
+    return sem ? MEM32(sem) : 0;
+}

@@ -22,6 +22,7 @@ set(rt_sources
     src/host/recomp_diag.c
     src/host/vr_rifle.c
     src/host/vr_lens.c
+    src/host/scope_game.c
     src/host/retail_pad.c
     )
 if(CHIHIRO_RENDERER STREQUAL "vulkan")

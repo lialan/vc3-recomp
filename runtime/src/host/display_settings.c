@@ -19,7 +19,7 @@
  *           and menus stay 4:3 (gl_backend.c, surf_xform). The Vulkan
  *           renderer's 16:9 keeps the game's 4:3 picture, HUD included,
  *           unchanged in the middle (gpu/vulkan/vk_wide.h); a game may
- *           widen its culling and aim to match (games/ss1/src/wide.c).
+ *           widen its culling and aim to match (host/scope_game.c).
  *
  * Each comes from, first that applies: VC3_FPS / VC3_SCALE / VC3_ASPECT,
  * the "fps=" / "scale=" / "aspect=" line of

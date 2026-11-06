@@ -21,6 +21,8 @@
 #include <stdint.h>
 #include "host/vr_rifle.h"
 
+struct ChScopeGame;     /* host/scope_game.h */
+
 enum { CH_VR_HANDGUN = 0, CH_VR_RIFLE = 1 };
 
 /* A display mode the DIP switches can pick: the value the switches read,
@@ -141,6 +143,11 @@ typedef struct ChihiroProfile {
          * asked by the renderer at each flip with one; 0: not known (NULL: none) */
         int (*lens_aim)(VrLensAim *out);
     } vr;
+
+    /* A game aimed through a sniper scope: where its aim, zoom and scope
+     * pass live, for the shared VR rifle and 16:9 view (host/scope_game.h;
+     * NULL: none) */
+    const struct ChScopeGame *scope;
 
     /* Hooks (NULL: none) */
     struct {
