@@ -115,6 +115,11 @@ typedef struct {
     float immersive_scale;    /* ChVkImmersiveConfig.scale */
     uint32_t (*immersive_lens)(void);   /* the lens picture's guest surface (vr_view.h; NULL/0: none) */
     int (*immersive_lens_aim)(VrLensAim *);   /* ChVkImmersiveConfig.lens_aim */
+    /* Non-zero while the game draws a view the screen only carries for a
+     * copy of it (the profile's vr.flat_now): immersive, its draws into the
+     * screen go to the game's own surface, and draws sampling the screen
+     * sample that, not the eyes. NULL: never. */
+    int (*immersive_flat_now)(uint32_t release);
     float immersive_lens_scale;               /* ChVkImmersiveConfig.lens_scale */
     VrGameProj immersive_program_projection;   /* ChVkImmersiveConfig.program_projection */
     /* Flat 16:9 (vk_wide.h), optional; requires raw_fixed and present_rgba.

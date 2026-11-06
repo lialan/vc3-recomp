@@ -27,6 +27,15 @@ static int skip_guest(void) {
     if(imm_skip_guest<0) {const char *e=getenv("CHIHIRO_VULKAN_IMMERSIVE_SKIP_GUEST");imm_skip_guest=!e || atoi(e);}
     return imm_skip_guest;
 }
+/* The game drawing a view the screen only carries for a copy (Silent Scope
+ * 3's scope view: drawn into the back buffer, then copied into the scope's
+ * texture, the main view drawn over it): its draws stay on the game's own
+ * surface, as flat, for the copy to read -- in the eyes it would be the
+ * world at the wrong projection, on the HUD a picture in front of it
+ * (the host's immersive_flat_now). */
+static int flat_now(const Nv2aRenderState *rs) {
+    return active && active->host.immersive_flat_now && rs && active->host.immersive_flat_now(rs->release);
+}
 static int imm_zpass_visible(void) {
     static int on=-1;
     if(on<0) {const char *e=getenv("CHIHIRO_VULKAN_IMMERSIVE_ZPASS");on=!e || atoi(e);}
@@ -726,7 +735,7 @@ static void clear(const Nv2aSurface *s,const Nv2aRenderState *rs,uint32_t flags,
     /* Skipped guest draws (immersive): the eyes take the clear alone. */
     const Nv2aSurface *at=active->imm && ch_vk_immersive_on(active->imm)?landing(s,rs):s;
     if(skip_guest() && active->imm && ch_vk_immersive_on(active->imm) && at->width &&
-       (uint64_t)at->width*3==(uint64_t)at->height*4) {
+       (uint64_t)at->width*3==(uint64_t)at->height*4 && !flat_now(rs)) {
         uint64_t start=active->costs.enabled?now_us():0,cpu0=active->costs.enabled?thread_cpu_ns():0;
         VkResult r=ch_vk_immersive_clear(active->imm,at,rs,flags,argb,zs);
         if(r!=VK_SUCCESS) fatal(r,"immersive clear");
@@ -745,7 +754,8 @@ static void clear(const Nv2aSurface *s,const Nv2aRenderState *rs,uint32_t flags,
     if(!full_color) import_color(f);
     if(flags & 3) import_depth(f,!active->host.strict_depth_clears && ch_vk_nv2a_clear_depth_full(s,rs,flags));
     store(f,ch_vk_nv2a_clear_state_read(f->target,s,rs,flags,argb,zs,f->rgba,f->bytes),"clear",flags&0xf0,flags&3);
-    if(active->imm) {
+    /* (a view the screen carries for a copy is the guest's alone: flat_now) */
+    if(active->imm && !(at->width && (uint64_t)at->width*3==(uint64_t)at->height*4 && flat_now(rs))) {
         VkResult r=ch_vk_immersive_clear(active->imm,s,rs,flags,argb,zs);
         if(r!=VK_SUCCESS) fatal(r,"immersive clear");
     }
@@ -786,8 +796,9 @@ static void draw_batch(const Nv2aSurface *s,const Nv2aBatch *b,const ChVkFixedGe
      * draws went to the eyes and, flat, to the guest as well -- on the Quest
      * as many draws again as the eyes (stage 1: ~4,500 a frame). */
     const Nv2aSurface *at=active->imm && ch_vk_immersive_on(active->imm)?landing(s,b->state):s;
+    const int flat=flat_now(b->state);
     if(b->zpass_out && imm_zpass_visible() && skip_guest() && fixed && active->imm &&
-       ch_vk_immersive_on(active->imm) && (uint64_t)at->width*3==(uint64_t)at->height*4) {
+       ch_vk_immersive_on(active->imm) && (uint64_t)at->width*3==(uint64_t)at->height*4 && !flat) {
         uint64_t pixels=(uint64_t)at->width*at->height;
         Nv2aRawExtent e;
         if(b->raw && b->raw->extent && b->raw->extent(b->raw,&e)) {
@@ -804,7 +815,7 @@ static void draw_batch(const Nv2aSurface *s,const Nv2aBatch *b,const ChVkFixedGe
     }
     {
         if(skip_guest() && fixed && active->imm && ch_vk_immersive_on(active->imm) && !b->zpass_out &&
-           (uint64_t)at->width*3==(uint64_t)at->height*4) {
+           (uint64_t)at->width*3==(uint64_t)at->height*4 && !flat) {
             uint64_t start=active->costs.enabled?now_us():0,cpu0=active->costs.enabled?thread_cpu_ns():0;
             VkResult r=ch_vk_immersive_draw(active->imm,at,b,fixed,active->textures?resolve_sample:NULL,active);
             if(r!=VK_SUCCESS) fatal(r,"immersive draw");
@@ -829,7 +840,7 @@ static void draw_batch(const Nv2aSurface *s,const Nv2aBatch *b,const ChVkFixedGe
     if(b->state->depth_test_enable || b->state->stencil_enable) import_depth(f,0);
     if(active->profile.enabled) t[3]=now_us();
     VkResult result=VK_SUCCESS;
-    int eyes_sampled=skip_guest() && fixed && active->imm && ch_vk_immersive_guest_draw(active->imm,f->target,s,b,fixed,
+    int eyes_sampled=skip_guest() && !flat && fixed && active->imm && ch_vk_immersive_guest_draw(active->imm,f->target,s,b,fixed,
         active->textures?resolve_sample:NULL,active,f->rgba,f->bytes,&result);
     if(!eyes_sampled) result=fixed?ch_vk_nv2a_draw_fixed_resolved_read(f->target,s,b,fixed,decode_cpu_texture,
         active->textures?resolve_sample:NULL,active,f->rgba,f->bytes):
@@ -882,7 +893,9 @@ static void draw_batch(const Nv2aSurface *s,const Nv2aBatch *b,const ChVkFixedGe
     active->unchanged_depth_draws+=((b->state->depth_test_enable && b->state->depth_write) ||
         (b->state->stencil_enable && b->state->stencil_write_mask)) && !(writes&2);
     store(f,result,"draw",writes&1,writes&2);
-    if(active->imm) {
+    /* (a view the screen carries for a copy is the guest's alone: flat_now;
+     * the copy into its texture still goes on, for the lens's own copy) */
+    if(active->imm && !(flat && (uint64_t)at->width*3==(uint64_t)at->height*4)) {
         VkResult r=ch_vk_immersive_draw(active->imm,s,b,fixed,active->textures?resolve_sample:NULL,active);
         if(r!=VK_SUCCESS) fatal(r,"immersive draw");
     }

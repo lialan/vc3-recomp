@@ -23,8 +23,10 @@
  * picture and the aim's yaw limit moves to the 16:9 view's edge.
  *
  * Diagnostics, by the game's env prefix: <PREFIX>_VR_RIFLE_TEST=yaw_deg,
- * pitch_deg,zoom[,frames] (a rifle held still; with frames, switched off
- * and on every that many game frames); <PREFIX>_AIM_LOG=1 (the aim, the
+ * pitch_deg,zoom[,frames[,start]] (a rifle held still; with frames (0:
+ * never), switched off and on every that many game frames; with start, off
+ * before that game frame -- menus the aim steers, as ss2's and ss3's, then
+ * pick as scripted); <PREFIX>_AIM_LOG=1 (the aim, the
  * shot's direction and the lens's aims); <PREFIX>_VR_LENS_GUARD=g (1..8).
  */
 #ifndef CH_SCOPE_GAME_H
@@ -82,6 +84,38 @@ typedef struct ChScopeGame {
     /* Bytes each replaced function's ret pops after its return address
      * (cdecl: 0) */
     unsigned circle_ret, marks_ret, reticle_ret;
+
+    /* Games built otherwise (Silent Scope 3); 0 where a game is as above.
+     *
+     * zoom_fov: a scope zoomed by its field of view, no zoom factor (zoom_k
+     * 0): the int16 full angles (65536 a turn) its drawn projection is
+     * remade from when they change -- the words ch_scope_fov's function
+     * copies -- scaled by the guard over the rifle's zoom while it runs and
+     * put back after, so the game keeps its own.
+     * pass_ret: the scope pass is the copy of a view drawn elsewhere into the
+     * scope's texture, by a function called for other copies too: only the
+     * call returning here is the pass (ch_scope_pass).
+     * scope_surf_off: the surface object pointer is at [scope_surf] + this.
+     * aim_pre: the scope camera is built from the aim before the aim step
+     * runs; ch_scope_aim_pre wraps that build and writes the rifle first.
+     * cull_view, cull_tan, cull_sec: a cull reading the main view's tangent
+     * and secant of its horizontal half angle (floats at those offsets in
+     * the view record cull_view) rather than a camera block: ch_scope_cull
+     * wraps it -- cdecl (centre, view, radius) -- widening them for the
+     * main view's calls and putting them back after (they make its
+     * projection too). */
+    uint32_t zoom_fov[4];
+    uint32_t pass_ret;
+    uint32_t scope_surf_off;
+    int aim_pre;
+    uint32_t cull_view, cull_tan, cull_sec;
+    /* screen_view: the scope view is drawn into the screen itself before
+     * the copy (pass_ret) takes it into the scope's texture -- the draws
+     * between ch_scope_screen_view's call whose first argument is this
+     * (cdecl, the view's index) and the copy are a picture for the copy,
+     * not the screen's: immersive, they go to the game's own surface
+     * (ch_scope_flat_now, the profile's vr.flat_now). 0: none. */
+    uint32_t screen_view;
 } ChScopeGame;
 
 /* The game's own functions, wrapped (each runs the lifted body, `gen`,
@@ -93,6 +127,12 @@ void ch_scope_focal(void (*gen)(void));      /* a camera mode's focal length, fr
 void ch_scope_circle(void (*gen)(void));     /* draws the scope circle, writes the zoom factor */
 void ch_scope_marks(void (*gen)(void));      /* the circle at the aim and the aim marks */
 void ch_scope_reticle(void (*gen)(void));    /* the reticle inside the scope view */
+/* The other build (above) */
+void ch_scope_fov(void (*gen)(void));        /* remakes the drawn scope projection from zoom_fov */
+void ch_scope_aim_pre(void (*gen)(void));    /* builds the scope camera from the aim (aim_pre) */
+void ch_scope_cull(void (*gen)(void));       /* the bounding-sphere cull (cull_view) */
+void ch_scope_screen_view(void (*gen)(void));    /* draws a view into the screen (screen_view) */
+int ch_scope_flat_now(uint32_t release);               /* the profile's vr.flat_now */
 
 /* The profile's vr hooks (chihiro_profile.h vr.rifle, vr.cull, vr.lens_aim) */
 void ch_scope_vr_rifle(const ChVrRifle *r);

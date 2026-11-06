@@ -1,0 +1,6 @@
+// Silent Scope 3 VR for Meta Quest: its activity (src/main/java/org/sscrecomp)
+// and resources; the rest is every game's (../chihiro-app.gradle).
+// quest/build.sh ss3 fills src/main/libs and the SDL Java sources first.
+ext.appNamespace = "org.sscrecomp"
+ext.appId = "org.sscrecomp.ss3"
+apply from: '../chihiro-app.gradle'

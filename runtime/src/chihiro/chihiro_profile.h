@@ -152,6 +152,11 @@ typedef struct ChihiroProfile {
         /* What the lens picture handed over now was drawn with (vr_view.h),
          * asked by the renderer at each flip with one; 0: not known (NULL: none) */
         int (*lens_aim)(VrLensAim *out);
+        /* Non-zero while the game's draws into the screen are a view it
+         * then copies (Silent Scope 3's scope): immersive, they are drawn
+         * on the game's own surface, flat, for the copy; asked by the
+         * renderer at each draw (NULL: never) */
+        int (*flat_now)(uint32_t release);
     } vr;
 
     /* A game aimed through a sniper scope: where its aim, zoom and scope

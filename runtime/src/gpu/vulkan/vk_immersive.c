@@ -379,12 +379,12 @@ static void trace_draw(const ChVkImmersive *m,const Nv2aSurface *s,const Nv2aBat
     Nv2aRawExtent e;int ok=b->raw && b->raw->extent && b->raw->extent(b->raw,&e);
     const Nv2aTexture *tx=b->texture?b->texture:b->stage[0];
     int rt=tx && m->config.guest_target && m->config.guest_target(m->config.guest_context,tx->offset);   /* the game renders into it */
-    fprintf(stderr,"[imm trace] f%llu on %d into %08X %ux%u 3d %d %s w0 %g idx %u ext %.0f..%.0f x %.0f..%.0f tex %08X %ux%u fmt %02X rt %d st1 %08X blend %u %04X/%04X mask %08X depth %u/%04X write %u query %d\n",
+    fprintf(stderr,"[imm trace] f%llu on %d into %08X %ux%u 3d %d %s w0 %g idx %u ext %.0f..%.0f x %.0f..%.0f tex %08X %ux%u fmt %02X rt %d st1 %08X blend %u %04X/%04X mask %08X depth %u/%04X write %u query %d rel %u\n",
         (unsigned long long)m->frames,m->on,s->color_va,s->width,s->height,is3d,
         b->raw?b->raw->kind==NV2A_RAW_FIXED?"fixed":"prog":"none",b->raw?b->raw->w0:0,b->raw?b->raw->index_count:0,
         ok?e.x0:-1,ok?e.x1:-1,ok?e.y0:-1,ok?e.y1:-1,tx?tx->offset:0,tx?tx->width:0,tx?tx->height:0,tx?tx->color:0,rt,
         b->stage[1]?b->stage[1]->offset:0,b->state->blend_enable,b->state->blend_src,b->state->blend_dst,b->state->color_mask,
-        b->state->depth_test_enable,b->state->depth_func,b->state->depth_write,b->zpass_out!=NULL);
+        b->state->depth_test_enable,b->state->depth_func,b->state->depth_write,b->zpass_out!=NULL,b->state->release);
 }
 VkResult ch_vk_immersive_draw(ChVkImmersive *m,const Nv2aSurface *s,const Nv2aBatch *b,
     const ChVkFixedGeometry *fixed,ChVkSampleResolver resolve,void *context) {

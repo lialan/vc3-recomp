@@ -644,6 +644,7 @@ static VkResult attach(ChVkBackendConfig config)
     if(config.present_immersive && has_host_config) config.present_immersive=present_immersive;
     if(!config.immersive_lens) config.immersive_lens=vc3_vr_lens_surface;
     if(!config.immersive_lens_aim) config.immersive_lens_aim=chihiro_profile()->vr.lens_aim;
+    if(!config.immersive_flat_now) config.immersive_flat_now=chihiro_profile()->vr.flat_now;
     /* The lens picture four times the game's size each way while immersive
      * (on the rifle's much bigger lens the game's 256 looked soft, and the 2D
      * scope is three times that lens: 1024 keeps it as sharp);
