@@ -151,6 +151,8 @@ static int s_vr;                    /* a rifle has been handed over: a headset (
  * 0x1ADFC8 -- a frame or so later: on the frames the rifle switches on or
  * off the scope is still drawn with the old one. */
 static float s_zoomk_guard = 1.0f, s_focal_guard = 1.0f;
+/* the rifle's zoom in ZOOM_K, then in the scope's focal length (0: the game's own) */
+static float s_zoomk_zoom, s_focal_zoom;
 /* SS1_VR_RIFLE_TEST's rifle, and its on/off period in game frames (0: on) */
 static uint64_t s_test_rifle;
 static uint32_t s_test_period;
@@ -272,7 +274,7 @@ static void shot_log(void)
  * -- the settings panel open, the gun not located: the game's own aim,
  * circle and reticle -- the lens shows its centre). */
 extern void sub_000FC4D0(void);
-static void lens_mark(float focal, float guard_in_focal, int rifle)
+static void lens_mark(float focal, float guard_in_focal, float zoom_in_focal, int rifle)
 {
     const uint32_t dev = MEM32(DEVICE);
     if (!dev || !(focal > 0))
@@ -283,7 +285,7 @@ static void lens_mark(float focal, float guard_in_focal, int rifle)
     sub_000FC4D0();                                 /* ret 4 */
     const float unit = (float)(6.283185307179586 / 65536.0);
     const VrLensAim a = { YAW_RIGHT * (int16_t)MEM16(AIM_YAW) * unit, PITCH_UP * (int16_t)MEM16(AIM_PITCH) * unit,
-                          focal * SCOPE_PROJ / SCOPE_W, guard_in_focal, rifle };
+                          focal * SCOPE_PROJ / SCOPE_W, guard_in_focal, rifle, zoom_in_focal };
     pthread_mutex_lock(&s_mark_lock);
     s_marks[s_mark_n % MARKS].time = time;
     s_marks[s_mark_n % MARKS].aim = a;
@@ -329,11 +331,11 @@ int ss1_vr_lens_aim(VrLensAim *out)
 void ss1_vr_scope_pass(void (*generated)(void))
 {
     static int published;
-    const float focal = MEMF(SCOPE_FOCAL), g = s_focal_guard;   /* what it hands its camera */
+    const float focal = MEMF(SCOPE_FOCAL), g = s_focal_guard, z = s_focal_zoom;   /* what it hands its camera */
     generated();
     s_scope_frame = MEM32(FRAME);
     if (s_frame_rifle || __atomic_load_n(&s_vr, __ATOMIC_RELAXED))
-        lens_mark(focal, g, s_frame_rifle != 0);
+        lens_mark(focal, g, z, s_frame_rifle != 0);
     {   /* SS1_AIM_LOG: the passes round a switch of the rifle -- the guard
          * published is the one in the focal length (focal * guard: the
          * game's own focal length at that zoom) */
@@ -380,6 +382,7 @@ static void circle_writes(float zoom)
         k = (float)(MEMF(ONE) / s);
     }
     s_zoomk_guard = guard();
+    s_zoomk_zoom = zoom;
     MEMF(ZOOM_K) = k * zoom / s_zoomk_guard;
     MEM32(0x1CEA13Cu) = 1;
 }
@@ -390,8 +393,10 @@ void ss1_vr_focal(void (*generated)(void))
 {
     const int scope = MEM32(0x1CEA0E0u) == 1;
     generated();
-    if (scope)
+    if (scope) {
         s_focal_guard = s_zoomk_guard;
+        s_focal_zoom = s_zoomk_zoom;
+    }
 }
 
 /* sub_00075F40 (cdecl, four floats): the scope circle */
@@ -401,6 +406,7 @@ void ss1_vr_circle(void (*generated)(void))
     if (!v) {
         generated();        /* 0x1ADFC8 the game's own */
         s_zoomk_guard = 1.0f;
+        s_zoomk_zoom = 0.0f;
         return;
     }
     circle_writes(rifle_zoom(v));

@@ -540,10 +540,10 @@ static int is_rifle(void)
 }
 static float s_zoom = 1.0f;     /* the rifle's zoom, 0.5..4: kept across stages, 1 on Reset game */
 /* The rifle's scope sensitivity, %: how much of the hand's turn moves the
- * aim while looking into the lens (rifle_frame); vr_scope_sens= */
-static const int SCOPE_SENS[] = { 100, 75, 50, 35 };
+ * aim while the scope picture is up (rifle_frame); vr_scope_sens= */
+static const int SCOPE_SENS[] = { 100, 75, 50, 35, 25 };
 #define SCOPE_SENS_N ((int)(sizeof SCOPE_SENS / sizeof SCOPE_SENS[0]))
-static int s_scope_sens = 50;
+static int s_scope_sens = 35;
 /* The rifle's steadied aim this display frame (as the game gets it; ok 0:
  * not located) -- where the lens shows its picture from (vk_lens_crop) */
 static float s_rifle_yaw, s_rifle_pitch;
@@ -2241,29 +2241,28 @@ static XrTime s_shot_t;
  * nothing: the game reloads by itself. The other hand is as for VC3
  * (gun_frame). d: the rifle's direction (LOCAL), NULL when not located.
  *
- * Scope sensitivity (vr_sens_step): while an eye looks into the lens --
- * behind it, within LENS_LOOK_DIST of its centre, the head facing it within
- * LENS_LOOK_ANGLE -- with the scope picture up and the panel closed, the
- * steadied aim moves by the Scope sensitivity row's share of the hand's
- * turn, never more than SENS_LEASH off it; otherwise it turns with the hand
- * and comes back onto it within a quarter second. That aim is the one: the
- * game's, the lens's crop (s_rifle_yaw, s_rifle_pitch), the drawn rifle's
- * barrel -- turned about the grip onto it -- and the laser's, from the
- * muzzle (rifle_along). With the panel open the rifle is drawn on the hand,
- * its pointer beam as gun_frame made it.
+ * Scope sensitivity (vr_sens_step): while the scope picture is up and the
+ * panel closed -- in play the scope is the only sight -- the steadied aim
+ * moves by the Scope sensitivity row's share of the hand's turn, never more
+ * than SENS_LEASH off it; otherwise it turns with the hand and comes back
+ * onto it within a quarter second. That aim is the one: the game's, the
+ * lens's crop (s_rifle_yaw, s_rifle_pitch), the drawn rifle's barrel --
+ * turned about the grip onto it -- and the laser's, from the muzzle
+ * (rifle_along). With the panel open the rifle is drawn on the hand, its
+ * pointer beam as gun_frame made it.
  *
- * Looking in is meant loosely: the player aims with the eye and glances
- * down at the lens, held low at arm's length -- so up to LENS_LOOK_DIST
- * away, but always behind the lens (on the side its picture faces): a
- * glance down at the rifle held across the body does not count. A recentre
+ * It once waited for an eye to look into the lens (eye_on_lens): the head
+ * facing it within LENS_LOOK_ANGLE. The player glances down at it with the
+ * eyes, not the head, so it hardly ever engaged (2026-11-06); the measure
+ * is kept for the log only. A recentre
  * turns the steadying's and the sensitivity's state into the new frame
  * (vr_aim_turn); a new gun hand, or the controller found again, starts
  * them afresh (vr_aim_reseed): no whip either way. <PREFIX>_AIM_LOG=1:
  * whether it is engaged and why, on each change and once a second. */
-#define SENS_LEASH (4.0f * 0.0174533f)
+#define SENS_LEASH (8.0f * 0.0174533f)
 #define LENS_LOOK_ANGLE (25.0f * 0.0174533f)
 #define LENS_LOOK_DIST 0.75f            /* metres */
-#define RIFLE_LASER_LEN 30.0f           /* metres from the muzzle */
+#define RIFLE_LASER_LEN 1000.0f         /* metres from the muzzle: to the horizon (eye_viewproj's far 2000) */
 
 /* Is either eye looking into the rifle's lens, where the controller holds
  * it? m: that eye's measures (vr_eye_on_lens: distance, angle, depth
@@ -2336,7 +2335,7 @@ static void rifle_frame(XrTime t, const Frame *f, const float *d, int now[2][5],
         s_zoom = vr_zoom_step(s_zoom, st[1], dt);
     if (d) {
         float ld[3], steadied[3], aim[3], la[3], m[3];
-        const int look = eye_on_lens(m), engaged = scope_on && !s_menu.open && look;
+        const int look = eye_on_lens(m), engaged = scope_on && !s_menu.open;
         if (s_rifle_lost || s_gun != seen_gun)
             vr_aim_reseed(&steady, &sens);      /* a new hand, or found again: from it afresh */
         else if (s_anchor_yaw != seen_yaw)      /* recentred: the state into the new frame */
@@ -2783,7 +2782,7 @@ static void eye_viewproj(const XrView *v, float vp[16])
     static const float ex[3] = { 1, 0, 0 }, ey[3] = { 0, 1, 0 }, ez[3] = { 0, 0, 1 };
     float view[16], proj[16], c0[3], c1[3], c2[3], t[3], rt[3];
     float l = tanf(v->fov.angleLeft), r = tanf(v->fov.angleRight);
-    float u = tanf(v->fov.angleUp), d = tanf(v->fov.angleDown), n = 0.02f, fa = 100.0f;
+    float u = tanf(v->fov.angleUp), d = tanf(v->fov.angleDown), n = 0.02f, fa = 2000.0f;   /* the rifle's laser */
 
     qrot(qi, ex, c0);
     qrot(qi, ey, c1);

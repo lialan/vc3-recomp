@@ -17,7 +17,9 @@ void vr_aim_angles(const float dir[3], float *yaw, float *pitch);
 typedef struct { float x[3], dx[3], prev[3]; int init; } VrSteady;
 void vr_steady(VrSteady *s, const float dir[3], float dt, float zoom, float out[3]);
 
-/* Exponential zoom from the thumbstick (dead zone 0.2), clamped to 0.5..4. */
+/* Exponential zoom from the thumbstick (dead zone 0.2), clamped to 0.5..4:
+ * VR_ZOOM_RATE doublings a second at full stick (0.5 to 4 in 0.6 s). */
+#define VR_ZOOM_RATE 5.0f
 float vr_zoom_step(float zoom, float stick_y, float dt);
 
 /* The lens's crop of its picture for a display frame (image-space
@@ -30,6 +32,10 @@ float vr_zoom_step(float zoom, float stick_y, float dt);
  * the rifle did not aim (a->follow 0), or yaw or pitch not finite: the
  * centre crop, 0. */
 int vr_lens_crop(const VrLensAim *a, float yaw, float pitch, float out[3]);
+/* The same with the zoom now: a picture the rifle aimed (follow) at a known
+ * zoom is cropped a->zoom / zoom_now times as wide -- the zoom shown at once,
+ * not when the game's next picture arrives -- at most the whole picture. */
+int vr_lens_crop_zoom(const VrLensAim *a, float yaw, float pitch, float zoom_now, float out[3]);
 
 /* Scope sensitivity: the aim follows the hand's rotation scaled by gain while
  * engaged, never more than leash radians from the hand; disengaged, it turns

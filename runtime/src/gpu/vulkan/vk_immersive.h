@@ -52,6 +52,7 @@ typedef struct {
     ChVkTarget *(*guest_target)(void *,uint32_t va);
     void *guest_context;
     float lens_k;   /* the game's usual lens, pixels at 640 wide (0: 772.5) */
+    float scale;    /* the eyes fixed at this share of native (1: native, no dynamic resolution); 0: dynamic */
     uint32_t (*lens_surface)(void);   /* the lens picture's guest surface, read at each flip (NULL/0: none) */
     /* What the lens picture handed over at this flip was drawn with (the
      * game's; vr_view.h), asked at the flip; 0: not known (NULL: none) */

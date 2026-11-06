@@ -52,6 +52,7 @@ static const ChihiroProfile k_ss1 = {
          * viewport's (c59). Eye depth = w: one unit is 555 of the game's
          * (an unscaled model's w row is -1/555); the scene lies at w 0.5..10. */
         .lens_k = 555.0f,
+        .render_scale = 1.0f,   /* native, always: no dynamic resolution */
         .program_proj = { 555.0f, -555.0f, 320.53125f, 240.53125f, 1.0f },
         .hud_tiles = {          /* cut round its layout (quest_vulkan.inc's spread) */
             {  0,  0,440,110, 0,-1},   /* total time (221-409 x 35-55) */

@@ -112,6 +112,7 @@ typedef struct {
         const ChVkImmFrame *);
     uint32_t immersive_eye_width,immersive_eye_height;
     float immersive_lens_k;   /* the game's usual lens, pixels at 640 wide (0: 772.5) */
+    float immersive_scale;    /* ChVkImmersiveConfig.scale */
     uint32_t (*immersive_lens)(void);   /* the lens picture's guest surface (vr_view.h; NULL/0: none) */
     int (*immersive_lens_aim)(VrLensAim *);   /* ChVkImmersiveConfig.lens_aim */
     float immersive_lens_scale;               /* ChVkImmersiveConfig.lens_scale */

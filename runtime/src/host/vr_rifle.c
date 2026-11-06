@@ -56,8 +56,22 @@ void vr_steady(VrSteady *s, const float dir[3], float dt, float zoom, float out[
 float vr_zoom_step(float zoom, float stick_y, float dt)
 {
     if (fabsf(stick_y) < 0.2f) return zoom;
-    zoom *= powf(2.0f, stick_y * dt);
+    zoom *= powf(2.0f, VR_ZOOM_RATE * stick_y * dt);
     return zoom < 0.5f ? 0.5f : zoom > 4.0f ? 4.0f : zoom;
+}
+
+static int lens_crop(const VrLensAim *a, float yaw, float pitch, double scale, float out[3]);
+int vr_lens_crop(const VrLensAim *a, float yaw, float pitch, float out[3])
+{
+    return lens_crop(a, yaw, pitch, 1.0, out);
+}
+
+int vr_lens_crop_zoom(const VrLensAim *a, float yaw, float pitch, float zoom_now, float out[3])
+{
+    double s = 1.0;
+    if (a && a->follow && isfinite(a->zoom) && a->zoom > 0 && isfinite(zoom_now) && zoom_now > 0)
+        s = (double)a->zoom / zoom_now;
+    return lens_crop(a, yaw, pitch, s, out);
 }
 
 /* The rifle's direction now, seen from the picture's camera: its tangent
@@ -65,13 +79,15 @@ float vr_zoom_step(float zoom, float stick_y, float dt)
  * r = (cos y, 0, sin y), up u = r x f (x right, y up, -z ahead) -- times the
  * focal length, about the picture's centre. A direction 90 degrees or more
  * off the camera's axis lands far out that way (and is clamped). */
-int vr_lens_crop(const VrLensAim *a, float yaw, float pitch, float out[3])
+static int lens_crop(const VrLensAim *a, float yaw, float pitch, double scale, float out[3])
 {
     out[0] = out[1] = out[2] = 0.5f;
     if (!a || !isfinite(a->yaw) || !isfinite(a->pitch) || !isfinite(a->focal) || !isfinite(a->guard)
         || !(a->focal > 0) || !(a->guard >= 1))
         return 0;
-    const double h = 0.5 / a->guard;
+    double h = 0.5 / a->guard * scale;     /* scale: the zoom drawn at over the zoom now */
+    if (h > 0.5)
+        h = 0.5;                            /* zoomed out past the band: the whole picture, till the next */
     out[2] = (float)h;
     if (!a->follow || !isfinite(yaw) || !isfinite(pitch))
         return 0;

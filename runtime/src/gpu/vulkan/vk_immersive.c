@@ -260,9 +260,11 @@ VkResult ch_vk_immersive_create(const ChVkImmersiveConfig *config,ChVkImmersive 
     e=getenv("CHIHIRO_VULKAN_IMMERSIVE_EFFECT_DIV");
     m->effect_div=e && (atoi(e)==4 || atoi(e)==2)?(uint32_t)atoi(e):2;
     m->dynamic=1;m->calm_need=6;
+    /* the game's fixed scale (its profile), else dynamic; the variable wins */
     e=getenv("CHIHIRO_VULKAN_IMMERSIVE_SCALE");
-    if(e && atof(e)>0) {
-        float k=(float)atof(e);m->dynamic=0;
+    const float fixed=e && atof(e)>0?(float)atof(e):m->config.scale>0?m->config.scale:0;
+    if(fixed>0) {
+        float k=fixed;m->dynamic=0;
         for(int i=0;i<4;i++) if(fabsf(k_levels[i]-k)<fabsf(k_levels[m->level]-k)) m->level=i;
         ch_vk_target_set_foveation_level(m->level);
     }

@@ -21,6 +21,38 @@ static int qo_beam_vertices(float q[6][5], const float eye[3], const float a[3],
     return 1;
 }
 
+/* A beam from a to b that keeps at least k radians of half width as seen
+ * from the eye (w metres at the least): each end faces the eye and is as
+ * wide as its distance asks, so a long beam stays a line all the way out
+ * instead of thinning below a pixel. */
+static __attribute__((unused)) int qo_beam_vertices_far(float q[6][5], const float eye[3], const float a[3], const float b[3], float w,
+                                float k)
+{
+    const float d[3] = { b[0] - a[0], b[1] - a[1], b[2] - a[2] };
+    const float *p[2] = { a, b };
+    float s[2][3];
+    int i, j;
+    for (j = 0; j < 2; j++) {
+        const float e[3] = { eye[0] - p[j][0], eye[1] - p[j][1], eye[2] - p[j][2] };
+        const float dist = sqrtf(e[0] * e[0] + e[1] * e[1] + e[2] * e[2]);
+        const float c[3] = { d[1] * e[2] - d[2] * e[1], d[2] * e[0] - d[0] * e[2], d[0] * e[1] - d[1] * e[0] };
+        const float l = sqrtf(c[0] * c[0] + c[1] * c[1] + c[2] * c[2]), half = k * dist > w ? k * dist : w;
+        if (l < 1e-6f)
+            return 0;
+        for (i = 0; i < 3; i++)
+            s[j][i] = c[i] * half / l;
+    }
+    {
+        float vertices[6][5] = {
+            { a[0] - s[0][0], a[1] - s[0][1], a[2] - s[0][2], -1, 0 }, { a[0] + s[0][0], a[1] + s[0][1], a[2] + s[0][2], 1, 0 },
+            { b[0] + s[1][0], b[1] + s[1][1], b[2] + s[1][2], 1, 0 }, { a[0] - s[0][0], a[1] - s[0][1], a[2] - s[0][2], -1, 0 },
+            { b[0] + s[1][0], b[1] + s[1][1], b[2] + s[1][2], 1, 0 }, { b[0] - s[1][0], b[1] - s[1][1], b[2] - s[1][2], -1, 0 },
+        };
+        memcpy(q, vertices, sizeof vertices);
+    }
+    return 1;
+}
+
 static int qo_spot_vertices(float q[6][5], const float eye[3], const float p[3], float rad)
 {
     static const float c[6][2] = { { -1, -1 }, { 1, -1 }, { 1, 1 }, { -1, -1 }, { 1, 1 }, { -1, 1 } };

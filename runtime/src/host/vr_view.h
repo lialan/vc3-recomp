@@ -64,8 +64,10 @@ uint32_t vc3_vr_lens_surface(void);
  * drawn (guard >= 1: the one in that focal length). guard 0: none known --
  * shown whole, as drawn. follow: the rifle aimed it (the game's reticle
  * not drawn): the lens follows the rifle across it, with a crosshair; 0:
- * the game aimed it, its reticle in it -- the lens shows its centre. */
-typedef struct { float yaw, pitch, focal, guard; int follow; } VrLensAim;
+ * the game aimed it, its reticle in it -- the lens shows its centre.
+ * zoom: the rifle's zoom it was drawn at (0: not known) -- the lens shows a
+ * zoom since then at once, cropping it tighter or wider (vr_lens_crop_zoom). */
+typedef struct { float yaw, pitch, focal, guard; int follow; float zoom; } VrLensAim;
 
 /* What the back end hands the host with each frame (vc3_quest_frame). */
 typedef struct {

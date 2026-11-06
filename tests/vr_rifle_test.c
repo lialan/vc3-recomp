@@ -150,7 +150,7 @@ static void steady_ignores_nonfinite_dir(void)
 static void zoom_step_range(void)
 {
     float z = 1;
-    for (int n = 0; n < 72; n++) z = vr_zoom_step(z, 1.0f, DT);
+    for (int n = 0; n < 72; n++) z = vr_zoom_step(z, 1.0f / VR_ZOOM_RATE + 1e-7f, DT);
     NEAR(z, 2.0, 0.02);
     for (int n = 0; n < 720; n++) z = vr_zoom_step(z, 1.0f, DT);
     NEAR(z, 4.0, 1e-6);

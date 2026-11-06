@@ -304,6 +304,7 @@ static int vk_host_init(void)
         vk_imm_eye_size(&config.immersive_eye_width,&config.immersive_eye_height);
         const ChihiroProfile *p=chihiro_profile();
         config.immersive_lens_k=p->vr.lens_k;
+        config.immersive_scale=p->vr.render_scale;
         config.immersive_program_projection=(VrGameProj){p->vr.program_proj.kx,p->vr.program_proj.ky,
             p->vr.program_proj.cx,p->vr.program_proj.cy,p->vr.program_proj.inv_pz};
     }
@@ -516,7 +517,8 @@ static void vk_lens_crop(void)
     if(log<0) log=ch_env("XR_LENS_LOG") && *ch_env("XR_LENS_LOG")=='1';
     /* the rifle aimed the picture (no reticle in it): the lens follows it */
     const int known=s_qo.lens_fresh && s_vk_lens_aim.guard>=1 && s_vk_lens_aim.follow;
-    const int c=vr_lens_crop(&s_vk_lens_aim,s_rifle_aim_ok?s_rifle_yaw:NAN,s_rifle_aim_ok?s_rifle_pitch:NAN,s_qo.lens_crop);
+    const int c=vr_lens_crop_zoom(&s_vk_lens_aim,s_rifle_aim_ok?s_rifle_yaw:NAN,s_rifle_aim_ok?s_rifle_pitch:NAN,s_zoom,
+        s_qo.lens_crop);
     s_qo.lens_cross=known;
     if(!known) return;
     const float du=s_qo.lens_crop[0]-.5f,dv=s_qo.lens_crop[1]-.5f,off=sqrtf(du*du+dv*dv);

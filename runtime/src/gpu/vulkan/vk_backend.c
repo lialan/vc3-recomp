@@ -1034,7 +1034,7 @@ static void flip(void) {
         if(on && !active->imm && active->pipeline_cache) {
             ChVkImmersiveConfig ic={.physical=active->host.physical,.device=active->host.device,.queue=active->host.queue,
                 .family=active->host.family,.pipeline_cache=active->pipeline_cache,.eye_width=active->host.immersive_eye_width,
-                .eye_height=active->host.immersive_eye_height,.batch_limit=active->host.batch_draw_limit,.decode=decode_cpu_texture,.textures=active->textures,.guest_target=guest_target_of,.guest_context=active,.lens_k=active->host.immersive_lens_k,
+                .eye_height=active->host.immersive_eye_height,.batch_limit=active->host.batch_draw_limit,.decode=decode_cpu_texture,.textures=active->textures,.guest_target=guest_target_of,.guest_context=active,.lens_k=active->host.immersive_lens_k,.scale=active->host.immersive_scale,
                 .lens_surface=active->host.immersive_lens,.lens_aim=active->host.immersive_lens_aim,
                 .lens_scale=active->host.immersive_lens_scale,.program_projection=active->host.immersive_program_projection};
             VkResult r=ch_vk_immersive_create(&ic,&active->imm);
