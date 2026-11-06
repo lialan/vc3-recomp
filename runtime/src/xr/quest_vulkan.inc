@@ -356,6 +356,7 @@ static int vk_overlay_init(void)
         vk_xr_check(ch_vk_xr_swapchain_create(s_inst,s_sess,xrGetInstanceProcAddr,s_vk.device,
             width,height,&s_vk_eye[e].chain),"overlay swapchain");
     }
+    ch_vk_overlay_prepare(s_vk_eye[0].target,chihiro_profile()->vr.weapon);   /* the rifle's model: now, not at its first frame */
     pthread_mutex_unlock(&s_vk_queue);
     return 1;
 }

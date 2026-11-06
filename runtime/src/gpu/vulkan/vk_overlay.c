@@ -1,13 +1,19 @@
 #include "vk_overlay.h"
 #include <math.h>
+#include <stddef.h>
+#include <stdint.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include "vk_jpeg.h"
 #include "../../xr/quest_gun_geometry.inc"
 #include "../../xr/quest_rifle_geometry.inc"
 #include "../../xr/quest_overlay_math.inc"
 #include "../../xr/quest_overlay_effects.inc"
-/* The rifle into the shared mesh (all of it rides the controller; no slide),
- * its scope at scale s (QoFrame.scope_scale). */
+#include "../../xr/quest_rifle_model.inc"
+#include "../../xr/quest_rifle_scope.inc"
+/* The box rifle (the fallback) into the shared mesh (all of it rides the
+ * controller; no slide), its scope at scale s (QoFrame.scope_scale). */
 #define RIFLE_MESH (-2)
 static float rifle_scale;
 static float scope_scale(const QoFrame *f) {return f->scope_scale>0?f->scope_scale:1.f;}
@@ -16,6 +22,88 @@ static void build_rifle(float s) {
     Box scope[RIFLE_SCOPE_N]; rifle_scope(s,scope);
     ADD(&n,RIFLE_BODY); add_boxes(&n,scope,RIFLE_SCOPE_N);
     slide_verts=0; gun_verts=n; cur_sight=RIFLE_MESH; rifle_scale=s;
+}
+
+/* The rifle: the M700 (third_party/rifle, CC0) textured, and the scope
+ * lathed round the lens (quest_rifle_scope.inc) -- or the boxes when the
+ * model cannot be had (said once). The mesh is unpacked, its colour decoded
+ * and uploaded (mipmapped, filtered linearly: it does not shimmer) once, on
+ * the device of the first target that wants it (ch_vk_overlay_prepare, at
+ * start-up). The vertices: the M700's, then the scope's (rebuilt when the
+ * scale changes); texture coordinates and alpha set once, position and
+ * light written each eye in one pass (rifle_shade). */
+static struct {
+    int state;                  /* 0: not tried; 1: ready; -1: failed, the boxes */
+    VkDevice device;
+    RifleModel m;
+    ChVkTexture *tex;
+    ChVkColorVertex *v;         /* m.nv, then up to SCOPE_MAX_V */
+    float scope_s;              /* the scale the scope was built at (0: none) */
+} s_m700;
+static RifleScopeMesh s_m700_scope;
+static void m700_fail(const char *why) {
+    fprintf(stderr,"[overlay] rifle model: %s -- the box rifle instead\n",why);
+    if(s_m700.tex) ch_vk_texture_destroy(s_m700.tex);
+    rifle_model_free(&s_m700.m); free(s_m700.v);
+    s_m700.tex=NULL; s_m700.v=NULL; s_m700.state=-1;
+}
+/* 1: the model is ready to draw into target; 0: the boxes. */
+static int m700_ready(ChVkTarget *target) {
+    if(s_m700.state) return s_m700.state>0 && s_m700.device==ch_vk_target_device(target);
+    if(!rifle_model_unpack(rifle_m700_mesh,(size_t)(rifle_m700_mesh_end-rifle_m700_mesh),&s_m700.m)) {
+        m700_fail("its mesh does not unpack"); return 0;
+    }
+    uint32_t w,h,levels=1,*argb=ch_jpeg_argb(rifle_m700_jpg,(size_t)(rifle_m700_jpg_end-rifle_m700_jpg),&w,&h);
+    if(!argb) { m700_fail("its texture does not decode"); return 0; }
+    for(uint32_t e=w>h?w:h;e>1;e>>=1) levels++;
+    VkResult r=ch_vk_target_upload_texture_mips(target,w,h,argb,levels,&s_m700.tex);
+    if(r==VK_ERROR_FORMAT_NOT_SUPPORTED) r=ch_vk_target_upload_texture_mips(target,w,h,argb,levels=1,&s_m700.tex);
+    free(argb);
+    if(r!=VK_SUCCESS) { s_m700.tex=NULL; m700_fail("its texture does not upload"); return 0; }
+    /* its own sampler: every other texture's is as it was */
+    const VkSamplerCreateInfo linear={.sType=VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
+        .magFilter=VK_FILTER_LINEAR,.minFilter=VK_FILTER_LINEAR,.mipmapMode=VK_SAMPLER_MIPMAP_MODE_LINEAR,
+        .addressModeU=VK_SAMPLER_ADDRESS_MODE_REPEAT,.addressModeV=VK_SAMPLER_ADDRESS_MODE_REPEAT,
+        .addressModeW=VK_SAMPLER_ADDRESS_MODE_REPEAT,.maxLod=VK_LOD_CLAMP_NONE};
+    if(ch_vk_texture_set_sampler(s_m700.tex,&linear)!=VK_SUCCESS) { m700_fail("no sampler for its texture"); return 0; }
+    s_m700.v=calloc((size_t)s_m700.m.nv+SCOPE_MAX_V,sizeof *s_m700.v);
+    if(!s_m700.v) { m700_fail("out of memory"); return 0; }
+    for(int i=0;i<s_m700.m.nv;i++) {
+        s_m700.v[i].xy[4]=s_m700.m.uv[i*2]; s_m700.v[i].xy[5]=s_m700.m.uv[i*2+1]; s_m700.v[i].rgba[3]=1;
+    }
+    s_m700.device=ch_vk_target_device(target); s_m700.scope_s=0; s_m700.state=1;
+    fprintf(stderr,"[overlay] rifle model: the M700, %d triangles, its texture %ux%u (%u levels)\n",
+        s_m700.m.ni/3,w,h,levels);
+    return 1;
+}
+void ch_vk_overlay_prepare(ChVkTarget *target,int weapon) {
+    if(target && weapon==QO_WEAPON_RIFLE) (void)m700_ready(target);
+}
+/* The M700 and its scope, opaque and depth-tested, into target (its depth
+ * cleared first, as the box gun's). */
+static VkResult m700_read(ChVkTarget *target,const QoFrame *f,const float vp[16],void *pixels,VkDeviceSize bytes) {
+    ChVkColorVertex *sv=s_m700.v+s_m700.m.nv;
+    const float s=scope_scale(f);
+    if(s_m700.scope_s!=s) {
+        if(!rifle_scope_mesh(s,&s_m700_scope)) return VK_ERROR_INITIALIZATION_FAILED;
+        for(int i=0;i<s_m700_scope.nv;i++) sv[i].rgba[3]=1;
+        s_m700.scope_s=s;
+    }
+    float model[16],kick[16],mvp[16];
+    pose_matrix(f->gun_q,f->gun_p,model); kick_matrix(f->kick,kick); mul(model,model,kick); mul(mvp,vp,model);
+    const int stride=(int)(sizeof(ChVkColorVertex)/sizeof(float)),col=(int)(offsetof(ChVkColorVertex,rgba)/sizeof(float));
+    if(!rifle_shade(s_m700.m.p,s_m700.m.n,NULL,s_m700.m.nv,mvp,model,(float *)(void *)s_m700.v,stride,col) ||
+       !rifle_shade(&s_m700_scope.p[0][0],&s_m700_scope.n[0][0],&s_m700_scope.c[0][0],s_m700_scope.nv,mvp,model,
+           (float *)(void *)sv,stride,col))
+        return VK_ERROR_INITIALIZATION_FAILED;
+    VkResult result=ch_vk_target_clear_aspects_read(target,2,NULL,1,0,pixels,bytes);
+    if(result!=VK_SUCCESS) return result;
+    const Nv2aRenderState state={.color_mask=0x01010101,.depth_test_enable=1,.depth_write=1,.depth_func=0x201};
+    result=ch_vk_target_draw_texture_read(target,NULL,s_m700.v,(uint32_t)s_m700.m.nv,s_m700.m.idx,(uint32_t)s_m700.m.ni,
+        &state,s_m700.tex,pixels,bytes);
+    if(result!=VK_SUCCESS) return result;
+    return ch_vk_target_draw_state_read(target,NULL,sv,(uint32_t)s_m700_scope.nv,s_m700_scope.idx,(uint32_t)s_m700_scope.ni,
+        &state,pixels,bytes);
 }
 VkResult ch_vk_overlay_gun_read(ChVkTarget *target,const QoFrame *f,const float vp[16],void *pixels,VkDeviceSize bytes) {
     if(!target || !f || !vp || !pixels) return VK_ERROR_INITIALIZATION_FAILED;
@@ -27,6 +115,7 @@ VkResult ch_vk_overlay_gun_read(ChVkTarget *target,const QoFrame *f,const float 
     for(unsigned i=0;i<3;i++) if(!isfinite(f->gun_p[i])) return VK_ERROR_INITIALIZATION_FAILED;
     int sight=f->sight;
     if(sight<0 || sight>=QO_SIGHT_COUNT) sight=QO_SIGHT_IRON;
+    if(f->weapon==QO_WEAPON_RIFLE && m700_ready(target)) return m700_read(target,f,vp,pixels,bytes);
     if(f->weapon==QO_WEAPON_RIFLE) { if(cur_sight!=RIFLE_MESH || rifle_scale!=scope_scale(f)) build_rifle(scope_scale(f)); }
     else if(cur_sight!=sight) build_gun(sight);
     (void)SIGHT_Y; (void)GLASS;
@@ -177,8 +266,10 @@ VkResult ch_vk_overlay_read(ChVkTarget *target,const QoFrame *f,const float vp[1
     pose_matrix(f->gun_q,f->gun_p,model); kick_matrix(f->kick,kick); mul(model,model,kick);
     back[0]=back[5]=back[10]=back[15]=1;
     back[14]=.022f*(f->kick>.6f?(1-f->kick)/.4f:f->kick/.6f); mul(slide,model,back);
-    const int rifle=f->weapon==QO_WEAPON_RIFLE;
-    const float local_muzzle[3]={0,0,rifle?RIFLE_MUZZLE_Z:MUZZLE_Z}; apply(model,local_muzzle,muzzle);
+    const int rifle=f->weapon==QO_WEAPON_RIFLE,m700=rifle && m700_ready(target);
+    /* the beam and the flash from the drawn gun's muzzle: the M700's, or the box rifle's */
+    const float local_muzzle[3]={0,m700?RIFLE_MUZZLE_Y:0,m700?RIFLE_MUZZLE_Z:rifle?RIFLE_BOX_MUZZLE_Z:MUZZLE_Z};
+    apply(model,local_muzzle,muzzle);
     if(rifle && f->show_gun) {
         result=lens_read(target,f,model,vp,pixels,bytes);
         if(result!=VK_SUCCESS) return result;

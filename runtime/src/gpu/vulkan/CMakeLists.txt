@@ -156,6 +156,16 @@ if(CHIHIRO_VULKAN_PIPELINE_CACHE_SEEDS)
 endif()
 
 target_sources(chihiro_vulkan PRIVATE ../guest_write_watch.c)
+# The VR rifle's model (third_party/rifle) in the binary, no file access on
+# the headset (vk_rifle_assets.S: .incbin), and its texture's JPEG decoder
+# (vk_jpeg.c: stb_image, third_party/stb).
+enable_language(ASM)
+set(rifle_mesh "${CH_VK_ROOT}/third_party/rifle/m700.mesh")
+set(rifle_jpg "${CH_VK_ROOT}/third_party/rifle/m700_color.jpg")
+target_sources(chihiro_vulkan PRIVATE vk_rifle_assets.S vk_jpeg.c)
+set_source_files_properties(vk_rifle_assets.S PROPERTIES
+    COMPILE_DEFINITIONS "RIFLE_M700_MESH=\"${rifle_mesh}\";RIFLE_M700_JPG=\"${rifle_jpg}\""
+    OBJECT_DEPENDS "${rifle_mesh};${rifle_jpg}")
 set(CHIHIRO_VULKAN_SPIRV_OPT_DIR "" CACHE PATH
     "SPIRV-Tools for the target (include/, lib/libSPIRV-Tools{-opt,}.a): pipelines specialized on the CPU")
 if(CHIHIRO_VULKAN_SPIRV_OPT_DIR)

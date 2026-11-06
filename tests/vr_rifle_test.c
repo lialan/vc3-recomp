@@ -1,13 +1,21 @@
 /* vr_rifle_test.c - checks of runtime/src/host/vr_rifle.c, the VR rifle's
- * maths (scripts/vr-rifle-test.sh): aim angles, tremor steadying, zoom. */
+ * maths (scripts/vr-rifle-test.sh): aim angles, tremor steadying, zoom; and
+ * of its model: the M700 and the scope lathed round the lens. */
 #include <math.h>
+#include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
+#include <time.h>
 
 #include "vr_rifle.h"
 #include "quest_overlay.h"
 #include <string.h>
 #include "quest_gun_geometry.inc"
 #include "quest_rifle_geometry.inc"
+#include "quest_overlay_math.inc"
+#include "quest_rifle_model.inc"
+#include "quest_rifle_scope.inc"
+#include "../runtime/src/gpu/vulkan/vk_jpeg.h"
 
 static int fails;
 #define CHECK(c) do { if (!(c)) { printf("FAIL %s:%d: %s\n", __FILE__, __LINE__, #c); fails++; } } while (0)
@@ -345,9 +353,418 @@ static void rifle_fits_hand(void)
         if (RIFLE_BODY[i].c[2] + RIFLE_BODY[i].h[2] > zmax) zmax = RIFLE_BODY[i].c[2] + RIFLE_BODY[i].h[2];
     }
     CHECK(zmax - zmin >= 0.9 && zmax - zmin <= 1.15);
-    NEAR(zmin, RIFLE_MUZZLE_Z, 1e-6);
+    NEAR(zmin, RIFLE_BOX_MUZZLE_Z, 1e-6);
     for (int a = 0; a < 3; a++) CHECK(fabsf(grip->c[a]) <= grip->h[a] + 0.03f);
     CHECK(sizeof RIFLE_BODY / sizeof *RIFLE_BODY + RIFLE_SCOPE_N <= 64);
+}
+
+/* ── The detailed rifle: the M700 (third_party/rifle, embedded) and its scope ── */
+
+static RifleModel m700;
+static int m700_ok = -1;
+static RifleScopeMesh scope;            /* big: static */
+
+static int m700_load(void)
+{
+    if (m700_ok < 0)
+        m700_ok = rifle_model_unpack(rifle_m700_mesh, (size_t)(rifle_m700_mesh_end - rifle_m700_mesh), &m700);
+    return m700_ok;
+}
+
+static float m700_top(void)
+{
+    float top = -1e9f;
+    for (int i = 0; i < m700.nv; i++) top = fmaxf(top, m700.p[i * 3 + 1]);
+    return top;
+}
+
+/* The nearest hit of a ray on triangle abc (Moller-Trumbore), or -1. */
+static double ray_tri(const double o[3], const double d[3], const float *a, const float *b, const float *c)
+{
+    double e1[3], e2[3], p[3], s[3], q[3];
+    for (int i = 0; i < 3; i++) { e1[i] = b[i] - a[i]; e2[i] = c[i] - a[i]; s[i] = o[i] - a[i]; }
+    p[0] = d[1] * e2[2] - d[2] * e2[1]; p[1] = d[2] * e2[0] - d[0] * e2[2]; p[2] = d[0] * e2[1] - d[1] * e2[0];
+    double det = e1[0] * p[0] + e1[1] * p[1] + e1[2] * p[2];
+    if (fabs(det) < 1e-15) return -1;
+    double u = (s[0] * p[0] + s[1] * p[1] + s[2] * p[2]) / det;
+    q[0] = s[1] * e1[2] - s[2] * e1[1]; q[1] = s[2] * e1[0] - s[0] * e1[2]; q[2] = s[0] * e1[1] - s[1] * e1[0];
+    double v = (d[0] * q[0] + d[1] * q[1] + d[2] * q[2]) / det;
+    double t = (e2[0] * q[0] + e2[1] * q[1] + e2[2] * q[2]) / det;
+    return u >= 0 && v >= 0 && u + v <= 1 && t > 0 ? t : -1;
+}
+
+/* Along a ray from o: how many of the M700's triangles it crosses, and the nearest. */
+static int m700_ray(const double o[3], const double d[3], double *nearest)
+{
+    int hits = 0;
+    *nearest = INFINITY;
+    for (int t = 0; t < m700.ni / 3; t++) {
+        const uint16_t *k = &m700.idx[t * 3];
+        double h = ray_tri(o, d, &m700.p[k[0] * 3], &m700.p[k[1] * 3], &m700.p[k[2] * 3]);
+        if (h > 0) { hits++; if (h < *nearest) *nearest = h; }
+    }
+    return hits;
+}
+
+static void m700_unpacks(void)
+{
+    CHECK(m700_load());
+    CHECK(m700.nv == 11332 && m700.ni == 3 * 11582);
+    CHECK(m700.nv <= 65535);                    /* uint16 indices */
+    int bad = 0;
+    for (int i = 0; i < m700.ni; i++) bad += m700.idx[i] >= m700.nv;
+    for (int i = 0; i < m700.nv; i++) {
+        const float *n = &m700.n[i * 3], *uv = &m700.uv[i * 2];
+        bad += fabsf(n[0] * n[0] + n[1] * n[1] + n[2] * n[2] - 1) > 1e-4f;
+        bad += !(uv[0] >= 0 && uv[0] <= 1 && uv[1] >= 0 && uv[1] <= 1);
+    }
+    CHECK(bad == 0);
+}
+
+/* The fallback's trigger: data that is not the mesh unpacks to nothing. */
+static void m700_rejects_bad_data(void)
+{
+    const size_t size = (size_t)(rifle_m700_mesh_end - rifle_m700_mesh);
+    unsigned char *b = malloc(size + 16);
+    RifleModel m;
+    if (!b) { CHECK(0); return; }
+    memcpy(b, rifle_m700_mesh, size);
+    CHECK(rifle_model_unpack(b, size, &m) == 1);
+    rifle_model_free(&m);
+    CHECK(rifle_model_unpack(b, size - 1, &m) == 0 && !m.p);             /* truncated */
+    CHECK(rifle_model_unpack(b, size + 1, &m) == 0 && !m.p);             /* trailing bytes */
+    CHECK(rifle_model_unpack(b, 0, &m) == 0 && !m.p);
+    CHECK(rifle_model_unpack(NULL, size, &m) == 0 && !m.p);
+    b[0] = 'X';
+    CHECK(rifle_model_unpack(b, size, &m) == 0 && !m.p);                 /* not its magic */
+    b[0] = rifle_m700_mesh[0];
+    const uint32_t nv = 11332;
+    memcpy(b + size - 2, &nv, 2);                                       /* the last index past the vertices */
+    CHECK(rifle_model_unpack(b, size, &m) == 0 && !m.p);
+    memcpy(b, rifle_m700_mesh, size);
+    b[8] = 1;                                                           /* indices not whole triangles */
+    CHECK(rifle_model_unpack(b, size, &m) == 0 && !m.p);
+    memcpy(b, rifle_m700_mesh, size);
+    const float nan = NAN;
+    memcpy(b + 12, &nan, 4);                                            /* a position scale not a number */
+    CHECK(rifle_model_unpack(b, size, &m) == 0 && !m.p);
+    free(b);
+}
+
+/* The laser leaves from the barrel's tip; the controller's grip point is in the pistol grip. */
+static void m700_muzzle_and_grip(void)
+{
+    if (!m700_load()) { CHECK(0); return; }
+    float zmin = 1e9f, lo[2] = {1e9f, 1e9f}, hi[2] = {-1e9f, -1e9f};
+    for (int i = 0; i < m700.nv; i++) zmin = fminf(zmin, m700.p[i * 3 + 2]);
+    for (int i = 0; i < m700.nv; i++)
+        if (m700.p[i * 3 + 2] < zmin + 0.003f)
+            for (int k = 0; k < 2; k++) { lo[k] = fminf(lo[k], m700.p[i * 3 + k]); hi[k] = fmaxf(hi[k], m700.p[i * 3 + k]); }
+    NEAR(RIFLE_MUZZLE_Z, zmin, 0.002);
+    NEAR(0, (lo[0] + hi[0]) / 2, 0.002);
+    NEAR(RIFLE_MUZZLE_Y, (lo[1] + hi[1]) / 2, 0.002);
+    /* inside the model (an odd number of crossings every way along the axes),
+     * the grip's sides within 2 cm either side */
+    static const double dirs[6][3] = {{1, 0, 0}, {-1, 0, 0}, {0, 1, 0}, {0, -1, 0}, {0, 0, 1}, {0, 0, -1}};
+    const double origin[3] = {0, 0, 0};
+    double side[6];
+    for (int k = 0; k < 6; k++) CHECK(m700_ray(origin, dirs[k], &side[k]) % 2 == 1);
+    CHECK(side[0] <= 0.02 && side[1] <= 0.02);
+}
+
+/* The colour texture decodes (the fallback when it does not: the box rifle). */
+static void m700_texture_decodes(void)
+{
+    uint32_t w = 0, h = 0, *px = ch_jpeg_argb(rifle_m700_jpg, (size_t)(rifle_m700_jpg_end - rifle_m700_jpg), &w, &h);
+    CHECK(px && w == 1024 && h == 1024);
+    if (px) {
+        double sum[3] = {0, 0, 0};
+        int opaque = 1;
+        for (uint32_t i = 0; i < w * h; i++) {
+            opaque &= px[i] >> 24 == 255;
+            for (int k = 0; k < 3; k++) sum[k] += (px[i] >> (16 - 8 * k)) & 255;
+        }
+        CHECK(opaque);
+        CHECK(sum[0] > sum[1] && sum[1] > sum[2]);  /* walnut and blued steel: red over green over blue */
+        free(px);
+    }
+    unsigned char junk[4096];
+    for (int i = 0; i < (int)sizeof junk; i++) junk[i] = (unsigned char)(i * 37 + 11);
+    junk[0] = 0xff; junk[1] = 0xd8;                 /* a JPEG's start, then nonsense */
+    CHECK(ch_jpeg_argb(junk, sizeof junk, &w, &h) == NULL);
+    CHECK(ch_jpeg_argb(rifle_m700_jpg, 64, &w, &h) == NULL);
+}
+
+/* The lens stays as approved (z, radius); the scope's eyepiece is round it,
+ * on its axis, and nothing of the scope is behind it. */
+static void scope_round_the_lens(void)
+{
+    for (int k = 0; k < NSCALES; k++) {
+        const float s = SCALES[k];
+        float c[3], r;
+        rifle_lens(s, c, &r);
+        NEAR(c[0], 0, 0); NEAR(c[2], 0.071, 1e-6); NEAR(r, RIFLE_LENS_R * s, 1e-6);
+        CHECK(rifle_scope_mesh(s, &scope));
+        CHECK(scope.nv > 0 && scope.nv <= 65535 && scope.ni % 3 == 0 && scope.ni > 0);
+        int bad = 0, n = 0;
+        double rim = 0, cx = 0, cy = 0, zmax = -1;
+        for (int i = 0; i < scope.ni; i++) bad += scope.idx[i] >= scope.nv;
+        for (int i = 0; i < scope.nv; i++) {
+            const float *p = scope.p[i];
+            zmax = fmax(zmax, p[2]);
+            if (p[2] < 0.030f) continue;            /* the eyepiece's housing */
+            rim = fmax(rim, hypot(p[0], p[1] - c[1]));
+            cx += p[0]; cy += p[1]; n++;
+        }
+        CHECK(bad == 0);
+        CHECK(n > 0);
+        CHECK(rim >= r);
+        NEAR(rim, RIFLE_REAR_R * s, 1e-4);
+        NEAR(cx / n, 0, 1e-4); NEAR(cy / n, rifle_scope_y(s), 1e-4);
+        CHECK(zmax < c[2]);
+    }
+}
+
+/* Does triangle t reach into the cylinder of radius r round the axis (cx, cy)
+ * from z0 to z1? Clipped to the slab, then the polygon against the circle. */
+static int tri_in_cylinder(const float *t0, const float *t1, const float *t2, double cx, double cy, double r,
+                           double z0, double z1)
+{
+    double poly[2][9][3];
+    int n = 3, m;
+    const float *t[3] = {t0, t1, t2};
+    for (int i = 0; i < 3; i++) for (int k = 0; k < 3; k++) poly[0][i][k] = t[i][k];
+    for (int side = 0; side < 2; side++) {      /* keep z >= z0, then z <= z1 */
+        double (*in)[3] = poly[side], (*out)[3] = poly[!side];
+        m = 0;
+        for (int i = 0; i < n; i++) {
+            const double *a = in[i], *b = in[(i + 1) % n];
+            double da = side ? z1 - a[2] : a[2] - z0, db = side ? z1 - b[2] : b[2] - z0;
+            if (da >= 0) memcpy(out[m++], a, sizeof out[0]);
+            if ((da >= 0) != (db >= 0)) {
+                double f = da / (da - db);
+                for (int k = 0; k < 3; k++) out[m][k] = a[k] + f * (b[k] - a[k]);
+                m++;
+            }
+        }
+        n = m;
+        if (!n) return 0;
+    }
+    double (*q)[3] = poly[0];                   /* the second pass's output */
+    int inside = 0;
+    for (int i = 0, j = n - 1; i < n; j = i++) {
+        double ax = q[i][0] - cx, ay = q[i][1] - cy, bx = q[j][0] - cx, by = q[j][1] - cy;
+        double ex = bx - ax, ey = by - ay, len = ex * ex + ey * ey;
+        double f = len > 0 ? fmax(0, fmin(1, -(ax * ex + ay * ey) / len)) : 0;
+        if (hypot(ax + f * ex, ay + f * ey) < r) return 1;      /* an edge within r of the axis */
+        if ((ay > 0) != (by > 0) && 0 < ax + (bx - ax) * (0 - ay) / (by - ay)) inside = !inside;
+    }
+    return inside;                                              /* the axis inside the polygon */
+}
+
+/* Nothing of the M700 or the scope between the lens and a point 30 cm behind it on its axis. */
+static void rifle_model_lens_unobstructed(void)
+{
+    if (!m700_load()) { CHECK(0); return; }
+    /* the check itself: a triangle across the axis, one beside it, one in front */
+    const float across[3][3] = {{-1, 0.10f, 0.2f}, {1, 0.10f, 0.2f}, {0, 0.13f, 0.25f}};
+    const float beside[3][3] = {{0.07f, 0, 0.1f}, {0.08f, 0.2f, 0.1f}, {0.07f, 0.2f, 0.3f}};
+    const float ahead[3][3] = {{-1, 0.1f, 0.0f}, {1, 0.1f, 0.0f}, {0, 0.13f, 0.06f}};
+    CHECK(tri_in_cylinder(across[0], across[1], across[2], 0, 0.12, 0.06, 0.071, 0.371));
+    CHECK(!tri_in_cylinder(beside[0], beside[1], beside[2], 0, 0.12, 0.06, 0.071, 0.371));
+    CHECK(!tri_in_cylinder(ahead[0], ahead[1], ahead[2], 0, 0.12, 0.06, 0.071, 0.371));
+    for (int k = 0; k < NSCALES; k++) {
+        float c[3], r;
+        int hits = 0;
+        rifle_lens(SCALES[k], c, &r);
+        for (int t = 0; t < m700.ni / 3; t++) {
+            const uint16_t *i = &m700.idx[t * 3];
+            hits += tri_in_cylinder(&m700.p[i[0] * 3], &m700.p[i[1] * 3], &m700.p[i[2] * 3], c[0], c[1], r, c[2], c[2] + 0.30);
+        }
+        CHECK(rifle_scope_mesh(SCALES[k], &scope));
+        for (int t = 0; t < scope.ni / 3; t++) {
+            const uint16_t *i = &scope.idx[t * 3];
+            hits += tri_in_cylinder(scope.p[i[0]], scope.p[i[1]], scope.p[i[2]], c[0], c[1], r, c[2], c[2] + 0.30);
+        }
+        CHECK(hits == 0);
+    }
+}
+
+/* Do triangles a and b cross (an edge of either through the other)? */
+static int tri_tri(const float *a[3], const float *b[3])
+{
+    for (int pass = 0; pass < 2; pass++) {
+        const float **e = pass ? b : a, **t = pass ? a : b;
+        for (int k = 0; k < 3; k++) {
+            const float *p = e[k], *q = e[(k + 1) % 3];
+            const double o[3] = {p[0], p[1], p[2]}, d[3] = {q[0] - p[0], q[1] - p[1], q[2] - p[2]};
+            const double h = ray_tri(o, d, t[0], t[1], t[2]);
+            if (h > 0 && h <= 1) return 1;
+        }
+    }
+    return 0;
+}
+
+static void tri_box(const float *t[3], float lo[3], float hi[3])
+{
+    for (int k = 0; k < 3; k++) {
+        lo[k] = fminf(t[0][k], fminf(t[1][k], t[2][k]));
+        hi[k] = fmaxf(t[0][k], fmaxf(t[1][k], t[2][k]));
+    }
+}
+
+/* The scope stands on the rail: no triangle of it crosses one of the M700's
+ * (at the scales checked), and at every scale it can have, the rings' feet
+ * are on the rail's top -- a hair above it, over it, not past its ends --
+ * and nothing else of the scope is down there. */
+static void scope_clear_of_m700(void)
+{
+    if (!m700_load()) { CHECK(0); return; }
+    const float top = m700_top();
+    NEAR(top, M700_RAIL_TOP, 0.0002);
+    /* the check itself: the scope at 1 dropped by 1 cm is in the rail (the last pass) */
+    static const float CHECKED[] = {0.3f, 0.5f, 1.0f, 1.5f, 2.0f, 1.0f};
+    const int NCHECKED = (int)(sizeof CHECKED / sizeof *CHECKED);
+    static int near[11582];
+    for (int k = 0; k < NCHECKED; k++) {
+        if (!rifle_scope_mesh(CHECKED[k], &scope)) { CHECK(0); continue; }
+        if (k == NCHECKED - 1)
+            for (int i = 0; i < scope.nv; i++) scope.p[i][1] -= 0.01f;
+        float slo[3] = {1e9f, 1e9f, 1e9f}, shi[3] = {-1e9f, -1e9f, -1e9f}, lo[3], hi[3];
+        for (int i = 0; i < scope.nv; i++)
+            for (int a = 0; a < 3; a++) { slo[a] = fminf(slo[a], scope.p[i][a]); shi[a] = fmaxf(shi[a], scope.p[i][a]); }
+        int n = 0, crossed = 0;
+        for (int t = 0; t < m700.ni / 3 && t < 11582; t++) {   /* the M700's triangles near the scope */
+            const uint16_t *i = &m700.idx[t * 3];
+            const float *v[3] = {&m700.p[i[0] * 3], &m700.p[i[1] * 3], &m700.p[i[2] * 3]};
+            tri_box(v, lo, hi);
+            if (hi[0] >= slo[0] && lo[0] <= shi[0] && hi[1] >= slo[1] && lo[1] <= shi[1] && hi[2] >= slo[2] && lo[2] <= shi[2])
+                near[n++] = t;
+        }
+        for (int t = 0; t < scope.ni / 3; t++) {
+            const float *a[3] = {scope.p[scope.idx[t * 3]], scope.p[scope.idx[t * 3 + 1]], scope.p[scope.idx[t * 3 + 2]]};
+            float alo[3], ahi[3];
+            tri_box(a, alo, ahi);
+            for (int j = 0; j < n; j++) {
+                const uint16_t *i = &m700.idx[near[j] * 3];
+                const float *b[3] = {&m700.p[i[0] * 3], &m700.p[i[1] * 3], &m700.p[i[2] * 3]};
+                tri_box(b, lo, hi);
+                if (hi[0] < alo[0] || lo[0] > ahi[0] || hi[1] < alo[1] || lo[1] > ahi[1] || hi[2] < alo[2] || lo[2] > ahi[2])
+                    continue;
+                crossed += tri_tri(a, b);
+            }
+        }
+        if (k == NCHECKED - 1) { CHECK(crossed > 0); break; }
+        if (crossed) printf("scale %.2f: %d of the scope's triangles cross the M700's\n", CHECKED[k], crossed);
+        CHECK(crossed == 0);
+    }
+    for (float s = 0.3f; s <= 2.0001f; s += 0.05f) {
+        if (!rifle_scope_mesh(s, &scope)) { CHECK(0); continue; }
+        double foot[2][3] = {{0, 0, 0}, {0, 0, 0}};
+        int feet[2] = {0, 0}, off = 0;
+        float low = 1e9f;
+        for (int i = 0; i < scope.nv; i++) {
+            const float *p = scope.p[i];
+            if (p[1] > M700_RAIL_TOP + 0.001f || p[2] < M700_RAIL_Z0 || p[2] > M700_RAIL_Z1) continue;
+            const int f = p[2] < -0.16f;            /* the front ring's foot, or the rear's */
+            for (int k = 0; k < 3; k++) foot[f][k] += p[k];
+            feet[f]++;
+            low = fminf(low, p[1]);
+            off += fabsf(p[0]) > 0.0105f || fabsf(p[2] - SCOPE_RING_Z[f]) > SCOPE_RING_HALF;
+        }
+        CHECK(off == 0);
+        CHECK(low > top && low - M700_RAIL_TOP <= 0.0005f);
+        for (int f = 0; f < 2; f++) {
+            CHECK(feet[f] > 0);
+            if (!feet[f]) continue;
+            const double o[3] = {foot[f][0] / feet[f], foot[f][1] / feet[f], foot[f][2] / feet[f]}, down[3] = {0, -1, 0};
+            double hit;
+            m700_ray(o, down, &hit);
+            CHECK(o[1] - hit >= 0.0645);            /* on the rail's top (its slots 0.0651), not past its end */
+        }
+    }
+}
+
+/* The scope's axis rises only for clearance: printed, and near where the user approved it. */
+static void scope_axis_height(void)
+{
+    printf("scope axis (lens centre y): %.4f at 0.5, %.4f at 1, %.4f at 2 (the box rifle's: %.4f at 1)\n",
+           rifle_scope_y(0.5f), rifle_scope_y(1), rifle_scope_y(2), 0.042 + 0.001 + 0.0675);
+    CHECK(rifle_scope_y(1) - 0.1105f < 0.03f);
+    for (float s = 0.3f; s <= 2.0001f; s += 0.05f) CHECK(rifle_scope_y(s) > rifle_scope_y(s - 0.05f));
+}
+
+/* rifle_shade lights as the overlay's gun (vk_overlay.c's box path): the
+ * normal turned into the world, the same light, the same highlight. */
+static void rifle_shade_matches_overlay_lighting(void)
+{
+    if (!m700_load()) { CHECK(0); return; }
+    const float q0[4] = {0.3f, -0.5f, 0.2f, 0.7874f}, p0[3] = {0.1f, 1.2f, -0.4f};
+    float q[4], model[16], vp[16] = {0}, mvp[16], out[3][8];
+    float qn = sqrtf(q0[0] * q0[0] + q0[1] * q0[1] + q0[2] * q0[2] + q0[3] * q0[3]);
+    for (int k = 0; k < 4; k++) q[k] = q0[k] / qn;
+    pose_matrix(q, p0, model);
+    for (int k = 0; k < 16; k++) vp[k] = (float)((k * 7) % 5) * 0.3f - 0.4f;
+    vp[15] = 2;
+    mul(mvp, vp, model);
+    double worst = 0;
+    int ok = 1;
+    for (int i = 0; i < m700.nv; i += 97) {
+        const int n = i + 3 <= m700.nv ? 3 : m700.nv - i;
+        const float rgb[9] = {0.2f, 0.3f, 0.4f, 0.5f, 0.6f, 0.7f, 1, 1, 1};
+        ok &= rifle_shade(&m700.p[i * 3], &m700.n[i * 3], rgb, n, mvp, model, &out[0][0], 8, 5);
+        for (int v = 0; v < n; v++) {
+            const float *pv = &m700.p[(i + v) * 3], *nv = &m700.n[(i + v) * 3];
+            float world[3], clip[4], nw[3], len = 0;
+            apply(model, pv, world);
+            for (int k = 0; k < 3; k++) { nw[k] = model[k] * nv[0] + model[4 + k] * nv[1] + model[8 + k] * nv[2]; len += nw[k] * nw[k]; }
+            len = sqrtf(len);
+            for (int k = 0; k < 3; k++) nw[k] /= len;
+            float diffuse = .38f + .62f * fmaxf(0, (nw[0] * .3f + nw[1] + nw[2] * .4f) / sqrtf(1.25f));
+            float spec = powf(fmaxf(0, (-nw[0] * .2f + nw[1] + nw[2] * .6f) / sqrtf(1.4f)), 24) * .18f;
+            for (int k = 0; k < 4; k++) clip[k] = vp[k] * world[0] + vp[4 + k] * world[1] + vp[8 + k] * world[2] + vp[12 + k];
+            const float want[4] = {clip[0], -clip[1], (clip[2] + clip[3]) * .5f, clip[3]};
+            for (int k = 0; k < 4; k++) worst = fmax(worst, fabs(out[v][k] - want[k]) / fmax(1, fabs(want[k])));
+            for (int k = 0; k < 3; k++) worst = fmax(worst, fabs(out[v][5 + k] - (rgb[v * 3 + k] * diffuse + spec)));
+        }
+    }
+    CHECK(ok);
+    CHECK(worst < 1e-4);
+    /* NULL colours: white */
+    ok = rifle_shade(m700.p, m700.n, NULL, 1, mvp, model, &out[0][0], 8, 5);
+    CHECK(ok && out[0][5] == out[0][6] && out[0][6] == out[0][7] && out[0][5] > 0.37f);
+    /* a position not finite, or at w = 0: refused */
+    const float inf_p[3] = {INFINITY, 0, 0}, up[3] = {0, 1, 0};
+    CHECK(!rifle_shade(inf_p, up, NULL, 1, mvp, model, &out[0][0], 8, 5));
+    float flat[16] = {0};
+    flat[0] = flat[5] = flat[10] = 1;               /* w always 0 */
+    CHECK(!rifle_shade(m700.p, m700.n, NULL, 1, flat, model, &out[0][0], 8, 5));
+}
+
+/* The overlay's cost per eye: the M700's and the scope's vertices (printed, not checked). */
+static void rifle_shade_timing(void)
+{
+    if (!m700_load() || !rifle_scope_mesh(1, &scope)) { CHECK(0); return; }
+    enum { STRIDE = 31, COL = 27, RUNS = 200 };     /* ChVkColorVertex: 27 floats of position etc., then the colour */
+    float *out = calloc((size_t)(m700.nv + scope.nv) * STRIDE, sizeof(float));
+    float model[16], vp[16] = {0}, mvp[16];
+    const float q[4] = {0, 0, 0, 1}, p[3] = {0, 1.2f, -0.4f};
+    if (!out) { CHECK(0); return; }
+    pose_matrix(q, p, model);
+    vp[0] = vp[5] = 1; vp[10] = -1; vp[11] = -1; vp[14] = -0.1f;
+    mul(mvp, vp, model);
+    clock_t t0 = clock();
+    int ok = 1;
+    for (int r = 0; r < RUNS; r++) {
+        ok &= rifle_shade(m700.p, m700.n, NULL, m700.nv, mvp, model, out, STRIDE, COL);
+        ok &= rifle_shade(&scope.p[0][0], &scope.n[0][0], &scope.c[0][0], scope.nv, mvp, model,
+                          out + (size_t)m700.nv * STRIDE, STRIDE, COL);
+    }
+    double us = (double)(clock() - t0) / CLOCKS_PER_SEC * 1e6 / RUNS;
+    CHECK(ok);
+    printf("rifle vertices per eye: %d (M700 %d, scope %d, %d + %d triangles): %.1f us (this machine, -O1)\n",
+           m700.nv + scope.nv, m700.nv, scope.nv, m700.ni / 3, scope.ni / 3, us);
+    free(out);
 }
 
 /* ── Scope sensitivity (vr_sens_step), the eye at the lens, the gun drawn along the aim ── */
@@ -751,6 +1168,16 @@ int main(void)
     rifle_lens_unobstructed();
     rifle_scope_on_top();
     rifle_fits_hand();
+    m700_unpacks();
+    m700_rejects_bad_data();
+    m700_muzzle_and_grip();
+    m700_texture_decodes();
+    scope_round_the_lens();
+    rifle_model_lens_unobstructed();
+    scope_clear_of_m700();
+    scope_axis_height();
+    rifle_shade_matches_overlay_lighting();
+    rifle_shade_timing();
     aim_angles_basic();
     aim_angles_poles_and_behind();
     steady_passes_first_and_still();

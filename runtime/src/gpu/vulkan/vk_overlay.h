@@ -13,4 +13,8 @@ VkResult ch_vk_overlay_gun_read(ChVkTarget *,const QoFrame *,const float gl_view
  * No input polling, compositor submission, or frame clearing is performed. */
 VkResult ch_vk_overlay_read(ChVkTarget *,const QoFrame *,const float gl_viewproj[16],
     const float eye[3],float sight_height,void *pixels,VkDeviceSize bytes);
+/* The weapon's (QO_WEAPON_*) model loaded now, on target's device, not at its
+ * first frame: the rifle's mesh unpacked, its texture decoded and uploaded
+ * (else the box rifle, said once). The handgun has nothing to load. */
+void ch_vk_overlay_prepare(ChVkTarget *,int weapon);
 #endif

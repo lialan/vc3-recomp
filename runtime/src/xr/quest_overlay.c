@@ -70,9 +70,10 @@ float qo_sight_height(int sight)
 
 void qo_muzzle(float out[3])
 {
+    const int rifle = chihiro_profile()->vr.weapon == CH_VR_RIFLE;
     out[0] = 0;
-    out[1] = 0;
-    out[2] = chihiro_profile()->vr.weapon == CH_VR_RIFLE ? RIFLE_MUZZLE_Z : MUZZLE_Z;
+    out[1] = rifle ? RIFLE_MUZZLE_Y : 0;     /* the M700's bore */
+    out[2] = rifle ? RIFLE_MUZZLE_Z : MUZZLE_Z;
 }
 
 void qo_lens_centre(float out[3])
