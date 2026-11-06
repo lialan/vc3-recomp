@@ -17,6 +17,7 @@ set(rt_sources
     src/chihiro/ch_env.c
     src/chihiro/chihiro_profile.c
     src/chihiro/d3d_fence.c
+    src/chihiro/cri_lock.c
     src/host/host_input.c
     src/host/display_settings.c
     src/host/recomp_diag.c

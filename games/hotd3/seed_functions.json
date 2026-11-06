@@ -1,1 +1,27 @@
-[]
+[
+ {
+  "start": "0x000BE7F0",
+  "observed": true,
+  "note": "Thread routine (indirect call 'Failed to resolve VA 0x000BE7F0' at boot): the game's frame loop, calls 0x135C10 and 0xC7640 until [0x30F730] is set. Static analysis folded it into 0xBE7B0, whose body ends in a noreturn call and int3."
+ },
+ {
+  "start": "0x000BE860",
+  "observed": true,
+  "note": "Thread routine (indirect call 'Failed to resolve VA 0x000BE860' at boot): loops on 0xC7660 until [0x30F738] is set. Folded into 0xBE7B0 the same way."
+ },
+ {
+  "start": "0x00019AF0",
+  "observed": false,
+  "note": "Method stored at 0x1340CE (mov eax, 0x19AF0; mov [0x21B20C], eax) beside 0x19A90 and 0x19E40. Folded into 0x19A34 after a jmp and padding."
+ },
+ {
+  "start": "0x000CEC30",
+  "observed": false,
+  "note": "Method stored at 0xCFB0C ([esi+0x6944]) beside 0xCEC10 and 0xCEC50. Folded into 0xCEC10 after a jmp and padding."
+ },
+ {
+  "start": "0x0011B350",
+  "observed": false,
+  "note": "Callback whose address is loaded at 0x11A869. Folded into 0x11B340, which ends in a noreturn call and int3."
+ }
+]

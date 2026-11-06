@@ -74,6 +74,27 @@ void sub_000B88D1(void) { vc3_relaunch(); }
 extern void chihiro_d3d_block_on_time(void);
 void sub_0013BC20(void) { chihiro_d3d_block_on_time(); } /* D3D_BlockOnTime (VC3 0x10CAC0) */
 
+/* CRI's lock, the scoped guest CPU (runtime/src/chihiro/cri_lock.c). The ADX
+ * manager registers 0xBE6D0 / 0xBE710 as the file system's lock callbacks
+ * ([0x30FDC8] / [0x30FDD0], arg [0x30FDCC]): raise the caller's priority,
+ * suspend the idle thread, count in [0x30F708] -- a lock only on one CPU.
+ * cdecl, one argument the caller drops. The servers' steps go inside the
+ * same lock: the main server 0xC7990 (ADXT, the file system that issues the
+ * reads, Sofdec; behind a busy flag), run each vblank by thread 0xBEC20, and
+ * the vsync thread 0xBE7F0's (0xC7640) and the file-system thread 0xBE860's
+ * (0xC7660). */
+extern void ch_cri_lock(void);
+extern void ch_cri_unlock(void);
+extern void ch_cri_server(void (*step)(void));
+void sub_000BE6D0(void) { ch_cri_lock(); g_esp += 4; }     /* ret */
+void sub_000BE710(void) { ch_cri_unlock(); g_esp += 4; }   /* ret */
+extern void sub_000C7640_gen(void);
+extern void sub_000C7660_gen(void);
+extern void sub_000C7990_gen(void);
+void sub_000C7990(void) { ch_cri_server(sub_000C7990_gen); }
+void sub_000C7640(void) { ch_cri_server(sub_000C7640_gen); }
+void sub_000C7660(void) { ch_cri_server(sub_000C7660_gen); }
+
 /* ── Manual function overrides ─────────────────────────────── */
 
 /* A function pointer to run for an Xbox VA instead of the dispatch table's,
