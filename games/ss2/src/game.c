@@ -22,6 +22,7 @@ static const ChihiroProfile k_ss2 = {
     .entry = 0x000B23EC,                /* retail-key decoded */
     .env_prefix = "SS2",
     .save_name = "ss2-recomp",
+    .disc_launcher = "ssc",             /* Silent Scope Complete's menu (default.xbe) */
     /* XDK 5558 D3D, as ss1's (found by its byte pattern): BlockOnTime at
      * 0x12CB50, replaced by the runtime's (recomp_manual.c). */
     .d3d = {

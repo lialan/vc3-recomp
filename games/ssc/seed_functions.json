@@ -1,0 +1,7 @@
+[
+ {
+  "start": "0x000DFFB8",
+  "observed": true,
+  "note": "XPP (USB) indirect-call target observed at runtime ([ICALL] Failed to resolve), as ss2's 0x177858: reached only through a pointer during enumeration; unresolved, the pad never reached the title."
+ }
+]

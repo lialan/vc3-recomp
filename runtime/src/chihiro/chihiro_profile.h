@@ -50,6 +50,12 @@ typedef struct ChihiroProfile {
     uint32_t entry;             /* the XBE entry point, as lifted */
     const char *env_prefix;     /* ch_env's alias prefix ("VC3": VC3_FPS = CHIHIRO_FPS) */
     const char *save_name;      /* the save folder under ~/Library/Application Support */
+    /* The game id of the disc's launcher (default.xbe; Silent Scope
+     * Complete's "ssc"): another image a title launches runs as the binary
+     * beside this one named after it ("d:\ss2.xbe": ss2), default.xbe and
+     * the dashboard as this one (main.c chihiro_launch_image). NULL: a
+     * launch exits, as before. */
+    const char *disc_launcher;
 
     /* The SEGA XPP library and the game's own wrappers the runtime replaces,
      * by guest address (scripts/find_chihiro_syms.py finds them; the game's
@@ -70,6 +76,10 @@ typedef struct ChihiroProfile {
         uint32_t kickoff_ret;       /* the return address BlockOnTime's KickOff call pushes */
         void (*kickoff)(void);      /* KickOff(0), the lifted function */
         uint32_t xlaunch;           /* XLaunchNewImage, replaced: a relaunch */
+        /* The device made without anti-aliasing (the game wraps its
+         * Direct3D_CreateDevice with chihiro_d3d_create_device): it draws at
+         * its own size, as the renderer's screen-shaped surfaces expect */
+        int no_multisample;
     } d3d;
 
     /* The baseboard DIP switches: the display mode the boot picks from them

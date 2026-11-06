@@ -179,3 +179,27 @@ uint32_t chihiro_d3d_progress(void)
     const uint32_t sem = d3d_semaphore_va();
     return sem ? MEM32(sem) : 0;
 }
+
+/* XDK D3D's Direct3D_CreateDevice(Adapter, DeviceType, hFocusWindow,
+ * BehaviorFlags, pPresentationParameters, ppReturnedDeviceInterface),
+ * stdcall, wrapped by a game that sets the profile's d3d.no_multisample:
+ * the presentation parameters' MultiSampleType (+0x10) becomes
+ * D3DMULTISAMPLE_NONE (0x0011: one sample across and down) first. Silent
+ * Scope 3 asks for 2-sample quincunx (0x1121), which D3D draws into a back
+ * buffer twice as wide (1280x480) and resolves at the swap; made without
+ * it, D3D draws at 640x480 as ss1's and ss2's -- the screen shape the
+ * renderer's views, 16:9 copies and HUD layout know -- and the headset
+ * draws the 3D again at its own resolution anyway. */
+void chihiro_d3d_create_device(void (*gen)(void))
+{
+    const char *keep = ch_env("MULTISAMPLE");   /* <PREFIX>_MULTISAMPLE=1: the game's own */
+    if (chihiro_profile()->d3d.no_multisample && !(keep && atoi(keep))) {
+        const uint32_t pp = MEM32(g_esp + 0x14);
+        if (pp && MEM32(pp + 0x10) != 0x0011) {
+            fprintf(stderr, "[D3D] device made without anti-aliasing (MultiSampleType 0x%04X -> 0x0011)\n",
+                    MEM32(pp + 0x10));
+            MEM32(pp + 0x10) = 0x0011;
+        }
+    }
+    gen();
+}

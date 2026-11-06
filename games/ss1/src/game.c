@@ -22,6 +22,7 @@ static const ChihiroProfile k_ss1 = {
     .entry = 0x00081362,                /* retail-key decoded */
     .env_prefix = "SS1",
     .save_name = "ss1-recomp",
+    .disc_launcher = "ssc",             /* Silent Scope Complete's menu (default.xbe) */
     /* XDK 5558 D3D. BlockOnTime(time, flags) at 0xFC580 (same device
      * layout as VC3's: newest time at +0x2C, semaphore pointer at +0x30),
      * replaced by the runtime's (recomp_manual.c). Its "newest fence" kick

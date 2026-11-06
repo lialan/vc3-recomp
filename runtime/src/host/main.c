@@ -21,7 +21,10 @@
 #include <dlfcn.h>
 #if defined(__APPLE__)
 #include <mach-o/dyld.h>   /* _NSGetExecutablePath */
+#include <mach/mach.h>      /* the crash report's page protections */
+#include <mach/mach_vm.h>
 #endif
+#include <ctype.h>
 #include <limits.h>
 #include <sys/ucontext.h>
 #include <signal.h>
@@ -120,6 +123,40 @@ static void fault_handler(int sig, siginfo_t *si, void *ucv)
         if (lr && dladdr((void *)lr, &di) && di.dli_sname)
             fprintf(stderr, "  host lr %p in %s+0x%lx\n", (void *)lr, di.dli_sname,
                     (unsigned long)(lr - (uintptr_t)di.dli_saddr));
+        /* The signal's kind and the instruction with its registers: a fault
+         * address of 0 with SIGBUS is often an ordered access (ldar/stlr) the
+         * alignment fixup did not take, which the registers then show. */
+        fprintf(stderr, "  signal %d code %d", sig, si->si_code);
+        if (pc)
+            fprintf(stderr, ", instruction %08X", *(const uint32_t *)pc);
+        fprintf(stderr, "\n");
+#if defined(__APPLE__) && defined(__aarch64__)
+        {
+            const __uint64_t *x = ((ucontext_t *)ucv)->uc_mcontext->__ss.__x;
+            int r;
+            for (r = 0; r < 29; r++)
+                fprintf(stderr, "  x%-2d=%016llx%s", r, (unsigned long long)x[r], r % 4 == 3 ? "\n" : "");
+            fprintf(stderr, "\n  memory base %p\n", (void *)xbox_GetMemoryOffset());
+            /* The protection of the pages the faulting instruction's base
+             * registers point at (a page another thread closed shows here) */
+            for (r = 0; r < 29; r++) {
+                mach_vm_address_t at = (mach_vm_address_t)x[r];
+                mach_vm_size_t size = 0;
+                vm_region_basic_info_data_64_t info;
+                mach_msg_type_number_t n = VM_REGION_BASIC_INFO_COUNT_64;
+                mach_port_t obj = MACH_PORT_NULL;
+                if (x[r] < 0x100000000ull || x[r] >= 0x7000000000ull)
+                    continue;           /* guest values, guest memory */
+                if (mach_vm_region(mach_task_self(), &at, &size, VM_REGION_BASIC_INFO_64,
+                                   (vm_region_info_t)&info, &n, &obj) == KERN_SUCCESS)
+                    fprintf(stderr, "  x%d's region %llx+%llx prot %d max %d\n", r,
+                            (unsigned long long)at, (unsigned long long)size,
+                            info.protection, info.max_protection);
+                if (obj != MACH_PORT_NULL)
+                    mach_port_deallocate(mach_task_self(), obj);
+            }
+        }
+#endif
     }
     /* Re-raise for whoever handled it before: the crash reporter, the
      * debugger, Android's debuggerd (which writes the tombstone). */
@@ -132,7 +169,16 @@ static void install_fault_handler(void)
 
     memset(&sa, 0, sizeof(sa));
     sa.sa_sigaction = fault_handler;
-    sa.sa_flags = SA_SIGINFO | SA_ONSTACK;
+    /* SA_NODEFER: a fault taken inside the handler is handled at once. A
+     * trapped register's emulation writes guest memory (the USB controller's
+     * done head, in the HCCA), and that memory can share a host page with
+     * GPU data the renderer's write watch has closed (16 KB pages on the
+     * Mac). Deferred, that fault was held until the handler returned and
+     * then delivered without an address at the next instruction -- an
+     * unhandled crash (Silent Scope 3's intro, in its USB interrupt
+     * routine). Handled now, the watch opens the page and the write goes
+     * on, as for any other write. */
+    sa.sa_flags = SA_SIGINFO | SA_ONSTACK | SA_NODEFER;
     sigemptyset(&sa.sa_mask);
     sigaction(SIGSEGV, &sa, &s_old_segv);
     sigaction(SIGBUS, &sa, &s_old_bus);
@@ -221,6 +267,105 @@ void vc3_relaunch(void)
     perror("[VC3] relaunch failed");
     g_eax = 0x80004005u;
     g_esp += 12;
+}
+
+/* ── Launching another image ───────────────────────────────── */
+
+/* The toolkit's launch handler (kernel.h xbox_SetLaunchHandler): a title's
+ * XLaunchNewImage of another XBE on its disc ("\Device\CdRom0;ss2.xbe")
+ * runs that game's binary, the one beside this one named after it, with
+ * this one's arguments and the launch data page in a file it reads at boot
+ * (RECOMP_LAUNCH_PAGE) -- the console's reboot into the new image.
+ * default.xbe and the dashboard (an empty path) are the disc's launcher
+ * (the profile's disc_launcher). Returns -- the title then exits, as
+ * before -- without a disc launcher, a binary for that image, or on Android
+ * (each game is its own app there). */
+static void chihiro_launch_image(const char *path, const uint8_t *page)
+{
+    const ChihiroProfile *gp = chihiro_profile();
+    const char *file = path, *p;
+    char name[64], exe[PATH_MAX] = { 0 }, bin[PATH_MAX], page_path[PATH_MAX];
+    size_t n = 0;
+
+    if (!gp->disc_launcher || !s_argv)
+        return;
+    for (p = path; *p; p++)                 /* the file part: after ';', '\' or ':' */
+        if (*p == ';' || *p == '\\' || *p == ':')
+            file = p + 1;
+    for (p = file; *p && *p != '.' && n < sizeof(name) - 1; p++)
+        name[n++] = (char)tolower((unsigned char)*p);
+    name[n] = 0;
+    if (!n || !strcmp(name, "default"))
+        snprintf(name, sizeof(name), "%s", gp->disc_launcher);
+#if defined(__ANDROID__)
+    (void)exe; (void)bin; (void)page_path; (void)page;
+    fprintf(stderr, "[launch] %s (%s): not on Android, exiting\n", name, path);
+#else
+    {
+        uint32_t size = sizeof(exe);
+        char *slash;
+#if defined(__APPLE__)
+        if (_NSGetExecutablePath(exe, &size) != 0)
+            return;
+#else
+        if (readlink("/proc/self/exe", exe, size - 1) <= 0)
+            return;
+#endif
+        if (!realpath(exe, bin))
+            return;
+        if ((slash = strrchr(bin, '/')))
+            slash[1] = 0;
+        if (strlen(bin) + strlen(name) + 1 > sizeof(bin))
+            return;
+        strcat(bin, name);
+        if (access(bin, X_OK) != 0) {
+            fprintf(stderr, "[launch] %s: no %s beside this binary, exiting\n", path, bin);
+            return;
+        }
+    }
+    unsetenv("RECOMP_LAUNCH_PAGE");
+    /* Scripted runs across images: RECOMP_PAD_SCRIPT_CHAIN="next|after|..."
+     * gives each launched image the next script (the toolkit's
+     * RECOMP_PAD_SCRIPT), the rest kept for the image after it. */
+    {
+        const char *chain = getenv("RECOMP_PAD_SCRIPT_CHAIN");
+        if (chain && *chain) {
+            char head[4096];
+            const char *bar = strchr(chain, '|');
+            size_t len = bar ? (size_t)(bar - chain) : strlen(chain);
+            if (len >= sizeof(head))
+                len = sizeof(head) - 1;
+            memcpy(head, chain, len);
+            head[len] = 0;
+            setenv("RECOMP_PAD_SCRIPT", head, 1);
+            if (bar)
+                setenv("RECOMP_PAD_SCRIPT_CHAIN", bar + 1, 1);
+            else
+                unsetenv("RECOMP_PAD_SCRIPT_CHAIN");
+        }
+    }
+    if (page) {
+        const char *tmp = getenv("TMPDIR");
+        FILE *f;
+        snprintf(page_path, sizeof(page_path), "%s/chihiro-launch-%d.bin",
+                 tmp && *tmp ? tmp : "/tmp", (int)getpid());
+        f = fopen(page_path, "wb");
+        if (!f || fwrite(page, 1, 0x1000, f) != 0x1000) {
+            if (f)
+                fclose(f);
+            fprintf(stderr, "[launch] %s: could not write %s, exiting\n", path, page_path);
+            return;
+        }
+        fclose(f);
+        setenv("RECOMP_LAUNCH_PAGE", page_path, 1);
+    }
+    fprintf(stderr, "[launch] %s -> %s\n", path[0] ? path : "(dashboard)", bin);
+    fflush(stdout);
+    fflush(stderr);
+    s_argv[0] = bin;
+    execv(bin, s_argv);
+    perror("[launch] exec failed");
+#endif
 }
 
 /* ── Boot (on the guest thread) ────────────────────────────── */
@@ -372,6 +517,7 @@ int main(int argc, char **argv)
     save = ch_env("SAVE_DIR");
 
     s_argv = argv;
+    xbox_SetLaunchHandler(chihiro_launch_image);
     setvbuf(stdout, NULL, _IONBF, 0);
     setvbuf(stderr, NULL, _IONBF, 0);
 
