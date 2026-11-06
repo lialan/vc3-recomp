@@ -530,20 +530,24 @@ static struct {
 } s_vr = { QO_SIGHT_RED_DOT, LASER_DOT, 1, 0, 1, 1, 120, 0, 1, 1, 0 };
 static int s_eye_boot;  /* s_vr.eye this run was started with */
 /* The rifle (the profile's weapon; Silent Scope, a retail title on an Xbox
- * pad): always immersive, its gun always shown (the lens is its only
- * sight), no sight, coin or arcade-button rows (menu_rows), its laser on
- * or off (on unless vr_laser=off) and a scope sensitivity row, its own
- * controls (rifle_frame). */
+ * pad): always immersive; either the rifle drawn with its scope (the lens
+ * its only sight) or, by default, no rifle -- its laser from the controller
+ * and the 2D scope on the grip (s_vr.show_gun: the Rifle model row,
+ * vr_rifle_model=on/off); no sight, coin or arcade-button rows
+ * (menu_rows), its laser on or off (on unless vr_laser=off) and a scope
+ * sensitivity row, its own controls (rifle_frame). */
 static int is_rifle(void)
 {
     return chihiro_profile()->vr.weapon == CH_VR_RIFLE;
 }
 static float s_zoom = 1.0f;     /* the rifle's zoom, 0.5..4: kept across stages, 1 on Reset game */
 /* The rifle's scope sensitivity, %: how much of the hand's turn moves the
- * aim while the scope picture is up (rifle_frame); vr_scope_sens= */
-static const int SCOPE_SENS[] = { 100, 75, 50, 35, 25 };
+ * aim while the scope is up (rifle_frame) -- the drawn rifle's lens
+ * (vr_scope_sens=) and the 2D scope's, much lower (vr_scope2d_sens=); the
+ * Scope sensitivity row sets the one in use. */
+static const int SCOPE_SENS[] = { 100, 75, 50, 35, 25, 20, 15, 10 };
 #define SCOPE_SENS_N ((int)(sizeof SCOPE_SENS / sizeof SCOPE_SENS[0]))
-static int s_scope_sens = 35;
+static int s_scope_sens = 35, s_scope2d_sens = 20;
 /* The rifle's steadied aim this display frame (as the game gets it; ok 0:
  * not located) -- where the lens shows its picture from (vk_lens_crop) */
 static float s_rifle_yaw, s_rifle_pitch;
@@ -600,15 +604,21 @@ static void screen_load(void)
     if ((v = vc3_setting_get("vr_eye=")))
         s_vr.eye = atoi(v) >= 256 ? atoi(v) : 0;        /* "native": 0 */
     s_eye_boot = s_vr.eye;
-    if ((v = vc3_setting_get("vr_scope_sens="))) {
+    {
         int i;
-        for (i = 0; i < SCOPE_SENS_N; i++)
-            if (atoi(v) == SCOPE_SENS[i])
+        const char *s2 = vc3_setting_get("vr_scope2d_sens=");
+        v = vc3_setting_get("vr_scope_sens=");
+        for (i = 0; i < SCOPE_SENS_N; i++) {
+            if (v && atoi(v) == SCOPE_SENS[i])
                 s_scope_sens = SCOPE_SENS[i];
+            if (s2 && atoi(s2) == SCOPE_SENS[i])
+                s_scope2d_sens = SCOPE_SENS[i];
+        }
     }
-    if (is_rifle()) {           /* and no rows to change them */
+    if (is_rifle()) {           /* no row to change it; the rifle drawn only when asked for */
         s_vr.immersive = 1;
-        s_vr.show_gun = 1;
+        v = vc3_setting_get("vr_rifle_model=");
+        s_vr.show_gun = v && !strcmp(v, "on");
     }
 }
 
@@ -645,6 +655,9 @@ static void vr_save(void)
         if (is_rifle()) {
             snprintf(b, sizeof b, "%d", s_scope_sens);
             vc3_setting_put("vr_scope_sens=", b);
+            snprintf(b, sizeof b, "%d", s_scope2d_sens);
+            vc3_setting_put("vr_scope2d_sens=", b);
+            vc3_setting_put("vr_rifle_model=", s_vr.show_gun ? "on" : "off");
         }
     }
     screen_save();
@@ -1869,14 +1882,15 @@ static const int s_rows[] = { M_SCREEN, M_DETAIL, M_REFRESH, M_SIGHT, M_LASER, M
                               M_SERVICE, M_RESET, M_CLOSE };
 #endif
 #define MENU_ROWS ((int)(sizeof s_rows / sizeof s_rows[0]))
-/* The rows shown, n of them: the rifle's without Screen, Sight, Gun model,
- * the coins and the arcade buttons; Scope sensitivity only the rifle's. */
+/* The rows shown, n of them: the rifle's without Screen, Sight, the coins
+ * and the arcade buttons (its Gun model row is Rifle model); Scope
+ * sensitivity only the rifle's. */
 static int menu_rows(int rows[MENU_ROWS])
 {
     int i, n = 0;
     for (i = 0; i < MENU_ROWS; i++) {
         int m = s_rows[i];
-        if (is_rifle() && (m == M_SCREEN || m == M_SIGHT || m == M_GUN || m == M_COINS
+        if (is_rifle() && (m == M_SCREEN || m == M_SIGHT || m == M_COINS
                            || m == M_COIN || m == M_TEST || m == M_SERVICE))
             continue;
         if (!is_rifle() && m == M_SENS)
@@ -1922,29 +1936,31 @@ static void controls_items(XmItem *it)
     it[9].label = held[1];
 }
 
-/* The rifle's controls page (rifle_frame): the gun hand fires, zooms and
- * answers the game's menus; the other hand's buttons are as above. */
-#define RIFLE_CTRL_ROWS 10
+/* The rifle's controls page (rifle_frame): the gun hand fires, zooms, holds
+ * the 2D scope up and answers the game's menus; the other hand's buttons
+ * are as above. */
+#define RIFLE_CTRL_ROWS 11
 static void rifle_controls_items(XmItem *it)
 {
     static char held[2][24];
     const int right = s_gun == HAND_R;
     static const char *const label[RIFLE_CTRL_ROWS] = {
-        "Trigger", "Thumbstick up/down", NULL, "Stick click (either)", "Left menu button",
+        "Trigger", "Grip, held", "Thumbstick up/down", NULL, "Stick click (either)", "Left menu button",
         "Other hand trigger", NULL, NULL, "Other hand stick", "Back" };
     static const char *const value[RIFLE_CTRL_ROWS] = {
-        "Fire", "Zoom (menus: move)", "Confirm / Back", "Start", "Settings panel",
+        "Fire", NULL, "Zoom (menus: move)", "Confirm / Back", "Start", "Settings panel",
         "Gun to that hand", "Recentre view", "Settings panel", "Screen distance, size", "" };
     int i;
     snprintf(held[0], sizeof held[0], "Other hand %s, held", right ? "X" : "A");
     snprintf(held[1], sizeof held[1], "Other hand %s, held", right ? "Y" : "B");
     for (i = 0; i < RIFLE_CTRL_ROWS; i++) {
         it[i].label = label[i];
-        snprintf(it[i].value, 40, "%s", value[i]);
+        snprintf(it[i].value, 40, "%s", value[i] ? value[i] : "");
     }
-    it[2].label = right ? "A / B" : "X / Y";
-    it[6].label = held[0];
-    it[7].label = held[1];
+    snprintf(it[1].value, 40, "%s", s_vr.show_gun ? "Nothing (Rifle model on)" : "2D scope, steadier aim");
+    it[3].label = right ? "A / B" : "X / Y";
+    it[7].label = held[0];
+    it[8].label = held[1];
 }
 static int ctrl_rows(void)
 {
@@ -1984,8 +2000,15 @@ static void menu_items(XmItem *it)
         snprintf(it[M_LASER].value, 40, "%s", s_vr.laser == LASER_OFF ? "Off" : "On");
     else
         snprintf(it[M_LASER].value, 40, "%s", laser[s_vr.laser]);
-    snprintf(it[M_SENS].value, 40, "%d%%", s_scope_sens);
+    if (is_rifle() && !s_vr.show_gun)   /* each way of aiming its own */
+        snprintf(it[M_SENS].value, 40, "%d%% (2D scope)", s_scope2d_sens);
+    else
+        snprintf(it[M_SENS].value, 40, "%d%%", s_scope_sens);
     snprintf(it[M_GUN].value, 40, "%s", s_vr.show_gun ? "Shown" : "Hidden");
+    if (is_rifle()) {
+        it[M_GUN].label = "Rifle model";
+        snprintf(it[M_GUN].value, 40, "%s", s_vr.show_gun ? "On (scope on the rifle)" : "Off (2D scope on grip)");
+    }
     snprintf(it[M_HAND].value, 40, "%s", s_gun == HAND_L ? "Left" : "Right");
     snprintf(it[M_STATS].value, 40, "%s", s_vr.show_stats ? "On" : "Off");
     snprintf(it[M_STEREO].value, 40, "%s", s_vr.immersive ? "On (immersive)"
@@ -2150,11 +2173,11 @@ static void menu_choose(int item)
         else
             s_vr.laser = (s_vr.laser + 1) % 3;
         break;
-    case M_SENS: {      /* 100, 75, 50, 35, 100 ... */
-        int k = 0;
-        while (k < SCOPE_SENS_N - 1 && SCOPE_SENS[k] != s_scope_sens)
+    case M_SENS: {      /* 100, 75 ... 10, 100 ...: the one in use (the drawn rifle's or the 2D scope's) */
+        int *sens = s_vr.show_gun ? &s_scope_sens : &s_scope2d_sens, k = 0;
+        while (k < SCOPE_SENS_N - 1 && SCOPE_SENS[k] != *sens)
             k++;
-        s_scope_sens = SCOPE_SENS[(k + 1) % SCOPE_SENS_N];
+        *sens = SCOPE_SENS[(k + 1) % SCOPE_SENS_N];
         break;
     }
     case M_GUN: s_vr.show_gun = !s_vr.show_gun; break;
@@ -2236,20 +2259,26 @@ static XrTime s_shot_t;
  * profile's vr.rifle; off while the panel is open). The gun hand's trigger
  * is the pad's right trigger (fire), its A / B (X / Y) the pad's A / B, a
  * stick click either hand Start; its thumbstick up/down zooms while the
- * scope picture is up (the newest immersive frame brought one), else is
- * the d-pad, as left/right always is (retail_pad.c). The grip does
- * nothing: the game reloads by itself. The other hand is as for VC3
+ * scope is up (the newest immersive frame brought a scope picture; the 2D
+ * scope held up), else is the d-pad, as left/right always is
+ * (retail_pad.c). The game reloads by itself. The other hand is as for VC3
  * (gun_frame). d: the rifle's direction (LOCAL), NULL when not located.
  *
- * Scope sensitivity (vr_sens_step): while the scope picture is up and the
- * panel closed -- in play the scope is the only sight -- the steadied aim
- * moves by the Scope sensitivity row's share of the hand's turn, never more
- * than SENS_LEASH off it; otherwise it turns with the hand and comes back
- * onto it within a quarter second. That aim is the one: the game's, the
- * lens's crop (s_rifle_yaw, s_rifle_pitch), the drawn rifle's barrel --
- * turned about the grip onto it -- and the laser's, from the muzzle
- * (rifle_along). With the panel open the rifle is drawn on the hand, its
- * pointer beam as gun_frame made it.
+ * Two ways to aim (the Rifle model row). By default no rifle is drawn: the
+ * laser leaves the controller, and the gun hand's grip, held, puts up the 2D
+ * scope -- the lens's picture on a disc round the aim (vk_overlay.c
+ * scope_2d_read), at once: the game draws its scope picture every frame.
+ * With the rifle drawn, its lens is the scope, always up in play.
+ *
+ * Scope sensitivity (vr_sens_step): while the scope is up and the panel
+ * closed, the steadied aim moves by the Scope sensitivity row's share of
+ * the hand's turn (the 2D scope's own, much lower), never more than
+ * SENS_LEASH off it; otherwise it turns with the hand and comes back onto
+ * it within a quarter second. That aim is the one: the game's, the lens's
+ * crop (s_rifle_yaw, s_rifle_pitch), the drawn rifle's barrel -- turned
+ * about the grip onto it -- and the laser's, from the muzzle or the
+ * controller (rifle_along). With the panel open the rifle is drawn on the
+ * hand, its pointer beam as gun_frame made it.
  *
  * It once waited for an eye to look into the lens (eye_on_lens): the head
  * facing it within LENS_LOOK_ANGLE. The player glances down at it with the
@@ -2263,6 +2292,25 @@ static XrTime s_shot_t;
 #define LENS_LOOK_ANGLE (25.0f * 0.0174533f)
 #define LENS_LOOK_DIST 0.75f            /* metres */
 #define RIFLE_LASER_LEN 1000.0f         /* metres from the muzzle: to the horizon (eye_viewproj's far 2000) */
+/* The 2D scope: a disc SCOPE_2D_DEG across round the aim -- three times the
+ * drawn rifle's lens (12 cm, about 16 degrees at arm's length) -- showing
+ * three times the lens's field at its magnification (SCOPE_2D_VIEW: the
+ * crop that much wider, vk_lens_crop), the game's scope picture drawn
+ * twice as wide again for the crop to follow the aim between pictures
+ * (SCOPE_2D_GUARD: ChVrRifle.guard). <PREFIX>_XR_SCOPE2D_DEG=d (10..90). */
+#define SCOPE_2D_DEG 48.0f
+#define SCOPE_2D_VIEW 3.0f
+#define SCOPE_2D_GUARD (SCOPE_2D_VIEW * 2.0f)
+static float scope_2d_radius(void)
+{
+    static float r;
+    if (!r) {
+        const char *e = ch_env("XR_SCOPE2D_DEG");
+        const float deg = e && atof(e) >= 10 && atof(e) <= 90 ? (float)atof(e) : SCOPE_2D_DEG;
+        r = deg * 0.5f * 0.0174533f;
+    }
+    return r;
+}
 
 /* Is either eye looking into the rifle's lens, where the controller holds
  * it? m: that eye's measures (vr_eye_on_lens: distance, angle, depth
@@ -2291,7 +2339,8 @@ static int eye_on_lens(float m[3])
 }
 
 /* The drawn rifle turned about the grip (s_qo.gun_p) so its barrel lies
- * along aim (LOCAL, unit), and its laser from the muzzle along it. */
+ * along aim (LOCAL, unit), and its laser from the muzzle along it -- with no
+ * rifle drawn, from the controller. */
 static void rifle_along(const float aim[3])
 {
     float q[4], m[3], mw[3];
@@ -2301,6 +2350,8 @@ static void rifle_along(const float aim[3])
     memcpy(s_qo.gun_q, q, sizeof q);
     g = (XrQuaternionf){ q[0], q[1], q[2], q[3] };
     qo_muzzle(m);
+    if (!s_vr.show_gun)
+        m[0] = m[1] = m[2] = 0.0f;
     qrot(g, m, mw);
     for (i = 0; i < 3; i++)
         s_qo.end[i] = s_qo.gun_p[i] + mw[i] + aim[i] * RIFLE_LASER_LEN;
@@ -2320,6 +2371,10 @@ static void rifle_frame(XrTime t, const Frame *f, const float *d, int now[2][5],
     float sticks[2][2], st[2], dt = (float)((double)(t - last_t) / 1e9);
     int h, buttons = 0;
     const int scope_on = f && f->vr.imm && s_qo.lens_fresh;
+    /* no rifle drawn: the 2D scope up while the gun hand's grip is held */
+    const int bare = !s_vr.show_gun;
+    const int scope_2d = bare && scope_on && !s_menu.open && now[s_gun][4] && s_qo.lens_tex;
+    const int sens_pct = bare ? s_scope2d_sens : s_scope_sens;
     if (!last_t || !(dt > 0.0f))
         dt = 1.0f / 72.0f;      /* the first frame: a display frame's worth */
     if (dt > 0.1f)
@@ -2331,11 +2386,11 @@ static void rifle_frame(XrTime t, const Frame *f, const float *d, int now[2][5],
         sticks[h][1] = v.y;
     }
     retail_pad_stick(s_gun, sticks, st);
-    if (scope_on && !s_menu.open)
+    if (scope_on && !s_menu.open && (!bare || scope_2d))
         s_zoom = vr_zoom_step(s_zoom, st[1], dt);
     if (d) {
         float ld[3], steadied[3], aim[3], la[3], m[3];
-        const int look = eye_on_lens(m), engaged = scope_on && !s_menu.open;
+        const int look = eye_on_lens(m), engaged = bare ? scope_2d : scope_on && !s_menu.open;
         if (s_rifle_lost || s_gun != seen_gun)
             vr_aim_reseed(&steady, &sens);      /* a new hand, or found again: from it afresh */
         else if (s_anchor_yaw != seen_yaw)      /* recentred: the state into the new frame */
@@ -2345,7 +2400,7 @@ static void rifle_frame(XrTime t, const Frame *f, const float *d, int now[2][5],
         seen_yaw = s_anchor_yaw;
         yaw_rot(-s_anchor_yaw, d, ld);
         vr_steady(&steady, ld, dt, s_zoom, steadied);
-        vr_sens_step(&sens, steadied, engaged, s_scope_sens / 100.0f, SENS_LEASH, dt, aim);
+        vr_sens_step(&sens, steadied, engaged, sens_pct / 100.0f, SENS_LEASH, dt, aim);
         vr_aim_angles(aim, &r.yaw, &r.pitch);
         r.on = !s_menu.open;
         if (!s_menu.open) {
@@ -2355,9 +2410,10 @@ static void rifle_frame(XrTime t, const Frame *f, const float *d, int now[2][5],
         if (aim_log < 0)
             aim_log = ch_env("AIM_LOG") && atoi(ch_env("AIM_LOG")) > 0;
         if (aim_log && (engaged != log_engaged || t - log_t >= 1000000000)) {
-            fprintf(stderr, "[rifle look] scope sensitivity %s (%d%%): scope picture %s, panel %s, looking in %s --"
-                    " eye %.2f m from the lens (in %.2f), %.1f deg off the head's forward (in %.0f), behind it %s"
-                    " (%.2f m)\n", engaged ? "ENGAGED" : "off", s_scope_sens, scope_on ? "up" : "not up",
+            fprintf(stderr, "[rifle look] scope sensitivity %s (%d%%, %s): scope picture %s, grip %s, panel %s,"
+                    " looking in %s -- eye %.2f m from the lens (in %.2f), %.1f deg off the head's forward (in %.0f),"
+                    " behind it %s (%.2f m)\n", engaged ? "ENGAGED" : "off", sens_pct,
+                    bare ? "2D scope" : "rifle lens", scope_on ? "up" : "not up", now[s_gun][4] ? "held" : "free",
                     s_menu.open ? "open" : "closed", look ? "yes" : "no", m[0], LENS_LOOK_DIST,
                     m[1] * 57.29578f, LENS_LOOK_ANGLE * 57.29578f, m[2] > 0 ? "yes" : "no", m[2]);
             log_engaged = engaged;
@@ -2370,6 +2426,8 @@ static void rifle_frame(XrTime t, const Frame *f, const float *d, int now[2][5],
     s_rifle_yaw = r.yaw;
     s_rifle_pitch = r.pitch;
     r.zoom = s_zoom;
+    r.guard = bare ? SCOPE_2D_GUARD : 0.0f;    /* the picture ready for the 2D scope, held up or not */
+    s_qo.scope_2d = scope_2d && d ? scope_2d_radius() : 0.0f;
     if (chihiro_profile()->vr.rifle)
         chihiro_profile()->vr.rifle(&r);
 
@@ -2400,6 +2458,7 @@ static void rifle_release(void)
     r.zoom = s_zoom;
     s_rifle_aim_ok = 0;
     s_rifle_lost = 1;
+    s_qo.scope_2d = 0.0f;
     retail_pad_apply(&none);
     if (chihiro_profile()->vr.rifle)
         chihiro_profile()->vr.rifle(&r);

@@ -117,20 +117,27 @@
 #define DEV_SEM     0x30u           /* -> the GPU's progress: the last fence time released */
 
 /* The scope drawn this many times wider than the lens shows (above): 3, or
- * SS1_VR_LENS_GUARD=g (1..4, the play test's tuning). With it the lens can
+ * SS1_VR_LENS_GUARD=g (1..8, the play test's tuning). With it the lens can
  * follow the rifle (g - 1) * 0.54 / zoom degrees ahead of the newest
  * picture: 1.08 at zoom 1. The picture reaches the headset ~110 ms after
  * the game read the aim, so at 1.5 (0.27 degrees) a 9 degree/s swing had
  * the lens at its edge in 78% of the frames on the Quest; at 3, 9% (at
- * the cost of the lens's detail: 170 of the 512 pixels across). */
+ * the cost of the lens's detail: 341 of the 1024 pixels across). The
+ * host's own (ChVrRifle.guard, 1..8) comes first: its 2D scope shows 3 times
+ * the lens's field, so it has the scope drawn 6 times wider. */
 #define GUARD_DEFAULT 3.0f
+static float s_host_guard;      /* the host's guard; 0: none */
 static float guard(void)
 {
     static float g;
+    float h;
+    __atomic_load(&s_host_guard, &h, __ATOMIC_RELAXED);
+    if (h >= 1.0f && h <= 8.0f)
+        return h;
     if (!g) {
         const char *e = ch_env("VR_LENS_GUARD");
         const float v = e ? (float)atof(e) : GUARD_DEFAULT;
-        g = v >= 1.0f && v <= 4.0f ? v : GUARD_DEFAULT;
+        g = v >= 1.0f && v <= 8.0f ? v : GUARD_DEFAULT;
     }
     return g;
 }
@@ -180,6 +187,10 @@ void ss1_vr_rifle(const ChVrRifle *r)
         v = (uint64_t)(uint16_t)game_angle(YAW_RIGHT * r->yaw)
             | (uint64_t)(uint16_t)game_angle(PITCH_UP * r->pitch) << 16
             | (uint64_t)zb << 32;
+    }
+    if (r && r->on) {
+        float g = isfinite(r->guard) && r->guard >= 1.0f && r->guard <= 8.0f ? r->guard : 0.0f;
+        __atomic_store(&s_host_guard, &g, __ATOMIC_RELAXED);
     }
     __atomic_store_n(&s_rifle, v, __ATOMIC_RELAXED);
     if (r)

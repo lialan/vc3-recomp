@@ -186,7 +186,8 @@ static int lens_vertex(const float model[16],const float vp[16],const float c[3]
 /* The crosshair at the lens's centre, as the game's reticle (it is not in
  * the picture: vr_lens_crop moves the picture under it): thin dark lines
  * across, thick posts toward the rim, a red dot. Rectangles in lens radii
- * (x0, y0, x1, y1), the last red; just in front of the glass. */
+ * (x0, y0, x1, y1), the last red; just in front of the glass (depth 0: over
+ * it by order alone). */
 static const float CROSS[][4]={
     {-.995f,-.006f,.995f,.006f},{-.006f,-.995f,.006f,.995f},
     {.5f,-.02f,.995f,.02f},{-.995f,-.02f,-.5f,.02f},{-.02f,.5f,.02f,.995f},{-.02f,-.995f,.02f,-.5f},
@@ -194,7 +195,7 @@ static const float CROSS[][4]={
 };
 #define CROSS_N (int)(sizeof CROSS/sizeof *CROSS)
 static VkResult crosshair_read(ChVkTarget *target,const float model[16],const float vp[16],const float c[3],float r,
-    void *pixels,VkDeviceSize bytes) {
+    int depth,void *pixels,VkDeviceSize bytes) {
     ChVkColorVertex v[CROSS_N*4]={0};
     uint16_t idx[CROSS_N*6];
     for(int q=0;q<CROSS_N;q++) {
@@ -208,24 +209,26 @@ static VkResult crosshair_read(ChVkTarget *target,const float model[16],const fl
         const uint16_t base=(uint16_t)(q*4),tri[6]={0,1,2,0,2,3};
         for(int k=0;k<6;k++) idx[q*6+k]=(uint16_t)(base+tri[k]);
     }
-    const Nv2aRenderState state={.color_mask=0x01010101,.depth_test_enable=1,.depth_write=1,.depth_func=0x203};
+    const Nv2aRenderState state={.color_mask=0x01010101,.depth_test_enable=(uint32_t)depth,.depth_write=(uint32_t)depth,
+        .depth_func=0x203};
     return ch_vk_target_draw_state_read(target,NULL,v,CROSS_N*4,idx,CROSS_N*6,&state,pixels,bytes);
 }
-/* The rifle's lens: a 32-segment disc on the scope's rear face, facing +z (the
- * eye), the picture's crop (QoFrame.lens_crop; all of it by default) on its
- * inscribed circle -- or dark glass when there is no fresh picture. The
+/* A lens's picture: a 32-segment disc of radius radius round c in model's
+ * space, facing +z (the eye), the picture's crop (QoFrame.lens_crop; all of
+ * it by default) on its inscribed circle -- or dark glass when there is no
+ * fresh picture -- with its crosshair; depth tested (the rifle's lens, behind
+ * nothing of the gun), or with depth 0 over whatever is drawn already. The
  * picture is drawn opaque: its alpha is not 1 (the game's X8R8G8B8 target),
  * so the colour goes in without alpha (and without blending) and a second
  * pass writes alpha 1 alone. */
-static VkResult lens_read(ChVkTarget *target,const QoFrame *f,const float model[16],const float vp[16],
-    void *pixels,VkDeviceSize bytes) {
+static VkResult lens_disc_read(ChVkTarget *target,const QoFrame *f,const float model[16],const float vp[16],
+    const float c[3],float radius,int depth,void *pixels,VkDeviceSize bytes) {
     enum { N=32 };
     ChVkColorVertex v[N+1]={0};
     uint16_t idx[N*3];
     const int textured=f->lens_fresh && f->lens_tex;
     const int crop=f->lens_crop[2]>0 && f->lens_crop[2]<=.5f && isfinite(f->lens_crop[0]) && isfinite(f->lens_crop[1]);
     const float cu=crop?f->lens_crop[0]:.5f,cv=crop?f->lens_crop[1]:.5f,h=crop?f->lens_crop[2]:.5f;
-    float c[3],radius; rifle_lens(scope_scale(f),c,&radius);
     for(int i=0;i<=N;i++) {
         float a=(float)(2*3.14159265358979*i/N),dx=i<N?cosf(a):0,dy=i<N?sinf(a):0;
         if(!lens_vertex(model,vp,c,radius,dx,dy,0,&v[i])) return VK_ERROR_INITIALIZATION_FAILED;
@@ -233,16 +236,66 @@ static VkResult lens_read(ChVkTarget *target,const QoFrame *f,const float model[
         v[i].rgba[0]=v[i].rgba[1]=v[i].rgba[2]=textured?1.f:.03f; v[i].rgba[3]=1;
     }
     for(int i=0;i<N;i++) { idx[i*3]=(uint16_t)N; idx[i*3+1]=(uint16_t)i; idx[i*3+2]=(uint16_t)((i+1)%N); }
-    Nv2aRenderState state={.color_mask=0x01010101,.depth_test_enable=1,.depth_write=1,.depth_func=0x203};
+    Nv2aRenderState state={.color_mask=0x01010101,.depth_test_enable=(uint32_t)depth,.depth_write=(uint32_t)depth,
+        .depth_func=0x203};
     if(!textured) return ch_vk_target_draw_state_read(target,NULL,v,N+1,idx,N*3,&state,pixels,bytes);
     state.color_mask=0x00010101;
     VkResult r=ch_vk_target_draw_texture_read(target,NULL,v,N+1,idx,N*3,&state,(const ChVkTexture *)f->lens_tex,pixels,bytes);
-    if(r==VK_SUCCESS && f->lens_cross) r=crosshair_read(target,model,vp,c,radius,pixels,bytes);
+    if(r==VK_SUCCESS && f->lens_cross) r=crosshair_read(target,model,vp,c,radius,depth,pixels,bytes);
     if(r!=VK_SUCCESS) return r;
     /* Alpha 1 over the whole disc with no depth test: it cannot depend on the colour pass's depth
      * matching. Anything nearer is the opaque gun, whose alpha is 1 already. */
     state.color_mask=0x01000000; state.depth_test_enable=0; state.depth_write=0;
     return ch_vk_target_draw_state_read(target,NULL,v,N+1,idx,N*3,&state,pixels,bytes);
+}
+/* The rifle's lens: on the scope's rear face, depth tested against the gun. */
+static VkResult lens_read(ChVkTarget *target,const QoFrame *f,const float model[16],const float vp[16],
+    void *pixels,VkDeviceSize bytes) {
+    float c[3],radius; rifle_lens(scope_scale(f),c,&radius);
+    return lens_disc_read(target,f,model,vp,c,radius,1,pixels,bytes);
+}
+/* A dark ring round a disc of radius r (1 to 1.04 of it), opaque, over what is drawn. */
+static VkResult rim_read(ChVkTarget *target,const float model[16],const float vp[16],const float c[3],float r,
+    void *pixels,VkDeviceSize bytes) {
+    enum { N=64 };
+    ChVkColorVertex v[N*2]={0};
+    uint16_t idx[N*6];
+    for(int i=0;i<N;i++) {
+        const float a=(float)(2*3.14159265358979*i/N),x=cosf(a),y=sinf(a);
+        if(!lens_vertex(model,vp,c,r,x,y,0,&v[i*2]) || !lens_vertex(model,vp,c,r,x*1.04f,y*1.04f,0,&v[i*2+1]))
+            return VK_ERROR_INITIALIZATION_FAILED;
+        for(int k=0;k<2;k++) { v[i*2+k].rgba[0]=v[i*2+k].rgba[1]=v[i*2+k].rgba[2]=.02f; v[i*2+k].rgba[3]=1; }
+        const uint16_t in0=(uint16_t)(i*2),out0=(uint16_t)(i*2+1),in1=(uint16_t)((i+1)%N*2),out1=(uint16_t)((i+1)%N*2+1);
+        const uint16_t q[6]={in0,out0,out1,in0,out1,in1};
+        memcpy(&idx[i*6],q,sizeof q);
+    }
+    const Nv2aRenderState state={.color_mask=0x01010101};
+    return ch_vk_target_draw_state_read(target,NULL,v,N*2,idx,N*6,&state,pixels,bytes);
+}
+/* The rifle's 2D scope (QoFrame.scope_2d; no rifle drawn): the lens's
+ * picture on a disc round the aim as this eye sees it -- SCOPE_2D_DIST out
+ * from the eye along the aim, facing back along it, its up the world's -- so
+ * the two eyes' discs are parallel and it is seen at infinity, as a
+ * riflescope shows the far scene; a dark rim round it. Over everything drawn
+ * before it: the beam runs up to its rim. */
+#define SCOPE_2D_DIST 2.0f
+static VkResult scope_2d_read(ChVkTarget *target,const QoFrame *f,const float vp[16],const float eye[3],
+    void *pixels,VkDeviceSize bytes) {
+    float d[3]={f->end[0]-f->gun_p[0],f->end[1]-f->gun_p[1],f->end[2]-f->gun_p[2]};
+    const float n=sqrtf(d[0]*d[0]+d[1]*d[1]+d[2]*d[2]);
+    if(!(n>0) || !isfinite(n) || !(f->scope_2d>0) || !(f->scope_2d<1.4f)) return VK_ERROR_INITIALIZATION_FAILED;
+    for(unsigned k=0;k<3;k++) d[k]/=n;
+    /* right: the aim across the world's up (+x when it is straight up or down); up: right across the aim */
+    float r[3]={-d[2],0,d[0]},rn=sqrtf(r[0]*r[0]+r[2]*r[2]);
+    if(rn<1e-4f) { r[0]=1; r[2]=0; rn=1; }
+    r[0]/=rn; r[2]/=rn;
+    const float u[3]={r[1]*d[2]-r[2]*d[1],r[2]*d[0]-r[0]*d[2],r[0]*d[1]-r[1]*d[0]};
+    const float model[16]={r[0],r[1],r[2],0,u[0],u[1],u[2],0,-d[0],-d[1],-d[2],0,
+        eye[0]+d[0]*SCOPE_2D_DIST,eye[1]+d[1]*SCOPE_2D_DIST,eye[2]+d[2]*SCOPE_2D_DIST,1};
+    static const float c[3]={0,0,0};
+    const float radius=SCOPE_2D_DIST*tanf(f->scope_2d);
+    VkResult result=lens_disc_read(target,f,model,vp,c,radius,0,pixels,bytes);
+    return result==VK_SUCCESS?rim_read(target,model,vp,c,radius,pixels,bytes):result;
 }
 
 VkResult ch_vk_overlay_read(ChVkTarget *target,const QoFrame *f,const float vp[16],
@@ -264,9 +317,11 @@ VkResult ch_vk_overlay_read(ChVkTarget *target,const QoFrame *f,const float vp[1
     pose_matrix(f->gun_q,f->gun_p,model); kick_matrix(f->kick,kick); mul(model,model,kick);
     back[0]=back[5]=back[10]=back[15]=1;
     back[14]=.022f*(f->kick>.6f?(1-f->kick)/.4f:f->kick/.6f); mul(slide,model,back);
-    const int rifle=f->weapon==QO_WEAPON_RIFLE,m700=rifle && m700_ready(target);
-    /* the beam and the flash from the drawn gun's muzzle: the M700's, or the box rifle's */
-    const float local_muzzle[3]={0,m700?RIFLE_MUZZLE_Y:0,m700?RIFLE_MUZZLE_Z:rifle?RIFLE_BOX_MUZZLE_Z:MUZZLE_Z};
+    const int rifle=f->weapon==QO_WEAPON_RIFLE,m700=rifle && m700_ready(target),bare=rifle && !f->show_gun;
+    /* the beam and the flash from the drawn gun's muzzle: the M700's, or the box rifle's; with no
+     * rifle drawn (its 2D scope), from the controller */
+    const float local_muzzle[3]={0,m700 && !bare?RIFLE_MUZZLE_Y:0,
+        bare?0:m700?RIFLE_MUZZLE_Z:rifle?RIFLE_BOX_MUZZLE_Z:MUZZLE_Z};
     apply(model,local_muzzle,muzzle);
     if(rifle && f->show_gun) {
         result=lens_read(target,f,model,vp,pixels,bytes);
@@ -295,6 +350,10 @@ VkResult ch_vk_overlay_read(ChVkTarget *target,const QoFrame *f,const float vp[1
     effect.color[1]=.15f; effect.color[2]=.1f; effect.color[3]=1;
     if(f->dot && qo_spot_vertices(q,eye,f->end,.006f*dist)) {
         result=effect_read(target,vp,(const float (*)[5])q,&effect,0,pixels,bytes);
+        if(result!=VK_SUCCESS) return result;
+    }
+    if(bare && f->scope_2d>0) {
+        result=scope_2d_read(target,f,vp,eye,pixels,bytes);
         if(result!=VK_SUCCESS) return result;
     }
     effect.color[1]=.75f; effect.color[2]=.3f; effect.color[3]=.9f;

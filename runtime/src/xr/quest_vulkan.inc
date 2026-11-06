@@ -99,9 +99,9 @@ static int vk_imm_view(void *context,Vc3VrView *view)
     return vc3_vr_view_latch(view);
 }
 /* a slot: the eyes side by side at up to VK_EYE_MAX each, the HUD (up to
- * 1280x960) after them, then the lens picture (up to 512x512) */
+ * 1280x960) after them, then the lens picture (up to 1024x1024) */
 #define VK_EYE_MAX 2560
-#define VK_BRIDGE_CAPACITY ((VkDeviceSize)2*VK_EYE_MAX*VK_EYE_MAX*4+(VkDeviceSize)1280*960*4+(VkDeviceSize)512*512*4+512)
+#define VK_BRIDGE_CAPACITY ((VkDeviceSize)2*VK_EYE_MAX*VK_EYE_MAX*4+(VkDeviceSize)1280*960*4+(VkDeviceSize)1024*1024*4+512)
 /* Each eye's picture: the panel's native size (s_native_w; 2160 on the
  * Steam Frame, where SteamVR recommends 1728), with foveated shading
  * (vk_split_init) keeping E.S. on its vblank there. The panel's Resolution
@@ -421,7 +421,10 @@ static void vk_test_dump(const Frame *f)
         g.lens_fresh && g.lens_tex?"with a picture":"dark",g.lens_crop[0],g.lens_crop[1],g.lens_crop[2],g.lens_cross,g.scope_scale);
     /* the rifle's laser as rifle_along draws it: on unless Off, no dot, far out along the barrel */
     const float reach=g.weapon==CH_VR_RIFLE?RIFLE_LASER_LEN/2.6f:1.0f;
-    if(g.weapon==CH_VR_RIFLE) {g.beam=s_vr.laser!=LASER_OFF;g.dot=0;}
+    if(g.weapon==CH_VR_RIFLE) {   /* and with no rifle drawn, its 2D scope held up */
+        g.beam=s_vr.laser!=LASER_OFF;g.dot=0;g.show_gun=s_vr.show_gun;
+        g.scope_2d=!s_vr.show_gun && g.lens_fresh && g.lens_tex?scope_2d_radius():0;
+    }
     for(int k=0;k<3;k++){g.gun_p[k]=eye[k]+o[k];g.end[k]=g.gun_p[k]+a[k]*reach;}
     size_t bytes=(size_t)s_vk_eye[0].w*s_vk_eye[0].h*4;
     static const float transparent[4]={0,0,0,0};
@@ -529,10 +532,11 @@ static void vk_lens_crop(void)
     static uint64_t since;
     static int log=-1;
     if(log<0) log=ch_env("XR_LENS_LOG") && *ch_env("XR_LENS_LOG")=='1';
-    /* the rifle aimed the picture (no reticle in it): the lens follows it */
+    /* the rifle aimed the picture (no reticle in it): the lens follows it; with no
+     * rifle drawn the 2D scope shows SCOPE_2D_VIEW times the lens's field */
     const int known=s_qo.lens_fresh && s_vk_lens_aim.guard>=1 && s_vk_lens_aim.follow;
-    const int c=vr_lens_crop_zoom(&s_vk_lens_aim,s_rifle_aim_ok?s_rifle_yaw:NAN,s_rifle_aim_ok?s_rifle_pitch:NAN,s_zoom,
-        s_qo.lens_crop);
+    const int c=vr_lens_crop_view(&s_vk_lens_aim,s_rifle_aim_ok?s_rifle_yaw:NAN,s_rifle_aim_ok?s_rifle_pitch:NAN,s_zoom,
+        s_vr.show_gun?1.0f:SCOPE_2D_VIEW,s_qo.lens_crop);
     s_qo.lens_cross=known;
     if(!known) return;
     const float du=s_qo.lens_crop[0]-.5f,dv=s_qo.lens_crop[1]-.5f,off=sqrtf(du*du+dv*dv);
@@ -980,8 +984,10 @@ static unsigned vk_present(const Frame *f,const XrCompositionLayerBaseHeader **l
     const int screen=!imm && s_vk_scr_tex && vk_screen_in_eyes();
     const int hud_shown=imm && s_vk_hud_valid && vk_hud_in_overlay();
     int overlay_want=s_overlay_ok>0 && s_views_ok && (s_qo.gun_valid || eye_test || screen || hud_shown);
-    /* the rifle's lens with a picture follows the aim every display frame (vk_lens_crop) */
-    const int lens_live=s_qo.gun_valid && s_qo.lens_fresh && chihiro_profile()->vr.weapon==CH_VR_RIFLE;
+    /* the rifle's lens with a picture follows the aim every display frame (vk_lens_crop); with no
+     * rifle drawn, while the 2D scope is held up -- the laser alone as the handgun's */
+    const int lens_live=s_qo.gun_valid && s_qo.lens_fresh && chihiro_profile()->vr.weapon==CH_VR_RIFLE &&
+        (s_qo.show_gun || s_qo.scope_2d>0);
     int overlay_reuse=overlay_want && !screen_new && overlay_reuse_frame(s_vk_overlay_have_last,overlay_full || lens_live,
         s_menu.open,s_vk_overlay_frame,display_period);
     if(!overlay_want) s_vk_overlay_have_last=0;

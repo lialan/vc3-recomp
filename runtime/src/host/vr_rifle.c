@@ -68,9 +68,14 @@ int vr_lens_crop(const VrLensAim *a, float yaw, float pitch, float out[3])
 
 int vr_lens_crop_zoom(const VrLensAim *a, float yaw, float pitch, float zoom_now, float out[3])
 {
-    double s = 1.0;
+    return vr_lens_crop_view(a, yaw, pitch, zoom_now, 1.0f, out);
+}
+
+int vr_lens_crop_view(const VrLensAim *a, float yaw, float pitch, float zoom_now, float view, float out[3])
+{
+    double s = isfinite(view) && view > 0 ? view : 1.0;
     if (a && a->follow && isfinite(a->zoom) && a->zoom > 0 && isfinite(zoom_now) && zoom_now > 0)
-        s = (double)a->zoom / zoom_now;
+        s *= (double)a->zoom / zoom_now;
     return lens_crop(a, yaw, pitch, s, out);
 }
 

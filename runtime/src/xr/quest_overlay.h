@@ -26,6 +26,8 @@ typedef struct {
     float lens_crop[3];         /* the part of it the lens shows: centre u, v, half size (vr_lens_crop; 0: all) */
     int   lens_cross;           /* a crosshair on the lens (the picture has no reticle of its own) */
     float scope_scale;          /* the rifle's scope and lens (qo_scope_scale; 0: 1) */
+    float scope_2d;             /* the rifle's 2D scope (show_gun 0): the lens's picture on a disc
+                                   this many radians in radius round the aim (end - gun_p); 0: none */
 } QoFrame;
 
 int  qo_init(void);

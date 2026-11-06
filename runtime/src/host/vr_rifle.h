@@ -8,6 +8,8 @@ typedef struct {
     int on;
     float yaw, pitch;   /* radians in the game camera's view space: yaw + right, pitch + up */
     float zoom;         /* 0.5..4 */
+    float guard;        /* the scope picture drawn this many times wider than the lens
+                           shows (the 2D scope's wider field and its band); 0: the game's own */
 } ChVrRifle;
 
 /* dir (GL view space of the game camera, any length) -> yaw/pitch; zero -> 0, 0. */
@@ -36,6 +38,11 @@ int vr_lens_crop(const VrLensAim *a, float yaw, float pitch, float out[3]);
  * zoom is cropped a->zoom / zoom_now times as wide -- the zoom shown at once,
  * not when the game's next picture arrives -- at most the whole picture. */
 int vr_lens_crop_zoom(const VrLensAim *a, float yaw, float pitch, float zoom_now, float out[3]);
+/* The same for the 2D scope, which shows view times the lens's field (3: a
+ * scope three times the lens's size at the lens's magnification): the crop
+ * view times as wide, at most the whole picture. A view not finite or not
+ * above 0: 1, the lens's own (vr_lens_crop_zoom). */
+int vr_lens_crop_view(const VrLensAim *a, float yaw, float pitch, float zoom_now, float view, float out[3]);
 
 /* Scope sensitivity: the aim follows the hand's rotation scaled by gain while
  * engaged, never more than leash radians from the hand; disengaged, it turns

@@ -226,6 +226,37 @@ static void lens_crop_zoom_scales(void)
     NEAR(c1[2], c2[2], 0);
 }
 
+/* The 2D scope (view 3: three times the lens's field at its magnification).
+ * A picture drawn 6 times wider than the lens shows (guard 6) gives half of
+ * itself; one drawn 3 times wider (the rifle's own guard) all of it; zoomed
+ * out twice since it was drawn, all of it (never more than the picture);
+ * zoomed in twice, half as wide. A turn moves the crop as it moves the
+ * lens's (the same focal), kept inside the picture. A view not finite or not
+ * above 0: the lens's own crop. */
+static void lens_crop_view_widens(void)
+{
+    const VrLensAim g6 = {0, 0, LENS_F / 2, 6.0f, 1, 1.0f}, g3 = {0, 0, LENS_F, LENS_G, 1, 1.0f};
+    const float bad[3] = {NAN, 0.0f, -2.0f};
+    float c[3], d[3];
+    CHECK(vr_lens_crop_view(&g6, 0, 0, 1.0f, 3.0f, c) == 0);
+    NEAR(c[0], 0.5, 1e-6); NEAR(c[1], 0.5, 1e-6); NEAR(c[2], 0.25, 1e-6);
+    CHECK(vr_lens_crop_view(&g3, 0, 0, 1.0f, 3.0f, c) == 0);
+    NEAR(c[2], 0.5, 1e-6);
+    vr_lens_crop_view(&g6, 0, 0, 0.5f, 3.0f, c);
+    NEAR(c[2], 0.5, 1e-6);
+    vr_lens_crop_view(&g6, 0, 0, 2.0f, 3.0f, c);
+    NEAR(c[2], 0.125, 1e-6);
+    vr_lens_crop_view(&g6, 0.002f, -0.001f, 1.0f, 3.0f, c);
+    vr_lens_crop_zoom(&g6, 0.002f, -0.001f, 1.0f, d);
+    NEAR(c[0], d[0], 1e-6); NEAR(c[1], d[1], 1e-6);
+    CHECK(vr_lens_crop_view(&g6, 0.2f, 0, 1.0f, 3.0f, c) == 1);
+    NEAR(c[0], 0.75, 1e-6);
+    for (int i = 0; i < 3; i++) {
+        vr_lens_crop_view(&g6, 0, 0, 1.0f, bad[i], c);
+        NEAR(c[2], 0.5 / 6.0, 1e-6);
+    }
+}
+
 /* Pitched: a yaw turn moves the picture by yaw * cos(pitch) across */
 static void lens_crop_pitched(void)
 {
@@ -1190,6 +1221,7 @@ int main(void)
     lens_crop_half_guard();
     lens_crop_clamps();
     lens_crop_zoom_scales();
+    lens_crop_view_widens();
     lens_crop_pitched();
     lens_crop_unknown();
     lens_crop_not_followed();
