@@ -21,9 +21,11 @@
  * than the lens shows (the zoom factor divided by it: the magnification the
  * lens shows stays the player's), so the host can shift its crop by how far
  * the rifle has turned since. Each scope pass's aim (the angle words it drew
- * with), focal length (its camera block's, times the game's projection) and
- * guard go to the renderer with the picture (ch_scope_lens_aim, the
- * profile's vr.lens_aim). The renderer runs behind the game -- the push
+ * with), focal length (its camera block's, times the game's projection; or,
+ * for a pass that only sets its target up, the projection the view is then
+ * drawn with: ChScopeGame.scope_drawing) and guard go to the renderer with
+ * the picture (ch_scope_lens_aim, the profile's vr.lens_aim). The renderer
+ * runs behind the game -- the push
  * buffer is drawn on threads of its own, often while the game is in its
  * next frame -- so each aim is tagged with a D3D fence inserted right after
  * its pass (no kick): the renderer's flip comes after that fence's release
@@ -127,6 +129,18 @@ static struct { uint32_t time; VrLensAim aim; } s_marks[MARKS];
 static unsigned s_mark_n;
 static pthread_mutex_t s_mark_lock = PTHREAD_MUTEX_INITIALIZER;
 
+/* The aim words' addresses (with aim_base, in the record it points to);
+ * 0: no record yet */
+static int aim_words(const ChScopeGame *g, uint32_t *pitch, uint32_t *yaw)
+{
+    uint32_t base = 0;
+    if (g->aim_base && !(base = MEM32(g->aim_base)))
+        return 0;
+    *pitch = base + g->aim_pitch;
+    *yaw = base + g->aim_yaw;
+    return 1;
+}
+
 static int16_t game_angle(float rad)
 {
     double u = isfinite(rad) ? rad * 65536.0 / 6.283185307179586 : 0.0;
@@ -209,7 +223,8 @@ void ch_scope_camera(void (*gen)(void))
 static void wide_aim(const ChScopeGame *g, void (*gen)(void))
 {
     static int16_t edge;
-    if (!vc3_wide_get() || !g->yaw_edge) {
+    uint32_t pa, ya;
+    if (!vc3_wide_get() || !g->yaw_edge || !aim_words(g, &pa, &ya)) {
         gen();
         return;
     }
@@ -217,13 +232,13 @@ static void wide_aim(const ChScopeGame *g, void (*gen)(void))
         const double turn = 6.283185307179586 / 65536.0;
         edge = (int16_t)(atan(tan(g->yaw_edge * turn) * WIDE_K) / turn);
     }
-    const int32_t yaw = (int16_t)MEM16(g->aim_yaw);
-    MEM16(g->aim_yaw) = 0;
+    const int32_t yaw = (int16_t)MEM16(ya);
+    MEM16(ya) = 0;
     gen();
-    int32_t step = (int16_t)MEM16(g->aim_yaw), y = yaw + step;
+    int32_t step = (int16_t)MEM16(ya), y = yaw + step;
     if (y > edge) y = edge;
     if (y < -edge) y = -edge;
-    MEM16(g->aim_yaw) = (uint16_t)(int16_t)y;
+    MEM16(ya) = (uint16_t)(int16_t)y;
 }
 
 /* --- the rifle ------------------------------------------------------------ */
@@ -241,15 +256,18 @@ void ch_scope_aim_step(void (*gen)(void))
     if (s_test_period)      /* the test's switching rifle */
         __atomic_store_n(&s_rifle, (frame / s_test_period) & 1 ? 0 : s_test_rifle, __ATOMIC_RELAXED);
     const uint64_t v = __atomic_load_n(&s_rifle, __ATOMIC_RELAXED);
+    uint32_t pa, ya;
     s_frame_rifle = v;
+    if (!aim_words(g, &pa, &ya))
+        return;
     if (v) {
-        MEM16(g->aim_yaw) = (uint16_t)v;
-        MEM16(g->aim_pitch) = (uint16_t)(v >> 16);
+        MEM16(ya) = (uint16_t)v;
+        MEM16(pa) = (uint16_t)(v >> 16);
     }
     if (aim_log() && frame % 30 == 0 && frame != logged) {
         logged = frame;
         fprintf(stderr, "[%s aim] frame %u yaw %d pitch %d rifle %s\n", g->tag, frame,
-                (int16_t)MEM16(g->aim_yaw), (int16_t)MEM16(g->aim_pitch), v ? "on" : "off");
+                (int16_t)MEM16(ya), (int16_t)MEM16(pa), v ? "on" : "off");
     }
 }
 
@@ -291,14 +309,15 @@ static void shot_log(const ChScopeGame *g)
  * centre). */
 static void lens_mark(const ChScopeGame *g, float focal, float guard_in_focal, float zoom_in_focal, int rifle)
 {
-    if (!(focal > 0))
+    uint32_t pa, ya;
+    if (!(focal > 0) || !aim_words(g, &pa, &ya))
         return;
     const uint32_t time = chihiro_d3d_fence();
     if (!time)
         return;
     const float unit = (float)(6.283185307179586 / 65536.0);
-    const VrLensAim a = { g->yaw_right * (int16_t)MEM16(g->aim_yaw) * unit,
-                          g->pitch_up * (int16_t)MEM16(g->aim_pitch) * unit,
+    const VrLensAim a = { g->yaw_right * (int16_t)MEM16(ya) * unit,
+                          g->pitch_up * (int16_t)MEM16(pa) * unit,
                           focal * g->scope_proj / g->scope_w, guard_in_focal, rifle, zoom_in_focal };
     pthread_mutex_lock(&s_mark_lock);
     s_marks[s_mark_n % MARKS].time = time;
@@ -340,17 +359,12 @@ int ch_scope_lens_aim(VrLensAim *out)
     return found;
 }
 
-void ch_scope_pass(void (*gen)(void))
+static int s_pass_open;     /* scope_drawing: a pass whose view's projection is still to come */
+
+/* A scope view drawn with focal (scope_proj units) and the guard and zoom
+ * in it: its lens mark */
+static void pass_drawn(const ChScopeGame *g, float focal, float gd, float z)
 {
-    static int published;
-    const ChScopeGame *g = game();
-    if (!g) {
-        gen();
-        return;
-    }
-    const float focal = MEMF(g->scope_focal), gd = s_focal_guard, z = s_focal_zoom;   /* what it hands its camera */
-    gen();
-    s_scope_frame = MEM32(g->frame);
     if (s_frame_rifle || __atomic_load_n(&s_vr, __ATOMIC_RELAXED))
         lens_mark(g, focal, gd, z, s_frame_rifle != 0);
     {   /* <PREFIX>_AIM_LOG: the passes round a switch of the rifle -- the
@@ -367,6 +381,23 @@ void ch_scope_pass(void (*gen)(void))
         left -= left > 0;
         was = on;
     }
+}
+
+void ch_scope_pass(void (*gen)(void))
+{
+    static int published;
+    const ChScopeGame *g = game();
+    if (!g) {
+        gen();
+        return;
+    }
+    const float focal = MEMF(g->scope_focal), gd = s_focal_guard, z = s_focal_zoom;   /* what it hands its camera */
+    gen();
+    s_scope_frame = MEM32(g->frame);
+    if (g->scope_drawing)
+        s_pass_open = 1;    /* the view and its projection come after (ch_scope_focal) */
+    else
+        pass_drawn(g, focal, gd, z);
     if (!published) {
         const uint32_t surf = MEM32(g->scope_surf);
         if (surf) {
@@ -399,9 +430,13 @@ void ch_scope_focal(void (*gen)(void))
     const ChScopeGame *g = game();
     const int scope = g && MEM32(g->cam_mode) == g->cam_mode_scope;
     gen();
-    if (scope) {
-        s_focal_guard = s_zoomk_guard;
-        s_focal_zoom = s_zoomk_zoom;
+    if (!scope)
+        return;
+    s_focal_guard = s_zoomk_guard;
+    s_focal_zoom = s_zoomk_zoom;
+    if (g->scope_drawing && s_pass_open && MEM32(g->scope_drawing)) {
+        s_pass_open = 0;    /* the first while the view is drawn: its projection */
+        pass_drawn(g, MEMF(g->scope_focal), s_focal_guard, s_focal_zoom);
     }
 }
 

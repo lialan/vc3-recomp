@@ -39,7 +39,10 @@ typedef struct ChScopeGame {
     uint32_t frame;                 /* the main loop's frame counter (u32) */
     /* The aim: int16 words, 65536 a turn, stepped by the game's aim step
      * (ch_scope_aim_step wraps it); the game's sign of a turn to the right
-     * and up; the step's yaw clamp, the 4:3 view's edge */
+     * and up; the step's yaw clamp, the 4:3 view's edge. With aim_base the
+     * words are offsets into the record it points to (the active player's;
+     * nothing while it is 0), else addresses. */
+    uint32_t aim_base;
     uint32_t aim_pitch, aim_yaw;
     int yaw_right, pitch_up;
     int yaw_edge;
@@ -53,6 +56,13 @@ typedef struct ChScopeGame {
      * focal length */
     uint32_t scope_focal, scope_surf;
     float scope_w, scope_proj;
+    /* A pass that only sets its target up, the view drawn after it: a word
+     * nonzero while the scope view is drawn. Its projection is then the
+     * first focal length the scope's camera mode makes while that is set
+     * (scope_focal, already in target pixels: scope_proj 1), and the pass's
+     * lens mark is made there. 0: the pass draws the whole view, with
+     * scope_focal at its entry times scope_proj. */
+    uint32_t scope_drawing;
     /* The camera block the CPU cull tests against (floats): focal length D,
      * width W, half width, secant of the horizontal half angle; the game's
      * own 0.25; the main view's W (another W is the scope's) */
