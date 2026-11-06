@@ -109,16 +109,21 @@
 #define DEV_TIME    0x2Cu           /* the next fence's time */
 #define DEV_SEM     0x30u           /* -> the GPU's progress: the last fence time released */
 
-/* The scope drawn this many times wider than the lens shows (above): 1.5,
- * or SS1_VR_LENS_GUARD=g (1..4). With it the lens can follow the rifle
- * (g - 1) * 0.54 / zoom degrees ahead of the newest picture. */
+/* The scope drawn this many times wider than the lens shows (above): 3, or
+ * SS1_VR_LENS_GUARD=g (1..4, the play test's tuning). With it the lens can
+ * follow the rifle (g - 1) * 0.54 / zoom degrees ahead of the newest
+ * picture: 1.08 at zoom 1. The picture reaches the headset ~110 ms after
+ * the game read the aim, so at 1.5 (0.27 degrees) a 9 degree/s swing had
+ * the lens at its edge in 78% of the frames on the Quest; at 3, 9% (at
+ * the cost of the lens's detail: 170 of the 512 pixels across). */
+#define GUARD_DEFAULT 3.0f
 static float guard(void)
 {
     static float g;
     if (!g) {
         const char *e = ch_env("VR_LENS_GUARD");
-        const float v = e ? (float)atof(e) : 1.5f;
-        g = v >= 1.0f && v <= 4.0f ? v : 1.5f;
+        const float v = e ? (float)atof(e) : GUARD_DEFAULT;
+        g = v >= 1.0f && v <= 4.0f ? v : GUARD_DEFAULT;
     }
     return g;
 }

@@ -151,10 +151,11 @@ static void zoom_step_range(void)
     NEAR(vr_zoom_step(1.7f, 0.1f, DT), 1.7f, 0);
 }
 
-/* Silent Scope's scope at zoom 1 drawn 1.5 times wider than the lens shows:
- * focal 296.8 px of its 256 / 1.5, in picture widths */
-#define LENS_G 1.5f
-#define LENS_F (296.8f / 256.0f / LENS_G)
+/* Silent Scope's scope at zoom 1 drawn 3 times (its default guard) wider
+ * than the lens shows: focal 296.8 * 45.583 px of its 256 / 3, in picture
+ * widths (games/ss1/src/vr_rifle.c SCOPE_PROJ) */
+#define LENS_G 3.0f
+#define LENS_F (296.8f * 45.583f / 256.0f / LENS_G)
 
 static void lens_crop_still(void)
 {
@@ -208,11 +209,12 @@ static void lens_crop_zoom_scales(void)
 {
     const VrLensAim z1 = {0, 0, LENS_F, LENS_G}, z2 = {0, 0, 2 * LENS_F, LENS_G};
     float c1[3], c2[3];
-    vr_lens_crop(&z1, 0.01f, -0.02f, c1);
-    vr_lens_crop(&z2, 0.01f, -0.02f, c2);
+    vr_lens_crop(&z1, 0.002f, -0.004f, c1);
+    vr_lens_crop(&z2, 0.002f, -0.004f, c2);
     NEAR(c2[0] - 0.5, 2 * (c1[0] - 0.5), 1e-6);
     NEAR(c2[1] - 0.5, 2 * (c1[1] - 0.5), 1e-6);
-    NEAR(c1[0] - 0.5, LENS_F * tan(0.01), 1e-4);
+    NEAR(c1[0] - 0.5, LENS_F * tan(0.002), 1e-5);
+    CHECK(fabs(c2[1] - 0.5) < 0.5 - c2[2]);   /* inside the band: not clamped */
     NEAR(c1[2], c2[2], 0);
 }
 
@@ -221,8 +223,8 @@ static void lens_crop_pitched(void)
 {
     const VrLensAim a = {0, 0.5f, LENS_F, LENS_G};
     float c[3];
-    vr_lens_crop(&a, 0.02f, 0.5f, c);
-    NEAR(c[0] - 0.5, LENS_F * 0.02 * cos(0.5), 2e-4);
+    vr_lens_crop(&a, 0.004f, 0.5f, c);
+    NEAR(c[0] - 0.5, LENS_F * 0.004 * cos(0.5), 1e-4);
 }
 
 /* No aim known: the whole picture as drawn */
