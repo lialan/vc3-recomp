@@ -41,8 +41,24 @@ int vr_lens_crop(const VrLensAim *a, float yaw, float pitch, float out[3]);
  * ahead), the state untouched. A gain not in 0..1: 1; a leash not >= 0: 0. */
 typedef struct { float aim[3], last[3]; int n; } VrSens;
 void vr_sens_step(VrSens *s, const float hand[3], int engaged, float gain, float leash, float dt, float out[3]);
-/* Is the head looking into the lens: within max_dist of its centre and facing it within max_angle (radians). */
-int vr_eye_on_lens(const float head_p[3], const float head_fwd[3], const float lens_c[3], float max_angle, float max_dist);
+/* The anchor turned about +y by yaw (a recentre): the steadying's and the
+ * sensitivity's state turned with it -- each vector v to (v.x cos + v.z sin,
+ * v.y, -v.x sin + v.z cos), as quest_host.c's yaw_rot -- so the aim carries
+ * on in the new frame without a jump. Either may be NULL; yaw not finite:
+ * nothing. */
+void vr_aim_turn(VrSteady *st, VrSens *se, float yaw);
+/* Both afresh (first-call behaviour), the next hand the aim at once: for a
+ * new gun hand, or the controller found again. Either may be NULL. */
+void vr_aim_reseed(VrSteady *st, VrSens *se);
+/* Is the eye looking into the lens: behind it (on the side it faces,
+ * lens_n, where its picture shows), within max_dist of its centre, and the
+ * head facing it within max_angle (radians). m (may be NULL): the eye's
+ * distance from the lens (m), the angle between the head's forward and the
+ * way to the lens (radians), and how far behind the lens's plane it is
+ * along lens_n (m; > 0 behind) -- all NaN when an input is not finite or
+ * forward or lens_n is zero. */
+int vr_eye_on_lens(const float eye_p[3], const float head_fwd[3], const float lens_c[3], const float lens_n[3],
+                   float max_angle, float max_dist, float m[3]);
 /* The gun's orientation q (x y z w) turned by the shortest rotation taking
  * its barrel (-z) onto dir: the gun drawn along dir, its roll kept. dir
  * opposite the barrel: a half turn about the gun's own up (+y). dir not

@@ -509,30 +509,158 @@ static void sens_ignores_bad_input(void)
     CHECK(angle3(oa, h) <= LEASH + 1e-3);
 }
 
+/* (lens - p) normalised: looking straight at the lens from p */
+static void look_at(const float lens[3], const float p[3], float f[3])
+{
+    double n = sqrt((double)(lens[0] - p[0]) * (lens[0] - p[0]) + (double)(lens[1] - p[1]) * (lens[1] - p[1])
+                    + (double)(lens[2] - p[2]) * (lens[2] - p[2]));
+    for (int i = 0; i < 3; i++) f[i] = (float)((lens[i] - p[i]) / n);
+}
+
+/* The lens faces +z (its picture's side) unless said; 25 degrees, 0.75 m */
 static void eye_on_lens_cases(void)
 {
-    const float lens[3] = {0.1f, 1.2f, -0.3f}, fwd[3] = {0, 0, -1}, fwd3[3] = {0, 0, -3};
-    const float A = (float)(25 * DEG), D = 0.45f;
-    float p[3], f[3];
+    const float lens[3] = {0.1f, 1.2f, -0.3f}, nz[3] = {0, 0, 1}, fwd[3] = {0, 0, -1}, fwd3[3] = {0, 0, -3};
+    const float px[3] = {1, 0, 0}, mx[3] = {-1, 0, 0}, nz3[3] = {0, 0, 4};
+    const float A = (float)(25 * DEG), D = 0.75f;
+    float p[3], f[3], m[3];
 #define AT(dx, dy, dz) (p[0] = lens[0] + (dx), p[1] = lens[1] + (dy), p[2] = lens[2] + (dz), p)
-    CHECK(vr_eye_on_lens(AT(0, 0, 0.2f), fwd, lens, A, D) == 1);        /* behind it, looking in */
-    CHECK(vr_eye_on_lens(AT(0.032f, 0, 0.15f), fwd, lens, A, D) == 1);  /* an eye beside the axis */
-    CHECK(vr_eye_on_lens(AT(0, 0, 0.44f), fwd3, lens, A, D) == 1);      /* any length of forward */
-    CHECK(vr_eye_on_lens(AT(0, 0, 0.46f), fwd, lens, A, D) == 0);       /* too far */
-    CHECK(vr_eye_on_lens(AT(0, 0, -0.2f), fwd, lens, A, D) == 0);       /* past it: the lens behind the head */
+    CHECK(vr_eye_on_lens(AT(0, 0, 0.2f), fwd, lens, nz, A, D, m) == 1);         /* behind it, looking in */
+    NEAR(m[0], 0.2, 1e-6); NEAR(m[1], 0, 1e-4); NEAR(m[2], 0.2, 1e-6);
+    CHECK(vr_eye_on_lens(AT(0.032f, 0, 0.15f), fwd, lens, nz, A, D, m) == 1);   /* an eye beside the axis */
+    NEAR(m[1], atan2(0.032, 0.15), 1e-4); NEAR(m[2], 0.15, 1e-6);
+    CHECK(vr_eye_on_lens(AT(0, 0, 0.74f), fwd3, lens, nz3, A, D, NULL) == 1);   /* any lengths */
+    CHECK(vr_eye_on_lens(AT(0, 0, 0.76f), fwd, lens, nz, A, D, m) == 0);        /* too far */
+    NEAR(m[0], 0.76, 1e-6);
+    /* the user's way: the eye on the target, a glance down at the lens held
+     * low at arm's length -- 0.55 m back, 0.3 m up, 29 degrees off its axis */
+    look_at(lens, AT(0, 0.3f, 0.55f), f);
+    CHECK(vr_eye_on_lens(p, f, lens, nz, A, D, m) == 1);
+    NEAR(m[0], sqrt(0.3 * 0.3 + 0.55 * 0.55), 1e-6); NEAR(m[1], 0, 1e-4); NEAR(m[2], 0.55, 1e-6);
+    /* in front of it, facing it (from the muzzle's side): not behind */
+    look_at(lens, AT(0, 0.05f, -0.3f), f);
+    CHECK(vr_eye_on_lens(p, f, lens, nz, A, D, m) == 0);
+    NEAR(m[1], 0, 1e-4); NEAR(m[2], -0.3, 1e-6);
+    CHECK(vr_eye_on_lens(AT(0, 0, -0.2f), fwd, lens, nz, A, D, m) == 0);       /* past it, the lens behind the head */
+    CHECK(vr_eye_on_lens(AT(0.2f, 0, 0), fwd, lens, nz, A, D, m) == 0);        /* on its plane: not behind */
+    /* a rifle held across the body (the lens facing +x), glanced down at
+     * from above and to its left: facing it, but on its front side; the
+     * same eye with the rifle the other way round is behind it */
+    look_at(lens, AT(-0.15f, 0.35f, 0.1f), f);
+    CHECK(vr_eye_on_lens(p, f, lens, px, A, D, m) == 0);
+    NEAR(m[1], 0, 1e-4); NEAR(m[2], -0.15, 1e-6);
+    CHECK(vr_eye_on_lens(p, f, lens, mx, A, D, m) == 1);
+    NEAR(m[2], 0.15, 1e-6);
     f[0] = 0; f[1] = 0; f[2] = 1;
-    CHECK(vr_eye_on_lens(AT(0, 0, 0.2f), f, lens, A, D) == 0);          /* turned away */
+    CHECK(vr_eye_on_lens(AT(0, 0, 0.2f), f, lens, nz, A, D, m) == 0);          /* turned away */
+    NEAR(m[1], PI, 1e-4);
     dir_yp(40 * DEG, 0, f);
-    CHECK(vr_eye_on_lens(AT(0, 0, 0.2f), f, lens, A, D) == 0);          /* turned 40 degrees aside */
+    CHECK(vr_eye_on_lens(AT(0, 0, 0.2f), f, lens, nz, A, D, m) == 0);          /* turned 40 degrees aside */
+    NEAR(m[1], 40 * DEG, 1e-4);
     dir_yp(0, -20 * DEG, f);
-    CHECK(vr_eye_on_lens(AT(0, 0, 0.2f), f, lens, A, D) == 1);          /* looking 20 degrees down at it */
-    CHECK(vr_eye_on_lens(AT(0.2f, 0, 0.1f), fwd, lens, A, D) == 0);     /* beside it, looking ahead */
-    f[0] = NAN; f[1] = 0; f[2] = -1;
-    CHECK(vr_eye_on_lens(AT(0, 0, 0.2f), f, lens, A, D) == 0);
-    f[0] = 0; f[1] = 0; f[2] = 0;
-    CHECK(vr_eye_on_lens(AT(0, 0, 0.2f), f, lens, A, D) == 0);
-    CHECK(vr_eye_on_lens(AT(0, NAN, 0.2f), fwd, lens, A, D) == 0);
+    CHECK(vr_eye_on_lens(AT(0, 0, 0.2f), f, lens, nz, A, D, m) == 1);          /* looking 20 degrees down at it */
+    CHECK(vr_eye_on_lens(AT(0.2f, 0, 0.1f), fwd, lens, nz, A, D, m) == 0);     /* beside it, looking ahead */
+    /* nothing to go by: no, and no measures */
+    const float nan3[3] = {NAN, 0, -1}, zero[3] = {0, 0, 0};
+    CHECK(vr_eye_on_lens(AT(0, 0, 0.2f), nan3, lens, nz, A, D, m) == 0);
+    CHECK(isnan(m[0]) && isnan(m[1]) && isnan(m[2]));
+    CHECK(vr_eye_on_lens(AT(0, 0, 0.2f), zero, lens, nz, A, D, m) == 0);
+    CHECK(vr_eye_on_lens(AT(0, 0, 0.2f), fwd, lens, nan3, A, D, m) == 0);
+    CHECK(vr_eye_on_lens(AT(0, 0, 0.2f), fwd, lens, zero, A, D, m) == 0);
+    CHECK(isnan(m[0]) && isnan(m[1]) && isnan(m[2]));
+    CHECK(vr_eye_on_lens(AT(0, NAN, 0.2f), fwd, lens, nz, A, D, m) == 0);
 #undef AT
+}
+
+/* turned about +y by a, as quest_host.c's yaw_rot (the anchor's yaw) */
+static void yaw_turn(double a, const float v[3], float o[3])
+{
+    const double c = cos(a), s = sin(a), x = v[0], z = v[2];
+    o[0] = (float)(c * x + s * z);
+    o[1] = v[1];
+    o[2] = (float)(-s * x + c * z);
+}
+
+/* A 30 degree recentre mid-sweep (the anchor's frame turned): with the
+ * steadying's and the sensitivity's state turned with it (vr_aim_turn) the
+ * aim carries on as it was -- each frame's step no bigger than the hand's,
+ * and about where an untouched filter fed the old frame puts it. Without
+ * the turn (the control: the reviewer's case) it whips far off. */
+static void aim_turn_on_recentre(void)
+{
+    const double Y = 30 * DEG, hand_step = 60 * DEG * DT;
+    VrSteady sa = {{0}, {0}, {0}, 0}, sb = sa, sc = sa, sd = sa;
+    VrSens ea = {{0}, {0}, 0}, eb = ea, ec = ea, ed = ea, xa = ea, xb = ea;
+    float h[3], hy[3], t[3], oa[3] = {0, 0, -1}, ob[3], oc[3], od[3], obt[3], prev[3], pa[3], pb[3];
+    float bprev[3] = {0, 0, -1};
+    double worst = 0, whip = 0, step = 0, exact = 0, frame = 0, bstep = 0;
+    for (int n = 0; n < 108; n++) {     /* 60 deg/s, a little up and down; turned at 0.75 s */
+        dir_yp(60 * DEG * n * DT, 0.1 * sin(2 * PI * 0.5 * n * DT), h);
+        yaw_turn(Y, h, hy);
+        if (n == 54) {
+            vr_aim_turn(&sa, &ea, (float)Y);
+            vr_aim_turn(NULL, &xa, (float)Y);
+            yaw_turn(Y, oa, prev);      /* where the aim was, in the new frame */
+        } else {
+            memcpy(prev, oa, sizeof prev);
+        }
+        const float *in = n >= 54 ? hy : h;
+        vr_steady(&sa, in, DT, 2.0f, t); vr_sens_step(&ea, t, 1, 0.5f, LEASH, DT, oa);
+        vr_steady(&sb, h, DT, 2.0f, t);  vr_sens_step(&eb, t, 1, 0.5f, LEASH, DT, ob);
+        vr_steady(&sc, in, DT, 2.0f, t); vr_sens_step(&ec, t, 1, 0.5f, LEASH, DT, oc);
+        vr_steady(&sd, hy, DT, 2.0f, t); vr_sens_step(&ed, t, 1, 0.5f, LEASH, DT, od);  /* the new frame all along */
+        vr_sens_step(&xa, in, 1, 0.5f, LEASH, DT, pa);  /* the sensitivity alone: exactly the same */
+        vr_sens_step(&xb, h, 1, 0.5f, LEASH, DT, pb);
+        if (n >= 54) {
+            yaw_turn(Y, ob, obt);
+            if (angle3(oa, obt) > worst) worst = angle3(oa, obt);
+            if (angle3(oc, obt) > whip) whip = angle3(oc, obt);
+            if (angle3(od, obt) > frame) frame = angle3(od, obt);
+            if (angle3(oa, prev) > step) step = angle3(oa, prev);
+            if (angle3(ob, bprev) > bstep) bstep = angle3(ob, bprev);
+            yaw_turn(Y, pb, t);
+            if (angle3(pa, t) > exact) exact = angle3(pa, t);
+        }
+        memcpy(bprev, ob, sizeof bprev);
+    }
+    /* The steadying works per component, so the same sweep steadied in two
+     * frames differs a little anyway (frame): the turned filter may be that
+     * far from the untouched one, never a whip. */
+    printf("recentre 30 deg mid-sweep: biggest step %.3f deg (the untouched filter's %.3f, the hand's %.3f);"
+           " %.3f deg off the untouched filter (steadied in the new frame all along: %.3f); without the turn"
+           " %.2f deg off\n", step / DEG, bstep / DEG, hand_step / DEG, worst / DEG, frame / DEG, whip / DEG);
+    CHECK(step <= bstep + 0.2 * DEG);
+    CHECK(worst <= frame + 0.1 * DEG);
+    CHECK(whip > 5 * DEG);
+    CHECK(exact < 1e-5);
+    /* a yaw not a number: nothing turned */
+    VrSteady s1 = sa, s2 = sa;
+    VrSens e1 = ea, e2 = ea;
+    vr_aim_turn(&s1, &e1, NAN);
+    vr_steady(&s1, hy, DT, 2.0f, oa); vr_sens_step(&e1, oa, 1, 0.5f, LEASH, DT, oa);
+    vr_steady(&s2, hy, DT, 2.0f, ob); vr_sens_step(&e2, ob, 1, 0.5f, LEASH, DT, ob);
+    for (int i = 0; i < 3; i++) NEAR(oa[i], ob[i], 0);
+}
+
+/* A new gun hand, or the controller found again: both start afresh, the
+ * next hand the aim at once (however far from the last) */
+static void aim_reseed_starts_afresh(void)
+{
+    VrSteady st = {{0}, {0}, {0}, 0};
+    VrSens se = {{0}, {0}, 0};
+    float h[3], t[3], o[3];
+    for (int n = 0; n <= 36; n++) {    /* an offset at the leash */
+        dir_yp(20.0 * DEG * n / 36, 0, h);
+        vr_steady(&st, h, DT, 1.0f, t);
+        vr_sens_step(&se, t, 1, 0.35f, LEASH, DT, o);
+    }
+    vr_aim_reseed(&st, &se);
+    dir_yp(-1.2, 0.3, h);
+    vr_steady(&st, h, DT, 1.0f, t);
+    vr_sens_step(&se, t, 1, 0.35f, LEASH, DT, o);
+    for (int i = 0; i < 3; i++) { NEAR(t[i], h[i], 1e-6); NEAR(o[i], h[i], 1e-6); }
+    vr_aim_reseed(NULL, &se);   /* either may be left out */
+    vr_aim_reseed(&st, NULL);
 }
 
 /* q (x y z w) applied to v */
@@ -616,6 +744,8 @@ int main(void)
     sens_disengage_returns_to_hand();
     sens_ignores_bad_input();
     eye_on_lens_cases();
+    aim_turn_on_recentre();
+    aim_reseed_starts_afresh();
     gun_along_cases();
     rifle_lens_on_scope_line();
     rifle_lens_unobstructed();

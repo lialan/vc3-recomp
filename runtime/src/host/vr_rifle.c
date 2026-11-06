@@ -183,22 +183,68 @@ void vr_sens_step(VrSens *s, const float hand[3], int engaged, float gain, float
     }
 }
 
-int vr_eye_on_lens(const float head_p[3], const float head_fwd[3], const float lens_c[3], float max_angle, float max_dist)
+/* v turned about +y by the angle of cosine c, sine s (yaw_rot's sense) */
+static void yaw_turn3(float v[3], double c, double s)
 {
-    double v[3], f[3], dist;
-    for (int i = 0; i < 3; i++) {
-        if (!isfinite(head_p[i]) || !isfinite(lens_c[i]))
-            return 0;
-        v[i] = (double)lens_c[i] - head_p[i];
+    const double x = v[0], z = v[2];
+    v[0] = (float)(c * x + s * z);
+    v[2] = (float)(-s * x + c * z);
+}
+
+/* Every vector of the state -- the steadying's filtered direction, its
+ * rate and its last input; the sensitivity's aim and last hand -- turned
+ * alike. The sensitivity's maths is all axis and angle, so it carries on
+ * exactly as if it had run in the new frame; the steadying works per
+ * component, so only nearly -- without a jump either way. */
+void vr_aim_turn(VrSteady *st, VrSens *se, float yaw)
+{
+    double c, s;
+    if (!isfinite(yaw))
+        return;
+    c = cos(yaw);
+    s = sin(yaw);
+    if (st) {
+        yaw_turn3(st->x, c, s);
+        yaw_turn3(st->dx, c, s);
+        yaw_turn3(st->prev, c, s);
     }
-    if (!unit3(head_fwd, f))
+    if (se) {
+        yaw_turn3(se->aim, c, s);
+        yaw_turn3(se->last, c, s);
+    }
+}
+
+void vr_aim_reseed(VrSteady *st, VrSens *se)
+{
+    if (st)
+        st->init = 0;
+    if (se)
+        se->n = 0;
+}
+
+int vr_eye_on_lens(const float eye_p[3], const float head_fwd[3], const float lens_c[3], const float lens_n[3],
+                   float max_angle, float max_dist, float m[3])
+{
+    double v[3], f[3], n[3], dist, c, depth;
+    float sink[3];
+    if (!m)
+        m = sink;
+    m[0] = m[1] = m[2] = NAN;
+    for (int i = 0; i < 3; i++) {
+        if (!isfinite(eye_p[i]) || !isfinite(lens_c[i]))
+            return 0;
+        v[i] = (double)lens_c[i] - eye_p[i];    /* from the eye to the lens */
+    }
+    if (!unit3(head_fwd, f) || !unit3(lens_n, n))
         return 0;
     dist = sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]);
-    if (!(dist <= max_dist))
-        return 0;
-    if (dist < 1e-6)            /* at the lens */
-        return 1;
-    return (v[0] * f[0] + v[1] * f[1] + v[2] * f[2]) / dist >= cos((double)max_angle);
+    c = dist > 0 ? (v[0] * f[0] + v[1] * f[1] + v[2] * f[2]) / dist : 1;
+    c = c > 1 ? 1 : c < -1 ? -1 : c;
+    depth = -(v[0] * n[0] + v[1] * n[1] + v[2] * n[2]);
+    m[0] = (float)dist;
+    m[1] = (float)acos(c);
+    m[2] = (float)depth;
+    return depth > 0 && dist <= max_dist && c >= cos((double)max_angle);
 }
 
 /* r * q: q's turn, then r's (quaternions x y z w) */

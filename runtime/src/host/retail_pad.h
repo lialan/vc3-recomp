@@ -20,6 +20,11 @@ typedef struct { int start, a, b, x, y, rt, lt, up, down, left, right; } RetailP
  * half way is the d-pad's, except while scope_on (the scope's zoom then);
  * left/right always the d-pad's. */
 void retail_pad_map(int buttons, float stick_x, float stick_y, int scope_on, RetailPadKeys *out);
+/* The gun hand's trigger as the pad's (RETAIL_PAD_TRIGGER): a pull still
+ * held when the settings panel shuts -- the one that chose Close -- is not
+ * a shot; the trigger counts again once it has been let go. latch: the
+ * caller's state, 0 at first. */
+int retail_pad_trigger(int *latch, int panel_open, int trigger);
 /* Presses and releases them through xbox_InputKeySet with the keyboard
  * map's keys (Enter Start, Z A, X B, C X, V Y, 3 right trigger, 1 left
  * trigger, the arrows the d-pad), each only when it changes. */

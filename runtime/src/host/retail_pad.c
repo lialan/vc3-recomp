@@ -56,3 +56,12 @@ void retail_pad_stick(int gun_hand, const float sticks[2][2], float out[2])
     out[0] = s[0];
     out[1] = s[1];
 }
+
+int retail_pad_trigger(int *latch, int panel_open, int trigger)
+{
+    if (panel_open)
+        *latch = 1;             /* its pulls are the panel's */
+    else if (!trigger)
+        *latch = 0;
+    return trigger && !*latch;
+}

@@ -548,6 +548,9 @@ static int s_scope_sens = 50;
  * not located) -- where the lens shows its picture from (vk_lens_crop) */
 static float s_rifle_yaw, s_rifle_pitch;
 static int s_rifle_aim_ok;
+/* The rifle not located, or no controllers to read, since its last aim:
+ * its steadying and sensitivity start afresh from the hand (rifle_frame). */
+static int s_rifle_lost = 1;
 /* The display's own pixels per eye (native_init): what "Native" draws. */
 static uint32_t s_native_w, s_native_h;
 /* The eyes' last immersive frame as drawn, % of their size each way: below
@@ -2239,7 +2242,7 @@ static XrTime s_shot_t;
  * (gun_frame). d: the rifle's direction (LOCAL), NULL when not located.
  *
  * Scope sensitivity (vr_sens_step): while an eye looks into the lens --
- * within LENS_LOOK_DIST of its centre, the head facing it within
+ * behind it, within LENS_LOOK_DIST of its centre, the head facing it within
  * LENS_LOOK_ANGLE -- with the scope picture up and the panel closed, the
  * steadied aim moves by the Scope sensitivity row's share of the hand's
  * turn, never more than SENS_LEASH off it; otherwise it turns with the hand
@@ -2247,30 +2250,45 @@ static XrTime s_shot_t;
  * game's, the lens's crop (s_rifle_yaw, s_rifle_pitch), the drawn rifle's
  * barrel -- turned about the grip onto it -- and the laser's, from the
  * muzzle (rifle_along). With the panel open the rifle is drawn on the hand,
- * its pointer beam as gun_frame made it. */
+ * its pointer beam as gun_frame made it.
+ *
+ * Looking in is meant loosely: the player aims with the eye and glances
+ * down at the lens, held low at arm's length -- so up to LENS_LOOK_DIST
+ * away, but always behind the lens (on the side its picture faces): a
+ * glance down at the rifle held across the body does not count. A recentre
+ * turns the steadying's and the sensitivity's state into the new frame
+ * (vr_aim_turn); a new gun hand, or the controller found again, starts
+ * them afresh (vr_aim_reseed): no whip either way. <PREFIX>_AIM_LOG=1:
+ * whether it is engaged and why, on each change and once a second. */
 #define SENS_LEASH (4.0f * 0.0174533f)
 #define LENS_LOOK_ANGLE (25.0f * 0.0174533f)
-#define LENS_LOOK_DIST 0.45f            /* metres */
+#define LENS_LOOK_DIST 0.75f            /* metres */
 #define RIFLE_LASER_LEN 30.0f           /* metres from the muzzle */
 
-/* Is either eye looking into the rifle's lens, where the controller holds it? */
-static int eye_on_lens(void)
+/* Is either eye looking into the rifle's lens, where the controller holds
+ * it? m: that eye's measures (vr_eye_on_lens: distance, angle, depth
+ * behind the lens), else the nearer eye's; NaN with nothing to measure. */
+static int eye_on_lens(float m[3])
 {
-    static const float ahead[3] = { 0, 0, -1 };
+    static const float ahead[3] = { 0, 0, -1 }, back[3] = { 0, 0, 1 };
     const XrQuaternionf g = { s_qo.gun_q[0], s_qo.gun_q[1], s_qo.gun_q[2], s_qo.gun_q[3] };
-    float c[3], lens[3], fwd[3];
-    int e, i;
+    float c[3], lens[3], n[3], fwd[3], me[2][3];
+    int e, i, on[2];
+    m[0] = m[1] = m[2] = NAN;
     if (!s_views_ok || !s_qo.gun_valid)
         return 0;
     qo_lens_centre(c);
     qrot(g, c, lens);
     for (i = 0; i < 3; i++)
         lens[i] += s_qo.gun_p[i];
+    qrot(g, back, n);                   /* the lens faces +z, the eye's way */
     qrot(s_views[0].pose.orientation, ahead, fwd);
     for (e = 0; e < 2; e++)
-        if (vr_eye_on_lens(&s_views[e].pose.position.x, fwd, lens, LENS_LOOK_ANGLE, LENS_LOOK_DIST))
-            return 1;
-    return 0;
+        on[e] = vr_eye_on_lens(&s_views[e].pose.position.x, fwd, lens, n, LENS_LOOK_ANGLE, LENS_LOOK_DIST,
+                               me[e]);
+    e = on[0] ? 0 : on[1] ? 1 : me[1][0] < me[0][0] ? 1 : 0;
+    memcpy(m, me[e], sizeof me[e]);
+    return on[0] || on[1];
 }
 
 /* The drawn rifle turned about the grip (s_qo.gun_p) so its barrel lies
@@ -2295,7 +2313,9 @@ static void rifle_frame(XrTime t, const Frame *f, const float *d, int now[2][5],
 {
     static VrSteady steady;
     static VrSens sens;
-    static XrTime last_t;
+    static XrTime last_t, log_t;
+    static float seen_yaw;              /* the anchor's yaw and the gun hand the state is for */
+    static int seen_gun = -1, aim_log = -1, log_engaged = -1, trigger_latch;
     ChVrRifle r = { 0 };
     RetailPadKeys keys;
     float sticks[2][2], st[2], dt = (float)((double)(t - last_t) / 1e9);
@@ -2315,17 +2335,37 @@ static void rifle_frame(XrTime t, const Frame *f, const float *d, int now[2][5],
     if (scope_on && !s_menu.open)
         s_zoom = vr_zoom_step(s_zoom, st[1], dt);
     if (d) {
-        float ld[3], steadied[3], aim[3], la[3];
+        float ld[3], steadied[3], aim[3], la[3], m[3];
+        const int look = eye_on_lens(m), engaged = scope_on && !s_menu.open && look;
+        if (s_rifle_lost || s_gun != seen_gun)
+            vr_aim_reseed(&steady, &sens);      /* a new hand, or found again: from it afresh */
+        else if (s_anchor_yaw != seen_yaw)      /* recentred: the state into the new frame */
+            vr_aim_turn(&steady, &sens, seen_yaw - s_anchor_yaw);
+        s_rifle_lost = 0;
+        seen_gun = s_gun;
+        seen_yaw = s_anchor_yaw;
         yaw_rot(-s_anchor_yaw, d, ld);
         vr_steady(&steady, ld, dt, s_zoom, steadied);
-        vr_sens_step(&sens, steadied, scope_on && !s_menu.open && eye_on_lens(), s_scope_sens / 100.0f,
-                     SENS_LEASH, dt, aim);
+        vr_sens_step(&sens, steadied, engaged, s_scope_sens / 100.0f, SENS_LEASH, dt, aim);
         vr_aim_angles(aim, &r.yaw, &r.pitch);
         r.on = !s_menu.open;
         if (!s_menu.open) {
             yaw_rot(s_anchor_yaw, aim, la);     /* back into LOCAL */
             rifle_along(la);
         }
+        if (aim_log < 0)
+            aim_log = ch_env("AIM_LOG") && atoi(ch_env("AIM_LOG")) > 0;
+        if (aim_log && (engaged != log_engaged || t - log_t >= 1000000000)) {
+            fprintf(stderr, "[rifle look] scope sensitivity %s (%d%%): scope picture %s, panel %s, looking in %s --"
+                    " eye %.2f m from the lens (in %.2f), %.1f deg off the head's forward (in %.0f), behind it %s"
+                    " (%.2f m)\n", engaged ? "ENGAGED" : "off", s_scope_sens, scope_on ? "up" : "not up",
+                    s_menu.open ? "open" : "closed", look ? "yes" : "no", m[0], LENS_LOOK_DIST,
+                    m[1] * 57.29578f, LENS_LOOK_ANGLE * 57.29578f, m[2] > 0 ? "yes" : "no", m[2]);
+            log_engaged = engaged;
+            log_t = t;
+        }
+    } else {
+        s_rifle_lost = 1;
     }
     s_rifle_aim_ok = d != NULL;     /* where the lens's picture is cropped (vk_lens_crop) */
     s_rifle_yaw = r.yaw;
@@ -2334,7 +2374,8 @@ static void rifle_frame(XrTime t, const Frame *f, const float *d, int now[2][5],
     if (chihiro_profile()->vr.rifle)
         chihiro_profile()->vr.rifle(&r);
 
-    if (now[s_gun][0])
+    /* the pull that chose Close is no shot: the trigger counts once let go */
+    if (retail_pad_trigger(&trigger_latch, s_menu.open, now[s_gun][0]))
         buttons |= RETAIL_PAD_TRIGGER;
     if (now[s_gun][1])
         buttons |= RETAIL_PAD_A;
@@ -2359,6 +2400,7 @@ static void rifle_release(void)
     ChVrRifle r = { 0 };
     r.zoom = s_zoom;
     s_rifle_aim_ok = 0;
+    s_rifle_lost = 1;
     retail_pad_apply(&none);
     if (chihiro_profile()->vr.rifle)
         chihiro_profile()->vr.rifle(&r);

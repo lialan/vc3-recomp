@@ -88,6 +88,26 @@ static void panel_open_freezes_rifle(void)
     CHECK(keys_down(&k) == 0);
 }
 
+/* The pull that chose Close is still held when the panel shuts: not a shot
+ * -- the trigger counts again once it has been let go */
+static void trigger_latched_after_panel(void)
+{
+    int latch = 0;
+    CHECK(retail_pad_trigger(&latch, 0, 1) == 1);       /* the panel shut all along: a pull fires */
+    CHECK(retail_pad_trigger(&latch, 0, 0) == 0);
+    CHECK(retail_pad_trigger(&latch, 1, 1) == 0);       /* the panel's pull */
+    CHECK(retail_pad_trigger(&latch, 0, 1) == 0);       /* shut with it still held: no shot */
+    CHECK(retail_pad_trigger(&latch, 0, 1) == 0);
+    CHECK(retail_pad_trigger(&latch, 0, 0) == 0);       /* let go */
+    CHECK(retail_pad_trigger(&latch, 0, 1) == 1);       /* the next pull fires */
+    CHECK(retail_pad_trigger(&latch, 0, 1) == 1);       /* and holds */
+    CHECK(retail_pad_trigger(&latch, 0, 0) == 0);
+    /* shut by the menu button, the trigger not held: the first pull fires */
+    CHECK(retail_pad_trigger(&latch, 1, 0) == 0);
+    CHECK(retail_pad_trigger(&latch, 0, 0) == 0);
+    CHECK(retail_pad_trigger(&latch, 0, 1) == 1);
+}
+
 static void left_hand_uses_left_stick(void)
 {
     const float sticks[2][2] = { { 0.1f, 0.9f }, { 0, -0.9f } };
@@ -172,6 +192,7 @@ int main(void)
     stick_zooms_with_scope();
     stick_routes_to_dpad_without_scope();
     panel_open_freezes_rifle();
+    trigger_latched_after_panel();
     left_hand_uses_left_stick();
     apply_presses_on_change();
     if (fails) { printf("%d failed\n", fails); return 1; }
