@@ -243,6 +243,191 @@ static void wide_aim(const ChScopeGame *g, void (*gen)(void))
     MEM16(ya) = (uint16_t)(int16_t)y;
 }
 
+/* --- the bot (<PREFIX>_BOT, scope_game.h) -------------------------------- */
+
+void xbox_InputKeySet(int vk, int down);    /* the toolkit's key table: player 1's pad */
+#define KEY_START 0x0D                      /* Enter: START */
+#define KEY_FIRE  '3'                       /* the right trigger */
+#define BOT_MAX 32
+
+static int bot_mode(void)
+{
+    static int m = -1;
+    if (m < 0) {
+        const char *e = ch_env("BOT");
+        m = e ? atoi(e) : 0;
+    }
+    return m;
+}
+
+static int bot_log(void)
+{
+    static int on = -1;
+    if (on < 0) {
+        const char *e = ch_env("BOT_LOG");
+        on = e && atoi(e) > 0;
+    }
+    return on;
+}
+
+static struct {
+    uint32_t play;              /* the frame the aim step last ran (seen: it has run) */
+    int seen;
+    uint32_t id;                /* the target held (its id + 1; 0: none) */
+    int on, fire;               /* frames the aim has been on it; the trigger wanted */
+    unsigned at;                /* frames the trigger has been wanted on it */
+    double yaw, pitch;          /* the aim last written */
+    unsigned pulls, targets;
+    ChScopeTarget last[BOT_MAX];    /* the previous frame's targets: their motion */
+    int nlast;
+} s_bot;
+
+/* A world point's direction from the shot's origin in the game's aim units
+ * (the main camera's axes -- x right, y up, -z ahead -- yaw then pitch, as
+ * the shot is built), and its distance; 0 behind */
+static int bot_angles(const ChScopeGame *g, const double o[3], const float p[3],
+                      double *yaw, double *pitch, double *dist)
+{
+    const double unit = 65536.0 / 6.283185307179586;
+    double c[3] = { 0, 0, 0 };
+    for (int i = 0; i < 3; i++) {
+        double row[3], n = 0;
+        for (int k = 0; k < 3; k++) {
+            row[k] = (int16_t)MEM16(g->main_cam + 6 * i + 2 * k);
+            n += row[k] * row[k];
+        }
+        n = n > 0 ? sqrt(n) : 1;
+        for (int k = 0; k < 3; k++)
+            c[i] += row[k] / n * (p[k] - o[k]);
+    }
+    if (!(c[2] < 0))
+        return 0;
+    *yaw = g->yaw_right * atan2(c[0], -c[2]) * unit;
+    *pitch = g->pitch_up * atan2(c[1], hypot(c[0], c[2])) * unit;
+    *dist = sqrt(c[0] * c[0] + c[1] * c[1] + c[2] * c[2]);
+    return 1;
+}
+
+/* After the aim step, in play: the aim onto the target, the trigger wanted
+ * while it was already on it */
+static void bot_aim(const ChScopeGame *g, uint32_t pa, uint32_t ya)
+{
+    ChScopeTarget t[BOT_MAX];
+    const uint32_t frame = MEM32(g->frame), rec = g->aim_base ? MEM32(g->aim_base) : 0;
+    const int n = g->bot_targets(t, BOT_MAX);
+    double o[3], best = 1e30, y = 0, p = 0, d = 0;
+    int pick = -1;
+    for (int k = 0; k < 3; k++)
+        o[k] = (int32_t)MEM32(rec + g->shot_origin + 4 * k);
+    if (frame - s_bot.play > 1)
+        s_bot.id = 0;           /* back in play: from the game's own aim */
+    s_bot.play = frame;
+    s_bot.seen = 1;
+    for (int i = 0; i < n; i++) {
+        float at[3];
+        double ty, tp, td;
+        memcpy(at, t[i].pos, sizeof at);
+        if (!bot_angles(g, o, at, &ty, &tp, &td))
+            continue;
+        /* the lead: its motion over the frames the shot takes to reach it,
+         * and one more (the shot is tested against next frame's) */
+        const double lead = 1.0 + (g->shot_speed > 0 ? td / g->shot_speed : 0.0);
+        for (int j = 0; j < s_bot.nlast; j++)
+            if (s_bot.last[j].id == t[i].id)
+                for (int k = 0; k < 3; k++)
+                    at[k] += (float)(lead * (t[i].pos[k] - s_bot.last[j].pos[k]));
+        if (!bot_angles(g, o, at, &ty, &tp, &td))
+            continue;
+        const double cost = t[i].id + 1 == s_bot.id ? -1.0 : hypot(ty - s_bot.yaw, tp - s_bot.pitch);
+        if (cost < best) {
+            best = cost;
+            pick = i;
+            y = ty;
+            p = tp;
+            d = td;
+        }
+    }
+    memcpy(s_bot.last, t, sizeof t[0] * (size_t)n);
+    s_bot.nlast = n;
+    s_bot.fire = 0;
+    if (pick < 0) {
+        s_bot.id = 0;
+        return;
+    }
+    if (t[pick].id + 1 != s_bot.id) {
+        s_bot.id = t[pick].id + 1;
+        s_bot.on = 0;
+        s_bot.at = 0;
+        s_bot.targets++;
+        if (bot_log())
+            fprintf(stderr, "[%s bot] frame %u: target %u (%u live) at yaw %.0f pitch %.0f, %.0f away, radius %.0f\n",
+                    g->tag, frame, t[pick].id, n, y, p, d, t[pick].radius);
+    }
+    /* on it: the aim the game has from last frame within the angle the
+     * target's radius makes (the half of it, round its middle) */
+    const double cone = atan2(0.5 * t[pick].radius, d) * 65536.0 / 6.283185307179586;
+    s_bot.on = hypot(y - s_bot.yaw, p - s_bot.pitch) < cone ? s_bot.on + 1 : 0;
+    s_bot.fire = s_bot.on >= 2;
+    s_bot.at += s_bot.fire;
+    {   /* BOT_CHEAT: fired at for 5 s and still up (behind cover): it is hit */
+        static int cheat = -1;
+        if (cheat < 0)
+            cheat = ch_env("BOT_CHEAT") && atoi(ch_env("BOT_CHEAT")) > 0;
+        if (cheat && g->bot_hit && s_bot.at >= 150) {
+            g->bot_hit(&t[pick]);
+            if (bot_log())
+                fprintf(stderr, "[%s bot] frame %u: target %u hit by the cheat\n", g->tag, frame, t[pick].id);
+            s_bot.at = 0;
+        }
+    }
+    s_bot.yaw = y;
+    s_bot.pitch = p;
+    MEM16(ya) = (uint16_t)(int16_t)lround(y < -32768 ? -32768 : y > 32767 ? 32767 : y);
+    MEM16(pa) = (uint16_t)(int16_t)lround(p < -32768 ? -32768 : p > 32767 ? 32767 : p);
+}
+
+static void bot_key(int vk, int down, int *held)
+{
+    if (down != *held) {
+        xbox_InputKeySet(vk, down);
+        *held = down;
+    }
+}
+
+void ch_scope_frame(void (*gen)(void))
+{
+    static int fire_held, start_held, phase;
+    static uint32_t done = ~0u;
+    const ChScopeGame *g = game();
+    gen();
+    if (!g || !g->bot_targets || !bot_mode() || MEM32(g->frame) == done)
+        return;
+    const uint32_t frame = done = MEM32(g->frame);  /* once a frame: the loop may call it again */
+    const int play = s_bot.seen && frame - s_bot.play <= 1, paused = g->paused && MEM32(g->paused);
+    int fire = 0, start = 0;
+    /* the trigger: pulled two frames, let go two, while the aim is on */
+    if (play && s_bot.fire && !paused)
+        fire = phase++ % 4 < 2;
+    else
+        phase = 0;
+    if (fire && !fire_held) {   /* (a pull while the rifle reloads fires nothing) */
+        s_bot.pulls++;
+        if (bot_log())
+            fprintf(stderr, "[%s bot] frame %u: pull %u at target %u\n", g->tag, frame, s_bot.pulls, s_bot.id - 1);
+    }
+    /* START: a pause resumed; with BOT=2, every 2 s out of play too, once
+     * play has begun (the menus before are the pad script's) */
+    if (paused)
+        start = frame % 30 < 3;
+    else if (bot_mode() >= 2 && s_bot.seen && !play)
+        start = frame % 60 < 3;
+    bot_key(KEY_FIRE, fire, &fire_held);
+    bot_key(KEY_START, start, &start_held);
+    if (bot_log() && frame % 900 == 0)
+        fprintf(stderr, "[%s bot] frame %u: %s, %u targets taken, %u trigger pulls\n", g->tag, frame,
+                paused ? "paused" : play ? "in play" : "out of play", s_bot.targets, s_bot.pulls);
+}
+
 /* --- the rifle ------------------------------------------------------------ */
 
 void ch_scope_aim_step(void (*gen)(void))
@@ -269,6 +454,8 @@ void ch_scope_aim_step(void (*gen)(void))
         MEM16(ya) = (uint16_t)v;
         MEM16(pa) = (uint16_t)(v >> 16);
     }
+    if (g->bot_targets && bot_mode())
+        bot_aim(g, pa, ya);
     if (aim_log() && frame % 30 == 0 && frame != logged) {
         logged = frame;
         fprintf(stderr, "[%s aim] frame %u yaw %d pitch %d rifle %s\n", g->tag, frame,

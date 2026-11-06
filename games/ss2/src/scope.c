@@ -119,6 +119,52 @@ static int marks_writes(void)
     return MEM32(0xB1AC20u) != 1 && (MEM32(0xB1AC24u) || MEM32(0xB1AC30u));
 }
 
+/* The bot's enemies: the game's objects (32 of 0x37C bytes from 0xB6CAA0)
+ * its own lock-on would take (sub_00043D90) -- active (+0x1C bit 0) and
+ * shown (bit 1), with life (+0x0A > 0) and its lock count (+0x13), not the
+ * player's own (the aim record's +0x184) -- and the shot can hit (+0xF0
+ * bit 0, sub_00050F10's list for sub_00051760). Aimed at the point the
+ * lock-on aims at (+0x158, int32 x y z), its radius +0x20. */
+static int bot_targets(ChScopeTarget *t, int max)
+{
+    const uint32_t own = MEM32(MEM32(0xB3DA04u) + 0x184);
+    int n = 0;
+    for (int i = 0; i < 32 && n < max; i++) {
+        const uint32_t o = 0xB6CAA0u + 0x37Cu * i, fl = MEM32(o + 0x1C);
+        if (!(fl & 1) || !(fl & 2) || (int16_t)MEM16(o + 0xA) <= 0 || !MEM8(o + 0x13)
+            || !(MEM8(o + 0xF0) & 1) || o == own)
+            continue;
+        t[n].id = (uint32_t)i;
+        t[n].object = o;
+        for (int k = 0; k < 3; k++)
+            t[n].pos[k] = (float)(int32_t)MEM32(o + 0x158 + 4 * k);
+        t[n].radius = (float)(int32_t)MEM32(o + 0x20);
+        n++;
+    }
+    return n;
+}
+
+/* SS2_BOT_CHEAT: a shot landing on the object, as the shot test writes one
+ * (sub_00051760, an object hit): hit this frame (+0xF0 bit 1; the test's
+ * list clears it each frame before testing), the shot's type (the aim
+ * record's +0x6C), the shooter (the active slot), the type's damage
+ * (0x1B590A + 4 type), bone 1 hit, at its aim point. Called from the aim
+ * step, between the test and the objects' update that takes the hit. */
+static void bot_hit(const ChScopeTarget *t)
+{
+    const uint32_t o = t->object, type = MEM16(MEM32(0xB3DA04u) + 0x6C);
+    MEM8(o + 0xF0) |= 2;
+    MEM8(o + 0xF1) = (uint8_t)type;
+    MEM8(o + 0x107) = (uint8_t)MEM16(0xB3D6E2u);
+    MEM16(o + 0x108) = MEM16(0x1B590Au + 4 * (uint32_t)(int16_t)type);
+    MEM8(o + 0x106) = 1;
+    MEM8(o + 0xF2) = 0;
+    for (int k = 0; k < 3; k++) {
+        MEM32(o + 0xF4 + 4 * k) = MEM32(o + 0x158 + 4 * k);
+        MEM16(o + 0x100 + 2 * k) = 0;
+    }
+}
+
 const ChScopeGame ss2_scope = {
     .tag = "ss2",
     .frame = 0xB3D034u,
@@ -134,4 +180,9 @@ const ChScopeGame ss2_scope = {
     .main_cam = 0xB3D1A4u, .scope_cam = 0xB3D2F4u,
     .circle_writes = circle_writes,
     .marks_writes = marks_writes,
+    .bot_targets = bot_targets,
+    .shot_origin = 0xD4u,   /* the shot leaves from the aim record's +0xD4 (sub_00056670) */
+    .paused = 0xB1956Cu,    /* the pause menu up (sub_0006E610 toggles it) */
+    .bot_hit = bot_hit,
+    .shot_speed = 11413.0f, /* 0x2C95 a frame (sub_00056670, sub_00056890) */
 };

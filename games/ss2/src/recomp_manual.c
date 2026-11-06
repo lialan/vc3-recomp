@@ -39,6 +39,10 @@ void sub_000A4240(void) { ch_scope_focal(sub_000A4240_gen); }      /* a camera m
 void sub_000768E0(void) { ch_scope_circle(sub_000768E0_gen); }     /* scope circle */
 void sub_00076D90(void) { ch_scope_marks(sub_00076D90_gen); }      /* circle at the aim, aim marks */
 void sub_00066AA0(void) { ch_scope_reticle(sub_00066AA0_gen); }    /* the scope's reticle */
+/* The main loop's tick, once a frame in every state (before the frame
+ * counter 0xB3D034 steps): the bot's buttons (SS2_BOT) */
+extern void sub_00069D00_gen(void);
+void sub_00069D00(void) { ch_scope_frame(sub_00069D00_gen); }
 
 /* Return a function to run instead of the given guest address, or NULL for
  * the generated dispatch table. */

@@ -36,6 +36,13 @@
 
 #include "host/vr_rifle.h"
 
+/* An enemy for the bot (ChScopeGame.bot_targets): the game's own id and
+ * object address, where to aim, and how far round it a shot still lands */
+typedef struct ChScopeTarget {
+    uint32_t id, object;
+    float pos[3], radius;
+} ChScopeTarget;
+
 typedef struct ChScopeGame {
     const char *tag;                /* log prefix: "ss1" */
     uint32_t frame;                 /* the main loop's frame counter (u32) */
@@ -116,6 +123,18 @@ typedef struct ChScopeGame {
      * not the screen's: immersive, they go to the game's own surface
      * (ch_scope_flat_now, the profile's vr.flat_now). 0: none. */
     uint32_t screen_view;
+
+    /* <PREFIX>_BOT (ch_scope_frame, below): the game's live enemies --
+     * bot_targets fills up to max (world points to aim at, game units) and
+     * returns how many; the shot's origin (int32 x, y, z at this offset in
+     * the aim record); a word nonzero while the game is paused. 0: no bot. */
+    int (*bot_targets)(ChScopeTarget *t, int max);
+    uint32_t shot_origin, paused;
+    float shot_speed;           /* game units a shot flies a frame (0: at once) */
+    /* <PREFIX>_BOT_CHEAT=1: a shot landing on t, written as the game's own
+     * shot test writes one (for a target behind cover the bot's shots
+     * cannot reach); 0: none */
+    void (*bot_hit)(const ChScopeTarget *t);
 } ChScopeGame;
 
 /* The game's own functions, wrapped (each runs the lifted body, `gen`,
@@ -141,5 +160,19 @@ int ch_scope_lens_aim(VrLensAim *out);
 
 /* At boot (chihiro.c, with a profile scope): <PREFIX>_VR_RIFLE_TEST */
 void ch_scope_boot(void);
+
+/* <PREFIX>_BOT=1: a player for test runs, here and on a headset alike
+ * (env.txt), from the first frame of play (the menus before are the
+ * player's or a pad script's). In play (the aim step) it holds the live
+ * enemy the game lists nearest its aim, aims at it (led by its motion over
+ * the shot's flight) and pulls the trigger (the pad's right trigger) while
+ * the aim stays on it; a target down leaves the game's list. Out of play it
+ * presses START to resume a pause, and with <PREFIX>_BOT=2 every 2 s
+ * besides (past cutscenes, results and the continue screen).
+ * <PREFIX>_BOT_CHEAT=1: a target fired at for 5 s and still up (behind
+ * cover) is hit outright (ChScopeGame.bot_hit). <PREFIX>_BOT_LOG=1 logs its
+ * targets and trigger pulls. ch_scope_frame wraps a function the game's main loop
+ * calls once a frame, in every state. */
+void ch_scope_frame(void (*gen)(void));
 
 #endif
