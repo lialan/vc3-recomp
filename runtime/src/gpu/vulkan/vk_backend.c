@@ -769,6 +769,52 @@ static void clear(const Nv2aSurface *s,const Nv2aRenderState *rs,uint32_t flags,
     }
     if(active->costs.enabled) {active->costs.clear_us+=now_us()-start;active->costs.clear_cpu_ns+=thread_cpu_ns()-cpu;}
 }
+/* A rejected draw in full, for finding which one it was: its target, its
+ * geometry (why the raw path declined it, vk_fixed.c), state and textures.
+ * where: "draw" (the guest's), "immersive draw" (the eyes'). */
+static void describe_rejected(const char *where,const Nv2aSurface *s,const Nv2aBatch *b) {
+    fprintf(stderr,"[Vulkan] rejected %s surface=%08X size=%ux%u vertices=%u ext=%d rc=%d stages=%08X\n",
+        where,s->color_va,s->width,s->height,b->count,b->ext!=NULL,b->rc!=NULL,b->rc?b->rc->stage_program:0);
+    const Nv2aRenderState *state=b->state;
+    if(b->raw) fprintf(stderr,"[Vulkan] rejected raw kind=%u prim=%u indices=%u range=%u..%u ff=%d\n",
+        b->raw->kind,b->raw->prim,b->raw->index_count,b->raw->min_index,b->raw->max_index,b->raw->ff!=NULL);
+    if(b->raw) {   /* why the raw path declined it (vk_fixed.c) */
+        const Nv2aRawGeometry *g=b->raw;
+        fprintf(stderr,"[Vulkan] rejected raw program=%u+%u check_out=%d constants=%d ends at",
+            g->program_start,g->program_len,g->check_out!=NULL,g->constants!=NULL);
+        for(unsigned i=0;g->program && i<g->program_len && g->program_start+i<136;i++)
+            if(g->program[g->program_start+i][3]&1) fprintf(stderr," %u",i);
+        fputc('\n',stderr);
+        for(unsigned a=0;a<16;a++) {
+            const Nv2aAttrib *v=&g->attr[a];
+            if(v->data || v->size) fprintf(stderr,"[Vulkan] rejected attr %u type %u size %u stride %u bytes %u %s\n",
+                a,v->type,v->size,v->stride,v->bytes,v->data?"array":"constant");
+        }
+    }
+    fprintf(stderr,"[Vulkan] rejected state raw=%d alpha=%u/%04X blend=%u/%04X/%04X/%04X cull=%u/%04X/%04X depth=%u/%u/%04X stencil=%u/%04X/%04X/%04X/%04X\n",
+        b->raw!=NULL,state->alpha_test_enable,state->alpha_func,state->blend_enable,state->blend_src,state->blend_dst,state->blend_eq,
+        state->cull_enable,state->cull_face,state->front_face,state->depth_test_enable,state->depth_write,state->depth_func,
+        state->stencil_enable,state->stencil_func,state->stencil_fail,state->stencil_zfail,state->stencil_zpass);
+    for(unsigned i=0;i<4;i++) {
+        const Nv2aTexture *texture=b->stage[i]?b->stage[i]:(i==0?b->texture:NULL);
+        if(texture) fprintf(stderr,"[Vulkan] texture%u address=%08X size=%ux%u format=%02X levels=%u filter=%08X address=%u/%u cube=%u\n",
+            i,texture->offset,texture->width,texture->height,texture->color,texture->levels,texture->filter,
+            texture->addr_u,texture->addr_v,texture->cube);
+    }
+}
+/* A draw the eyes cannot make (FEATURE_NOT_PRESENT) is left out of them, not
+ * fatal, as the guest's is (draw_batch): Silent Scope 2 stopped minutes into
+ * play on the headset ("fatal immersive draw: VkResult=-8"). Described in
+ * full the first few times, counted after; any other failure still stops. */
+static void immersive_result(VkResult r,const Nv2aSurface *s,const Nv2aBatch *b) {
+    static unsigned left;
+    if(r==VK_SUCCESS) return;
+    if(r!=VK_ERROR_FEATURE_NOT_PRESENT) fatal(r,"immersive draw");
+    if(left++<8) {
+        describe_rejected("immersive draw",s,b);
+        fprintf(stderr,"[Vulkan] immersive draw left out (not supported)\n");
+    } else if(left%300==0) fprintf(stderr,"[Vulkan] %u immersive draws left out (not supported)\n",left);
+}
 static void draw_batch(const Nv2aSurface *s,const Nv2aBatch *b,const ChVkFixedGeometry *fixed) {
     Nv2aSurface narrowed;if(b) s=narrow_surface(s,b->state,&narrowed);
     configure_render_thread();
@@ -809,7 +855,7 @@ static void draw_batch(const Nv2aSurface *s,const Nv2aBatch *b,const ChVkFixedGe
         if(b->state->color_mask&0x01010101) {
             Nv2aBatch copy=*b;copy.zpass_out=NULL;
             VkResult r=ch_vk_immersive_draw(active->imm,at,&copy,fixed,active->textures?resolve_sample:NULL,active);
-            if(r!=VK_SUCCESS) fatal(r,"immersive draw");
+            immersive_result(r,at,&copy);
         }
         return;
     }
@@ -818,7 +864,7 @@ static void draw_batch(const Nv2aSurface *s,const Nv2aBatch *b,const ChVkFixedGe
            (uint64_t)at->width*3==(uint64_t)at->height*4 && !flat) {
             uint64_t start=active->costs.enabled?now_us():0,cpu0=active->costs.enabled?thread_cpu_ns():0;
             VkResult r=ch_vk_immersive_draw(active->imm,at,b,fixed,active->textures?resolve_sample:NULL,active);
-            if(r!=VK_SUCCESS) fatal(r,"immersive draw");
+            immersive_result(r,at,b);
             if(active->costs.enabled) {active->costs.eye_us+=now_us()-start;active->costs.eye_cpu_ns+=thread_cpu_ns()-cpu0;}
             return;
         }
@@ -858,34 +904,7 @@ static void draw_batch(const Nv2aSurface *s,const Nv2aBatch *b,const ChVkFixedGe
         return;
     }
     if(result!=VK_SUCCESS) {
-        fprintf(stderr,"[Vulkan] rejected draw surface=%08X size=%ux%u vertices=%u ext=%d rc=%d stages=%08X\n",
-            s->color_va,s->width,s->height,b->count,b->ext!=NULL,b->rc!=NULL,b->rc?b->rc->stage_program:0);
-        const Nv2aRenderState *state=b->state;
-        if(b->raw) fprintf(stderr,"[Vulkan] rejected raw kind=%u prim=%u indices=%u range=%u..%u ff=%d\n",
-            b->raw->kind,b->raw->prim,b->raw->index_count,b->raw->min_index,b->raw->max_index,b->raw->ff!=NULL);
-        if(b->raw) {   /* why the raw path declined it (vk_fixed.c) */
-            const Nv2aRawGeometry *g=b->raw;
-            fprintf(stderr,"[Vulkan] rejected raw program=%u+%u check_out=%d constants=%d ends at",
-                g->program_start,g->program_len,g->check_out!=NULL,g->constants!=NULL);
-            for(unsigned i=0;g->program && i<g->program_len && g->program_start+i<136;i++)
-                if(g->program[g->program_start+i][3]&1) fprintf(stderr," %u",i);
-            fputc('\n',stderr);
-            for(unsigned a=0;a<16;a++) {
-                const Nv2aAttrib *v=&g->attr[a];
-                if(v->data || v->size) fprintf(stderr,"[Vulkan] rejected attr %u type %u size %u stride %u bytes %u %s\n",
-                    a,v->type,v->size,v->stride,v->bytes,v->data?"array":"constant");
-            }
-        }
-        fprintf(stderr,"[Vulkan] rejected state raw=%d alpha=%u/%04X blend=%u/%04X/%04X/%04X cull=%u/%04X/%04X depth=%u/%u/%04X stencil=%u/%04X/%04X/%04X/%04X\n",
-            b->raw!=NULL,state->alpha_test_enable,state->alpha_func,state->blend_enable,state->blend_src,state->blend_dst,state->blend_eq,
-            state->cull_enable,state->cull_face,state->front_face,state->depth_test_enable,state->depth_write,state->depth_func,
-            state->stencil_enable,state->stencil_func,state->stencil_fail,state->stencil_zfail,state->stencil_zpass);
-        for(unsigned i=0;i<4;i++) {
-            const Nv2aTexture *texture=b->stage[i]?b->stage[i]:(i==0?b->texture:NULL);
-            if(texture) fprintf(stderr,"[Vulkan] texture%u address=%08X size=%ux%u format=%02X levels=%u filter=%08X address=%u/%u cube=%u\n",
-                i,texture->offset,texture->width,texture->height,texture->color,texture->levels,texture->filter,
-                texture->addr_u,texture->addr_v,texture->cube);
-        }
+        describe_rejected("draw",s,b);
         if(result==VK_ERROR_FEATURE_NOT_PRESENT) {fprintf(stderr,"[Vulkan] draw left out (not supported)\n");return;}
     }
     unsigned writes=ch_vk_attachment_write_mask(b->state);
@@ -897,7 +916,7 @@ static void draw_batch(const Nv2aSurface *s,const Nv2aBatch *b,const ChVkFixedGe
      * the copy into its texture still goes on, for the lens's own copy) */
     if(active->imm && !(flat && (uint64_t)at->width*3==(uint64_t)at->height*4)) {
         VkResult r=ch_vk_immersive_draw(active->imm,s,b,fixed,active->textures?resolve_sample:NULL,active);
-        if(r!=VK_SUCCESS) fatal(r,"immersive draw");
+        immersive_result(r,s,b);
     }
     if(active->wide && active->wide_on) {
         VkResult r=ch_vk_wide_draw(active->wide,s,b,fixed,active->textures?resolve_sample:NULL,active);
