@@ -1,6 +1,12 @@
-// Silent Scope Complete VR for Meta Quest. All of the game runs natively (libmain.so,
-// src/android/); this only checks that the player's game files are there and
-// loads the libraries.
+// Silent Scope Complete VR for Meta Quest. All of the game runs natively; this
+// only checks that the player's game files are there and loads the libraries.
+//
+// One app holds the disc: the menu (libmain.so) and each game built into this
+// APK (libss1.so..libss3.so, game.conf's BUNDLE). A process runs one of them --
+// the menu, or the game its intent names (Restart.IMAGE) -- and the menu
+// starting a game, or a game quitting to the menu, restarts this app with the
+// other (launchSibling). A game not built in is the sibling app named after
+// it, as before.
 //
 // The game's files (default.xbe and data_title/) are looked for as
 // src/android/android_main.c does:
@@ -25,9 +31,11 @@ import org.libsdl.app.SDLActivity;
 public class SilentScopeCompleteVR extends SDLActivity {
     private static final String TAG = "SilentScopeCompleteVR";
     private String problem;     /* null: the game is there */
+    private String image;       /* the game this process runs (lib<image>.so); null: the menu */
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
+        image = bundled(getIntent().getStringExtra(Restart.IMAGE));
         problem = checkGame();
         super.onCreate(savedInstanceState);
         if (problem != null) {
@@ -44,24 +52,46 @@ public class SilentScopeCompleteVR extends SDLActivity {
 
     @Override
     protected String[] getLibraries() {
-        return new String[] { "SDL2", "openxr_loader", "main" };
+        return new String[] { "SDL2", "openxr_loader", image != null ? image : "main" };
+    }
+
+    /* android_main.c: each image keeps its own settings, saves and pipeline
+     * cache in this app (one app, several images). */
+    @Override
+    protected String[] getArguments() {
+        return new String[] { "--bundled" };
+    }
+
+    /* The menu's image name: this package's last part ("ssc"). */
+    private String menuName() {
+        String own = getPackageName();
+        return own.substring(own.lastIndexOf('.') + 1);
+    }
+
+    /* img if it is a game built into this APK, else null (the menu, or not here). */
+    private String bundled(String img) {
+        if (img == null || img.equals(menuName()) || !img.matches("[a-z0-9_]+")) return null;
+        return new File(getApplicationInfo().nativeLibraryDir, "lib" + img + ".so").exists() ? img : null;
     }
 
     private String checkGame() {
         File own = getExternalFilesDir(null);
         File shared = new File(Environment.getExternalStorageDirectory(), "SilentScope");
+        /* the menu: default.xbe and data_title; a game: ssN.xbe and dataN */
+        String xbe = image == null ? "default.xbe" : image + ".xbe";
+        String data = image == null ? "data_title" : "data" + image.replaceAll("[^0-9]", "");
         for (File base : new File[] { own, shared })
-            if (base != null && new File(base, "default.xbe").canRead() && new File(base, "data_title").isDirectory()) {
+            if (base != null && new File(base, xbe).canRead() && new File(base, data).isDirectory()) {
                 writeHelp(own, null);
                 return null;
             }
         String msg;
         if (!Environment.isExternalStorageManager()) {
-            msg = "Allow Silent Scope Complete VR to access all files, copy the game (default.xbe and data_title) to "
+            msg = "Allow Silent Scope Complete VR to access all files, copy the game (" + xbe + " and " + data + ") to "
                 + shared + ", then start it again.";
             askForFileAccess();
         } else {
-            msg = "Game files not found: copy default.xbe and the data_title folder to " + shared;
+            msg = "Game files not found: copy " + xbe + " and the " + data + " folder to " + shared;
         }
         writeHelp(own, msg);
         Log.e(TAG, msg);
@@ -75,22 +105,30 @@ public class SilentScopeCompleteVR extends SDLActivity {
         Log.i(TAG, "restarting the game");
         Intent again = new Intent(this, Restart.class);
         again.putExtra(Restart.PID, android.os.Process.myPid());
+        if (image != null) again.putExtra(Restart.IMAGE, image);
         again.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
         startActivity(again);
         android.os.Process.killProcess(android.os.Process.myPid());
     }
 
     /* Called from the game (main.c's chihiro_launch_image, through
-     * quest_host.c): another image of the disc (XLaunchNewImage) is the
-     * sibling app named after it -- org.sscrecomp.ss2 for "ss2" -- which
-     * Restart starts once this process is gone. */
-    public void launchSibling(String image) {
-        String own = getPackageName();
-        String pkg = own.substring(0, own.lastIndexOf('.') + 1) + image;
-        Log.i(TAG, "launching " + pkg);
+     * quest_host.c): another image of the disc (XLaunchNewImage). The menu,
+     * or a game built into this APK, is this app again running it; any other
+     * is the sibling app named after it -- org.sscrecomp.ss2 for "ss2".
+     * Restart starts it once this process is gone. */
+    public void launchSibling(String nextImage) {
         Intent next = new Intent(this, Restart.class);
         next.putExtra(Restart.PID, android.os.Process.myPid());
-        next.putExtra(Restart.PACKAGE, pkg);
+        String here = bundled(nextImage);
+        if (here != null || nextImage.equals(menuName())) {
+            Log.i(TAG, "starting " + nextImage + " in this app");
+            if (here != null) next.putExtra(Restart.IMAGE, here);
+        } else {
+            String own = getPackageName();
+            String pkg = own.substring(0, own.lastIndexOf('.') + 1) + nextImage;
+            Log.i(TAG, "launching " + pkg);
+            next.putExtra(Restart.PACKAGE, pkg);
+        }
         next.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
         startActivity(next);
         android.os.Process.killProcess(android.os.Process.myPid());

@@ -91,11 +91,14 @@ int SDL_main(int argc, char **argv)
     char game[1024] = "", path[1100];
     const char *own = SDL_AndroidGetExternalStoragePath();
     const char *priv = SDL_AndroidGetInternalStoragePath();
-    char *args[3];
+    char *args[3], base[1024];
     const ChihiroProfile *gp;
+    /* An app holding several of a disc's images (Silent Scope Complete: the
+     * menu and its three games, each its own library) says so: each image
+     * then keeps its settings, saves and pipeline cache in a folder named
+     * after it, as when each was its own app. */
+    const int bundled = argc > 1 && !strcmp(argv[argc - 1], "--bundled");
 
-    (void)argc;
-    (void)argv;
     chihiro_profile_apply(chihiro_game());
     gp = chihiro_profile();
     log_to_logcat();
@@ -121,9 +124,13 @@ int SDL_main(int argc, char **argv)
          * working app's shared env.txt and saved settings. */
         snprintf(path, sizeof path, "%s/env.txt", priv);
         load_env(path);
-        snprintf(path, sizeof path, "%s/save", priv);
+        if (bundled)
+            snprintf(base, sizeof base, "%s/%s", priv, gp->id);
+        else
+            snprintf(base, sizeof base, "%s", priv);
+        snprintf(path, sizeof path, "%s/save", base);
         ch_setenv("SAVE_DIR", path, 0);
-        ch_setenv("CONFIG_DIR", priv, 0);
+        ch_setenv("CONFIG_DIR", base, 0);
     }
     /* The app plays its sound (main.c mutes unless VC3_SOUND=1). */
     ch_setenv("SOUND", "1", 0);

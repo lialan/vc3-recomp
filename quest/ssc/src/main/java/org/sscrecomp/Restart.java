@@ -1,9 +1,10 @@
 // Starts the game again after it has closed -- a relaunch of the game
 // (XLaunchNewImage) ends its process, and an app cannot exec itself --
 // or, with a package, that app: another image of the disc (the launcher,
-// another game) is another app, the sibling package named after it. This runs in a process of its
-// own (":restart", see the manifest), waits for the game's to end, starts it
-// and closes, without showing anything.
+// another game) is another app, the sibling package named after it -- or,
+// with an image, this app running that game (one built into it). This runs in
+// a process of its own (":restart", see the manifest), waits for the game's to
+// end, starts it and closes, without showing anything.
 package org.sscrecomp;
 
 import android.app.Activity;
@@ -16,6 +17,7 @@ import java.io.File;
 public class Restart extends Activity {
     static final String PID = "pid";
     static final String PACKAGE = "package";
+    static final String IMAGE = "image";     /* a game built into this app; none: the menu */
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -28,8 +30,11 @@ public class Restart extends Activity {
         Intent game = pkg != null ? getPackageManager().getLaunchIntentForPackage(pkg) : null;
         if (pkg != null && game == null)
             Toast.makeText(this, pkg + " is not installed", Toast.LENGTH_LONG).show();
-        if (game == null)
+        if (game == null) {
             game = new Intent(this, SilentScopeCompleteVR.class);
+            String image = getIntent().getStringExtra(IMAGE);
+            if (image != null) game.putExtra(IMAGE, image);
+        }
         game.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
         startActivity(game);
         finish();

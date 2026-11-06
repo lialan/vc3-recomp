@@ -7,7 +7,9 @@
 #   APK_OUT=path quest/build.sh     the APK under another name
 #
 # The game's names come from games/<id>/game.conf, its app module is
-# quest/<id>. The APK holds no game files: copy the game's XBE and media/ to
+# quest/<id>. A game.conf BUNDLE (ids) builds those games too and packs each
+# as lib<id>.so beside this one's libmain.so: one app for a disc's images
+# (Silent Scope Complete). The APK holds no game files: copy the game's XBE and media/ to
 # the headset (quest/install.sh). Needs the lifted game in games/<id>/generated
 # (scripts/lift.sh <id>), the Android SDK with NDK 27, a JDK 17+, and SDL2 and
 # the OpenXR loader for arm64 Android in $DEPS (default ../deps beside the
@@ -118,8 +120,15 @@ cmake --build "$B" -j"$(getconf _NPROCESSORS_ONLN)" ${TARGET:+--target "$TARGET"
 
 M=$Q/$GAME
 LIBS=$M/src/main/libs/arm64-v8a
+rm -rf "$LIBS"
 mkdir -p "$LIBS"
 "$STRIP" --strip-unneeded -o "$LIBS/libmain.so" "$B/libmain.so"
+# BUNDLE: the disc's other images in this app, each its own library (the
+# activity loads lib<id>.so in place of libmain.so), built as its own game.
+for b in ${BUNDLE:-}; do
+    "$Q/build.sh" "$b" --native
+    "$STRIP" --strip-unneeded -o "$LIBS/lib$b.so" "$ROOT/build-quest-$b/libmain.so"
+done
 cp "$DEPS/sdl2-android/lib/libSDL2.so" "$DEPS/oxr/jni/arm64-v8a/libopenxr_loader.so" "$LIBS/"
 rm -rf "$M/src/main/java/org/libsdl"
 cp -R "$SDL_SRC/android-project/app/src/main/java/org/libsdl" "$M/src/main/java/org/"
