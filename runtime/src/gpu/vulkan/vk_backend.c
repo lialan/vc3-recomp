@@ -836,12 +836,35 @@ static void draw_batch(const Nv2aSurface *s,const Nv2aBatch *b,const ChVkFixedGe
         ch_vk_nv2a_draw_resolved_read(f->target,s,b,decode_cpu_texture,
         active->textures?resolve_sample:NULL,active,f->rgba,f->bytes);
     if(active->profile.enabled) t[4]=now_us();
+    /* A draw neither path can make (FEATURE_NOT_PRESENT) is left out, not
+     * fatal: Silent Scope 2's stage-end effect (a full-screen copy, a
+     * vertex program the raw path declined and the CPU path made no
+     * vertices of) stopped the game on a black headset. Described in full
+     * the first few times, counted after. */
+    static unsigned rejected;
+    if(result==VK_ERROR_FEATURE_NOT_PRESENT && rejected++>=8) {
+        if(rejected%300==0) fprintf(stderr,"[Vulkan] %u draws left out (not supported)\n",rejected);
+        return;
+    }
     if(result!=VK_SUCCESS) {
         fprintf(stderr,"[Vulkan] rejected draw surface=%08X size=%ux%u vertices=%u ext=%d rc=%d stages=%08X\n",
             s->color_va,s->width,s->height,b->count,b->ext!=NULL,b->rc!=NULL,b->rc?b->rc->stage_program:0);
         const Nv2aRenderState *state=b->state;
         if(b->raw) fprintf(stderr,"[Vulkan] rejected raw kind=%u prim=%u indices=%u range=%u..%u ff=%d\n",
             b->raw->kind,b->raw->prim,b->raw->index_count,b->raw->min_index,b->raw->max_index,b->raw->ff!=NULL);
+        if(b->raw) {   /* why the raw path declined it (vk_fixed.c) */
+            const Nv2aRawGeometry *g=b->raw;
+            fprintf(stderr,"[Vulkan] rejected raw program=%u+%u check_out=%d constants=%d ends at",
+                g->program_start,g->program_len,g->check_out!=NULL,g->constants!=NULL);
+            for(unsigned i=0;g->program && i<g->program_len && g->program_start+i<136;i++)
+                if(g->program[g->program_start+i][3]&1) fprintf(stderr," %u",i);
+            fputc('\n',stderr);
+            for(unsigned a=0;a<16;a++) {
+                const Nv2aAttrib *v=&g->attr[a];
+                if(v->data || v->size) fprintf(stderr,"[Vulkan] rejected attr %u type %u size %u stride %u bytes %u %s\n",
+                    a,v->type,v->size,v->stride,v->bytes,v->data?"array":"constant");
+            }
+        }
         fprintf(stderr,"[Vulkan] rejected state raw=%d alpha=%u/%04X blend=%u/%04X/%04X/%04X cull=%u/%04X/%04X depth=%u/%u/%04X stencil=%u/%04X/%04X/%04X/%04X\n",
             b->raw!=NULL,state->alpha_test_enable,state->alpha_func,state->blend_enable,state->blend_src,state->blend_dst,state->blend_eq,
             state->cull_enable,state->cull_face,state->front_face,state->depth_test_enable,state->depth_write,state->depth_func,
@@ -852,6 +875,7 @@ static void draw_batch(const Nv2aSurface *s,const Nv2aBatch *b,const ChVkFixedGe
                 i,texture->offset,texture->width,texture->height,texture->color,texture->levels,texture->filter,
                 texture->addr_u,texture->addr_v,texture->cube);
         }
+        if(result==VK_ERROR_FEATURE_NOT_PRESENT) {fprintf(stderr,"[Vulkan] draw left out (not supported)\n");return;}
     }
     unsigned writes=ch_vk_attachment_write_mask(b->state);
     active->unchanged_color_draws+=color_write && !(writes&1);
