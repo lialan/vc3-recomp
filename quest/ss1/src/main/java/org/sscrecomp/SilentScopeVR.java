@@ -80,6 +80,22 @@ public class SilentScopeVR extends SDLActivity {
         android.os.Process.killProcess(android.os.Process.myPid());
     }
 
+    /* Called from the game (main.c's chihiro_launch_image, through
+     * quest_host.c): another image of the disc (XLaunchNewImage) is the
+     * sibling app named after it -- org.sscrecomp.ss2 for "ss2" -- which
+     * Restart starts once this process is gone. */
+    public void launchSibling(String image) {
+        String own = getPackageName();
+        String pkg = own.substring(0, own.lastIndexOf('.') + 1) + image;
+        Log.i(TAG, "launching " + pkg);
+        Intent next = new Intent(this, Restart.class);
+        next.putExtra(Restart.PID, android.os.Process.myPid());
+        next.putExtra(Restart.PACKAGE, pkg);
+        next.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        startActivity(next);
+        android.os.Process.killProcess(android.os.Process.myPid());
+    }
+
     private void askForFileAccess() {
         try {
             startActivity(new Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,

@@ -43,6 +43,16 @@ static const ChihiroProfile k_ssc = {
         .kickoff = sub_00094E40,
         .no_multisample = 1,            /* 640x480, not its 1280x480 quincunx buffer */
     },
+    /* On the headset: the games' app folder and controls -- the gun hand's
+     * thumbstick is the d-pad (the menu's cursor), A / B are A / B, a stick
+     * click Start (quest_host.c rifle_frame; no rifle hooks: nothing to
+     * aim). Its screens are 2D, shown on the flat screen. */
+    .vr = {
+        .app_name = "Silent Scope Complete VR",
+        .panel_title = "Silent Scope Complete - settings",
+        .sdcard_dir = "/sdcard/SilentScope",    /* the three games' folder */
+        .weapon = CH_VR_RIFLE,
+    },
 };
 
 const ChihiroProfile *chihiro_game(void)

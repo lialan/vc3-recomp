@@ -3628,6 +3628,35 @@ void vc3_quest_restart(void)
     _exit(0);                           /* as at close: no handlers under the game */
 }
 
+/* main.c's chihiro_launch_image on the headset: another image of the disc is
+ * another app, the sibling package named after it (org.sscrecomp.ss2 for
+ * "ss2"), which the activity's launchSibling starts once this process has
+ * ended (its Restart helper). Returns when there is no activity to ask --
+ * the title then exits, as before. */
+void chihiro_quest_launch(const char *image)
+{
+#if defined(__ANDROID__)
+    JNIEnv *env = (JNIEnv *)SDL_AndroidGetJNIEnv();
+    jobject activity = (jobject)SDL_AndroidGetActivity();
+    if (env && activity) {
+        jclass cls = (*env)->GetObjectClass(env, activity);
+        jmethodID m = (*env)->GetMethodID(env, cls, "launchSibling", "(Ljava/lang/String;)V");
+        if (m) {
+            jstring s = (*env)->NewStringUTF(env, image);
+            (*env)->CallVoidMethod(env, activity, m, s);
+        } else {
+            (*env)->ExceptionClear(env);
+            fprintf(stderr, "[launch] this app cannot start %s (no launchSibling)\n", image);
+            return;
+        }
+    }
+    fflush(stderr);
+    _exit(0);
+#else
+    (void)image;
+#endif
+}
+
 int vc3_quest_run(int (*guest_main)(void))
 {
     pthread_attr_t attr;

@@ -127,6 +127,12 @@ int SDL_main(int argc, char **argv)
     }
     /* The app plays its sound (main.c mutes unless VC3_SOUND=1). */
     ch_setenv("SOUND", "1", 0);
+    /* Started by another image's XLaunchNewImage (main.c's
+     * chihiro_launch_image left its launch data page here and asked for this
+     * app): the toolkit loads it at boot and removes it. */
+    snprintf(path, sizeof path, "%s/launch.bin", game);
+    if (access(path, R_OK) == 0)
+        setenv("RECOMP_LAUNCH_PAGE", path, 1);
     chdir(game);
     fprintf(stderr, "[android] game %s, saves %s\n", game, ch_env("SAVE_DIR"));
 

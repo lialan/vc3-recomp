@@ -298,8 +298,30 @@ static void chihiro_launch_image(const char *path, const uint8_t *page)
     if (!n || !strcmp(name, "default"))
         snprintf(name, sizeof(name), "%s", gp->disc_launcher);
 #if defined(__ANDROID__)
-    (void)exe; (void)bin; (void)page_path; (void)page;
-    fprintf(stderr, "[launch] %s (%s): not on Android, exiting\n", name, path);
+    /* Each image is its own app on the headset: the page goes into the game
+     * folder (the working directory; android_main.c hands it to the next
+     * app at its boot) and the sibling app named after the image starts
+     * once this process has ended (quest_host.c). */
+    (void)exe; (void)bin;
+    {
+        extern void chihiro_quest_launch(const char *image);
+        snprintf(page_path, sizeof(page_path), "launch.bin");
+        remove(page_path);
+        if (page) {
+            FILE *f = fopen(page_path, "wb");
+            if (!f || fwrite(page, 1, 0x1000, f) != 0x1000) {
+                if (f)
+                    fclose(f);
+                remove(page_path);
+                fprintf(stderr, "[launch] %s: could not write %s, exiting\n", path, page_path);
+                return;
+            }
+            fclose(f);
+        }
+        fprintf(stderr, "[launch] %s -> the %s app\n", path[0] ? path : "(dashboard)", name);
+        chihiro_quest_launch(name);
+        remove(page_path);          /* no app to hand it to */
+    }
 #else
     {
         uint32_t size = sizeof(exe);
