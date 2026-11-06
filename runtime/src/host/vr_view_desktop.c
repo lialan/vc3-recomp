@@ -7,6 +7,11 @@
  * of view (default 100 degrees), swaying up to sway degrees either way over
  * time (0: still); the window's side-by-side stereo then shows
  * what each eye of a headset would get. Unset: immersive is off.
+ *
+ * The game's scale is the headset's (quest_host.c imm_units): the profile's
+ * game units per metre, or <prefix>_IMM_UNITS. One unit a metre put Silent
+ * Scope's eyes 12.5 times too far apart (its 0.08 units a metre): indoors
+ * the left eye stood beyond the corridor's wall, in the next room.
  */
 #if !defined(__ANDROID__)
 
@@ -19,6 +24,18 @@
 #include "vr_math.h"
 #include "vr_view.h"
 #include "chihiro/ch_env.h"
+#include "chihiro/chihiro_profile.h"
+
+static float units(void)
+{
+    static float u = -1;
+    if (u < 0) {
+        const char *e = ch_env("IMM_UNITS");
+        float d = chihiro_profile()->gpu.units_per_m;
+        u = e && atof(e) > 0 ? (float)atof(e) : d > 0.0f ? d : 1.0f;
+    }
+    return u;
+}
 
 int vc3_vr_view_latch(Vc3VrView *v)
 {
@@ -66,7 +83,7 @@ int vc3_vr_view_latch(Vc3VrView *v)
         v->fov[i][1] = t;
         v->fov[i][2] = t;
         v->fov[i][3] = -t;
-        vr_eye_matrix(v->pose_q[i], v->pose_p[i], v->tan_fov[i], 1.0f, 0.05f, 2000.0f, v->vp[i]);
+        vr_eye_matrix(v->pose_q[i], v->pose_p[i], v->tan_fov[i], units(), 0.05f, 2000.0f, v->vp[i]);
     }
     {   /* VC3_IMMERSIVE_TEST_SCALE=n: the immersive detail the headset would
          * ask; VC3_IMMERSIVE_TEST_SIZE=WxH: native, each eye that size */
