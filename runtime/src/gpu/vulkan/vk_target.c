@@ -2142,10 +2142,12 @@ static VkResult create_pipeline(ChVkTarget *t,const PipelineKey *key) {
         int foveated=target_foveated(t->device,t->width);
         if(foveated) for(int lv=0;lv<4;lv++) TRY(rate_image_create(t,lv));
         TRY(target_pass(t->device,t->depth_format,t->input_pass,t->width,0,&t->pass));
-        /* the clears VC3 opens batches with; not depth and stencil alone
-         * (6): on Turnip's direct rendering that pass cost ~4% in mission 2 */
-        static const int variants[]={1,7};
-        for(int i=0;i<2;i++) TRY(target_pass(t->device,t->depth_format,t->input_pass,t->width,variants[i],&t->pass_clear[variants[i]]));
+        /* the clears VC3 opens batches with, and HOTD3's color and depth
+         * (3: its eyes loaded both from memory every frame, ~0.5 ms of the
+         * Quest's GPU); not depth and stencil alone (6): on Turnip's direct
+         * rendering that pass cost ~4% in mission 2 */
+        static const int variants[]={1,3,7};
+        for(int i=0;i<3;i++) TRY(target_pass(t->device,t->depth_format,t->input_pass,t->width,variants[i],&t->pass_clear[variants[i]]));
         VkImageViewCreateInfo view={.sType=VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
             .image=t->image,.viewType=VK_IMAGE_VIEW_TYPE_2D,.format=VK_FORMAT_R8G8B8A8_UNORM,
             .subresourceRange={VK_IMAGE_ASPECT_COLOR_BIT,0,1,0,1}};
@@ -2879,6 +2881,18 @@ VkResult ch_vk_target_clear_aspects_read(ChVkTarget *t, uint32_t flags,
         clear[1].depthStencil=(VkClearDepthStencilValue){
             t->quantized_depth==5 && (flags&2)?ch_vk_depth_unpack(ch_vk_depth_pack_attachment(depth)):depth,stencil};
         TRY(begin_batch_clear(t,flags,clear));
+        t->pending++;t->pending_clears++;t->resource_stats.batch_clears++;
+        return VK_SUCCESS;
+    }
+    /* A clear before anything is drawn in a batch whose pass has not begun
+     * (its opening clear deferred) joins that clear: HOTD3 clears color and
+     * depth, then stencil -- all three at the pass's start, nothing loaded. */
+    if(pass_clear && t->pending && t->pass_deferred && t->pass_clear[(t->deferred_aspects|flags)&7]) {
+        if(flags&1) memcpy(t->deferred_clear[0].color.float32,rgba,4*sizeof(float));
+        if(flags&2) t->deferred_clear[1].depthStencil.depth=
+            t->quantized_depth==5?ch_vk_depth_unpack(ch_vk_depth_pack_attachment(depth)):depth;
+        if(flags&4) t->deferred_clear[1].depthStencil.stencil=stencil;
+        t->deferred_aspects|=flags;
         t->pending++;t->pending_clears++;t->resource_stats.batch_clears++;
         return VK_SUCCESS;
     }
