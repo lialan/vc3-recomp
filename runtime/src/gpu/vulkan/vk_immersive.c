@@ -24,8 +24,9 @@ struct ImmSurface {
     /* Effect-only surfaces (never shown, no 3D: E.S.'s feedback buffer) get
      * eyes at half the size each way -- their full-screen passes were ~0.6 ms
      * each at native size; a blurred trail does not need native detail.
-     * div: the eyes' current divisor; last_3d/last_shown/last_drawn: frames. */
-    uint32_t div;uint64_t last_3d,last_shown,last_drawn;size_t pixels_bytes;
+     * div: the eyes' current divisor; last_3d/last_shown/last_drawn: frames;
+     * had_3d: ever a scene -- never an effect buffer, its eyes stay full. */
+    uint32_t div,had_3d;uint64_t last_3d,last_shown,last_drawn;size_t pixels_bytes;
     uint32_t world,drawn,flat,hud,full;    /* this frame: 3D batches; any eye work; 2D flat/HUD/full-screen */
     uint32_t composite;    /* this frame: flat draws sampling eyes (the scene drawn elsewhere, composited in) */
     uint64_t onto_shown;   /* the newest frame it was composited full-screen onto a shown surface (+1; 0: never) */
@@ -952,11 +953,15 @@ VkResult ch_vk_immersive_flip(ChVkImmersive *m,uint32_t presented,const Vc3VrVie
      * the renderer never a frame ahead. */
     for(unsigned i=0;i<m->count;i++) {
         struct ImmSurface *f=&m->surfaces[i];
-        if(f->world>=IMM_SCENE_BATCHES) f->last_3d=m->frames;
+        if(f->world>=IMM_SCENE_BATCHES) {f->last_3d=m->frames;f->had_3d=1;}
         if(f->va==presented || shown(m,f->va)) f->last_shown=m->frames;
         if(!f->eyes) continue;
-        /* Resize: effect-only for ~2 s -> half size; a scene or shown -> full. */
-        uint32_t want=m->half_effects && m->frames-f->last_3d>120 && m->frames-f->last_shown>120?m->effect_div:1;
+        /* Resize: effect-only for ~2 s -> half size; a scene or shown -> full.
+         * A surface that has drawn a scene is never an effect buffer: HOTD3's
+         * scene surface, 2D through a cutscene, went to half size and back,
+         * and the eyes' pipelines (built for their size) were rebuilt in
+         * play each way (headset frames 22-43 a second). */
+        uint32_t want=m->half_effects && !f->had_3d && m->frames-f->last_3d>120 && m->frames-f->last_shown>120?m->effect_div:1;
         if(want!=f->div) {
             VkResult r=ch_vk_target_finish(f->eyes);if(r!=VK_SUCCESS) return r;
             if(m->config.textures) ch_vk_texture_cache_forget_source(m->config.textures,f->eyes);

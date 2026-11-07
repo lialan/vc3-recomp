@@ -22,6 +22,7 @@
 #include "color_spv.h"
 #include "fixed_layout_assert.h"
 #include "vk_combiner_program.h"
+#include "../nv2a_stage_fetch.h"
 #include "combiner_program_assert.h"
 typedef struct {
     VkPipelineColorBlendAttachmentState blend;
@@ -32,8 +33,12 @@ typedef struct {
     ChVkCombinerProgram program;
     uint32_t sample_static,sample_types;
     uint32_t vertex_count,vertex_program[136][4],vertex_fetch_specialized,vertex_formats[16];
-    /* IDs match fixed.vert; numeric matrices/materials remain dynamic. */
-    uint32_t fixed_fetch[25];
+    /* IDs match fixed.vert; numeric matrices/materials remain dynamic.
+     * 25: the lights' kinds, 2 bits each (lighting on; else 0); 26: the
+     * attributes whose offset and stride are whole words (bit a); 27: the
+     * texture coordinate sets the fragment shader reads (bits 0-3), bit 4
+     * when known (a specialized combiner), else 0: all. */
+    uint32_t fixed_fetch[28];
 } PipelineKey;
 _Static_assert(offsetof(PipelineKey,vertex_program)==offsetof(PipelineKey,vertex_count)+4,"vertex specialization layout");
 _Static_assert(offsetof(PipelineKey,sample_static)==offsetof(PipelineKey,program)+sizeof(ChVkCombinerProgram),"fragment fetch specialization layout");
@@ -2020,9 +2025,9 @@ static VkResult pipeline_build(VkDevice device,VkPipelineCache cache,VkRenderPas
     }
     VkSpecializationInfo vp_specialization={563,vp_entries,sizeof vp_data,vp_data};
     if(key->vertex_count) stages[0].pSpecializationInfo=&vp_specialization;
-    VkSpecializationMapEntry fixed_entries[25];
-    for(unsigned i=0;i<25;i++) fixed_entries[i]=(VkSpecializationMapEntry){i,i*4,4};
-    VkSpecializationInfo fixed_specialization={25,fixed_entries,sizeof key->fixed_fetch,key->fixed_fetch};
+    VkSpecializationMapEntry fixed_entries[28];
+    for(unsigned i=0;i<28;i++) fixed_entries[i]=(VkSpecializationMapEntry){i,i*4,4};
+    VkSpecializationInfo fixed_specialization={28,fixed_entries,sizeof key->fixed_fetch,key->fixed_fetch};
     if(key->fixed && !key->vertex_count) stages[0].pSpecializationInfo=&fixed_specialization;
 #ifdef CH_VK_SPIRV_OPT
     for(unsigned s=0;s<2;s++) {
@@ -2591,6 +2596,13 @@ static VkResult draw_full(ChVkTarget *t, const float rgba[4],
         key.fixed_fetch[15]=ff->colmat_amb;key.fixed_fetch[16]=ff->colmat_dif;
         memcpy(key.fixed_fetch+17,ff->texgen_on,4*sizeof(uint32_t));
         memcpy(key.fixed_fetch+21,ff->texmat_on,4*sizeof(uint32_t));
+        /* The lights in use (unlit draws: none), and the whole-word
+         * attributes: the light loop and the byte stitching of each
+         * attribute were most of the vertex shader -- ~1600 instructions
+         * a vertex, re-run in every tile a triangle touches (Quest). */
+        if(ff->lighting) for(unsigned i=0;i<8;i++) key.fixed_fetch[25]|=(ff->light_kind[i]&3u)<<(2*i);
+        if(fixed->stream_bytes) for(unsigned a=0;a<8;a++)
+            if(!(fixed->attribute_offset[a]&3u) && !(fixed->attribute_stride[a]&3u)) key.fixed_fetch[26]|=1u<<a;
     }
     key.fragment_depth=t->quantized_depth==5 && depth_state.depthTestEnable;
     key.alpha_shader=!!state->alpha_test_enable || !t->split_alpha;
@@ -2602,6 +2614,17 @@ static VkResult draw_full(ChVkTarget *t, const float rgba[4],
             for(unsigned i=0;i<4;i++) if(stage_images && stage_images[i])
                 key.sample_types|=(ch_vk_texture_is_cube(stage_images[i])?3u:1u)<<(i*2);
         }
+    }
+    /* The coordinate sets the specialized combiner reads (its stage modes and
+     * textures, as the fragment shader samples them): the vertex shader
+     * writes the others as 0 and skips their attributes. */
+    if(key.fixed_fetch[0] && key.specialized && key.sample_static) {
+        uint32_t used=16u;
+        for(unsigned i=0;i<4;i++) {
+            uint32_t types=(key.sample_types>>(i*2))&3u;
+            if(ch_nv_stage_coordinate_mask((key.program.stage_program>>(i*5))&31u,types!=0,types==3)) used|=1u<<i;
+        }
+        key.fixed_fetch[27]=used;
     }
     PipelineResources *entry=NULL,*oldest=NULL;
     unsigned capacity=t->reuse_resources?(t->specialize_rc?PIPELINE_SLOTS:BASE_PIPELINE_SLOTS):1;

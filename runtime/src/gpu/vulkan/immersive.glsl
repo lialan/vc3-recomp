@@ -1,4 +1,10 @@
 // Immersive VR (modes 1, 2) and flat 16:9 (mode 3, below).
+// Loops with a fixed count, unrolled when the shader is specialized
+// (fixed.vert defines CH_UNROLL as [[unroll]]): SPIR-V Tools unrolls only
+// loops marked so, and the constants it folds are in them.
+#ifndef CH_UNROLL
+#define CH_UNROLL
+#endif
 // Immersive VR: one draw, two instances, the eyes side by side in one target
 // (instance = eye). Mode 1, 3D: the game-camera position back from the
 // vertex's screen position s (surface pixels) and w through the game's own
@@ -17,7 +23,7 @@ void ch_imm_texcoords(inout vec2 uv,inout vec4 t[4]) {
     // mode 0 (a guest draw sampling eyes, e.g. an effect map): the left eye
     float e=params.p.imm_mode==0u?0.:float(gl_InstanceIndex&1);
     float off=e*(1.-.5*k);
-    for(int i=0;i<4;i++) if((m&(1u<<uint(i)))!=0u) {
+    CH_UNROLL for(int i=0;i<4;i++) if((m&(1u<<uint(i)))!=0u) {
         float q=t[i].w==0?1:t[i].w;
         t[i].x=t[i].x*.5*k+off*q;t[i].y*=k;
     }
@@ -39,7 +45,7 @@ void ch_imm_screen_texcoords(vec3 s,vec4 c,inout vec2 uv,inout vec4 t[4]) {
     vec2 gp=s.xy/vec2(params.p.surface[0],params.p.surface[1]);
     vec2 p=vec2(c.x,c.y)*.5+.5*c.w;      // target-normalized position, times w
     float e=float(gl_InstanceIndex&1),off=e*(1.-.5*k);
-    for(int i=0;i<4;i++) if((m&(1u<<uint(i)))!=0u) {
+    CH_UNROLL for(int i=0;i<4;i++) if((m&(1u<<uint(i)))!=0u) {
         float q=t[i].w==0?1:t[i].w;
         vec2 d=t[i].xy/q-gp;
         if(all(lessThan(abs(d),vec2(.25)))) {
@@ -77,7 +83,7 @@ vec4 ch_imm_position(vec3 s,float w,vec4 guest_clip,out float side,out float low
         // both eyes' matrices at fixed places, then the instance's: a
         // matrix indexed by the instance was read from memory per vertex
         mat4 m;
-        for(int k=0;k<4;k++) {
+        CH_UNROLL for(int k=0;k<4;k++) {
             vec4 l=vec4(params.p.imm_vp[0][k*4],params.p.imm_vp[0][k*4+1],params.p.imm_vp[0][k*4+2],params.p.imm_vp[0][k*4+3]);
             vec4 r=vec4(params.p.imm_vp[1][k*4],params.p.imm_vp[1][k*4+1],params.p.imm_vp[1][k*4+2],params.p.imm_vp[1][k*4+3]);
             m[k]=eye==0?l:r;

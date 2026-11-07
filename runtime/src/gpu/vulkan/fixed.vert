@@ -1,7 +1,16 @@
 #version 450
 #extension GL_GOOGLE_include_directive : require
 #extension GL_EXT_scalar_block_layout : require
+#extension GL_EXT_control_flow_attributes : require
 #define CH_NV_SHADER_GLSL 1
+// Fixed-count loops unrolled once specialized (CH_UNROLL, attribute_stream.glsl)
+#define CH_UNROLL [[unroll]]
+#define CH_NV_UNROLL [[unroll]]
+// The lights straight from the uniform block (params, below), not copied
+// into private arrays for each vertex: those went to scratch memory (672
+// bytes and dozens of waits a vertex on the Quest).
+#define CH_NV_LIGHT(i,r) vec4(params.p.state.light[i][(r)*4],params.p.state.light[i][(r)*4+1],params.p.state.light[i][(r)*4+2],params.p.state.light[i][(r)*4+3])
+#define CH_NV_LKIND(i) int(ff_specialized!=0u?((ff_light_kinds>>(2u*uint(i)))&3u):params.p.state.light_kind[i])
 #include "../nv2a_fixed_shader.h"
 #include "fixed_layout.glsl"
 #include "attribute_decode.glsl"
@@ -41,6 +50,15 @@ layout(constant_id=21) const uint ff_texmat_on_0=0u;
 layout(constant_id=22) const uint ff_texmat_on_1=0u;
 layout(constant_id=23) const uint ff_texmat_on_2=0u;
 layout(constant_id=24) const uint ff_texmat_on_3=0u;
+// The lights in use, 2 bits each (CH_NV_LKIND): an unused light's code goes.
+layout(constant_id=25) const uint ff_light_kinds=0u;
+// Attributes at whole-word offsets and strides (bit a): read word by word
+// (attribute_stream.glsl), without the byte stitching.
+layout(constant_id=26) const uint ff_aligned=0u;
+// The coordinate sets the fragment shader reads (bits 0-3), bit 4 when known:
+// the others are written as 0, their attributes and texgen dropped.
+layout(constant_id=27) const uint ff_tc_used=0u;
+bool ch_tc_on(uint i) {return ff_specialized==0u || (ff_tc_used&16u)==0u || (ff_tc_used&(1u<<i))!=0u;}
 uint ff_texmat_on(int slot) {
     switch(slot) {
     case 0:return ff_texmat_on_0;
@@ -62,6 +80,7 @@ uint ff_format(uint slot) {
     } return 0u;
 }
 #define CH_ATTRIBUTE_FORMAT(slot) (ff_specialized!=0u?ff_format(slot):params.p.attribute_format[slot])
+#define CH_ATTRIBUTE_ALIGNED(slot) (ff_specialized!=0u?((ff_aligned>>(slot))&1u):0u)
 #include "attribute_stream.glsl"
 vec4 a_pos;
 vec4 a_wt;
@@ -82,9 +101,9 @@ layout(location=4) out vec4 tc[4];
 #define v_tc3 tc[3]
 vec4 o_screen;
 mat4 u_comp,u_mv[4],u_proj,u_tm[4];
-vec4 u_c59,u_samb,u_light[40],u_ascale[8];
+vec4 u_c59,u_samb,u_ascale[8];
 uvec4 u_texgen[4];
-int u_tgon[4],u_tmon[4],u_lkind[8],u_usecomp,u_lighting,u_flipn,u_hasnrm,u_hascol;
+int u_tgon[4],u_tmon[4],u_usecomp,u_lighting,u_flipn,u_hasnrm,u_hascol;
 ivec2 u_colmat;
 uint u_skin,u_fogmode;
 int u_packed,u_bgra,u_fogen;
@@ -93,7 +112,7 @@ vec2 u_aa,u_uvs0,u_texsize,u_fogp;
 mat4 matrix(float m[16]) { return transpose(mat4(m[0],m[1],m[2],m[3],m[4],m[5],m[6],m[7],m[8],m[9],m[10],m[11],m[12],m[13],m[14],m[15])); }
 void load_state() {
     u_comp=matrix(params.p.state.composite);u_proj=matrix(params.p.state.proj);
-    for(int k=0;k<4;k++) {
+    CH_UNROLL for(int k=0;k<4;k++) {
         u_mv[k]=matrix(params.p.state.mv[k]);u_tm[k]=matrix(params.p.state.texmat[k]);
         u_texgen[k]=uvec4(params.p.state.texgen[k][0],params.p.state.texgen[k][1],params.p.state.texgen[k][2],params.p.state.texgen[k][3]);
         u_tgon[k]=int(ff_specialized!=0u?ff_texgen_on(k):params.p.state.texgen_on[k]);
@@ -106,10 +125,7 @@ void load_state() {
     u_colmat=ivec2((ff_specialized!=0u?ff_colmat_amb:params.p.state.colmat_amb),(ff_specialized!=0u?ff_colmat_dif:params.p.state.colmat_dif));
     u_samb=vec4(params.p.state.scene_amb[0],params.p.state.scene_amb[1],params.p.state.scene_amb[2],params.p.state.scene_amb[3]);
     u_matalpha=params.p.state.mat_alpha;
-    for(int k=0;k<8;k++) {
-        u_lkind[k]=int(params.p.state.light_kind[k]);u_ascale[k]=vec4(1);
-        for(int j=0;j<5;j++) for(int c=0;c<4;c++) u_light[k*5+j][c]=params.p.state.light[k][j*4+c];
-    }
+    CH_UNROLL for(int k=0;k<8;k++) u_ascale[k]=vec4(1);
     u_packed=0;u_bgra=0; // Attributes have already been decoded, never transformed.
     u_aa=vec2(params.p.aa[0],params.p.aa[1]);
     u_uvs0=vec2(params.p.uv_scale0[0],params.p.uv_scale0[1]);u_texsize=vec2(params.p.texture[0],params.p.texture[1]);
@@ -122,10 +138,10 @@ void main() {
     a_wt=ch_attribute(ch_stream_attribute(1u,32u),CH_ATTRIBUTE_FORMAT(1u));
     a_nrm=ch_attribute(ch_stream_attribute(2u,32u),CH_ATTRIBUTE_FORMAT(2u));
     a_col=ch_attribute(ch_stream_attribute(3u,32u),CH_ATTRIBUTE_FORMAT(3u));
-    a_t0=ch_attribute(ch_stream_attribute(4u,32u),CH_ATTRIBUTE_FORMAT(4u));
-    a_t1=ch_attribute(ch_stream_attribute(5u,32u),CH_ATTRIBUTE_FORMAT(5u));
-    a_t2=ch_attribute(ch_stream_attribute(6u,32u),CH_ATTRIBUTE_FORMAT(6u));
-    a_t3=ch_attribute(ch_stream_attribute(7u,32u),CH_ATTRIBUTE_FORMAT(7u));
+    a_t0=ch_tc_on(0u)?ch_attribute(ch_stream_attribute(4u,32u),CH_ATTRIBUTE_FORMAT(4u)):vec4(0,0,0,1);
+    a_t1=ch_tc_on(1u)?ch_attribute(ch_stream_attribute(5u,32u),CH_ATTRIBUTE_FORMAT(5u)):vec4(0,0,0,1);
+    a_t2=ch_tc_on(2u)?ch_attribute(ch_stream_attribute(6u,32u),CH_ATTRIBUTE_FORMAT(6u)):vec4(0,0,0,1);
+    a_t3=ch_tc_on(3u)?ch_attribute(ch_stream_attribute(7u,32u),CH_ATTRIBUTE_FORMAT(7u)):vec4(0,0,0,1);
     load_state();ch_nv_fixed_vertex();
     vec3 s=o_screen.xyz;float w=o_screen.w;
     bool bad=abs(w)<=1e-6 || any(isnan(o_screen)) || any(isinf(o_screen));
@@ -145,4 +161,5 @@ void main() {
     v_tc3.xy*=vec2(params.p.stage_scale[3][0],params.p.stage_scale[3][1]);
     ch_imm_texcoords(v_uv,tc);
     if(!bad) ch_imm_screen_texcoords(s,guest_clip,v_uv,tc);
+    CH_UNROLL for(uint i=0u;i<4u;i++) if(!ch_tc_on(i)) tc[i]=vec4(0);
 }

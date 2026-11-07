@@ -3,6 +3,21 @@
 /* Fixed-function arithmetic shared by the reference GL and native Vulkan
  * vertex shaders. Callers supply attribute/uniform globals and the output
  * varyings; API-specific clipping/presentation remains in their epilogues. */
+/* Light i's row r (0: ambient, range in w; 1: diffuse; 2: direction; 3:
+ * position; 4: attenuation) and its kind: the GL renderer's uniform arrays by
+ * default. The Vulkan shader reads its uniform block instead (fixed.vert):
+ * copied into private arrays for every vertex, they were 672 bytes of scratch
+ * memory a vertex on the Quest. */
+/* [[unroll]] in the Vulkan shader (fixed.vert); nothing for GL. */
+#ifndef CH_NV_UNROLL
+#define CH_NV_UNROLL
+#endif
+#ifndef CH_NV_LIGHT
+#define CH_NV_LIGHT(i, r) u_light[(i) * 5 + (r)]
+#endif
+#ifndef CH_NV_LKIND
+#define CH_NV_LKIND(i) u_lkind[i]
+#endif
 #define CH_NV_FIXED_SHADER_FUNCTIONS \
 vec4 fetch(int r, vec4 a) { \
   if (((u_packed >> r) & 1) != 0) { \
@@ -32,26 +47,29 @@ vec4 lit_color(vec4 pos, vec4 nrm, vec4 vc) { \
   if (u_flipn != 0 && dot(n, e) > 0.0) n = -n; \
   bool hv = u_hascol != 0; \
   vec3 o = u_samb.rgb; \
-  for (int i = 0; i < 8; i++) { \
-    int kind = u_lkind[i]; \
-    if (kind == 0) continue; \
-    vec3 l; float att = 1.0; \
-    if (kind == 1) l = u_light[i * 5 + 2].xyz; \
-    else { \
-      l = u_light[i * 5 + 3].xyz - e; \
-      float d = length(l), range = u_light[i * 5].w; \
-      if (d > range && range > 0.0) continue; \
+  /* no continue: a loop with one is not unrolled (SPIR-V Tools), and */ \
+  /* unrolled, the lights a specialized shader does not use go */ \
+  CH_NV_UNROLL for (int i = 0; i < 8; i++) { \
+    int kind = CH_NV_LKIND(i); \
+    vec3 l = CH_NV_LIGHT(i, 2).xyz; float att = 1.0; \
+    bool lit = kind != 0; \
+    if (lit && kind != 1) { \
+      l = CH_NV_LIGHT(i, 3).xyz - e; \
+      float d = length(l), range = CH_NV_LIGHT(i, 0).w; \
+      lit = !(d > range && range > 0.0); \
       if (d > 1e-8) l /= d; \
-      vec3 a = u_light[i * 5 + 4].xyz; \
+      vec3 a = CH_NV_LIGHT(i, 4).xyz; \
       att = a.x + a.y * d + a.z * d * d; \
       att = att > 1e-8 ? 1.0 / att : 1.0; \
     } \
-    float ndl = dot(n, l); \
-    if (ndl < 0.0) ndl = 0.0; \
-    vec3 amb = u_light[i * 5].rgb, dif = u_light[i * 5 + 1].rgb; \
-    if (hv && u_colmat.x != 0) amb *= vc.rgb; \
-    if (hv && u_colmat.y != 0) dif *= vc.rgb; \
-    o += att * (amb + dif * ndl); \
+    if (lit) { \
+      float ndl = dot(n, l); \
+      if (ndl < 0.0) ndl = 0.0; \
+      vec3 amb = CH_NV_LIGHT(i, 0).rgb, dif = CH_NV_LIGHT(i, 1).rgb; \
+      if (hv && u_colmat.x != 0) amb *= vc.rgb; \
+      if (hv && u_colmat.y != 0) dif *= vc.rgb; \
+      o += att * (amb + dif * ndl); \
+    } \
   } \
   return clamp(vec4(o, (hv && u_colmat.y != 0) ? vc.a : u_matalpha), 0.0, 1.0); \
 } \
@@ -61,7 +79,7 @@ vec4 texgen(uvec4 mode, vec3 e, vec3 n, vec4 tc) { \
   float d = dot(n, u); \
   vec3 r = u - 2.0 * d * n; \
   float m = 2.0 * sqrt(r.x * r.x + r.y * r.y + (r.z + 1.0) * (r.z + 1.0)); \
-  for (int c = 0; c < 3; c++) { \
+  CH_NV_UNROLL for (int c = 0; c < 3; c++) { \
     if (mode[c] == 0x8511u) tc[c] = n[c]; \
     else if (mode[c] == 0x8512u) tc[c] = r[c]; \
     else if (mode[c] == 0x2402u && c < 2 && m > 1e-8) tc[c] = r[c] / m + 0.5; \
@@ -78,16 +96,16 @@ void ch_nv_fixed_vertex() { \
   int nm = 1; \
   if (u_skin != 0u) { \
     nm = u_skin <= 2u ? 2 : u_skin <= 4u ? 3 : 4; \
-    for (int k = 0; k < 4; k++) ww[k] = k < nm ? wt[k] : 0.0; \
+    CH_NV_UNROLL for (int k = 0; k < 4; k++) ww[k] = k < nm ? wt[k] : 0.0; \
     if ((u_skin & 1u) != 0u) { \
       float last = 1.0; \
-      for (int k = 0; k < nm - 1; k++) last -= wt[k]; \
+      CH_NV_UNROLL for (int k = 0; k < nm - 1; k++) last -= wt[k]; \
       ww[nm - 1] = last; \
     } \
   } \
   vec4 eye = vec4(0.0); \
   vec3 en = vec3(0.0); \
-  for (int k = 0; k < nm; k++) { \
+  CH_NV_UNROLL for (int k = 0; k < nm; k++) { \
     eye += ww[k] * (u_mv[k] * pos); \
     en += ww[k] * (mat3(u_mv[k]) * nrm.xyz); \
   } \
@@ -99,7 +117,7 @@ void ch_nv_fixed_vertex() { \
   d0 = clamp(d0, 0.0, 1.0); \
   float elen = length(en); \
   if (elen > 1e-8) en /= elen; \
-  for (int st = 0; st < 4; st++) { \
+  CH_NV_UNROLL for (int st = 0; st < 4; st++) { \
     if (u_tgon[st] != 0) t[st] = texgen(u_texgen[st], eye.xyz, en, t[st]); \
     if (u_tmon[st] != 0) t[st] = u_tm[st] * t[st]; \
   } \
