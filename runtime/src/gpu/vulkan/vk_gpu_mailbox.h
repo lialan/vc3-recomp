@@ -57,7 +57,9 @@ void ch_vk_gpu_mailbox_set_images(ChVkGpuMailbox *,const VkImage images[CH_VK_GP
 /* How many finished frames may wait, taken oldest first (1, the default: only
  * the newest waits). 2 lets a frame that finishes a little late still be
  * shown, in order, instead of being replaced by the next one. A full queue
- * drops its oldest frame, which bounds the added latency. */
+ * drops its oldest frame once a newer one has finished, which bounds the
+ * added latency; until then a publish waits for the GPU (bridge mode), so a
+ * game ahead of the GPU never has every waiting frame replaced unfinished. */
 void ch_vk_gpu_mailbox_set_queue(ChVkGpuMailbox *,unsigned depth);
 /* Source must contain current pixels, including any guest CPU edits.
  * VK_NOT_READY means all slots are held: keep the previously displayed frame. */

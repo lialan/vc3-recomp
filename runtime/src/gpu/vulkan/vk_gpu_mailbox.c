@@ -1,4 +1,5 @@
 #include "vk_gpu_mailbox.h"
+#include "vk_mailbox_policy.h"
 #include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -122,6 +123,32 @@ VkResult ch_vk_gpu_mailbox_create(ChVkGpuMailbox **out) {
     if(pthread_mutex_init(&b->lock,NULL)) {free(b);return VK_ERROR_INITIALIZATION_FAILED;}
     b->depth=1;*out=b;return VK_SUCCESS;
 }
+/* Room for one more waiting frame (b->lock held; it may be dropped and
+ * taken again while waiting): a full queue waits while the GPU has not
+ * finished its next frame, then drops its oldest (vk_mailbox_policy.h). The
+ * wait also keeps the game from running more than the queue ahead of the
+ * GPU. A second's wait (a stuck GPU): the oldest goes, as before. */
+static void make_room(ChVkGpuMailbox *b) {
+    for(;;) {
+        int ready[2]={1,1};
+        for(unsigned k=0;k<b->waiting && k<2;k++)
+            ready[k]=!b->pending[k].ready || vkGetFenceStatus(b->pending[k].ready_device,b->pending[k].ready)==VK_SUCCESS;
+        int a=ch_vk_mailbox_full_action(b->waiting,b->depth,ready);
+        if(a==CH_VK_MAILBOX_ROOM) return;
+        if(a!=CH_VK_MAILBOX_DROP_OLDEST) {
+            VkDevice d=b->pending[a].ready_device;VkFence f=b->pending[a].ready;
+            pthread_mutex_unlock(&b->lock);
+            VkResult w=vkWaitForFences(d,1,&f,VK_TRUE,1000000000ULL);
+            pthread_mutex_lock(&b->lock);
+            if(w==VK_SUCCESS) continue;
+            if(b->waiting<b->depth) return;
+        }
+        b->slots[b->pending[0].slot].held=0;
+        for(unsigned k=1;k<b->waiting;k++) b->pending[k-1]=b->pending[k];
+        b->waiting--;
+        return;
+    }
+}
 VkResult ch_vk_gpu_mailbox_publish(void *context,const Nv2aSurface *surface,ChVkTarget *target) {
     ChVkGpuMailbox *b=context;
     if(!b || !surface || !target) return VK_ERROR_INITIALIZATION_FAILED;
@@ -144,11 +171,7 @@ VkResult ch_vk_gpu_mailbox_publish(void *context,const Nv2aSurface *surface,ChVk
     pthread_mutex_lock(&b->lock);
     if(r==VK_SUCCESS) {
         b->slots[i].w=w;b->slots[i].h=h;
-        if(b->waiting==b->depth) {   /* full: drop the oldest waiting frame */
-            b->slots[b->pending[0].slot].held=0;
-            for(unsigned k=1;k<b->waiting;k++) b->pending[k-1]=b->pending[k];
-            b->waiting--;
-        }
+        make_room(b);
         b->pending[b->waiting++]=(ChVkGpuFrame){.surface=*surface,.sequence=++b->sequence,
             .image=b->slots[i].image,.owner=b,.slot=i,
             .ready_device=b->buffers[i]?b->device:VK_NULL_HANDLE,.ready=b->buffers[i]?b->copy[i].fence:VK_NULL_HANDLE,
@@ -237,11 +260,7 @@ VkResult ch_vk_gpu_mailbox_publish_immersive(ChVkGpuMailbox *b,const Nv2aSurface
     VkResult r=async_copy(b,i,3,targets,(const VkDeviceSize[]){0,hud_offset,lens_offset},eyes_image);
     pthread_mutex_lock(&b->lock);
     if(r==VK_SUCCESS) {
-        if(b->waiting==b->depth) {
-            b->slots[b->pending[0].slot].held=0;
-            for(unsigned k=1;k<b->waiting;k++) b->pending[k-1]=b->pending[k];
-            b->waiting--;
-        }
+        make_room(b);
         ChVkGpuFrame frame={.surface=*surface,.sequence=++b->sequence,.owner=b,.slot=i,
             .immersive=1,.imm=*info,.hud_offset=hud_offset,.ready_device=b->device,.ready=b->copy[i].fence,
             .due_ns=b->due?b->due():0};
