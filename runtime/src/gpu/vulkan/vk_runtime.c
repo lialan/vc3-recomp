@@ -72,6 +72,58 @@ static void save_pipeline_cache(void)
             ch_vk_pipeline_cache_file_save(runtime.cache_device,runtime.pipeline_cache,runtime.cache_path)?"ok":"skipped");
 }
 
+/* The periodic save, off the render thread. Copying the cache out of the
+ * driver, checksumming it and writing it (78 MB for HOTD3's chapter 1) took
+ * 100-380 ms; on the render thread every save was a visible hitch, every
+ * ~10 s while the cache grew. The cache is internally synchronized (not
+ * created EXTERNALLY_SYNCHRONIZED), so reading it here while pipelines are
+ * created elsewhere is allowed, and the file is written to a temporary name
+ * and renamed, so a save at exit racing one here leaves a whole file. */
+#if !defined(_WIN32)
+#include <pthread.h>
+static struct {
+    pthread_mutex_t lock;pthread_cond_t wake;pthread_t thread;
+    int started,request,stop;
+    size_t saved;   /* the size last saved; the saver's own */
+} saver={PTHREAD_MUTEX_INITIALIZER,PTHREAD_COND_INITIALIZER};
+static void *saver_main(void *arg)
+{
+    (void)arg;
+    pthread_mutex_lock(&saver.lock);
+    for(;;) {
+        while(!saver.request && !saver.stop) pthread_cond_wait(&saver.wake,&saver.lock);
+        if(saver.stop) break;
+        saver.request=0;
+        pthread_mutex_unlock(&saver.lock);
+        size_t size=0;
+        if(vkGetPipelineCacheData(runtime.cache_device,runtime.pipeline_cache,&size,NULL)==VK_SUCCESS && size>saver.saved) {
+            save_pipeline_cache();saver.saved=size;
+        }
+        pthread_mutex_lock(&saver.lock);
+    }
+    pthread_mutex_unlock(&saver.lock);
+    return NULL;
+}
+static void saver_request(void)
+{
+    pthread_mutex_lock(&saver.lock);
+    if(!saver.started && !saver.stop) saver.started=pthread_create(&saver.thread,NULL,saver_main,NULL)==0;
+    saver.request=1;
+    pthread_cond_signal(&saver.wake);
+    pthread_mutex_unlock(&saver.lock);
+}
+/* Before the cache is saved a last time and destroyed. */
+static void saver_stop(void)
+{
+    pthread_mutex_lock(&saver.lock);
+    int started=saver.started;
+    saver.stop=1;
+    pthread_cond_signal(&saver.wake);
+    pthread_mutex_unlock(&saver.lock);
+    if(started) pthread_join(saver.thread,NULL);
+}
+#endif
+
 static void frame_completed(const Nv2aSurface *surface)
 {
     runtime.frames++;
@@ -91,12 +143,16 @@ static void frame_completed(const Nv2aSurface *surface)
     /* The cache was saved only on a clean exit, and a game closed from its
      * launcher (Steam) never has one: every session compiled every pipeline
      * again, mid-play. Every ~10 s, when the cache has grown, it is saved
-     * (on this thread, which serializes pipeline creation). */
+     * (by the saver thread above, not this one). */
     if(runtime.pipeline_cache && runtime.cache_path && runtime.frames%600==0) {
+#if !defined(_WIN32)
+        saver_request();
+#else
         static size_t saved;size_t size=0;
         if(vkGetPipelineCacheData(runtime.cache_device,runtime.pipeline_cache,&size,NULL)==VK_SUCCESS && size>saved) {
             save_pipeline_cache();saved=size;
         }
+#endif
     }
     if(runtime.frames==1 || runtime.frames%60==0)
         fprintf(stderr,"[Vulkan] completed frame %llu: %ux%u, guest=%08X\n",
@@ -681,6 +737,12 @@ static VkResult attach(ChVkBackendConfig config)
             if(cache_result!=VK_SUCCESS) return cache_result;
         }
         config.pipeline_cache=runtime.pipeline_cache;
+#if !defined(_WIN32)
+        /* What is on disk already counts as saved: a session that adds no
+         * pipeline writes nothing (it rewrote the whole 78 MB at its first
+         * check, and at each check after where the driver's size moved). */
+        if(loaded) {size_t size=0;if(vkGetPipelineCacheData(config.device,runtime.pipeline_cache,&size,NULL)==VK_SUCCESS) saver.saved=size;}
+#endif
         fprintf(stderr,"[Vulkan pipeline cache] packaged_bytes=%zu loaded_bytes=%zu path=%s\n",packaged,loaded,
             runtime.cache_path?runtime.cache_path:"(memory only)");
         /* Pipeline recipes beside the cache: what earlier runs built,
@@ -834,6 +896,9 @@ void ch_vk_runtime_stop(void)
     imm_test_stop();
     ch_vk_interp_destroy(interp.p);interp.p=NULL;
     free(interp.prev);free(interp.mid);
+#if !defined(_WIN32)
+    saver_stop();
+#endif
     save_pipeline_cache();
     if(runtime.pipeline_cache) vkDestroyPipelineCache(runtime.cache_device,runtime.pipeline_cache,NULL);
     free(runtime.cache_path);
