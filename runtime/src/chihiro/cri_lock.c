@@ -28,7 +28,11 @@
  *   - while the count is held, a thread at or below the spinner's priority
  *     waits to take it -- across the holder's waits, as the spinner made it;
  *   - a thread above the spinner's priority, or one already inside, takes it
- *     at once.
+ *     at once;
+ *   - a thread held back STARVE_MS goes in anyway (gate()).
+ * (The game's own unlock is a bare `dec; jnz`, so its count can go below 0;
+ * that arithmetic without the "already inside" pass was tried and starved
+ * the loader 132 times in 200 s of Mac play, against none with these rules.)
  * Priorities are the game's own, kept by the kernel bridge
  * (xbox_GuestThreadBasePriority; time-critical is 16 there, as in the kernel).
  *
@@ -50,6 +54,7 @@
 #include <pthread.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <time.h>
 
 #include "recomp_types.h"
 #include "chihiro/ch_env.h"
@@ -65,6 +70,16 @@ static int s_count;                       /* the game's count */
 static int32_t s_saved;                   /* the first holder's priority */
 static RECOMP_TLS int t_inside;           /* this thread's net share of it */
 static int s_trace;
+
+/* The calling thread's kernel id on Linux and Android (as [STACKS] and the
+ * system's tools name it), else a short form of its pthread. */
+#if defined(__linux__)
+#include <sys/syscall.h>
+#include <unistd.h>
+static unsigned long cri_tid(void) { return (unsigned long)syscall(SYS_gettid); }
+#else
+static unsigned long cri_tid(void) { return (unsigned long)(uintptr_t)pthread_self() & 0xFFFFFu; }
+#endif
 
 static void cri_trace(const char *what, int prio)
 {
@@ -83,7 +98,7 @@ static void cri_trace(const char *what, int prio)
     }
     chain[n] = 0;
     fprintf(stderr, "[CRI] %s tid %lx prio %d count %d inside %d from %08X:%s\n", what,
-            (unsigned long)(uintptr_t)pthread_self() & 0xFFFFFu, prio, s_count, t_inside,
+            cri_tid(), prio, s_count, t_inside,
             MEM32(g_esp), chain);
 }
 
@@ -104,23 +119,99 @@ static int32_t kprio(int prio)
     return prio == 15 ? 16 : prio == -15 ? -16 : prio;
 }
 
-/* Lock held. Wait as the console's spinner would make this thread wait. */
+/* Who took the count from 0 (thread, guest return address and the code
+ * addresses on its guest stack), for a wait that does not end; and each
+ * thread's share inside, with where it last took it. */
+static unsigned long s_holder;
+static uint32_t s_holder_chain[6];
+#define CRI_THREADS 32
+static struct { unsigned long tid; int inside, takes, gives; int32_t prio; uint32_t chain[4]; } s_who[CRI_THREADS];
+static int cri_slot(void)
+{
+    unsigned long me = cri_tid();
+    for (int i = 0; i < CRI_THREADS; i++)
+        if (s_who[i].tid == me) return i;
+    for (int i = 0; i < CRI_THREADS; i++)
+        if (!s_who[i].tid) { s_who[i].tid = me; return i; }
+    return -1;
+}
+
+static void guest_chain(uint32_t *out, int n)
+{
+    int k, shown = 0;
+    for (k = 0; k < 96 && shown < n; k++) {
+        uint32_t v = MEM32(g_esp + 4u * k);
+        if (v >= 0x10000u && v < 0x16D000u)
+            out[shown++] = v;
+    }
+    while (shown < n)
+        out[shown++] = 0;
+}
+
+/* Lock held. Wait as the console's spinner would make this thread wait --
+ * but not for ever. The count is held for milliseconds on the console; here
+ * it was seen held for 14 s and more on the Quest (the vblank server inside,
+ * other threads nesting on top, the count never back to 0) while a thread
+ * held back starved, and once every CRI thread then piled up behind it: the
+ * game froze. Lifted, the threads run at once, so the count's nesting can
+ * hold where the console's one CPU would have let the waiter in (and a
+ * thread releasing other threads' shares, as 0xCA370 does before a read,
+ * leaves them inside beside each other anyway). A thread held back STARVE_MS
+ * goes in, as a starved thread is let run there; logged at most once a
+ * second, with who is inside. Never reached in Mac boots or 200 s of Mac
+ * play; at 1 s, threads that need the lock many times a second still
+ * stalled the Quest for 10-40 s, so 100 ms. */
+#define STARVE_MS 100
 static void gate(int spin_prio)
 {
     int32_t prio = xbox_GuestThreadBasePriority();
     if (!t_inside && prio <= kprio(spin_prio) && s_count > 0) {
+        struct timespec start, until;
         cri_trace("wait", prio);
+        clock_gettime(CLOCK_REALTIME, &start);
+        until = start;
+        until.tv_nsec += STARVE_MS * 1000000L;
+        if (until.tv_nsec >= 1000000000L) { until.tv_sec++; until.tv_nsec -= 1000000000L; }
         while (s_count > 0)
-            pthread_cond_wait(&s_free, &s_mu);
+            if (pthread_cond_timedwait(&s_free, &s_mu, &until) != 0 && s_count > 0) {
+                static uint64_t logged_s;
+                if (until.tv_sec != (time_t)logged_s) { logged_s = (uint64_t)until.tv_sec;
+                    uint32_t me[6];
+                    guest_chain(me, 6);
+                    fprintf(stderr, "[CRI] starved %d ms, let in: count %d taken by tid %lx from %X %X %X %X %X %X;"
+                            " waiter tid %lx prio %d from %X %X %X %X %X %X\n", STARVE_MS, s_count, s_holder,
+                            s_holder_chain[0], s_holder_chain[1], s_holder_chain[2], s_holder_chain[3],
+                            s_holder_chain[4], s_holder_chain[5],
+                            cri_tid(), prio,
+                            me[0], me[1], me[2], me[3], me[4], me[5]);
+                    for (int i = 0; i < CRI_THREADS; i++)
+                        if (s_who[i].tid && (s_who[i].inside || s_who[i].takes != s_who[i].gives))
+                            fprintf(stderr, "[CRI]   tid %lx inside %d takes %d gives %d prio %d last take from %X %X %X %X\n",
+                                    s_who[i].tid, s_who[i].inside, s_who[i].takes, s_who[i].gives, s_who[i].prio,
+                                    s_who[i].chain[0], s_who[i].chain[1], s_who[i].chain[2], s_who[i].chain[3]);
+                }
+                break;
+            }
     }
 }
 
 /* Lock held: the game's lock body. */
 static void take(int hold_prio)
 {
-    if (s_count++ == 0)
+    if (s_count++ == 0) {
         s_saved = xbox_GuestThreadSetBasePriority(kprio(hold_prio));
+        s_holder = cri_tid();
+        guest_chain(s_holder_chain, 6);
+    }
     t_inside++;
+    {
+        int i = cri_slot();
+        if (i >= 0) {
+            s_who[i].inside = t_inside; s_who[i].takes++;
+            s_who[i].prio = xbox_GuestThreadBasePriority();
+            guest_chain(s_who[i].chain, 4);
+        }
+    }
     cri_trace("lock", xbox_GuestThreadBasePriority());
 }
 
@@ -129,6 +220,10 @@ static void give(void)
 {
     if (t_inside > 0)
         t_inside--;
+    {
+        int i = cri_slot();
+        if (i >= 0) { s_who[i].inside = t_inside; s_who[i].gives++; }
+    }
     if (s_count > 0 && --s_count == 0) {
         xbox_GuestThreadSetBasePriority(s_saved);
         pthread_cond_broadcast(&s_free);
