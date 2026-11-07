@@ -30,7 +30,9 @@ extern const char *chihiro_save_dir(void);
  * reads that cross it split, so index the file by the raw offset and let a
  * 64 KB image cover both halves. */
 #define BACKUP_SIZE  0x10000u
-#define EEPROM_SIZE  0x100u
+/* HOTD3 writes 0xA0 bytes at 0x80 (two copies of its settings and gun
+ * calibration); 256 cut the second copy short. */
+#define EEPROM_SIZE  0x200u
 #define LOG_LIMIT    16
 
 typedef struct {
@@ -126,9 +128,30 @@ static uint32_t store_xfer(store_t *s, int write, const char *op)
 int chihiro_gun_calibration(int16_t cal[10])
 {
     uint32_t at = chihiro_profile()->aim.backup_offset;   /* VC3: 0x476 */
+    uint32_t ee = chihiro_profile()->aim.eeprom_offset;   /* HOTD3: 0x90 */
     const uint8_t *p = s_backup_data + at;
     int i;
 
+    /* HOTD3's GUN ADJUSTMENT: player 1's readings at the top-left, centre
+     * and bottom-right targets, x then y, one dword each; ordered as a
+     * calibration must be, or there is none yet (a blank EEPROM). */
+    if (ee && ee + 24 <= EEPROM_SIZE) {
+        uint32_t v[6];
+        store_load(&s_eeprom);
+        for (i = 0; i < 6; i++)
+            memcpy(&v[i], s_eeprom_data + ee + 4u * (uint32_t)i, 4);
+        if (!(v[0] < v[1] && v[1] < v[2] && v[2] < 256
+              && v[3] < v[4] && v[4] < v[5] && v[5] < 256))
+            return 0;
+        memset(cal, 0, 10 * sizeof cal[0]);
+        cal[2] = (int16_t)((int)v[0] - 128);   /* left   x */
+        cal[4] = (int16_t)((int)v[1] - 128);   /* centre x */
+        cal[6] = (int16_t)((int)v[2] - 128);   /* right  x */
+        cal[1] = (int16_t)(128 - (int)v[3]);   /* top    y */
+        cal[5] = (int16_t)(128 - (int)v[4]);   /* centre y */
+        cal[9] = (int16_t)(128 - (int)v[5]);   /* bottom y */
+        return 1;
+    }
     if (!at || at + 22 > BACKUP_SIZE)
         return 0;
     store_load(&s_backup);

@@ -6,11 +6,22 @@
  * recomp_manual.c for how each was found).
  */
 #include <stddef.h>
+#include <stdint.h>
 
 #include "chihiro/chihiro_profile.h"
 #include "chihiro/chihiro.h"
 
 extern void sub_0013BB70(void);     /* D3D KickOff(flags), lifted (VC3's 0x10CA10) */
+
+/* Launch data for a boot into the test menu (HOTD3_TEST_LAUNCH=1), as the
+ * TestLaunch stub acdemoT.xbe (Sega's sample, VC3's vc3_t.xbe's twin) hands
+ * it: type 0, title id 0, the first launch-data dword 1. */
+static void hotd3_launch_data(uint8_t page[4096])
+{
+    *(uint32_t *)(page + 0x000) = 0;    /* LaunchDataType: title */
+    *(uint32_t *)(page + 0x004) = 0;    /* title id, as in the certificate */
+    *(uint32_t *)(page + 0x400) = 1;    /* launched by TestLaunch */
+}
 
 static const ChihiroProfile k_hotd3 = {
     .id = "hotd3",
@@ -52,15 +63,23 @@ static const ChihiroProfile k_hotd3 = {
         .analog_channels = 8, .screen_channels = 2,
         .trigger = JVS_SW_PUSH1, .offscreen = JVS_SW_PUSH2,
     },
-    /* PROVISIONAL, VC3's gun numbers until HOTD3's GUN ADJUSTMENT is read
-     * (Phase 3). backup_offset 0: no saved calibration is read, so VC3's
-     * backup layout is never assumed; the defaults apply. */
+    /* GUN SETTING > PLAYER1 GUN ADJUSTMENT: shoot targets centred at
+     * (75.5, 53.5), (563.5, 419.5) and (319.5, 236.5) of 640x480; the readings
+     * (the analog channels' top bytes, which INPUT TEST shows as GUN-X/Y) go
+     * to EEPROM at 0x90 as dwords, x then y, top-left/centre/bottom-right,
+     * player 2's after them, in a "HOD4EEP0" record at 0x80. A blank EEPROM:
+     * the game's own player-1 defaults, as PLAYER1 GUN DEFAULT ADJUSTMENT
+     * stores them (x 0x02/0x76/0xDC, y 0x1B/0x88/0xE3; player 2's differ),
+     * here in the runtime's units. */
     .aim = {
-        .backup_offset = 0,
-        .defaults = { 5, 233, -318, 17, -10, 15, 242, 34, -10, -204 },
-        .dots_x = { 16.0f, 320.0f, 624.0f }, .dots_y = { 16.0f, 240.0f, 464.0f },
-        .units_x = 2.5f, .units_y = 1.875f,
+        .eeprom_offset = 0x90,
+        .defaults = { 0, 101, -126, 0, -10, -8, 92, 0, 0, -99 },
+        .dots_x = { 75.5f, 319.5f, 563.5f }, .dots_y = { 53.5f, 236.5f, 419.5f },
+        .units_x = 1.0f, .units_y = 1.0f,
         .screen_w = 640.0f, .screen_h = 480.0f,
+    },
+    .hooks = {
+        .launch_data = hotd3_launch_data,
     },
 };
 

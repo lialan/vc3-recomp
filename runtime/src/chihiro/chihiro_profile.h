@@ -102,6 +102,10 @@ typedef struct ChihiroProfile {
      * the calibration it applies (host_input.c) */
     struct {
         uint32_t backup_offset;     /* the calibration's record in backup RAM (0x0010 tag, 10 int16) */
+        /* or in EEPROM (HOTD3): three dots' raw readings as dwords, x then y,
+         * top-left/centre/bottom-right; read into the layout above as
+         * x = reading - 128, y = 128 - reading (units 1) */
+        uint32_t eeprom_offset;
         int16_t defaults[10];       /* a real gun's calibration, used when none is saved */
         float dots_x[3], dots_y[3]; /* the calibration dots: left/centre/right x, top/centre/bottom y */
         float units_x, units_y;     /* gun units per reading step across / down (y up) */

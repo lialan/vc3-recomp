@@ -101,12 +101,20 @@ static void auto_parse(void)
  * VC3_AUTOFIRE_MS (a real click is ~80 ms; for testing short ones). */
 static uint32_t auto_hold_ms(const char *key)
 {
-    static int fire_ms = -1;
+    static int fire_ms = -1, key_ms = -1;
     if (fire_ms < 0) {
         const char *e = ch_env("AUTOFIRE_MS");
         fire_ms = e ? atoi(e) : 0;
     }
-    return !strcmp(key, "fire") && fire_ms > 0 ? (uint32_t)fire_ms : AUTO_HOLD_MS;
+    /* VC3_AUTOKEY_MS: every other key's hold. HOTD3's test menu takes a test
+     * press as select, then -- still held on the next screen -- as exit. */
+    if (key_ms < 0) {
+        const char *e = ch_env("AUTOKEY_MS");
+        key_ms = e ? atoi(e) : 0;
+    }
+    if (!strcmp(key, "fire"))
+        return fire_ms > 0 ? (uint32_t)fire_ms : AUTO_HOLD_MS;
+    return key_ms > 0 ? (uint32_t)key_ms : AUTO_HOLD_MS;
 }
 
 /* Is the scripted key held right now? */
@@ -757,12 +765,29 @@ void host_input_poll(chihiro_input_t *in)
      * explicit VC3_AUTOAIM also holds the aim between shots;
      * VC3_AUTOAIM=sweep[:s[:x,y]] keeps it moving over the screen, as a
      * player's does, from s seconds on (before, x,y -- a mission on Mission
-     * Select -- or the centre: shots that hit fill the E.S. gauge). */
+     * Select -- or the centre: shots that hit fill the E.S. gauge).
+     * VC3_AUTOAIM=@t:x,y;t:x,y;... aims at each x,y from t seconds on (the
+     * latest entry whose t has come), to shoot a sequence of targets --
+     * a calibration's, say. */
     if (ux < 0.0 && (auto_held("fire", t) || ch_env("AUTOAIM"))) {
         const char *aim = ch_env("AUTOAIM");
         ux = 0.5;
         uy = 0.5;
-        if (aim && !strncmp(aim, "sweep", 5)) {
+        if (aim && aim[0] == '@') {
+            const char *s = aim + 1;
+            double at, x, y;
+            int n;
+            while (sscanf(s, "%lf:%lf,%lf%n", &at, &x, &y, &n) == 3) {
+                if (t >= (uint32_t)(at * 1000.0)) {
+                    ux = x;
+                    uy = y;
+                }
+                s += n;
+                if (*s != ';')
+                    break;
+                s++;
+            }
+        } else if (aim && !strncmp(aim, "sweep", 5)) {
             double from = 0.0;
             if (aim[5] == ':')
                 sscanf(aim + 6, "%lf:%lf,%lf", &from, &ux, &uy);

@@ -23,5 +23,20 @@
   "start": "0x0011B350",
   "observed": false,
   "note": "Callback whose address is loaded at 0x11A869. Folded into 0x11B340, which ends in a noreturn call and int3."
+ },
+ {
+  "start": "0x0011B4B0",
+  "observed": true,
+  "note": "The task scheduler's task-finish routine (indirect call \"Failed to resolve VA 0x0011B4B0\", 600k times in a 75 s game): stored at 0x11B574. Folded into 0x11B480, which ends in a call to longjmp (0x1258EC) and padding."
+ },
+ {
+  "start": "0x00019E40",
+  "observed": false,
+  "note": "Method stored at 0x1340D9 beside 0x19AF0 (seeded) and 0x19A90. Folded into 0x19DCA/0x19E10 after padding (aligned, after nop/int3 padding, stored as a pointer)."
+ },
+ {
+  "start": "0x0008D080",
+  "observed": false,
+  "note": "Callback pushed at 0x8EB8C (with 0x5D910), a destructor-like method (flag argument, ecx this). Folded into 0x8D010 after padding."
  }
 ]

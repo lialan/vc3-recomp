@@ -64,6 +64,8 @@ static int jvs_trace(void)
     if (s_trace < 0) {
         const char *v = ch_env("JVS_TRACE");
         s_trace = v && *v && *v != '0';
+        if (s_trace && atoi(v) > 1)
+            s_log_budget = atoi(v);    /* JVS_TRACE=<n>: n lines, not 200 */
     }
     return s_trace;
 }
