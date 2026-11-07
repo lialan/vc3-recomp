@@ -99,6 +99,33 @@ void sub_000BFB00(void) { ch_cri_counter_lock(0x0030F8A0, CRI_SPIN, CRI_HOLD); g
 void sub_000BFB20(void) { ch_cri_counter_unlock(0x0030F8A0); g_esp += 4; }
 void sub_000C8260(void) { ch_cri_counter_lock(0x0030FF30, CRI_SPIN, CRI_HOLD); g_esp += 4; }
 void sub_000C8280(void) { ch_cri_counter_unlock(0x0030FF30); g_esp += 4; }
+/* Sofdec's lock pair (cdecl, one unused argument the caller drops): 0xD3D20
+ * takes the lock (0xC7230) only while its server's "inside" counter
+ * [0x4FB178] is 0, 0xD3D30 gives it back (0xD3670 -> 0xC7250) on the same
+ * test -- so the server, which counts itself inside around its work (0xD5C70)
+ * while holding the lock, skips it in its own nested calls. Lifted, the
+ * server could come in between another thread's two halves and that unlock
+ * skipped what its lock took: the lock leaked and the boot crawled. Each
+ * unlock now gives back exactly what its own lock took (cri_lock.c). eax and
+ * ecx as the original's test leaves them when it skips. */
+#define SFD_INSIDE 0x004FB178u
+extern int ch_cri_scope_enter(uint32_t counter_va);
+extern int ch_cri_scope_leave(uint32_t counter_va);
+extern void sub_000C7230(void);
+extern void sub_000C7250(void);
+void sub_000D3D20(void)
+{
+    if (ch_cri_scope_enter(SFD_INSIDE)) { PUSH32(g_esp, 0x000D3D2Eu); sub_000C7230(); }
+    else { g_ecx = MEM32(SFD_INSIDE); g_eax = 1; }
+    g_esp += 4;                                 /* ret */
+}
+void sub_000D3D30(void)
+{
+    if (ch_cri_scope_leave(SFD_INSIDE)) { PUSH32(g_esp, 0x000D3D3Eu); sub_000C7250(); }
+    else { g_ecx = MEM32(SFD_INSIDE); g_eax = 1; }
+    g_esp += 4;                                 /* ret */
+}
+
 /* The spinner (0xBE7B0) only counts in [0x30F710] until told to stop
  * ([0x30F728]); on the console it starves the threads below it while the lock
  * is held, which ch_cri_lock does here. Suspending another thread only counts

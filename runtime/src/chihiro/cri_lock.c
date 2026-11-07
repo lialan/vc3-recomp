@@ -37,9 +37,11 @@
  * meanwhile take the count below 0. Stopped at 0, they were lost: the count
  * came back 1-2 too high and stayed held for good, holding the loaders back
  * until loading crawled (a Quest freeze, the game thread polling a load; none
- * in ~10 Quest runs since). The count still drifts up now and then on the
- * Quest (to 5-6 in one run: some other take without its give, not found);
- * the STARVE_MS escape keeps that from stopping the loaders. (That
+ * in ~10 Quest runs since). The count drifted up too, on the Quest (to 26 in
+ * one boot): a module that skips the lock while its server is inside lost
+ * a share whenever the server came in between its lock and unlock --
+ * ch_cri_scope_enter/leave, at the end of this file. The STARVE_MS escape
+ * stays, so a share lost some other way only slows the loaders. (That
  * arithmetic was once tried without the "already inside" pass and starved
  * the loader 132 times in 200 s of Mac play.)
  * Priorities are the game's own, kept by the kernel bridge
@@ -293,4 +295,40 @@ void ch_cri_counter_unlock(uint32_t counter_va)
     if (--MEM32(counter_va) == 0)
         give();
     pthread_mutex_unlock(&s_mu);
+}
+
+/* A lock taken only while a module's "inside" counter is 0, and given back
+ * the same way (HOTD3's Sofdec 0xD3D20 / 0xD3D30 on [0x4FB178]: the server
+ * 0xD5C70 counts itself inside around its work, which already holds the
+ * lock, so its own nested calls skip it). The game decides each half from
+ * the counter as it is at that moment. On the console nothing else runs
+ * between a thread's two halves to change it; lifted, the server raises it
+ * on another core in between, and the unlock skips the lock its own lock
+ * took: the count leaked one share at a time (to 26 in a Quest boot), every
+ * other CRI thread waited out STARVE_MS on each take, and loading crawled --
+ * the boot looked frozen. The halves are scoped in one function (HOTD3: 22
+ * functions, an unlock on each exit), so each thread keeps its own record:
+ * enter decides from the counter, as the game does, and remembers; leave
+ * gives back exactly what its enter took. Returns 1 when the caller should
+ * take (enter) or give (leave) the lock. More than 64 deep, or a leave with
+ * no enter on this thread: the counter, as the game. */
+static RECOMP_TLS uint64_t t_scope_took;
+static RECOMP_TLS int t_scope_depth;
+
+int ch_cri_scope_enter(uint32_t counter_va)
+{
+    int take = (int32_t)MEM32(counter_va) <= 0;
+    if (t_scope_depth < 64) {
+        if (take) t_scope_took |= 1ull << t_scope_depth;
+        else      t_scope_took &= ~(1ull << t_scope_depth);
+    }
+    t_scope_depth++;
+    return take;
+}
+
+int ch_cri_scope_leave(uint32_t counter_va)
+{
+    if (t_scope_depth > 0 && --t_scope_depth < 64)
+        return (int)((t_scope_took >> t_scope_depth) & 1u);
+    return (int32_t)MEM32(counter_va) <= 0;
 }
