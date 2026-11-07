@@ -126,6 +126,36 @@ void sub_000D3D30(void)
     g_esp += 4;                                 /* ret */
 }
 
+/* The ADX server 0xBDE20 (no arguments): returns if its running flag
+ * [0x30F6D0] is set, else sets it, serves and clears it. The CRI server
+ * thread (callback 0xBED80) and the movie decoder (0xBDF80) both call it after
+ * each vblank; claimed atomically here, so they no longer run it at once
+ * (cri_lock.c). Kept out, it returns as the game's test would: eax the flag. */
+#define ADX_SERVER_RUNNING 0x0030F6D0u
+extern int ch_cri_server_enter(uint32_t flag_va);
+extern void ch_cri_server_leave(uint32_t flag_va);
+extern void sub_000BDE20_gen(void);
+void sub_000BDE20(void)
+{
+    if (!ch_cri_server_enter(ADX_SERVER_RUNNING)) {
+        g_eax = MEM32(ADX_SERVER_RUNNING) ? MEM32(ADX_SERVER_RUNNING) : 1;
+        g_esp += 4;                             /* ret */
+        return;
+    }
+    sub_000BDE20_gen();
+    ch_cri_server_leave(ADX_SERVER_RUNNING);
+}
+
+/* CRI's default error handler 0xBFB30 (`jmp $`; cdecl (arg, code), the
+ * caller drops them): logged and returned instead of spinning forever with
+ * the lock held (cri_lock.c). */
+extern void ch_cri_error(uint32_t arg, int32_t code);
+void sub_000BFB30(void)
+{
+    ch_cri_error(MEM32(g_esp + 4), (int32_t)MEM32(g_esp + 8));
+    g_esp += 4;                                 /* ret */
+}
+
 /* The spinner (0xBE7B0) only counts in [0x30F710] until told to stop
  * ([0x30F728]); on the console it starves the threads below it while the lock
  * is held, which ch_cri_lock does here. Suspending another thread only counts

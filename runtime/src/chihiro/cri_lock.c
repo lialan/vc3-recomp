@@ -134,6 +134,17 @@ static int32_t kprio(int prio)
  * addresses on its guest stack), for a wait that does not end; and each
  * thread's share inside, with where it last took it. */
 static unsigned long s_holder;
+/* The modules' nesting counters seen (ch_cri_counter_lock), for the
+ * starvation report: a counter stuck above 0 holds the lock for good. */
+#define CRI_COUNTERS 4
+static uint32_t s_counter_va[CRI_COUNTERS];
+static void note_counter(uint32_t va)
+{
+    for (int i = 0; i < CRI_COUNTERS; i++) {
+        if (s_counter_va[i] == va) return;
+        if (!s_counter_va[i]) { s_counter_va[i] = va; return; }
+    }
+}
 static uint32_t s_holder_chain[6];
 #define CRI_THREADS 32
 static struct { unsigned long tid; int inside, takes, gives; int32_t prio; uint32_t chain[4]; } s_who[CRI_THREADS];
@@ -195,6 +206,8 @@ static void gate(int spin_prio)
                             s_holder_chain[4], s_holder_chain[5],
                             cri_tid(), prio,
                             me[0], me[1], me[2], me[3], me[4], me[5]);
+                    for (int i = 0; i < CRI_COUNTERS && s_counter_va[i]; i++)
+                        fprintf(stderr, "[CRI]   counter %X = %d\n", s_counter_va[i], (int32_t)MEM32(s_counter_va[i]));
                     for (int i = 0; i < CRI_THREADS; i++)
                         if (s_who[i].tid && (s_who[i].inside || s_who[i].takes != s_who[i].gives))
                             fprintf(stderr, "[CRI]   tid %lx inside %d takes %d gives %d prio %d last take from %X %X %X %X\n",
@@ -276,6 +289,7 @@ void ch_cri_counter_lock(uint32_t counter_va, int spin_prio, int hold_prio)
         return;
     }
     pthread_mutex_lock(&s_mu);
+    note_counter(counter_va);
     gate(spin_prio);
     if (MEM32(counter_va) == 0)
         take(hold_prio);
@@ -331,4 +345,70 @@ int ch_cri_scope_leave(uint32_t counter_va)
     if (t_scope_depth > 0 && --t_scope_depth < 64)
         return (int)((t_scope_took >> t_scope_depth) & 1u);
     return (int32_t)MEM32(counter_va) <= 0;
+}
+
+/* A CRI server's "running" flag (HOTD3: the ADX server 0xBDE20 on
+ * [0x30F6D0]): the game returns if it is set, else sets it, runs the server
+ * and clears it. On the console nothing runs between the test and the set.
+ * Lifted, the CRI server thread (through its callback 0xBED80) and the movie
+ * decoder (0xBDF80) both call it right after the same vblank, on two cores;
+ * both passed the test, ran the server at once and corrupted a stream's ring
+ * buffer -- its check (0xBFE50) failed with -3, CRI's error handler spun
+ * forever holding the lock, and every other CRI thread starved (a Quest
+ * freeze, one run in three). enter claims the server atomically: 1 when the
+ * caller may run it (the game's own test then passes), 0 when another thread
+ * is running it (the caller returns as the game's test would). Callers that
+ * the game's flag alone would have let in twice are counted and logged. */
+#define CRI_SERVERS 4
+static struct { uint32_t va; int busy; } s_server[CRI_SERVERS];
+static unsigned s_server_races;
+
+static int server_slot(uint32_t flag_va)
+{
+    for (int i = 0; i < CRI_SERVERS; i++) {
+        uint32_t v = __atomic_load_n(&s_server[i].va, __ATOMIC_ACQUIRE);
+        if (v == flag_va) return i;
+        if (!v) {
+            uint32_t z = 0;
+            if (__atomic_compare_exchange_n(&s_server[i].va, &z, flag_va, 0, __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE)
+                || z == flag_va)
+                return i;
+        }
+    }
+    return -1;
+}
+
+int ch_cri_server_enter(uint32_t flag_va)
+{
+    int i = server_slot(flag_va), z = 0;
+    if (i < 0)
+        return 1;
+    if (__atomic_compare_exchange_n(&s_server[i].busy, &z, 1, 0, __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE))
+        return 1;
+    if (MEM32(flag_va) == 0) {   /* the game's own test would have let it in */
+        unsigned n = __atomic_add_fetch(&s_server_races, 1, __ATOMIC_RELAXED);
+        if (n <= 4 || !(n & (n - 1)))
+            fprintf(stderr, "[CRI] server %X: a second thread kept out (%u so far)\n", flag_va, n);
+    }
+    return 0;
+}
+
+void ch_cri_server_leave(uint32_t flag_va)
+{
+    int i = server_slot(flag_va);
+    if (i >= 0)
+        __atomic_store_n(&s_server[i].busy, 0, __ATOMIC_RELEASE);
+}
+
+/* CRI's default error handler (HOTD3 0xBFB30, `jmp $`, called as (arg,
+ * code)): the console halts there. Lifted, a thread that reaches it spins a
+ * core forever, holding the CRI lock if it had it, and the game freezes.
+ * Logged and returned instead; the stream may glitch. */
+void ch_cri_error(uint32_t arg, int32_t code)
+{
+    static unsigned n;
+    unsigned k = __atomic_add_fetch(&n, 1, __ATOMIC_RELAXED);
+    if (k <= 8 || !(k & (k - 1)))
+        fprintf(stderr, "[CRI] error %d (arg %X): the console would halt here; carrying on (%u so far)\n",
+                code, arg, k);
 }
