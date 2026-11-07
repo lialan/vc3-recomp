@@ -13,6 +13,7 @@
 
 #include <stdio.h>
 #include <stdint.h>
+#include <time.h>
 
 /* Thread-local guest registers, MEM/XBOX_PTR, recomp_func_t (see VC3's
  * recomp_manual.c: a plain extern g_eax would not be the lifted code's). */
@@ -74,26 +75,43 @@ void sub_000B88D1(void) { vc3_relaunch(); }
 extern void chihiro_d3d_block_on_time(void);
 void sub_0013BC20(void) { chihiro_d3d_block_on_time(); } /* D3D_BlockOnTime (VC3 0x10CAC0) */
 
-/* CRI's lock, the scoped guest CPU (runtime/src/chihiro/cri_lock.c). The ADX
- * manager registers 0xBE6D0 / 0xBE710 as the file system's lock callbacks
- * ([0x30FDC8] / [0x30FDD0], arg [0x30FDCC]): raise the caller's priority,
- * suspend the idle thread, count in [0x30F708] -- a lock only on one CPU.
- * cdecl, one argument the caller drops. The servers' steps go inside the
- * same lock: the main server 0xC7990 (ADXT, the file system that issues the
- * reads, Sofdec; behind a busy flag), run each vblank by thread 0xBEC20, and
- * the vsync thread 0xBE7F0's (0xC7640) and the file-system thread 0xBE860's
- * (0xC7660). */
-extern void ch_cri_lock(void);
+/* CRI's lock, as the console runs it (runtime/src/chihiro/cri_lock.c). The
+ * ADX manager registers 0xBE6D0 / 0xBE710 as the file system's lock
+ * callbacks ([0x30FDC8] / [0x30FDD0], arg [0x30FDCC]). Lock: from a count of
+ * 0 ([0x30F708]) save the caller's priority ([0x4F9220]), raise it to
+ * [0x30F6F4] (15) and resume the spinner thread [0x4F9200] (0xBE7B0, at
+ * [0x30F6F8] = 2); unlock to 0 suspends it and gives the releaser the saved
+ * priority. So while it is held nothing at 2 or below runs: the vsync server
+ * 0xBE7F0 (1), the game thread (0), the file-system server 0xBE860 and the
+ * loader 0x7AF10 (-2). cdecl, one argument the caller drops. */
+extern void ch_cri_lock(int spin_prio, int hold_prio);
 extern void ch_cri_unlock(void);
-extern void ch_cri_server(void (*step)(void));
-void sub_000BE6D0(void) { ch_cri_lock(); g_esp += 4; }     /* ret */
-void sub_000BE710(void) { ch_cri_unlock(); g_esp += 4; }   /* ret */
-extern void sub_000C7640_gen(void);
-extern void sub_000C7660_gen(void);
-extern void sub_000C7990_gen(void);
-void sub_000C7990(void) { ch_cri_server(sub_000C7990_gen); }
-void sub_000C7640(void) { ch_cri_server(sub_000C7640_gen); }
-void sub_000C7660(void) { ch_cri_server(sub_000C7660_gen); }
+extern void ch_cri_counter_lock(uint32_t counter_va, int spin_prio, int hold_prio);
+extern void ch_cri_counter_unlock(uint32_t counter_va);
+#define CRI_SPIN ((int)MEM32(0x0030F6F8))
+#define CRI_HOLD ((int)MEM32(0x0030F6F4))
+void sub_000BE6D0(void) { ch_cri_lock(CRI_SPIN, CRI_HOLD); g_esp += 4; }   /* ret */
+void sub_000BE710(void) { ch_cri_unlock(); g_esp += 4; }                   /* ret */
+/* The modules' nesting counters: take the lock at 0, give it back at 0 --
+ * ADXT's 0xBFB00 / 0xBFB20 on [0x30F8A0], the stream file system's 0xC8260 /
+ * 0xC8280 on [0x30FF30]. No arguments, plain ret. */
+void sub_000BFB00(void) { ch_cri_counter_lock(0x0030F8A0, CRI_SPIN, CRI_HOLD); g_esp += 4; }
+void sub_000BFB20(void) { ch_cri_counter_unlock(0x0030F8A0); g_esp += 4; }
+void sub_000C8260(void) { ch_cri_counter_lock(0x0030FF30, CRI_SPIN, CRI_HOLD); g_esp += 4; }
+void sub_000C8280(void) { ch_cri_counter_unlock(0x0030FF30); g_esp += 4; }
+/* The spinner (0xBE7B0) only counts in [0x30F710] until told to stop
+ * ([0x30F728]); on the console it starves the threads below it while the lock
+ * is held, which ch_cri_lock does here. Suspending another thread only counts
+ * on the host, so it spun a core all the time: wait for the stop request
+ * asleep, then run the original, which exits the thread. */
+extern void sub_000BE7B0_gen(void);
+void sub_000BE7B0(void)
+{
+    const struct timespec ts = { 0, 20 * 1000 * 1000 };
+    while (!MEM32(0x0030F728))
+        nanosleep(&ts, NULL);
+    sub_000BE7B0_gen();
+}
 
 /* ── Manual function overrides ─────────────────────────────── */
 
