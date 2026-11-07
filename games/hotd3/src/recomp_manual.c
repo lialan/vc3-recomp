@@ -127,6 +127,11 @@ extern void sub_00048F50_gen(void);
 extern void hotd3_cull_sphere(void (*generated)(void));
 void sub_00048F50(void) { hotd3_cull_sphere(sub_00048F50_gen); }
 
+/* The request thread (stdcall, 1 arg), sleeping between retries of a pending
+ * request instead of spinning a core (hotd3_requests.c). */
+extern void hotd3_request_thread(void);
+void sub_0007AF10(void) { hotd3_request_thread(); }
+
 /* ── Manual function overrides ─────────────────────────────── */
 
 /* A function pointer to run for an Xbox VA instead of the dispatch table's,

@@ -30,9 +30,18 @@
  *   - a thread above the spinner's priority, or one already inside, takes it
  *     at once;
  *   - a thread held back STARVE_MS goes in anyway (gate()).
- * (The game's own unlock is a bare `dec; jnz`, so its count can go below 0;
- * that arithmetic without the "already inside" pass was tried and starved
- * the loader 132 times in 200 s of Mac play, against none with these rules.)
+ * The count is the game's arithmetic exactly: its unlock is a bare
+ * `dec; jnz`, so it goes below 0 and back. It does here: before a blocking
+ * read 0xCA370 releases every share (other threads' too, which run beside
+ * it here) and 0xCA3A0 takes them back after, so those threads' own unlocks
+ * meanwhile take the count below 0. Stopped at 0, they were lost: the count
+ * came back 1-2 too high and stayed held for good, holding the loaders back
+ * until loading crawled (a Quest freeze, the game thread polling a load; none
+ * in ~10 Quest runs since). The count still drifts up now and then on the
+ * Quest (to 5-6 in one run: some other take without its give, not found);
+ * the STARVE_MS escape keeps that from stopping the loaders. (That
+ * arithmetic was once tried without the "already inside" pass and starved
+ * the loader 132 times in 200 s of Mac play.)
  * Priorities are the game's own, kept by the kernel bridge
  * (xbox_GuestThreadBasePriority; time-critical is 16 there, as in the kernel).
  *
@@ -224,7 +233,8 @@ static void give(void)
         int i = cri_slot();
         if (i >= 0) { s_who[i].inside = t_inside; s_who[i].gives++; }
     }
-    if (s_count > 0 && --s_count == 0) {
+    /* the game's `dec; jnz`: below 0 too (see the header) */
+    if (--s_count == 0) {
         xbox_GuestThreadSetBasePriority(s_saved);
         pthread_cond_broadcast(&s_free);
     }

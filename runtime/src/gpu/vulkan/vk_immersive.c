@@ -11,6 +11,9 @@
  * effect buffer gets a stray one (the mission 2 boss's feedback buffer: one
  * a frame), and growing its eyes rebuilt their pipelines (~130 ms). */
 #define IMM_SCENE_BATCHES 8u
+/* Flips an eye target goes undrawn before the flip finishes it (waits for its
+ * batches): by then they are long done (ch_vk_immersive_flip). */
+#define IMM_IDLE_FINISH 4u
 #define ZOOM_SLOTS 8
 /* A screen-shaped guest surface's eyes (2*eye_width x eye_height). */
 struct ImmSurface {
@@ -21,8 +24,8 @@ struct ImmSurface {
     /* Effect-only surfaces (never shown, no 3D: E.S.'s feedback buffer) get
      * eyes at half the size each way -- their full-screen passes were ~0.6 ms
      * each at native size; a blurred trail does not need native detail.
-     * div: the eyes' current divisor; last_3d/last_shown: frames. */
-    uint32_t div;uint64_t last_3d,last_shown;size_t pixels_bytes;
+     * div: the eyes' current divisor; last_3d/last_shown/last_drawn: frames. */
+    uint32_t div;uint64_t last_3d,last_shown,last_drawn;size_t pixels_bytes;
     uint32_t world,drawn,flat,hud,full;    /* this frame: 3D batches; any eye work; 2D flat/HUD/full-screen */
     uint32_t composite;    /* this frame: flat draws sampling eyes (the scene drawn elsewhere, composited in) */
     uint64_t onto_shown;   /* the newest frame it was composited full-screen onto a shown surface (+1; 0: never) */
@@ -940,8 +943,13 @@ VkResult ch_vk_immersive_flip(ChVkImmersive *m,uint32_t presented,const Vc3VrVie
     }
     /* Texture-cache pins last until a target retires its batches, which it
      * does when it is next used: submit this frame's eye work without a wait
-     * (it retires next frame), and finish targets left unused (their work is
-     * long done), so no pins pile up across frames. */
+     * (it retires next frame), and finish targets left unused for
+     * IMM_IDLE_FINISH frames (their work long done by then), so no pins pile
+     * up across frames. Finished at once, a target drawn every other frame
+     * -- a double-buffered screen (HOTD3's 80330000 / 8045C000) -- waited
+     * each flip for its last frame's batches, still on the GPU behind the
+     * scene: the flip waited for the GPU every frame (~8 ms on the Quest),
+     * the renderer never a frame ahead. */
     for(unsigned i=0;i<m->count;i++) {
         struct ImmSurface *f=&m->surfaces[i];
         if(f->world>=IMM_SCENE_BATCHES) f->last_3d=m->frames;
@@ -958,7 +966,8 @@ VkResult ch_vk_immersive_flip(ChVkImmersive *m,uint32_t presented,const Vc3VrVie
             if(m->log) fprintf(stderr,"[immersive] surface %08X eyes now 1/%u size\n",f->va,want);
             continue;
         }
-        VkResult r=f->drawn?ch_vk_target_submit(f->eyes):ch_vk_target_finish(f->eyes);
+        if(f->drawn) f->last_drawn=m->frames;
+        VkResult r=m->frames-f->last_drawn<IMM_IDLE_FINISH?ch_vk_target_submit(f->eyes):ch_vk_target_finish(f->eyes);
         if(r!=VK_SUCCESS) return r;
     }
     if(m->hud) {VkResult r=m->hud_used?ch_vk_target_submit(m->hud):ch_vk_target_finish(m->hud);if(r!=VK_SUCCESS) return r;}

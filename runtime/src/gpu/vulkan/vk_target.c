@@ -821,11 +821,23 @@ static void color_staging_reuse_on(ChVkTarget *t,VkCommandBuffer command) {
     vkCmdPipelineBarrier(command,VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,VK_PIPELINE_STAGE_TRANSFER_BIT,0,1,&b,0,NULL,0,NULL);
 }
 static void color_staging_reuse(ChVkTarget *t) {color_staging_reuse_on(t,t->command);}
-#if defined(__linux__) && !defined(__ANDROID__)
-#include <execinfo.h>
+#if defined(__linux__) || defined(__APPLE__)
 #include <dlfcn.h>
 #include <stdio.h>
-/* CHIHIRO_VULKAN_WAIT_STACKS=1 (desktop Linux): where the host blocks on a
+#if defined(__ANDROID__)
+#include <unwind.h>
+typedef struct { void **pc; int n, max; } WaitWalk;
+static _Unwind_Reason_Code wait_walk_step(struct _Unwind_Context *c, void *arg) {
+    WaitWalk *w=arg; uintptr_t ip=(uintptr_t)_Unwind_GetIP(c);
+    if(!ip) return _URC_END_OF_STACK;
+    w->pc[w->n++]=(void *)ip;
+    return w->n>=w->max?_URC_END_OF_STACK:_URC_NO_REASON;
+}
+static int backtrace(void **pc, int max) {WaitWalk w={pc,0,max};_Unwind_Backtrace(wait_walk_step,&w);return w.n;}
+#else
+#include <execinfo.h>
+#endif
+/* CHIHIRO_VULKAN_WAIT_STACKS=1 (Linux, Android, macOS): where the host blocks on a
  * batch's fence -- each wait's time summed by its call stack, the top ones
  * printed now and then as module offsets (addr2line -f -e <binary> ...). For
  * finding which guest-visible readbacks cost the most round trips. */
