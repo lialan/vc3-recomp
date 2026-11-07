@@ -25,6 +25,7 @@ struct ImmSurface {
     uint32_t div;uint64_t last_3d,last_shown;size_t pixels_bytes;
     uint32_t world,drawn,flat,hud,full;    /* this frame: 3D batches; any eye work; 2D flat/HUD/full-screen */
     uint32_t composite;    /* this frame: flat draws sampling eyes (the scene drawn elsewhere, composited in) */
+    uint64_t onto_shown;   /* the newest frame it was composited full-screen onto a shown surface (+1; 0: never) */
     uint32_t held,held_zs; /* a depth/stencil clear held back (shot_hold): its flags (0: none), value */
 };
 struct ChVkImmersive {
@@ -450,7 +451,9 @@ VkResult ch_vk_immersive_clear(ChVkImmersive *m,const Nv2aSurface *s,const Nv2aR
     VkResult r=eyes(m,f); if(r!=VK_SUCCESS) return r;
     f->serial++;
     /* A guest clear rectangle does not map onto the re-projected eyes: the
-     * whole eye image, with the clear's color and depth. */
+     * whole eye image, with the clear's color and depth (eye_clear_black:
+     * black, its alpha kept). */
+    if(m->config.eye_clear_black) argb&=0xFF000000u;
     Nv2aSurface extent=*s; ch_vk_target_size(f->eyes,&extent.width,&extent.height);
     f->drawn++;
     if(f->held) {   /* one held back: this one covers it, or it goes first */
@@ -547,12 +550,13 @@ static void trace_draw(const ChVkImmersive *m,const Nv2aSurface *s,const Nv2aBat
     Nv2aRawExtent e;int ok=b->raw && b->raw->extent && b->raw->extent(b->raw,&e);
     const Nv2aTexture *tx=b->texture?b->texture:b->stage[0];
     int rt=tx && m->config.guest_target && m->config.guest_target(m->config.guest_context,tx->offset);   /* the game renders into it */
-    fprintf(stderr,"[imm trace] f%llu on %d into %08X %ux%u 3d %d %s w0 %g idx %u ext %.0f..%.0f x %.0f..%.0f tex %08X %ux%u fmt %02X rt %d st1 %08X blend %u %04X/%04X mask %08X depth %u/%04X write %u query %d rel %u\n",
+    fprintf(stderr,"[imm trace] f%llu on %d into %08X %ux%u 3d %d %s w0 %g idx %u ext %.0f..%.0f x %.0f..%.0f tex %08X %ux%u fmt %02X rt %d st1 %08X blend %u %04X/%04X mask %08X depth %u/%04X write %u query %d rel %u prog %016llX\n",
         (unsigned long long)m->frames,m->on,s->color_va,s->width,s->height,is3d,
         b->raw?b->raw->kind==NV2A_RAW_FIXED?"fixed":"prog":"none",b->raw?b->raw->w0:0,b->raw?b->raw->index_count:0,
         ok?e.x0:-1,ok?e.x1:-1,ok?e.y0:-1,ok?e.y1:-1,tx?tx->offset:0,tx?tx->width:0,tx?tx->height:0,tx?tx->color:0,rt,
         b->stage[1]?b->stage[1]->offset:0,b->state->blend_enable,b->state->blend_src,b->state->blend_dst,b->state->color_mask,
-        b->state->depth_test_enable,b->state->depth_func,b->state->depth_write,b->zpass_out!=NULL,b->state->release);
+        b->state->depth_test_enable,b->state->depth_func,b->state->depth_write,b->zpass_out!=NULL,b->state->release,
+        (unsigned long long)(b->raw && b->raw->kind!=NV2A_RAW_FIXED?b->raw->program_hash:0));
 }
 VkResult ch_vk_immersive_draw(ChVkImmersive *m,const Nv2aSurface *s,const Nv2aBatch *b,
     const ChVkFixedGeometry *fixed,ChVkSampleResolver resolve,void *context) {
@@ -598,7 +602,8 @@ VkResult ch_vk_immersive_draw(ChVkImmersive *m,const Nv2aSurface *s,const Nv2aBa
                 if(f && f->projection_ok) {g=f->projection;is3d=1;}
                 else if(m->projection_ok) {g=m->projection;is3d=1;}
             }
-        } else if(b->raw->w0!=1.0f && b->raw->w0==b->raw->w0) {
+        } else if(b->raw->w0!=1.0f && b->raw->w0==b->raw->w0 &&
+                  !(b->raw->w0>0.0f && b->raw->w0<=m->config.program_flat_w)) {
             /* A program batch: its surface's newest fixed projection, else
              * the frame's (as the OpenGL renderer does), else the game's
              * own (a game with no fixed-function 3D), sized to the surface. */
@@ -641,7 +646,15 @@ VkResult ch_vk_immersive_draw(ChVkImmersive *m,const Nv2aSurface *s,const Nv2aBa
     Nv2aBatch copy=*b; copy.zpass_out=NULL;
     int full=!is3d && full_screen(m,b,s);
     if(!is3d) {if(!f) f=find(m,s);if(f) f->full+=full;}
-    if(!is3d && shown(m,s->color_va) && !full) {
+    /* scene_hud: the surface composited onto the screen (the scene, its
+     * eyes sampled by a full-screen draw there) -- its small 2D is the HUD */
+    if(full && m->config.scene_hud && shown(m,s->color_va)) {
+        const Nv2aTexture *tx=b->texture?b->texture:b->stage[0];
+        struct ImmSurface *src=tx?eye_source(m,tx):NULL;
+        if(src && src!=f) src->onto_shown=m->frames+1;
+    }
+    const int scene_hud=m->config.scene_hud && f && f->onto_shown && m->frames<=f->onto_shown+1;
+    if(!is3d && (shown(m,s->color_va) || scene_hud) && !full) {
         /* a screen effect over part of the screen (samples_screen): left
          * out -- in front of the world it would be a stale flat picture */
         if(samples_screen(m,b)) {m->skipped_batches++;return VK_SUCCESS;}
@@ -669,6 +682,7 @@ VkResult ch_vk_immersive_draw(ChVkImmersive *m,const Nv2aSurface *s,const Nv2aBa
     if(!f) {m->skipped_batches++;return VK_SUCCESS;}
     VkResult r=eyes(m,f); if(r!=VK_SUCCESS) return r;
     ChVkImmDraw imm={.mode=is3d?1u:2u,.scale=k_levels[m->level]};
+    if(is3d && m->config.world_behind) imm.sbs|=1u<<16;   /* behind the game's camera too (vk_fixed.h) */
     if(!is3d && m->config.textures) {
         if(b->texture && eye_source(m,b->texture)) imm.sbs|=16;
         for(unsigned i=0;i<4;i++) if(b->stage[i] && eye_source(m,b->stage[i])) imm.sbs|=1u<<i;

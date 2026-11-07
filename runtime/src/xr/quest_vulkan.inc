@@ -321,6 +321,10 @@ static int vk_host_init(void)
         config.immersive_scale=p->vr.render_scale;
         config.immersive_program_projection=(VrGameProj){p->vr.program_proj.kx,p->vr.program_proj.ky,
             p->vr.program_proj.cx,p->vr.program_proj.cy,p->vr.program_proj.inv_pz};
+        config.immersive_program_flat_w=p->vr.program_flat_w;
+        config.immersive_scene_hud=p->vr.scene_hud;
+        config.immersive_world_behind=p->vr.world_behind;
+        config.immersive_eye_clear_black=p->vr.eye_clear_black;
     }
     return ch_vk_runtime_configure(&config);
 }

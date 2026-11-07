@@ -24,7 +24,10 @@ typedef struct {
      * uploads end at constants. */
     uint32_t imm_mode;
     /* Mode 2: textures sampled from another surface's eyes (side by side):
-     * bit i stage i, bit 4 the plain texture; each eye samples its half. */
+     * bit i stage i, bit 4 the plain texture; each eye samples its half.
+     * Mode 1: bits 8-12 the same, sampled per eye (immersive.glsl); bit 16
+     * the world behind the game's camera too: not the guest's clip planes
+     * (clip w > 0, its near plane), only the eye's view. */
     uint32_t imm_sbs;
     float imm_gp[5],imm_vp[2][16];
     /* Dynamic resolution (vk_immersive.c): each eye's picture fills this

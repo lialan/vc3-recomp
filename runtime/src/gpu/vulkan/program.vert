@@ -43,8 +43,9 @@ void main() {
     gl_Position=bad?vec4(0,0,0,1):guest_clip;
     gl_ClipDistance[2]=bad?-1e30:side;
     gl_ClipDistance[3]=bad?-1e30:low;
-    gl_ClipDistance[0]=bad?-1e30:w-1e-3;
-    gl_ClipDistance[1]=bad?-1e30:params.p.near_z!=0u?(s.z-params.p.vp_off_z)*w:1;
+    bool behind=ch_imm_behind();
+    gl_ClipDistance[0]=bad?-1e30:behind?1:w-1e-3;
+    gl_ClipDistance[1]=bad?-1e30:behind?1:params.p.near_z!=0u?(s.z-params.p.vp_off_z)*w:1;
     v_col=vp_color(O[3]);v_spec=vp_color(O[4]);v_fog=fog_factor(O[5].x);
     v_uv=O[9].xy*vec2(params.p.uv_scale0[0],params.p.uv_scale0[1])/vec2(params.p.texture[0],params.p.texture[1]);
     for(int i=0;i<4;i++) {tc[i]=O[9+i];tc[i].xy*=vec2(params.p.stage_scale[i][0],params.p.stage_scale[i][1]);}

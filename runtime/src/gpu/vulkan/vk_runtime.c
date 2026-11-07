@@ -370,6 +370,10 @@ static VkResult imm_test_setup(ChVkBackendConfig *config)
     config->immersive_lens_k=p->vr.lens_k;
     config->immersive_program_projection=(VrGameProj){p->vr.program_proj.kx,p->vr.program_proj.ky,
         p->vr.program_proj.cx,p->vr.program_proj.cy,p->vr.program_proj.inv_pz};
+    config->immersive_program_flat_w=p->vr.program_flat_w;
+    config->immersive_scene_hud=p->vr.scene_hud;
+    config->immersive_world_behind=p->vr.world_behind;
+    config->immersive_eye_clear_black=p->vr.eye_clear_black;
     fprintf(stderr,"[Vulkan] immersive test view: each eye %ux%u, lens focal %.1f\n",w,h,config->immersive_lens_k);
     return VK_SUCCESS;
 }

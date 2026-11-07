@@ -122,6 +122,10 @@ typedef struct {
     int (*immersive_flat_now)(uint32_t release);
     float immersive_lens_scale;               /* ChVkImmersiveConfig.lens_scale */
     VrGameProj immersive_program_projection;   /* ChVkImmersiveConfig.program_projection */
+    float immersive_program_flat_w;            /* ChVkImmersiveConfig.program_flat_w */
+    int immersive_scene_hud;                   /* ChVkImmersiveConfig.scene_hud */
+    int immersive_world_behind;                /* ChVkImmersiveConfig.world_behind */
+    int immersive_eye_clear_black;             /* ChVkImmersiveConfig.eye_clear_black */
     /* Flat 16:9 (vk_wide.h), optional; requires raw_fixed and present_rgba.
      * At each flip, non-zero to draw wide from then on: the presented
      * surface's wide picture (its height, 16:9) goes to present_rgba at its

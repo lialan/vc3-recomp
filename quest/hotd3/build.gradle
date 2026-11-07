@@ -1,0 +1,6 @@
+// House of the Dead III VR for Meta Quest: its activity (src/main/java/org/hotd3recomp)
+// and resources; the rest is every game's (../chihiro-app.gradle).
+// quest/build.sh hotd3 fills src/main/libs and the SDL Java sources first.
+ext.appNamespace = "org.hotd3recomp"
+ext.appId = "org.hotd3recomp.vr"
+apply from: '../chihiro-app.gradle'

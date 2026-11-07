@@ -70,6 +70,10 @@ typedef struct {
      * batch gives one (Silent Scope draws all its 3D with vertex programs),
      * at 640x480 (kx 0: none: such batches are 3D only after a fixed one) */
     VrGameProj program_projection;
+    float program_flat_w;   /* a program batch with 0 < clip w <= this is 2D (0: only w 1) */
+    int scene_hud;          /* 2D on a surface composited onto the shown one is HUD too */
+    int world_behind;       /* 3D behind the game's camera drawn too (its clip w > 0 and near plane off) */
+    int eye_clear_black;    /* the eyes' colour clears are black, not the game's colour */
 } ChVkImmersiveConfig;
 VkResult ch_vk_immersive_create(const ChVkImmersiveConfig *,ChVkImmersive **);
 void ch_vk_immersive_destroy(ChVkImmersive *);

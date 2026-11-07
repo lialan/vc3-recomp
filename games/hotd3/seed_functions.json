@@ -38,5 +38,30 @@
   "start": "0x0008D080",
   "observed": false,
   "note": "Callback pushed at 0x8EB8C (with 0x5D910), a destructor-like method (flag argument, ecx this). Folded into 0x8D010 after padding."
+ },
+ {
+  "start": "0x00069B60",
+  "observed": true,
+  "note": "Method (ecx this) stored by sub_0006C1A0 (eax = 0x69B60; [edi] = eax): indirect call \"Failed to resolve VA 0x00069B60\" 3671 times in a 300 s Quest VR run, once the VR cull drew stage parts the flat game skips. stored as a constant by the lifted code (a callback), not reached by the analysis: aligned, after nop padding, no function starts there (hidden_fns.py)."
+ },
+ {
+  "start": "0x00023930",
+  "observed": false,
+  "note": "Method (push esi; mov esi, ecx) stored as a constant by the lifted code (a callback), not reached by the analysis: aligned, after nop padding, no function starts there (hidden_fns.py)."
+ },
+ {
+  "start": "0x0008EAC0",
+  "observed": false,
+  "note": "Method (push ecx; push esi; mov esi, ecx) stored as a constant by the lifted code (a callback), not reached by the analysis: aligned, after nop padding, no function starts there (hidden_fns.py)."
+ },
+ {
+  "start": "0x000CA110",
+  "observed": false,
+  "note": "Function (sub esp, 0x10) stored as a constant by the lifted code (a callback), not reached by the analysis: aligned, after nop padding, no function starts there (hidden_fns.py)."
+ },
+ {
+  "start": "0x000CEBF0",
+  "observed": false,
+  "note": "Function (mov ecx, [esp+4]) stored as a constant by the lifted code (a callback), not reached by the analysis: aligned, after nop padding, no function starts there (hidden_fns.py)."
  }
 ]

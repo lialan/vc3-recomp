@@ -1122,7 +1122,11 @@ static void flip(void) {
                 .family=active->host.family,.pipeline_cache=active->pipeline_cache,.eye_width=active->host.immersive_eye_width,
                 .eye_height=active->host.immersive_eye_height,.batch_limit=active->host.batch_draw_limit,.decode=decode_cpu_texture,.textures=active->textures,.guest_target=guest_target_of,.guest_context=active,.lens_k=active->host.immersive_lens_k,.scale=active->host.immersive_scale,
                 .lens_surface=active->host.immersive_lens,.lens_aim=active->host.immersive_lens_aim,
-                .lens_scale=active->host.immersive_lens_scale,.program_projection=active->host.immersive_program_projection};
+                .lens_scale=active->host.immersive_lens_scale,.program_projection=active->host.immersive_program_projection,
+                .program_flat_w=active->host.immersive_program_flat_w,
+                .scene_hud=active->host.immersive_scene_hud,
+                .world_behind=active->host.immersive_world_behind,
+                .eye_clear_black=active->host.immersive_eye_clear_black};
             VkResult r=ch_vk_immersive_create(&ic,&active->imm);
             if(r!=VK_SUCCESS) fatal(r,"immersive creation");
             fprintf(stderr,"[Vulkan] immersive view: each eye %ux%u\n",ic.eye_width,ic.eye_height);

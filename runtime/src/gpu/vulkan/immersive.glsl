@@ -11,7 +11,7 @@
 // top-right; gl_ClipDistance[2] (side) and [3] (low) keep everything out of
 // the rest, which the headset never shows.
 void ch_imm_texcoords(inout vec2 uv,inout vec4 t[4]) {
-    uint m=params.p.imm_sbs;
+    uint m=params.p.imm_sbs&31u;
     if(m==0u) return;
     float k=params.p.imm_scale;
     // mode 0 (a guest draw sampling eyes, e.g. an effect map): the left eye
@@ -33,7 +33,7 @@ void ch_imm_texcoords(inout vec2 uv,inout vec4 t[4]) {
 // texture mapped onto the geometry (a monitor showing a picture): that
 // eye's half, as for 2D.
 void ch_imm_screen_texcoords(vec3 s,vec4 c,inout vec2 uv,inout vec4 t[4]) {
-    uint m=params.p.imm_sbs>>8;
+    uint m=(params.p.imm_sbs>>8)&31u;
     if(m==0u || params.p.imm_mode!=1u) return;
     float k=params.p.imm_scale;
     vec2 gp=s.xy/vec2(params.p.surface[0],params.p.surface[1]);
@@ -53,6 +53,11 @@ void ch_imm_screen_texcoords(vec3 s,vec4 c,inout vec2 uv,inout vec4 t[4]) {
         else {uv.x=uv.x*.5*k+off;uv.y*=k;}
     }
 }
+// Mode 1 with imm_sbs bit 16 (the profile's vr.world_behind): the world
+// behind the game's camera too. The guest's own clip planes (clip w > 0, its
+// near plane) are not applied, only each eye's view: the game-camera
+// position back from s and w below is exact for any w but 0.
+bool ch_imm_behind() {return params.p.imm_mode==1u && (params.p.imm_sbs&0x10000u)!=0u;}
 vec4 ch_imm_position(vec3 s,float w,vec4 guest_clip,out float side,out float low) {
     uint mode=params.p.imm_mode;
     int eye=gl_InstanceIndex&1;

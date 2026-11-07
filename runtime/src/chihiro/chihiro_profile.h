@@ -150,6 +150,29 @@ typedef struct ChihiroProfile {
          * immersive view recovers it (vr_math.h VrGameProj): screen = (k e.xy
          * / e.z + c) in 640x480 pixels, eye z = clip w * inv_pz (kx 0: none) */
         struct { float kx, ky, cx, cy, inv_pz; } program_proj;
+        /* A vertex-program batch whose clip w is over 0 and at most this is
+         * screen space, not the world (0: only w 1 is): House of the Dead
+         * III draws all its 2D -- HUD, text, copies, sprites -- through
+         * D3D's pass-through for pre-transformed vertices with rhw 10, 1/168
+         * or 1/560 (its near plane), and its world fixed-function. */
+        float program_flat_w;
+        /* 2D drawn on the scene before the scene is composited onto the
+         * screen is the HUD too, not only 2D drawn on the screen after
+         * (House of the Dead III draws player 1's life, RELOAD and CONTINUE
+         * into its scene buffer); full-screen 2D there stays in the world */
+        int scene_hud;
+        /* The immersive eyes draw the world behind the game's camera too: its
+         * 3D is not clipped at the camera's plane (clip w > 0) and near plane
+         * as the console clips it, only to each eye's view -- for a game
+         * that draws what lies behind its camera (House of the Dead III
+         * draws its rooms whole); 0: clipped there, the head turned past 90
+         * degrees sees nothing */
+        int world_behind;
+        /* The immersive eyes clear to black, not to the game's clear colour:
+         * what shows where the game drew nothing (House of the Dead III
+         * clears to its fog colour, red in the lab -- a doorway it never
+         * draws from behind showed as a red hole); 0: the game's colour */
+        int eye_clear_black;
         /* The HUD's pieces, rectangles of its 640x480 picture, y down (count 0:
          * one quad); dx, dy: which way the piece spreads (-1..1; 0: stays) */
         struct { float x0, y0, x1, y1; signed char dx, dy; } hud_tiles[10];

@@ -12,6 +12,8 @@
 #include "chihiro/chihiro.h"
 
 extern void sub_0013BB70(void);     /* D3D KickOff(flags), lifted (VC3's 0x10CA10) */
+extern void hotd3_vr_aim_set(int on, int x, int y);    /* vr_aim.c */
+extern void hotd3_vr_cull_set(float half_angle_rad);   /* vr_cull.c */
 
 /* Launch data for a boot into the test menu (HOTD3_TEST_LAUNCH=1), as the
  * TestLaunch stub acdemoT.xbe (Sega's sample, VC3's vc3_t.xbe's twin) hands
@@ -77,6 +79,53 @@ static const ChihiroProfile k_hotd3 = {
         .dots_x = { 75.5f, 319.5f, 563.5f }, .dots_y = { 53.5f, 236.5f, 419.5f },
         .units_x = 1.0f, .units_y = 1.0f,
         .screen_w = 640.0f, .screen_h = 480.0f,
+    },
+    .gpu = {
+        /* the lab's walkway is ~10.8 units under the camera, a hunched
+         * zombie on it ~12.7 tall (eye-space boxes of chapter 1's batches):
+         * ~7.5 a metre */
+        .units_per_m = 7.5f,
+    },
+    .vr = {
+        .app_name = "House of the Dead III VR",
+        .panel_title = "House of the Dead III - settings",
+        .sdcard_dir = "/sdcard/HouseOfTheDead3",
+        .sight_height = { 0.0285f, 0.0335f, 0.0400f },  /* VC3's handgun sights */
+        .weapon = CH_VR_HANDGUN,
+        .lens_k = 625.2f,       /* its world's projection, as the renderer reads it */
+        /* All its program batches are one program, D3D's pass-through for
+         * pre-transformed vertices: the HUD (rhw 10), text and sprites at or
+         * in front of the near plane (w 168, 560.5), full-screen copies (1)
+         * -- 2D; the world is fixed-function */
+        .program_flat_w = 1000.0f,
+        /* player 1's life, RELOAD and CONTINUE go into the scene buffer
+         * (0x80001000) before it is copied onto the screen */
+        .scene_hud = 1,
+        .aim_screen = hotd3_vr_aim_set,
+        .cull = hotd3_vr_cull_set,
+        /* its stage parts are drawn whole, all round the camera (vr_cull.c):
+         * turning the head shows them, but for the room behind a door the
+         * player has gone through, which it does not draw at all */
+        .world_behind = 1,
+        /* it clears its scene to the stage's fog colour, red in the lab (fog
+         * from 150 units, past its rooms): where it draws nothing -- that
+         * doorway -- black reads as distance, red as a hole */
+        .eye_clear_black = 1,
+        /* its HUD: player 1's P1 and life at the bottom left, player 2's (or
+         * PRESS START BUTTON, CREDIT(S)) at the bottom right, RELOAD left of
+         * the middle over its player's side, CONTINUE? in the middle */
+        .hud_tiles = {
+            {  0,  0,240,200,-1,-1},
+            {240,  0,400,200, 0,-1},
+            {400,  0,640,200, 1,-1},
+            {  0,200,240,380,-1, 0},   /* player 1's RELOAD */
+            {240,200,400,380, 0, 0},   /* CONTINUE? */
+            {400,200,640,380, 1, 0},   /* player 2's */
+            {  0,380,240,480,-1, 1},   /* P1, life */
+            {240,380,400,480, 0, 1},
+            {400,380,640,480, 1, 1},   /* player 2, credits */
+        },
+        .hud_tile_count = 9,
     },
     .hooks = {
         .launch_data = hotd3_launch_data,

@@ -113,6 +113,20 @@ void sub_000BE7B0(void)
     sub_000BE7B0_gen();
 }
 
+/* The guns' readings into the players' aim (once a frame, from 0x84E0F),
+ * then player 1's from the VR host, which may lie beyond the screen
+ * (vr_aim.c). */
+extern void sub_00079E80_gen(void);
+extern void hotd3_gun_aim(void (*generated)(void));
+void sub_00079E80(void) { hotd3_gun_aim(sub_00079E80_gen); }
+
+/* The stage's culling test, a part's bounding sphere against the camera's
+ * view (from the stage's drawer 0x13F00), widened while immersive
+ * (vr_cull.c). */
+extern void sub_00048F50_gen(void);
+extern void hotd3_cull_sphere(void (*generated)(void));
+void sub_00048F50(void) { hotd3_cull_sphere(sub_00048F50_gen); }
+
 /* ── Manual function overrides ─────────────────────────────── */
 
 /* A function pointer to run for an Xbox VA instead of the dispatch table's,
