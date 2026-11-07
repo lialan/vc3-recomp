@@ -90,8 +90,9 @@ static const ChihiroProfile k_hotd3 = {
         .app_name = "House of the Dead III VR",
         .panel_title = "House of the Dead III - settings",
         .sdcard_dir = "/sdcard/HouseOfTheDead3",
-        .sight_height = { 0.0285f, 0.0335f, 0.0400f },  /* VC3's handgun sights */
-        .weapon = CH_VR_HANDGUN,
+        /* a pump-action shotgun, as the cabinet's guns are shaped: the
+         * handgun's controls, its sights the shotgun's own (the overlay's) */
+        .weapon = CH_VR_SHOTGUN,
         .lens_k = 625.2f,       /* its world's projection, as the renderer reads it */
         /* All its program batches are one program, D3D's pass-through for
          * pre-transformed vertices: the HUD (rhw 10), text and sprites at or

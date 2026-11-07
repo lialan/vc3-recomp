@@ -7,8 +7,8 @@
 #ifndef VC3_QUEST_OVERLAY_H
 #define VC3_QUEST_OVERLAY_H
 
-/* QoFrame.weapon: the profile's CH_VR_HANDGUN / CH_VR_RIFLE values */
-enum { QO_WEAPON_HANDGUN, QO_WEAPON_RIFLE };
+/* QoFrame.weapon: the profile's CH_VR_HANDGUN / CH_VR_RIFLE / CH_VR_SHOTGUN values */
+enum { QO_WEAPON_HANDGUN, QO_WEAPON_RIFLE, QO_WEAPON_SHOTGUN };
 enum { QO_SIGHT_IRON, QO_SIGHT_RED_DOT, QO_SIGHT_HOLO, QO_SIGHT_COUNT };
 
 /* One headset frame's worth, in metres in the LOCAL space. */
@@ -30,13 +30,15 @@ typedef struct {
                                    this many radians in radius round the aim (end - gun_p); 0: none */
     int   shot_dot;             /* the rifle's dot where its shot lands, at end: red, the same size
                                    at any distance, in a dark rim; depth tested (vk_overlay.c) */
+    float pump;                 /* the shotgun's pump (its fore-end), 0..1 of its stroke back */
 } QoFrame;
 
 int  qo_init(void);
 /* Gun space (x right, y up, -z the barrel; origin the aim pose): the line the
  * sight looks along lies this far above the origin (the rifle's: its scope's
- * axis, whatever the sight), and the muzzle is here (the rifle's for it: the
- * M700's, its bore 4.6 cm above the origin). */
+ * axis, whatever the sight; the shotgun's: over its rib or its optic), and
+ * the muzzle is here (the rifle's for it: the M700's, its bore 4.6 cm above
+ * the origin; the shotgun's the 870's, 81 cm out). */
 float qo_sight_height(int sight);
 void  qo_muzzle(float out[3]);
 /* The rifle's scope, lens and all, this many times its size (<PREFIX>_XR_LENS_SCALE; 1). */

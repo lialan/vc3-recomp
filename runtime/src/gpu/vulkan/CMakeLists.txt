@@ -187,6 +187,14 @@ target_sources(chihiro_vulkan PRIVATE vk_rifle_assets.S vk_jpeg.c)
 set_source_files_properties(vk_rifle_assets.S PROPERTIES
     COMPILE_DEFINITIONS "RIFLE_M700_MESH=\"${rifle_mesh}\";RIFLE_M700_JPG=\"${rifle_jpg}\""
     OBJECT_DEPENDS "${rifle_mesh};${rifle_jpg}")
+# The VR shotgun's (third_party/shotgun) likewise (vk_shotgun_assets.S).
+set(shotgun_mesh "${CH_VK_ROOT}/third_party/shotgun/r870.mesh")
+set(shotgun_pump_mesh "${CH_VK_ROOT}/third_party/shotgun/r870_pump.mesh")
+set(shotgun_jpg "${CH_VK_ROOT}/third_party/shotgun/r870_color.jpg")
+target_sources(chihiro_vulkan PRIVATE vk_shotgun_assets.S)
+set_source_files_properties(vk_shotgun_assets.S PROPERTIES
+    COMPILE_DEFINITIONS "SHOTGUN_R870_MESH=\"${shotgun_mesh}\";SHOTGUN_R870_PUMP_MESH=\"${shotgun_pump_mesh}\";SHOTGUN_R870_JPG=\"${shotgun_jpg}\""
+    OBJECT_DEPENDS "${shotgun_mesh};${shotgun_pump_mesh};${shotgun_jpg}")
 set(CHIHIRO_VULKAN_SPIRV_OPT_DIR "" CACHE PATH
     "SPIRV-Tools for the target (include/, lib/libSPIRV-Tools{-opt,}.a): pipelines specialized on the CPU")
 if(CHIHIRO_VULKAN_SPIRV_OPT_DIR)

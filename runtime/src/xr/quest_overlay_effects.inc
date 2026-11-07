@@ -89,11 +89,11 @@ static void unapply(const float *m, const float p[3], float o[3])
 }
 
 /* The pane, its coordinates in metres from the sight's line (the reticle
- * and the edge are worked out in them); box: its x0 y0 x1 y1 there. */
-static void qo_glass_vertices(float q[6][5], float center[2], float radii[3], float box[4], const float *model, int sight, float sight_height, const float eye[3], const float target[3])
+ * and the edge are worked out in them); box: its x0 y0 x1 y1 there. gz:
+ * the gun's GLASS[sight] (the shotgun's R870_GLASS). */
+static void qo_glass_vertices(float q[6][5], float center[2], float radii[3], float box[4], const float *model, int sight, const float gz[4], float sight_height, const float eye[3], const float target[3])
 {
     static const float c[6][2] = { { -1, -1 }, { 1, -1 }, { 1, 1 }, { -1, -1 }, { 1, 1 }, { -1, 1 } };
-    const float *gz = GLASS[sight];
     float e[3], t[3], cx = 1e3f, cy = 1e3f;
     radii[0] = radii[1] = radii[2] = 0;
     int k;

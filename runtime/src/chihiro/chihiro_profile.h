@@ -23,7 +23,10 @@
 
 struct ChScopeGame;     /* host/scope_game.h */
 
-enum { CH_VR_HANDGUN = 0, CH_VR_RIFLE = 1 };
+/* The gun held in VR (vr.weapon). The shotgun is the handgun in all but
+ * what is drawn: a pump-action shotgun (the Vulkan renderer's; the GL
+ * renderer draws the handgun), its pump worked by each shot and reload. */
+enum { CH_VR_HANDGUN = 0, CH_VR_RIFLE = 1, CH_VR_SHOTGUN = 2 };
 
 /* A display mode the DIP switches can pick: the value the switches read,
  * and the frame the toolkit's window is sized for. */
@@ -142,7 +145,7 @@ typedef struct ChihiroProfile {
         const char *panel_title;    /* the settings panel's */
         const char *sdcard_dir;     /* the game's folder on shared storage */
         float sight_height[3];      /* iron, red dot, holo, metres over the bore (0: the overlay's) */
-        int weapon;                 /* CH_VR_HANDGUN or CH_VR_RIFLE */
+        int weapon;                 /* CH_VR_HANDGUN, CH_VR_RIFLE or CH_VR_SHOTGUN */
         float lens_k;               /* the main view's focal length, pixels at 640 wide (0: 772.5) */
         float render_scale;         /* immersive eyes fixed at this share of native (1: native); 0: automatic */
         /* The main view's projection for a game that draws its 3D with vertex

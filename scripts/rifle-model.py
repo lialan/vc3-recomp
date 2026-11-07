@@ -1,14 +1,21 @@
 #!/usr/bin/env python3
 """The VR rifle's model for the runtime: third_party/rifle/m700.mesh and
-m700_color.jpg from the Stein Games M700 (CC0; third_party/README.md).
+m700_color.jpg from the Stein Games M700 (CC0; third_party/README.md); and
+the VR shotgun's, third_party/shotgun/r870.mesh, r870_pump.mesh and
+r870_color.jpg from Gintoki1234's Remington 870 (CC BY 4.0; the same).
 
 Usage (by hand, once; the output is committed):
     python3 -I scripts/rifle-model.py <m700.glb> [out dir: third_party/rifle]
+    python3 -I scripts/rifle-model.py --shotgun <r870.glb> [out dir: third_party/shotgun]
 in a venv with numpy and Pillow. The input is the M700 already in glTF in the
 rifle's gun space (metres; +y up; the muzzle along -z; +x right; the origin
 the pistol grip's centre), one mesh, one primitive, its base colour JPEG and
 its occlusion/roughness/metal JPEG (R = ambient occlusion). It is read as
-data: nothing in it is run.
+data: nothing in it is run. The shotgun's is the same but for two meshes,
+"body" and "pump" (the fore-end, which slides), one primitive each, one
+material, and its gun space the handgun's (quest_gun_geometry.inc: the
+origin the controller's aim pose, the trigger where the handgun's is); each
+mesh is written as one file in m700.mesh's format.
 
 m700.mesh, little-endian:
     "RFL1", uint32 vertices, uint32 indices,
@@ -19,8 +26,10 @@ m700_color.jpg: the base colour times the ambient occlusion (in linear
 light), 1024 x 1024. The normal and roughness/metal maps are not used: the
 overlay lights per vertex.
 
-Also prints what the runtime's constants (quest_rifle_geometry.inc) are
-measured from: the muzzle, the rail, the heights round it.
+Also prints what the runtime's constants (quest_rifle_geometry.inc,
+quest_shotgun_geometry.inc) are measured from: the muzzle, the rail, the
+heights round it; the shotgun's bead and receiver, and how far its pump
+slides back before it meets the receiver.
 """
 import io
 import json
@@ -34,7 +43,10 @@ from PIL import Image
 TEXTURE = 1024
 
 
-def load_glb(path):
+def load_glb(path, names=None):
+    """names: the meshes wanted, in that order, one primitive each, one
+    material (None: the file's one mesh, one primitive). Their (positions,
+    normals, uv, triangles), the base colour and the occlusion."""
     data = open(path, 'rb').read()
     magic, version, _ = struct.unpack_from('<III', data, 0)
     if magic != 0x46546C67 or version != 2:
@@ -62,16 +74,30 @@ def load_glb(path):
         return arr.reshape(-1, n) if n > 1 else arr
 
     meshes = gltf['meshes']
-    if len(meshes) != 1 or len(meshes[0]['primitives']) != 1:
-        sys.exit('want one mesh with one primitive')
-    prim = meshes[0]['primitives'][0]
-    if prim.get('mode', 4) != 4:
-        sys.exit('want triangles')
-    at = prim['attributes']
-    pos = accessor(at['POSITION'], 3).astype(np.float64)
-    nrm = accessor(at['NORMAL'], 3).astype(np.float64)
-    uv = accessor(at['TEXCOORD_0'], 2).astype(np.float64)
-    idx = accessor(prim['indices'], 1).astype(np.int64).reshape(-1, 3)
+    if names is None:
+        if len(meshes) != 1 or len(meshes[0]['primitives']) != 1:
+            sys.exit('want one mesh with one primitive')
+        chosen = meshes
+    else:
+        named = {m.get('name'): m for m in meshes}
+        if len(named) != len(meshes) or sorted(named) != sorted(names):
+            sys.exit('want the meshes %s' % ', '.join(names))
+        chosen = [named[n] for n in names]
+        if any(len(m['primitives']) != 1 for m in chosen):
+            sys.exit('want one primitive a mesh')
+        if len({m['primitives'][0]['material'] for m in chosen}) != 1:
+            sys.exit('want one material')
+    parts = []
+    for m in chosen:
+        prim = m['primitives'][0]
+        if prim.get('mode', 4) != 4:
+            sys.exit('want triangles')
+        at = prim['attributes']
+        pos = accessor(at['POSITION'], 3).astype(np.float64)
+        nrm = accessor(at['NORMAL'], 3).astype(np.float64)
+        uv = accessor(at['TEXCOORD_0'], 2).astype(np.float64)
+        idx = accessor(prim['indices'], 1).astype(np.int64).reshape(-1, 3)
+        parts.append((pos, nrm, uv, idx))
 
     material = gltf['materials'][prim['material']]
     pbr = material['pbrMetallicRoughness']
@@ -84,7 +110,7 @@ def load_glb(path):
 
     base = image(pbr['baseColorTexture']['index']).convert('RGB')
     occlusion = image(material['occlusionTexture']['index']).convert('RGB').split()[0]
-    return pos, nrm, uv, idx, base, occlusion, gltf
+    return parts, base, occlusion, gltf
 
 
 def srgb_to_linear(c):
@@ -192,13 +218,40 @@ def measure(pos, idx):
         print('grip origin   ray %s hits at %.4f m' % (name, ray(tris, np.zeros(3), np.array(d, float))))
 
 
+def measure_shotgun(body, bidx, pump, pidx):
+    tris = body[bidx]
+    zmin = body[:, 2].min()
+    tip = body[body[:, 2] < zmin + 0.002]
+    tip_c = (tip.min(0) + tip.max(0)) / 2
+    for name, p in (('body', body), ('pump', pump)):
+        print('%s bounds   x %.4f..%.4f  y %.4f..%.4f  z %.4f..%.4f' % (
+            name, p[:, 0].min(), p[:, 0].max(), p[:, 1].min(), p[:, 1].max(), p[:, 2].min(), p[:, 2].max()))
+    print('muzzle tip    (%.4f, %.4f, %.4f)  [R870_MUZZLE_Y/Z]' % (tip_c[0], tip_c[1], zmin))
+    print('bead          highest %.4f (z %.4f..%.4f)  [R870_BEAD_TOP]' % (top(tris, zmin, zmin + 0.04), zmin, zmin + 0.04))
+    print('rib           highest %.4f (z %.4f..-0.150)' % (top(tris, zmin + 0.04, -0.150, 0.004), zmin + 0.04))
+    print('receiver      highest %.4f (z -0.130..0.030, |x| < 0.011)  [R870_RECEIVER_TOP]' % top(tris, -0.130, 0.030, 0.011))
+    # the fore-end, under the barrel (its action bars, higher, run on into the receiver), and the
+    # nearest of the body behind its rear face within its outline: the receiver's front (the
+    # receiver is open below, so a ray along the bars finds nothing nearer than the trigger plate)
+    fore = pump[pump[:, 1] < -0.005]
+    rear = fore[:, 2].max()
+    lo, hi = fore.min(0), fore.max(0)
+    behind = body[(body[:, 2] > rear) & (body[:, 1] >= lo[1]) & (body[:, 1] <= hi[1])
+                  & (np.abs(body[:, 0]) <= hi[0])]
+    print('pump back     its fore-end\'s rear (z %.4f) is %.4f m from the receiver  [R870_STROKE under it]' % (
+        rear, behind[:, 2].min() - rear))
+
+
 def main():
+    if len(sys.argv) > 1 and sys.argv[1] == '--shotgun':
+        return main_shotgun(sys.argv[2:])
     if len(sys.argv) not in (2, 3):
         sys.exit(__doc__)
     src = sys.argv[1]
     out = sys.argv[2] if len(sys.argv) == 3 else os.path.join(
         os.path.dirname(os.path.abspath(__file__)), '..', 'third_party', 'rifle')
-    pos, nrm, uv, idx, base, occlusion, gltf = load_glb(src)
+    parts, base, occlusion, gltf = load_glb(src)
+    pos, nrm, uv, idx = parts[0]
     print('source        %s: %d vertices, %d triangles; %s' % (
         os.path.basename(src), len(pos), len(idx), gltf.get('asset', {}).get('copyright', '')))
     body, unpacked = pack_mesh(pos, nrm, uv, idx)
@@ -211,6 +264,31 @@ def main():
     print('wrote         m700.mesh %d bytes, m700_color.jpg %d bytes (%d x %d)' % (
         len(body), len(jpg.getvalue()), TEXTURE, TEXTURE))
     measure(unpacked, idx)
+
+
+def main_shotgun(args):
+    if len(args) not in (1, 2):
+        sys.exit(__doc__)
+    src = args[0]
+    out = args[1] if len(args) == 2 else os.path.join(
+        os.path.dirname(os.path.abspath(__file__)), '..', 'third_party', 'shotgun')
+    parts, base, occlusion, gltf = load_glb(src, ('body', 'pump'))
+    print('source        %s: %s; %s' % (os.path.basename(src), ', '.join(
+        '%s %d vertices, %d triangles' % (n, len(p[0]), len(p[3])) for n, p in zip(('body', 'pump'), parts)),
+        gltf.get('asset', {}).get('copyright', '')))
+    unpacked = []
+    for name, (pos, nrm, uv, idx) in zip(('r870.mesh', 'r870_pump.mesh'), parts):
+        body, back = pack_mesh(pos, nrm, uv, idx)
+        with open(os.path.join(out, name), 'wb') as f:
+            f.write(body)
+        print('wrote         %s %d bytes' % (name, len(body)))
+        unpacked.append((back, idx))
+    jpg = io.BytesIO()
+    colour_texture(base, occlusion).save(jpg, 'JPEG', quality=90, subsampling=0, optimize=True)
+    with open(os.path.join(out, 'r870_color.jpg'), 'wb') as f:
+        f.write(jpg.getvalue())
+    print('wrote         r870_color.jpg %d bytes (%d x %d)' % (len(jpg.getvalue()), TEXTURE, TEXTURE))
+    measure_shotgun(unpacked[0][0], unpacked[0][1], unpacked[1][0], unpacked[1][1])
 
 
 if __name__ == '__main__':

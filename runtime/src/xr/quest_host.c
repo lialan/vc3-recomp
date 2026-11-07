@@ -2252,6 +2252,30 @@ static float s_hit_u = -1, s_hit_v = -1;
 static QoFrame s_qo;
 static XrTime s_shot_t;
 
+/* The shotgun's pump (the profile's CH_VR_SHOTGUN): each shot, and each
+ * reload (the trigger off the screen, the grip), works it -- back and
+ * forward again over PUMP_S, its travel sin^2 of the stroke's share (no
+ * jolt at either end). One pulled while it comes forward sends it back from
+ * where it is; while it still goes back, it goes on. */
+#define PUMP_S 0.28
+static XrTime s_pump_t;         /* the stroke's start (0: none yet) */
+static double pump_phase(XrTime t)
+{
+    return s_pump_t ? (double)(t - s_pump_t) / 1e9 / PUMP_S : 1.0;
+}
+static void pump_work(XrTime t)
+{
+    const double p = pump_phase(t);
+    if (chihiro_profile()->vr.weapon != CH_VR_SHOTGUN || (p >= 0.0 && p < 0.5))
+        return;
+    s_pump_t = p < 1.0 ? t - (XrTime)((1.0 - p) * PUMP_S * 1e9) : t;
+}
+static float pump_travel(XrTime t)
+{
+    const double p = pump_phase(t), s = p > 0.0 && p < 1.0 ? sin(3.14159265358979 * p) : 0.0;
+    return (float)(s * s);
+}
+
 /* ── The rifle ────────────────────────────────────────────────────────────
  * The profile's weapon (Silent Scope: a retail title on an Xbox pad). Its
  * shot leaves the game's camera, so only the rifle's direction counts: in
@@ -2732,13 +2756,17 @@ static void gun_frame(XrTime t, const Frame *f)
             rumble(s_gun, ux < 0 ? 0.3f : 0.8f, ux < 0 ? 40 : 25);
             if (ux >= 0)
                 s_shot_t = t;
+            pump_work(t);       /* a shot, or off the screen a reload */
         }
+        if (now[s_gun][4] && !was[s_gun][4])
+            pump_work(t);       /* a reload */
     }
-    /* the kick and the flash of a shot */
+    /* the kick and the flash of a shot; the shotgun's pump */
     {
         double ms = s_shot_t ? (double)(t - s_shot_t) / 1e6 : 1e9;
         s_qo.kick = ms >= 0 && ms < 140 ? (float)(1.0 - ms / 140.0) : 0.0f;
         s_qo.flash = ms < 40;
+        s_qo.pump = pump_travel(t);
     }
 
     if (s_menu.test_frames) {

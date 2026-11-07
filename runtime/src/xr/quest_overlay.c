@@ -45,6 +45,18 @@
 /* Gun space: x right, y up, -z along the barrel; the bore on the aim ray. */
 #include "quest_gun_geometry.inc"
 #include "quest_rifle_geometry.inc"
+#include "quest_shotgun_geometry.inc"
+
+/* The profile's shotgun is drawn by the Vulkan overlay (vk_overlay.c); the
+ * GL one here draws the handgun, so aims along its sights. */
+static int held_shotgun(void)
+{
+#ifdef CHIHIRO_RENDERER_VULKAN
+    return chihiro_profile()->vr.weapon == CH_VR_SHOTGUN;
+#else
+    return 0;
+#endif
+}
 
 float qo_scope_scale(void)
 {
@@ -65,15 +77,15 @@ float qo_sight_height(int sight)
     if (sight < 0 || sight >= QO_SIGHT_COUNT)
         sight = 0;
     p = chihiro_profile()->vr.sight_height;     /* the game's gun, else this one */
-    return p[sight] > 0.0f ? p[sight] : SIGHT_Y[sight];
+    return p[sight] > 0.0f ? p[sight] : held_shotgun() ? R870_SIGHT_Y[sight] : SIGHT_Y[sight];
 }
 
 void qo_muzzle(float out[3])
 {
-    const int rifle = chihiro_profile()->vr.weapon == CH_VR_RIFLE;
+    const int rifle = chihiro_profile()->vr.weapon == CH_VR_RIFLE, shotgun = held_shotgun();
     out[0] = 0;
-    out[1] = rifle ? RIFLE_MUZZLE_Y : 0;     /* the M700's bore */
-    out[2] = rifle ? RIFLE_MUZZLE_Z : MUZZLE_Z;
+    out[1] = rifle ? RIFLE_MUZZLE_Y : shotgun ? R870_MUZZLE_Y : 0;     /* the M700's bore, the 870's */
+    out[2] = rifle ? RIFLE_MUZZLE_Z : shotgun ? R870_MUZZLE_Z : MUZZLE_Z;
 }
 
 void qo_lens_centre(float out[3])
@@ -275,7 +287,7 @@ static void glass_reticle(const float *vp, const float *model, int sight, const 
                           const float target[3])
 {
     float q[6][5], center[2], r[3], box[4];
-    qo_glass_vertices(q, center, r, box, model, sight, qo_sight_height(sight), eye, target);
+    qo_glass_vertices(q, center, r, box, model, sight, GLASS[sight], qo_sight_height(sight), eye, target);
     glUseProgram(prog_ret);
     glBindBuffer(GL_ARRAY_BUFFER, vbo_spot);
     glBufferData(GL_ARRAY_BUFFER, 6 * 5 * sizeof(float), q, GL_DYNAMIC_DRAW);

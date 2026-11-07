@@ -8,6 +8,7 @@
 #include "vk_jpeg.h"
 #include "../../xr/quest_gun_geometry.inc"
 #include "../../xr/quest_rifle_geometry.inc"
+#include "../../xr/quest_shotgun_geometry.inc"
 #include "../../xr/quest_overlay_math.inc"
 #include "../../xr/quest_overlay_effects.inc"
 #include "../../xr/quest_rifle_model.inc"
@@ -47,25 +48,39 @@ static void m700_fail(const char *why) {
     rifle_model_free(&s_m700.m); free(s_m700.v);
     s_m700.tex=NULL; s_m700.v=NULL; s_m700.state=-1;
 }
+/* A model's colour (a JPEG in the binary) decoded and uploaded to target's
+ * device, mipmapped, with a linear sampler of its own (every other
+ * texture's is as it was): VK_SUCCESS and *tex, its size and levels; or
+ * why not, *tex NULL. */
+static VkResult model_texture(ChVkTarget *target,const unsigned char *jpg,const unsigned char *jpg_end,
+    ChVkTexture **tex,uint32_t *w,uint32_t *h,uint32_t *levels,const char **why) {
+    uint32_t *argb=ch_jpeg_argb(jpg,(size_t)(jpg_end-jpg),w,h);
+    *tex=NULL; *levels=1;
+    if(!argb) { *why="its texture does not decode"; return VK_ERROR_INITIALIZATION_FAILED; }
+    for(uint32_t e=*w>*h?*w:*h;e>1;e>>=1) (*levels)++;
+    VkResult r=ch_vk_target_upload_texture_mips(target,*w,*h,argb,*levels,tex);
+    if(r==VK_ERROR_FORMAT_NOT_SUPPORTED) r=ch_vk_target_upload_texture_mips(target,*w,*h,argb,*levels=1,tex);
+    free(argb);
+    if(r!=VK_SUCCESS) { *tex=NULL; *why="its texture does not upload"; return r; }
+    const VkSamplerCreateInfo linear={.sType=VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
+        .magFilter=VK_FILTER_LINEAR,.minFilter=VK_FILTER_LINEAR,.mipmapMode=VK_SAMPLER_MIPMAP_MODE_LINEAR,
+        .addressModeU=VK_SAMPLER_ADDRESS_MODE_REPEAT,.addressModeV=VK_SAMPLER_ADDRESS_MODE_REPEAT,
+        .addressModeW=VK_SAMPLER_ADDRESS_MODE_REPEAT,.maxLod=VK_LOD_CLAMP_NONE};
+    r=ch_vk_texture_set_sampler(*tex,&linear);
+    if(r!=VK_SUCCESS) { ch_vk_texture_destroy(*tex); *tex=NULL; *why="no sampler for its texture"; }
+    return r;
+}
 /* 1: the model is ready to draw into target; 0: the boxes. */
 static int m700_ready(ChVkTarget *target) {
     if(s_m700.state) return s_m700.state>0 && s_m700.device==ch_vk_target_device(target);
     if(!rifle_model_unpack(rifle_m700_mesh,(size_t)(rifle_m700_mesh_end-rifle_m700_mesh),&s_m700.m)) {
         m700_fail("its mesh does not unpack"); return 0;
     }
-    uint32_t w,h,levels=1,*argb=ch_jpeg_argb(rifle_m700_jpg,(size_t)(rifle_m700_jpg_end-rifle_m700_jpg),&w,&h);
-    if(!argb) { m700_fail("its texture does not decode"); return 0; }
-    for(uint32_t e=w>h?w:h;e>1;e>>=1) levels++;
-    VkResult r=ch_vk_target_upload_texture_mips(target,w,h,argb,levels,&s_m700.tex);
-    if(r==VK_ERROR_FORMAT_NOT_SUPPORTED) r=ch_vk_target_upload_texture_mips(target,w,h,argb,levels=1,&s_m700.tex);
-    free(argb);
-    if(r!=VK_SUCCESS) { s_m700.tex=NULL; m700_fail("its texture does not upload"); return 0; }
-    /* its own sampler: every other texture's is as it was */
-    const VkSamplerCreateInfo linear={.sType=VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
-        .magFilter=VK_FILTER_LINEAR,.minFilter=VK_FILTER_LINEAR,.mipmapMode=VK_SAMPLER_MIPMAP_MODE_LINEAR,
-        .addressModeU=VK_SAMPLER_ADDRESS_MODE_REPEAT,.addressModeV=VK_SAMPLER_ADDRESS_MODE_REPEAT,
-        .addressModeW=VK_SAMPLER_ADDRESS_MODE_REPEAT,.maxLod=VK_LOD_CLAMP_NONE};
-    if(ch_vk_texture_set_sampler(s_m700.tex,&linear)!=VK_SUCCESS) { m700_fail("no sampler for its texture"); return 0; }
+    uint32_t w,h,levels;
+    const char *why;
+    if(model_texture(target,rifle_m700_jpg,rifle_m700_jpg_end,&s_m700.tex,&w,&h,&levels,&why)!=VK_SUCCESS) {
+        m700_fail(why); return 0;
+    }
     s_m700.v=calloc((size_t)s_m700.m.nv+SCOPE_MAX_V,sizeof *s_m700.v);
     if(!s_m700.v) { m700_fail("out of memory"); return 0; }
     for(int i=0;i<s_m700.m.nv;i++) {
@@ -76,8 +91,65 @@ static int m700_ready(ChVkTarget *target) {
         s_m700.m.ni/3,w,h,levels);
     return 1;
 }
+
+/* The shotgun: the Remington 870 (third_party/shotgun, CC BY 4.0) textured,
+ * its pump slid back along the barrel by QoFrame.pump of R870_STROKE, an
+ * optic's mount strip on the receiver -- or the handgun's boxes when the
+ * model cannot be had (said once). Loaded as the M700 is (m700_ready), once,
+ * on the device of the first target that wants it. The vertices: the
+ * body's, then the pump's (its indices after the body's, offset), then a
+ * mount strip's; texture coordinates and alpha set once, position and light
+ * written each eye (rifle_shade). */
+extern const unsigned char shotgun_r870_mesh[],shotgun_r870_mesh_end[],shotgun_r870_pump_mesh[],
+    shotgun_r870_pump_mesh_end[],shotgun_r870_jpg[],shotgun_r870_jpg_end[];
+static struct {
+    int state;                  /* 0: not tried; 1: ready; -1: failed, the handgun */
+    VkDevice device;
+    RifleModel body,pump;
+    ChVkTexture *tex;
+    ChVkColorVertex *v;         /* body.nv, pump.nv, then R870_BOX_V */
+    uint16_t *idx;              /* body.ni, then pump.ni */
+} s_r870;
+static void r870_fail(const char *why) {
+    fprintf(stderr,"[overlay] shotgun model: %s -- the handgun instead\n",why);
+    if(s_r870.tex) ch_vk_texture_destroy(s_r870.tex);
+    rifle_model_free(&s_r870.body); rifle_model_free(&s_r870.pump); free(s_r870.v); free(s_r870.idx);
+    s_r870.tex=NULL; s_r870.v=NULL; s_r870.idx=NULL; s_r870.state=-1;
+}
+/* 1: the model is ready to draw into target; 0: the handgun. */
+static int r870_ready(ChVkTarget *target) {
+    if(s_r870.state) return s_r870.state>0 && s_r870.device==ch_vk_target_device(target);
+    if(!rifle_model_unpack(shotgun_r870_mesh,(size_t)(shotgun_r870_mesh_end-shotgun_r870_mesh),&s_r870.body) ||
+       !rifle_model_unpack(shotgun_r870_pump_mesh,(size_t)(shotgun_r870_pump_mesh_end-shotgun_r870_pump_mesh),&s_r870.pump)) {
+        r870_fail("its mesh does not unpack"); return 0;
+    }
+    const int nv=s_r870.body.nv+s_r870.pump.nv,ni=s_r870.body.ni+s_r870.pump.ni;
+    if(nv>65535) { r870_fail("too many vertices for 16-bit indices"); return 0; }
+    uint32_t w,h,levels;
+    const char *why;
+    if(model_texture(target,shotgun_r870_jpg,shotgun_r870_jpg_end,&s_r870.tex,&w,&h,&levels,&why)!=VK_SUCCESS) {
+        r870_fail(why); return 0;
+    }
+    s_r870.v=calloc((size_t)nv+R870_BOX_V,sizeof *s_r870.v);
+    s_r870.idx=malloc((size_t)ni*sizeof *s_r870.idx);
+    if(!s_r870.v || !s_r870.idx) { r870_fail("out of memory"); return 0; }
+    const RifleModel *part[2]={&s_r870.body,&s_r870.pump};
+    for(int k=0,base=0,at=0;k<2;base+=part[k]->nv,at+=part[k]->ni,k++) {
+        for(int i=0;i<part[k]->nv;i++) {
+            ChVkColorVertex *o=&s_r870.v[base+i];
+            o->xy[4]=part[k]->uv[i*2]; o->xy[5]=part[k]->uv[i*2+1]; o->rgba[3]=1;
+        }
+        for(int i=0;i<part[k]->ni;i++) s_r870.idx[at+i]=(uint16_t)(part[k]->idx[i]+base);
+    }
+    for(int i=0;i<R870_BOX_V;i++) s_r870.v[nv+i].rgba[3]=1;
+    s_r870.device=ch_vk_target_device(target); s_r870.state=1;
+    fprintf(stderr,"[overlay] shotgun model: the Remington 870, %d triangles (its pump %d), its texture %ux%u (%u levels)\n",
+        ni/3,s_r870.pump.ni/3,w,h,levels);
+    return 1;
+}
 void ch_vk_overlay_prepare(ChVkTarget *target,int weapon) {
     if(target && weapon==QO_WEAPON_RIFLE) (void)m700_ready(target);
+    if(target && weapon==QO_WEAPON_SHOTGUN) (void)r870_ready(target);
 }
 /* The M700 and its scope, opaque and depth-tested, into target (its depth
  * cleared by the caller, as for the box gun: the headset loop clears all of
@@ -105,6 +177,31 @@ static VkResult m700_read(ChVkTarget *target,const QoFrame *f,const float vp[16]
     return ch_vk_target_draw_state_read(target,NULL,sv,(uint32_t)s_m700_scope.nv,s_m700_scope.idx,(uint32_t)s_m700_scope.ni,
         &state,pixels,bytes);
 }
+/* The 870, its pump where QoFrame.pump puts it, and the sight's mount strip
+ * (none for the bead), opaque and depth-tested as the M700. */
+static VkResult r870_read(ChVkTarget *target,const QoFrame *f,int sight,const float vp[16],void *pixels,VkDeviceSize bytes) {
+    float model[16],kick[16],mvp[16],back[16]={0},pump[16],pump_mvp[16];
+    pose_matrix(f->gun_q,f->gun_p,model); kick_matrix(f->kick,kick); mul(model,model,kick); mul(mvp,vp,model);
+    back[0]=back[5]=back[10]=back[15]=1; back[14]=R870_STROKE*f->pump;
+    mul(pump,model,back); mul(pump_mvp,vp,pump);
+    const int stride=(int)(sizeof(ChVkColorVertex)/sizeof(float)),col=(int)(offsetof(ChVkColorVertex,rgba)/sizeof(float));
+    const int nv=s_r870.body.nv+s_r870.pump.nv,ni=s_r870.body.ni+s_r870.pump.ni;
+    if(!rifle_shade(s_r870.body.p,s_r870.body.n,NULL,s_r870.body.nv,mvp,model,(float *)(void *)s_r870.v,stride,col) ||
+       !rifle_shade(s_r870.pump.p,s_r870.pump.n,NULL,s_r870.pump.nv,pump_mvp,pump,
+           (float *)(void *)(s_r870.v+s_r870.body.nv),stride,col))
+        return VK_ERROR_INITIALIZATION_FAILED;
+    const Nv2aRenderState state={.color_mask=0x01010101,.depth_test_enable=1,.depth_write=1,.depth_func=0x201};
+    VkResult result=ch_vk_target_draw_texture_read(target,NULL,s_r870.v,(uint32_t)nv,s_r870.idx,(uint32_t)ni,
+        &state,s_r870.tex,pixels,bytes);
+    if(result!=VK_SUCCESS || sight==QO_SIGHT_IRON) return result;
+    float p[R870_BOX_V][3],n[R870_BOX_V][3],c[R870_BOX_V][3];
+    uint16_t idx[R870_BOX_V];
+    r870_box(&R870_MOUNT[sight],p,n,c);
+    for(int i=0;i<R870_BOX_V;i++) idx[i]=(uint16_t)i;
+    if(!rifle_shade(&p[0][0],&n[0][0],&c[0][0],R870_BOX_V,mvp,model,(float *)(void *)(s_r870.v+nv),stride,col))
+        return VK_ERROR_INITIALIZATION_FAILED;
+    return ch_vk_target_draw_state_read(target,NULL,s_r870.v+nv,R870_BOX_V,idx,R870_BOX_V,&state,pixels,bytes);
+}
 VkResult ch_vk_overlay_gun_read(ChVkTarget *target,const QoFrame *f,const float vp[16],void *pixels,VkDeviceSize bytes) {
     if(!target || !f || !vp || !pixels) return VK_ERROR_INITIALIZATION_FAILED;
     if(!f->gun_valid || !f->show_gun) return ch_vk_target_clear_aspects_read(target,0,NULL,0,0,pixels,bytes);
@@ -112,10 +209,12 @@ VkResult ch_vk_overlay_gun_read(ChVkTarget *target,const QoFrame *f,const float 
     float norm=0;
     for(unsigned i=0;i<4;i++) { if(!isfinite(f->gun_q[i])) return VK_ERROR_INITIALIZATION_FAILED; norm+=f->gun_q[i]*f->gun_q[i]; }
     if(fabsf(norm-1)>.001f || !isfinite(f->kick) || f->kick<0 || f->kick>1) return VK_ERROR_INITIALIZATION_FAILED;
+    if(!isfinite(f->pump) || f->pump<0 || f->pump>1) return VK_ERROR_INITIALIZATION_FAILED;
     for(unsigned i=0;i<3;i++) if(!isfinite(f->gun_p[i])) return VK_ERROR_INITIALIZATION_FAILED;
     int sight=f->sight;
     if(sight<0 || sight>=QO_SIGHT_COUNT) sight=QO_SIGHT_IRON;
     if(f->weapon==QO_WEAPON_RIFLE && m700_ready(target)) return m700_read(target,f,vp,pixels,bytes);
+    if(f->weapon==QO_WEAPON_SHOTGUN && r870_ready(target)) return r870_read(target,f,sight,vp,pixels,bytes);
     if(f->weapon==QO_WEAPON_RIFLE) { if(cur_sight!=RIFLE_MESH || rifle_scale!=scope_scale(f)) build_rifle(scope_scale(f)); }
     else if(cur_sight!=sight) build_gun(sight);
     (void)SIGHT_Y; (void)GLASS;
@@ -323,10 +422,12 @@ VkResult ch_vk_overlay_read(ChVkTarget *target,const QoFrame *f,const float vp[1
     back[0]=back[5]=back[10]=back[15]=1;
     back[14]=.022f*(f->kick>.6f?(1-f->kick)/.4f:f->kick/.6f); mul(slide,model,back);
     const int rifle=f->weapon==QO_WEAPON_RIFLE,m700=rifle && m700_ready(target),bare=rifle && !f->show_gun;
-    /* the beam and the flash from the drawn gun's muzzle: the M700's, or the box rifle's; with no
-     * rifle drawn (its 2D scope), from the controller */
-    const float local_muzzle[3]={0,m700 && !bare?RIFLE_MUZZLE_Y:0,
-        bare?0:m700?RIFLE_MUZZLE_Z:rifle?RIFLE_BOX_MUZZLE_Z:MUZZLE_Z};
+    const int r870=f->weapon==QO_WEAPON_SHOTGUN && f->show_gun && r870_ready(target);
+    /* the beam and the flash from the drawn gun's muzzle: the M700's, the box rifle's, the 870's;
+     * with no rifle drawn (its 2D scope), from the controller; with no shotgun drawn, from where
+     * the handgun's would be */
+    const float local_muzzle[3]={0,m700 && !bare?RIFLE_MUZZLE_Y:r870?R870_MUZZLE_Y:0,
+        bare?0:m700?RIFLE_MUZZLE_Z:rifle?RIFLE_BOX_MUZZLE_Z:r870?R870_MUZZLE_Z:MUZZLE_Z};
     apply(model,local_muzzle,muzzle);
     if(rifle && f->show_gun) {
         result=lens_read(target,f,model,vp,pixels,bytes);
@@ -334,7 +435,9 @@ VkResult ch_vk_overlay_read(ChVkTarget *target,const QoFrame *f,const float vp[1
     }
     if(!rifle && f->show_gun && sight!=QO_SIGHT_IRON) {
         float center[2],radii[3],box[4];
-        qo_glass_vertices(q,center,radii,box,slide,sight,sight_height,eye,f->end);
+        /* the handgun's glass rides its slide; the shotgun's its receiver */
+        qo_glass_vertices(q,center,radii,box,r870?model:slide,sight,r870?R870_GLASS[sight]:GLASS[sight],
+            sight_height,eye,f->end);
         /* The pane is symmetric about x = 0: shape.w its half width,
          * reticle.zw its bottom and top. */
         ChVkEffect effect={.kind=2,.color={1,.09f,.05f,1},.tint={.55f,.75f,.85f,.06f},
