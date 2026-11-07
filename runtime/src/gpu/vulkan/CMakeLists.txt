@@ -155,6 +155,27 @@ if(CHIHIRO_VULKAN_PIPELINE_CACHE_SEEDS)
     endif()
 endif()
 
+# Pipeline recipes harvested on the headset, packaged so that a first launch
+# precompiles the whole game's pipelines before it starts (vk_recipe_assets.S,
+# vk_target.c). quest/build.sh passes games/<id>/pipeline-cache/quest3/*.recipes.
+set(CHIHIRO_VULKAN_PACKAGED_RECIPES "" CACHE FILEPATH "Pipeline recipes to package (one file; empty: none)")
+set(CHIHIRO_VULKAN_PACKAGED_SPECIALIZED "" CACHE FILEPATH "CPU-specialized shaders to package (one .specialized file; empty: none)")
+enable_language(ASM)
+target_sources(chihiro_vulkan PRIVATE vk_recipe_assets.S)
+set(packaged_defs)
+set(packaged_deps)
+foreach(kind RECIPES SPECIALIZED)
+    if(CHIHIRO_VULKAN_PACKAGED_${kind})
+        get_filename_component(packaged_file "${CHIHIRO_VULKAN_PACKAGED_${kind}}" ABSOLUTE)
+        if(NOT EXISTS "${packaged_file}")
+            message(FATAL_ERROR "Missing packaged pipeline file: ${packaged_file}")
+        endif()
+        list(APPEND packaged_defs "CH_VK_PACKAGED_${kind}=\"${packaged_file}\"")
+        list(APPEND packaged_deps "${packaged_file}")
+    endif()
+endforeach()
+set_source_files_properties(vk_recipe_assets.S PROPERTIES
+    COMPILE_DEFINITIONS "${packaged_defs}" OBJECT_DEPENDS "${packaged_deps}")
 target_sources(chihiro_vulkan PRIVATE ../guest_write_watch.c)
 # The VR rifle's model (third_party/rifle) in the binary, no file access on
 # the headset (vk_rifle_assets.S: .incbin), and its texture's JPEG decoder

@@ -39,23 +39,39 @@ static uint64_t cache_key(const uint32_t *code,size_t words,const VkSpecializati
     return h;
 }
 static const uint32_t kMagic=0x43535031u;   /* "1PSC": key, word count, words */
+/* Packaged with the build (vk_recipe_assets.S; empty without). */
+extern "C" const unsigned char ch_vk_packaged_specialized[],ch_vk_packaged_specialized_end[];
 extern "C" void ch_vk_spirv_specialize_cache_open(const char *path)
 {
     std::lock_guard<std::mutex> lock(s_mutex);
     s_path=path?path:"";s_cache.clear();
-    if(s_path.empty()) return;
-    FILE *f=fopen(s_path.c_str(),"rb");
-    if(!f) return;
-    uint32_t magic=0;size_t loaded=0;
-    if(fread(&magic,4,1,f)==1 && magic==kMagic) for(;;) {
-        uint64_t key;uint32_t words;
-        if(fread(&key,8,1,f)!=1 || fread(&words,4,1,f)!=1 || !words || words>(1u<<20)) break;
-        std::vector<uint32_t> v(words);
-        if(fread(v.data(),4,words,f)!=words) break;
-        s_cache[key]=std::move(v);loaded++;
+    FILE *f=s_path.empty()?NULL:fopen(s_path.c_str(),"rb");
+    if(f) {
+        uint32_t magic=0;size_t loaded=0;
+        if(fread(&magic,4,1,f)==1 && magic==kMagic) for(;;) {
+            uint64_t key;uint32_t words;
+            if(fread(&key,8,1,f)!=1 || fread(&words,4,1,f)!=1 || !words || words>(1u<<20)) break;
+            std::vector<uint32_t> v(words);
+            if(fread(v.data(),4,words,f)!=words) break;
+            s_cache[key]=std::move(v);loaded++;
+        }
+        fclose(f);
+        fprintf(stderr,"[Vulkan] %zu CPU-specialized shaders from %s\n",loaded,s_path.c_str());
     }
-    fclose(f);
-    fprintf(stderr,"[Vulkan] %zu CPU-specialized shaders from %s\n",loaded,s_path.c_str());
+    /* Those packaged with the build (vk_recipe_assets.S; the same records):
+     * a first launch's precompile specialized every shader here, ~0.5 s each
+     * on the Quest's CPU -- 42 s for HOTD3. Not written to the file. */
+    size_t packaged=0;
+    const unsigned char *p=ch_vk_packaged_specialized,*end=ch_vk_packaged_specialized_end;
+    uint32_t pmagic=0;
+    if(end-p>=4) {std::memcpy(&pmagic,p,4);p+=4;}
+    if(pmagic==kMagic) while(end-p>=12) {
+        uint64_t key;uint32_t words;std::memcpy(&key,p,8);std::memcpy(&words,p+8,4);p+=12;
+        if(!words || words>(1u<<20) || (size_t)(end-p)<(size_t)words*4) break;
+        std::vector<uint32_t> v(words);std::memcpy(v.data(),p,(size_t)words*4);p+=(size_t)words*4;
+        if(s_cache.emplace(key,std::move(v)).second) packaged++;
+    }
+    if(packaged) fprintf(stderr,"[Vulkan] %zu packaged CPU-specialized shaders added\n",packaged);
 }
 static void store(uint64_t key,const std::vector<uint32_t> &v)
 {

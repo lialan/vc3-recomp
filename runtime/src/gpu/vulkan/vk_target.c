@@ -2205,6 +2205,8 @@ typedef struct {
     uint32_t magic,version,width,height,depth_format,input_pass;
     PipelineKey key;
 } Recipe;
+/* Recipes packaged with the build (vk_recipe_assets.S; empty without). */
+extern const unsigned char ch_vk_packaged_recipes[],ch_vk_packaged_recipes_end[];
 #define RECIPE_MAGIC 0x50524b56u   /* "VKRP" */
 #define RECIPE_VERSION ((uint32_t)sizeof(Recipe)*16u+1u)
 #define RECIPE_THREADS 8
@@ -2294,11 +2296,27 @@ VkResult ch_vk_target_recipes_start(VkDevice device,VkPipelineCache cache,const 
         }
         fclose(in);
     }
+    /* The recipes packaged with the build (vk_recipe_assets.S: harvested on
+     * the headset, the .recipes files in games/<id>/pipeline-cache/quest3): a first
+     * launch, with no file yet, precompiles the whole game's pipelines too.
+     * Not written to the file -- they come with every start. */
+    size_t local=s_recipes.count,packaged=0,packaged_bad=0;
+    for(const unsigned char *p=ch_vk_packaged_recipes;p+sizeof(Recipe)<=ch_vk_packaged_recipes_end;p+=sizeof(Recipe)) {
+        Recipe r;memcpy(&r,p,sizeof r);
+        if(!recipe_valid(&r)) {packaged_bad++;continue;}
+        if(!recipe_seen(key_identity(r.width,r.height,r.depth_format,r.input_pass,&r.key))) continue;
+        Recipe *grown=realloc(s_recipes.list,(s_recipes.count+1)*sizeof *grown);
+        if(!grown) break;
+        s_recipes.list=grown;s_recipes.list[s_recipes.count++]=r;packaged++;
+    }
+    if(packaged || packaged_bad)
+        fprintf(stderr,"[Vulkan pipelines] %zu packaged recipes added%s\n",packaged,
+            packaged_bad?" (some of another layout: re-harvest them)":"");
     /* A file of another layout (an older build) starts over. */
-    s_recipes.file=fopen(path,bad && !s_recipes.count?"wb":"ab");
-    if(bad && s_recipes.count) {   /* keep the good ones only */
+    s_recipes.file=fopen(path,bad && !local?"wb":"ab");
+    if(bad && local) {   /* keep the file's good ones only */
         fclose(s_recipes.file);s_recipes.file=fopen(path,"wb");
-        if(s_recipes.file) {fwrite(s_recipes.list,sizeof *s_recipes.list,s_recipes.count,s_recipes.file);fflush(s_recipes.file);}
+        if(s_recipes.file) {fwrite(s_recipes.list,sizeof *s_recipes.list,local,s_recipes.file);fflush(s_recipes.file);}
     }
     s_recipes.device=device;s_recipes.cache=cache;s_recipes.start_ns=time_ns();
     atomic_store(&s_recipes.next,0);atomic_store(&s_recipes.stop,0);
@@ -2314,6 +2332,24 @@ VkResult ch_vk_target_recipes_start(VkDevice device,VkPipelineCache cache,const 
         bad?" (some of another layout dropped)":"",s_recipes.threads_n);
     pthread_mutex_unlock(&s_recipes.lock);
     return s_recipes.file?VK_SUCCESS:VK_ERROR_INITIALIZATION_FAILED;
+}
+/* Until the precompile started by ch_vk_target_recipes_start is done: the
+ * game starts with every recorded and packaged pipeline built, so play never
+ * compiles one it has been seen to use. Returns how many were built. */
+unsigned ch_vk_target_recipes_wait(void) {
+    const struct timespec tick={0,5*1000*1000};
+    uint64_t start=time_ns(),last=start;
+    while(atomic_load(&s_recipes.done)<s_recipes.threads_n) {
+        nanosleep(&tick,NULL);
+        if(time_ns()-last>2000000000ull) {
+            last=time_ns();
+            fprintf(stderr,"[Vulkan pipelines] precompiling before the game starts: %u of %zu\n",
+                atomic_load(&s_recipes.built)+atomic_load(&s_recipes.failed),s_recipes.count);
+        }
+    }
+    if(s_recipes.threads_n)
+        fprintf(stderr,"[Vulkan pipelines] the game waited %.0f ms for the precompile\n",(time_ns()-start)/1e6);
+    return atomic_load(&s_recipes.built);
 }
 static void async_stop(void);
 void ch_vk_target_recipes_stop(void) {

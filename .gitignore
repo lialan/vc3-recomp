@@ -84,6 +84,8 @@ media/
 vc3-game/
 *.cache
 *.recipes
+*.recipes.joined
+*.specialized
 validation/**/*.png
 validation/**/*.ppm
 validation/**/*.raw

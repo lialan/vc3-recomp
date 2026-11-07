@@ -70,6 +70,26 @@ else
     done
     PIPELINE_ARGS+=("-DCHIHIRO_VULKAN_PIPELINE_CACHE_SEEDS=$PACKAGED_SEEDS")
 fi
+# Pipeline recipes harvested on the headset (scripts/harvest-pipelines.sh):
+# packaged, so a first launch compiles the whole game's pipelines before it
+# starts instead of in play. CHIHIRO_VULKAN_PACKAGED_RECIPES names a file;
+# unset, every .recipes in the game's quest3 folder, joined; empty: none.
+if [ "${CHIHIRO_VULKAN_PACKAGED_RECIPES+x}" != x ]; then
+    CHIHIRO_VULKAN_PACKAGED_RECIPES=""
+    RECIPE_FILES=("$ROOT/games/$GAME/pipeline-cache/quest3/"*.recipes)
+    if [ -f "${RECIPE_FILES[0]}" ]; then
+        CHIHIRO_VULKAN_PACKAGED_RECIPES="$ROOT/games/$GAME/pipeline-cache/quest3/packaged.recipes.joined"
+        cat "${RECIPE_FILES[@]}" > "$CHIHIRO_VULKAN_PACKAGED_RECIPES"
+        echo "packaging $(($(wc -c < "$CHIHIRO_VULKAN_PACKAGED_RECIPES"))) bytes of pipeline recipes"
+    fi
+fi
+PIPELINE_ARGS+=("-DCHIHIRO_VULKAN_PACKAGED_RECIPES=$CHIHIRO_VULKAN_PACKAGED_RECIPES")
+# and their CPU-specialized shaders (~0.5 s each to make on the headset):
+# the newest .specialized there (CHIHIRO_VULKAN_PACKAGED_SPECIALIZED names one)
+if [ "${CHIHIRO_VULKAN_PACKAGED_SPECIALIZED+x}" != x ]; then
+    CHIHIRO_VULKAN_PACKAGED_SPECIALIZED=$(ls -t "$ROOT/games/$GAME/pipeline-cache/quest3/"*.specialized 2>/dev/null | head -1)
+fi
+PIPELINE_ARGS+=("-DCHIHIRO_VULKAN_PACKAGED_SPECIALIZED=$CHIHIRO_VULKAN_PACKAGED_SPECIALIZED")
 # A seed is required by default only when one is supplied (a damaged or
 # foreign one then fails the build); with none, the game records its own
 # pipelines on the headset as it plays.

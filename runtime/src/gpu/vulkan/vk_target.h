@@ -41,6 +41,8 @@ VkResult ch_vk_target_record_export(ChVkTarget *t,VkCommandBuffer command,VkImag
  * record only); stop() joins them (before the device or cache goes). */
 VkResult ch_vk_target_recipes_start(VkDevice device,VkPipelineCache cache,const char *path,unsigned threads);
 void ch_vk_target_recipes_stop(void);
+/* Block until ch_vk_target_recipes_start's precompile is done; how many it built. */
+unsigned ch_vk_target_recipes_wait(void);
 typedef struct {
     uint64_t pipeline_builds,pipeline_hits,pipeline_evictions,geometry_allocations;
     uint64_t batch_draws,batch_clears,batch_submissions,combined_depth_copies,combined_texture_copies,combined_depth_readbacks,direct_depth_readbacks,direct_color_readbacks,direct_paired_readbacks,combined_color_readbacks,queued_depth_uploads,queued_color_readbacks,ring_submissions;

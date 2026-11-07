@@ -33,6 +33,8 @@ static struct {
     VkPipelineCache pipeline_cache;
     VkDevice cache_device;
     char *cache_path;
+    char *recipes_path;   /* beside it: the pipelines it has built (vk_target.c) */
+    char *specialized_path;   /* and their CPU-specialized shaders (vk_spirv_specialize.cpp) */
     uint64_t publish_ns;
     ChGuestWriteWatch *write_watch;
     uint32_t *argb;
@@ -65,11 +67,47 @@ static void fatal(VkResult result,const char *operation)
     abort();
 }
 
+/* CHIHIRO_VULKAN_PIPELINE_EXPORT=<folder>: a copy of the pipeline cache and
+ * its recipes there, at start and after each save -- the headset keeps them
+ * in the app's private folder, which nothing else can read. Harvested from
+ * there into games/<id>/pipeline-cache/quest3/ (scripts/harvest-pipelines.sh),
+ * quest/build.sh packages them: a first launch then compiles the whole game
+ * before it starts (vk_target.c, recipes). */
+static void copy_file(const char *from,const char *to_dir)
+{
+    const char *base=strrchr(from,'/');base=base?base+1:from;
+    size_t n=strlen(to_dir)+strlen(base)+8;char *to=malloc(n),*tmp=malloc(n+4);
+    FILE *in=fopen(from,"rb"),*out=NULL;size_t bytes=0;
+    if(to && tmp && in) {
+        snprintf(to,n,"%s/%s",to_dir,base);snprintf(tmp,n+4,"%s.tmp",to);
+        out=fopen(tmp,"wb");
+        char buf[1<<16];size_t k;
+        while(out && (k=fread(buf,1,sizeof buf,in))>0) {
+            if(fwrite(buf,1,k,out)!=k) {fclose(out);out=NULL;remove(tmp);break;}
+            bytes+=k;
+        }
+        if(out && fclose(out)==0 && rename(tmp,to)==0)
+            fprintf(stderr,"[Vulkan pipelines] exported %s (%zu bytes)\n",to,bytes);
+    }
+    if(in) fclose(in);
+    free(to);free(tmp);
+}
+static void export_pipelines(void)
+{
+    const char *dir=ch_env("VULKAN_PIPELINE_EXPORT");
+    if(!dir || !*dir) return;
+    if(runtime.cache_path) copy_file(runtime.cache_path,dir);
+    if(runtime.recipes_path) copy_file(runtime.recipes_path,dir);
+    if(runtime.specialized_path) copy_file(runtime.specialized_path,dir);
+}
+
 static void save_pipeline_cache(void)
 {
-    if(runtime.pipeline_cache && runtime.cache_path)
-        fprintf(stderr,"[Vulkan pipeline cache] save=%s\n",
-            ch_vk_pipeline_cache_file_save(runtime.cache_device,runtime.pipeline_cache,runtime.cache_path)?"ok":"skipped");
+    if(runtime.pipeline_cache && runtime.cache_path) {
+        int ok=ch_vk_pipeline_cache_file_save(runtime.cache_device,runtime.pipeline_cache,runtime.cache_path);
+        fprintf(stderr,"[Vulkan pipeline cache] save=%s\n",ok?"ok":"skipped");
+        if(ok) export_pipelines();
+    }
 }
 
 /* The periodic save, off the render thread. Copying the cache out of the
@@ -764,12 +802,19 @@ static VkResult attach(ChVkBackendConfig config)
                 {   /* CPU-specialized shaders beside them */
                     char *spec=malloc(strlen(recipes)+16);
                     if(spec) {strcpy(spec,recipes);strcpy(strrchr(spec,'.'),".specialized");
-                        ch_vk_spirv_specialize_cache_open(spec);free(spec);}
+                        ch_vk_spirv_specialize_cache_open(spec);
+                        free(runtime.specialized_path);runtime.specialized_path=spec;}
                 }
 #endif
                 const char *e=getenv("CHIHIRO_VULKAN_PRECOMPILE_THREADS");
                 ch_vk_target_recipes_start(config.device,runtime.pipeline_cache,recipes,e?(unsigned)atoi(e):4u);
-                free(recipes);
+                /* The game starts once they are all built (packaged ones
+                 * too: a first launch compiles here, not in play).
+                 * CHIHIRO_VULKAN_PRECOMPILE_WAIT=0: in the background. */
+                const char *w=ch_env("VULKAN_PRECOMPILE_WAIT");
+                if(!w || atoi(w)) ch_vk_target_recipes_wait();
+                free(runtime.recipes_path);runtime.recipes_path=recipes;
+                export_pipelines();
             }
         }
     }
@@ -905,7 +950,7 @@ void ch_vk_runtime_stop(void)
 #endif
     save_pipeline_cache();
     if(runtime.pipeline_cache) vkDestroyPipelineCache(runtime.cache_device,runtime.pipeline_cache,NULL);
-    free(runtime.cache_path);
+    free(runtime.cache_path);free(runtime.recipes_path);free(runtime.specialized_path);
     if(runtime.write_watch) {
 #if !defined(_WIN32)
         w32_set_memory_observer(NULL);
