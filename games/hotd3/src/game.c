@@ -58,12 +58,20 @@ static const ChihiroProfile k_hotd3 = {
         { NULL,   0x2, "640x480",  "2" },
     },
     /* VC3's I/O board, to start with: the same Sega library asks for it
-     * (Phase 2 checks what HOTD3's I/O check wants) */
+     * (Phase 2 checks what HOTD3's I/O check wants). The gun, as INPUT TEST
+     * names its switches (decoded by sub_00011950): TRIGGER push 1,
+     * SCREEN-IN push 2 (held: the gun sees no screen -- no position, no
+     * shot), GRIP push 3. A press of GRIP is HOTD3's reload, its only one
+     * (gun +0x18, from sub_00079E80, starts sub_000955A0's reload, whose
+     * sub_00094A10 loads six shells): a reload holds SCREEN-IN and GRIP
+     * both, so the trigger the reload pulls 100 ms on (host_input.c) is no
+     * shot. With push 2 alone -- the off-screen switch VC3 reloads by --
+     * neither the grip nor the trigger off the screen ever reloaded. */
     .jvs = {
         .ident = "SEGA ENTERPRISES,LTD.;I/O BD JVS;837-13551 ;Ver1.00;98/10",
         .players = 2, .switch_bytes = 2, .coin_slots = 2,
         .analog_channels = 8, .screen_channels = 2,
-        .trigger = JVS_SW_PUSH1, .offscreen = JVS_SW_PUSH2,
+        .trigger = JVS_SW_PUSH1, .offscreen = JVS_SW_PUSH2 | JVS_SW_PUSH3,
     },
     /* GUN SETTING > PLAYER1 GUN ADJUSTMENT: shoot targets centred at
      * (75.5, 53.5), (563.5, 419.5) and (319.5, 236.5) of 640x480; the readings

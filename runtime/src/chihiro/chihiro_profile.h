@@ -97,7 +97,9 @@ typedef struct ChihiroProfile {
     struct {
         const char *ident;          /* the identify reply */
         int players, switch_bytes, coin_slots, analog_channels, screen_channels;
-        /* the player switch bits the host's inputs press */
+        /* the player switch bits the host's inputs press (offscreen: what a
+         * reload holds -- VC3's gun "off the screen" switch; House of the
+         * Dead III's that and its gun's GRIP, which it reloads by) */
         uint16_t trigger, offscreen, change, pedal;
     } jvs;
 
