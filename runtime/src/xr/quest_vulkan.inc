@@ -325,6 +325,12 @@ static int vk_host_init(void)
         config.immersive_scene_hud=p->vr.scene_hud;
         config.immersive_world_behind=p->vr.world_behind;
         config.immersive_eye_clear_black=p->vr.eye_clear_black;
+        /* Zero copy: the eye targets' own images shared with this device,
+         * handed over at each flip instead of copied into a slot's image
+         * (a 4128x2208 copy: ~0.9 ms of the Quest's GPU a game frame);
+         * CHIHIRO_VULKAN_EYES_ZERO_COPY=0: copied, as before. */
+        const char *z=getenv("CHIHIRO_VULKAN_EYES_ZERO_COPY");
+        config.immersive_share_eyes=!z || atoi(z)!=0;
     }
     return ch_vk_runtime_configure(&config);
 }
@@ -579,6 +585,7 @@ static uint64_t s_vk_seg[12];   /* world, clear, HUD, gun, swapchain copy, settl
 static struct {
     VkCommandPool pool;VkCommandBuffer cmd[VK_HOST_CMDS];VkFence fence[VK_HOST_CMDS];
     int busy[VK_HOST_CMDS];unsigned next;int world;   /* world: the last world copy's slot, -1 none */
+    const ChVkGpuFrame *eyes;   /* the frame whose shared eyes it read (zero copy), NULL none */
     /* CHIHIRO_VULKAN_MAILBOX_TIMING=1 (diagnostic): the world copies' GPU
      * time on the headset's device, averaged in the log every 60 */
     VkQueryPool timing;int timed[VK_HOST_CMDS];float period;double ms;unsigned n;
@@ -653,6 +660,34 @@ static void vk_host_world_settle(void)
 {
     if(s_vk_host.world>=0) vk_host_wait((unsigned)s_vk_host.world);
     s_vk_host.world=-1;
+    if(s_vk_host.eyes) ch_vk_gpu_frame_eyes_done(s_vk_host.eyes);   /* the game may render into them again */
+    s_vk_host.eyes=NULL;
+}
+/* Zero copy (ChVkGpuFrame.eyes_shared): the game's eye targets' images on
+ * this device, each imported once, by the mailbox's share. */
+static struct {uint64_t id;VkImage image;VkDeviceMemory memory;} s_vk_shared[CH_VK_GPU_MAILBOX_SHARES];
+/* The frame's eyes to copy from; NULL: none -- the game took them back, or
+ * they cannot be imported (later frames copied, as without zero copy). */
+static VkImage vk_shared_eyes(const Frame *f)
+{
+    unsigned s;uint64_t id;
+    if(!ch_vk_gpu_frame_eyes_begin(&f->gpu,&s,&id)) return VK_NULL_HANDLE;
+    if(s_vk_shared[s].id!=id) {   /* a new target there; no copy reads the old one (settled) */
+        if(s_vk_shared[s].image) vkDestroyImage(s_vk.device,s_vk_shared[s].image,NULL);
+        if(s_vk_shared[s].memory) vkFreeMemory(s_vk.device,s_vk_shared[s].memory,NULL);
+        memset(&s_vk_shared[s],0,sizeof s_vk_shared[s]);
+        ChVkTargetExport memory;
+        if(!ch_vk_gpu_frame_eyes_memory(&f->gpu,&memory)) return VK_NULL_HANDLE;   /* taken back just now */
+        VkResult r=ch_vk_xr_bridge_import_image(&s_vk_bridge,&memory,&s_vk_shared[s].image,&s_vk_shared[s].memory);
+        if(r!=VK_SUCCESS) {
+            fprintf(stderr,"[xr] the game's eye image not imported (%d): copied from here on\n",(int)r);
+            ch_vk_gpu_mailbox_copy_eyes(s_vk_frames);ch_vk_gpu_frame_eyes_done(&f->gpu);
+            return VK_NULL_HANDLE;
+        }
+        s_vk_shared[s].id=id;
+        fprintf(stderr,"[xr] immersive: the game's eye image %u imported (%ux%u, zero copy)\n",s,memory.width,memory.height);
+    }
+    return s_vk_shared[s].image;
 }
 /* A new immersive frame into the world swapchain and the HUD texture;
  * returns whether anything changed. */
@@ -668,13 +703,24 @@ static int vk_world_update(const Frame *f)
         fprintf(stderr,"[xr] immersive: eyes %ux%u, side by side\n",w/2,h);
     }
     if(s_vk_world_sequence==f->gpu.sequence) return 0;
+    /* zero copy: from the game's eye target itself, given back after */
+    const VkImage shared=f->gpu.eyes_shared?vk_shared_eyes(f):VK_NULL_HANDLE;
+    if(f->gpu.eyes_shared && !shared) {s_vk_world_sequence=f->gpu.sequence;return 0;}   /* the last picture stays */
     uint32_t index;VkImage image;
     (void)result;
     SEG(6,vk_xr_check(ch_vk_xr_swapchain_wait(s_vk_world,XR_INFINITE_DURATION,&index,&image),"world acquire"));
     VkCommandBuffer cmd=vk_host_begin();
+    /* The read counts from here, the swapchain image waited for (a
+     * compositor delay there does not hold up the game); 0: the game took
+     * its eyes back meanwhile, having waited 100 ms -- the image goes back
+     * unwritten, an older picture once. */
+    const int read=shared && ch_vk_gpu_frame_eyes_reading(&f->gpu,s_vk.device,s_vk_host.fence[s_vk_host.next%VK_HOST_CMDS]);
     vk_host_stamp(cmd,0);
-    if(f->gpu.eyes_image && s_vk_bridge.image_w==w && s_vk_bridge.image_h==h)
-        SEG(7,vk_xr_check(ch_vk_xr_swapchain_record_image(s_vk_world,cmd,s_vk_bridge.xr_image[f->gpu.slot],s_vk.family),"world copy"));
+    if(read)
+        SEG(7,vk_xr_check(ch_vk_xr_swapchain_record_image(s_vk_world,cmd,shared,s_vk.family,1),"world copy"));
+    else if(shared);
+    else if(f->gpu.eyes_image && s_vk_bridge.image_w==w && s_vk_bridge.image_h==h)
+        SEG(7,vk_xr_check(ch_vk_xr_swapchain_record_image(s_vk_world,cmd,s_vk_bridge.xr_image[f->gpu.slot],s_vk.family,0),"world copy"));
     else SEG(7,vk_xr_check(ch_vk_xr_swapchain_record_buffer(s_vk_world,cmd,s_vk_bridge.xr_buffer[f->gpu.slot],0),"world copy"));
     s_vk_world_scale=f->gpu.imm.scale>0 && f->gpu.imm.scale<=1?f->gpu.imm.scale:1;
     s_drawn_pct=(int)(s_vk_world_scale*100+.5f);
@@ -738,6 +784,7 @@ static int vk_world_update(const Frame *f)
     }
     vk_host_stamp(cmd,1);
     s_vk_host.world=(int)vk_host_submit();
+    if(read) s_vk_host.eyes=&f->gpu;
     SEG(9,vk_xr_check(ch_vk_xr_swapchain_release_submitted(s_vk_world),"world release"));
     if(s_vk_hud_valid && !vk_hud_in_overlay()) vk_xr_check(ch_vk_xr_quad_release_submitted(s_vk_hud_quad),"HUD release");
     s_vk_world_sequence=f->gpu.sequence;

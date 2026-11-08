@@ -40,7 +40,9 @@ XrResult ch_vk_xr_swapchain_settle(ChVkXrSwapchain *s);
 XrResult ch_vk_xr_swapchain_record_buffer(ChVkXrSwapchain *s,VkCommandBuffer command,VkBuffer buffer,VkDeviceSize offset);
 /* The same from an RGBA8 image of the swapchain's size that another device
  * copied into and released (ch_vk_target_record_copy_to_image), acquired
- * here for queue family `family`. */
-XrResult ch_vk_xr_swapchain_record_image(ChVkXrSwapchain *s,VkCommandBuffer command,VkImage source,uint32_t family);
+ * here for queue family `family`; with release, released back to that
+ * device after the copy, as it was acquired (zero copy: its eye target,
+ * ch_vk_target_record_release, which it renders into again). */
+XrResult ch_vk_xr_swapchain_record_image(ChVkXrSwapchain *s,VkCommandBuffer command,VkImage source,uint32_t family,int release);
 XrResult ch_vk_xr_swapchain_release_submitted(ChVkXrSwapchain *s);
 #endif

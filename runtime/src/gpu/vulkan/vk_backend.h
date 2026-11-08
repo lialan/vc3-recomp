@@ -126,6 +126,7 @@ typedef struct {
     int immersive_scene_hud;                   /* ChVkImmersiveConfig.scene_hud */
     int immersive_world_behind;                /* ChVkImmersiveConfig.world_behind */
     int immersive_eye_clear_black;             /* ChVkImmersiveConfig.eye_clear_black */
+    int immersive_share_eyes;                  /* ChVkImmersiveConfig.share_eyes */
     /* Flat 16:9 (vk_wide.h), optional; requires raw_fixed and present_rgba.
      * At each flip, non-zero to draw wide from then on: the presented
      * surface's wide picture (its height, 16:9) goes to present_rgba at its

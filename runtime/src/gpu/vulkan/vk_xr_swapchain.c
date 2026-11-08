@@ -218,7 +218,7 @@ XrResult ch_vk_xr_swapchain_record_buffer(ChVkXrSwapchain *s,VkCommandBuffer com
     vkCmdPipelineBarrier(command,VK_PIPELINE_STAGE_TRANSFER_BIT,VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT,0,0,NULL,0,NULL,1,&barrier);
     return XR_SUCCESS;
 }
-XrResult ch_vk_xr_swapchain_record_image(ChVkXrSwapchain *s,VkCommandBuffer command,VkImage source,uint32_t family) {
+XrResult ch_vk_xr_swapchain_record_image(ChVkXrSwapchain *s,VkCommandBuffer command,VkImage source,uint32_t family,int release) {
     if(!s || !command || !source) return XR_ERROR_VALIDATION_FAILURE;
     if(!s->waited || s->failed) return XR_ERROR_CALL_ORDER_INVALID;
     VkImage image=s->images[s->index].image;
@@ -242,6 +242,11 @@ XrResult ch_vk_xr_swapchain_record_image(ChVkXrSwapchain *s,VkCommandBuffer comm
     done.dstAccessMask=VK_ACCESS_COLOR_ATTACHMENT_READ_BIT|VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
     done.oldLayout=VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;done.newLayout=VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
     vkCmdPipelineBarrier(command,VK_PIPELINE_STAGE_TRANSFER_BIT,VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT,0,0,NULL,0,NULL,1,&done);
+    if(release) {   /* back to the device that renders into it, once the copy has read it */
+        VkImageMemoryBarrier back=barriers[0];
+        back.dstAccessMask=0;back.srcQueueFamilyIndex=family;back.dstQueueFamilyIndex=VK_QUEUE_FAMILY_EXTERNAL;
+        vkCmdPipelineBarrier(command,VK_PIPELINE_STAGE_TRANSFER_BIT,VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,0,0,NULL,0,NULL,1,&back);
+    }
     return XR_SUCCESS;
 }
 XrResult ch_vk_xr_swapchain_release_submitted(ChVkXrSwapchain *s) {

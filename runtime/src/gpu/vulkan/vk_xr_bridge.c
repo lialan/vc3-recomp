@@ -1,4 +1,5 @@
 #include "vk_xr_bridge.h"
+#include "vk_target.h"
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
@@ -191,6 +192,45 @@ VkResult ch_vk_xr_bridge_create_images(ChVkXrBridge *b, VkPhysicalDevice physica
     b->image_w = width; b->image_h = height;
     fprintf(stderr, "[xr bridge] shared images %ux%u%s\n", width, height, dedicated ? " (dedicated)" : "");
     return VK_SUCCESS;
+}
+
+VkResult ch_vk_xr_bridge_import_image(ChVkXrBridge *b, const ChVkTargetExport *memory,
+                                      VkImage *image, VkDeviceMemory *imported) {
+    if (!image || !imported) return VK_ERROR_INITIALIZATION_FAILED;
+    *image = VK_NULL_HANDLE; *imported = VK_NULL_HANDLE;
+    if (!b || !b->xr || !memory || memory->fd < 0) {
+        if (memory && memory->fd >= 0) close(memory->fd);
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+    VkExternalMemoryImageCreateInfo external = {.sType = VK_STRUCTURE_TYPE_EXTERNAL_MEMORY_IMAGE_CREATE_INFO,
+        .handleTypes = VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT};
+    VkImageCreateInfo info = image_info(memory->width, memory->height, &external);
+    info.usage = memory->usage;
+    VkResult r = vkCreateImage(b->xr, &info, NULL, image);
+    if (r == VK_SUCCESS) {   /* the same image on the same GPU: the same needs */
+        VkMemoryRequirements req;
+        vkGetImageMemoryRequirements(b->xr, *image, &req);
+        if (!(req.memoryTypeBits & (1u << memory->memory_type)) || req.size > memory->size)
+            r = VK_ERROR_FEATURE_NOT_PRESENT;
+    }
+    if (r == VK_SUCCESS) {
+        VkMemoryDedicatedAllocateInfo dedicated = {.sType = VK_STRUCTURE_TYPE_MEMORY_DEDICATED_ALLOCATE_INFO,
+            .image = *image};
+        VkImportMemoryFdInfoKHR import = {.sType = VK_STRUCTURE_TYPE_IMPORT_MEMORY_FD_INFO_KHR,
+            .pNext = memory->dedicated ? &dedicated : NULL,
+            .handleType = VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT, .fd = memory->fd};
+        VkMemoryAllocateInfo alloc = {.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO, .pNext = &import,
+            .allocationSize = memory->size, .memoryTypeIndex = memory->memory_type};
+        r = vkAllocateMemory(b->xr, &alloc, NULL, imported);
+        if (r == VK_SUCCESS) r = vkBindImageMemory(b->xr, *image, *imported, 0);   /* the memory owns the fd */
+        else close(memory->fd);
+    } else close(memory->fd);
+    if (r != VK_SUCCESS) {
+        if (*image) vkDestroyImage(b->xr, *image, NULL);
+        if (*imported) vkFreeMemory(b->xr, *imported, NULL);
+        *image = VK_NULL_HANDLE; *imported = VK_NULL_HANDLE;
+    }
+    return r;
 }
 
 void ch_vk_xr_bridge_destroy(ChVkXrBridge *b) {

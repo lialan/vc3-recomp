@@ -20,6 +20,10 @@ typedef struct {
      * (ch_vk_gpu_mailbox_set_images; released to VK_QUEUE_FAMILY_EXTERNAL
      * in TRANSFER_SRC_OPTIMAL). */
     int eyes_image;
+    /* Zero copy: the eyes in the eye target's own image, which the
+     * headset's device shares (ch_vk_target_create_exportable): read it only
+     * as ch_vk_gpu_frame_eyes_begin/eyes_reading allow, until eyes_done. */
+    int eyes_shared;
     /* Bridge mode: the copy into the slot's buffer is asynchronous; wait on
      * this fence (of ready_device) before reading the buffer. */
     VkDevice ready_device;
@@ -39,6 +43,7 @@ void ch_vk_gpu_mailbox_set_pacing(ChVkGpuMailbox *,uint64_t (*due)(void),uint64_
 /* Wait for a taken frame's copy (bridge mode); no-op otherwise. */
 VkResult ch_vk_gpu_frame_wait(const ChVkGpuFrame *);
 #define CH_VK_GPU_MAILBOX_SLOTS 4
+#define CH_VK_GPU_MAILBOX_SHARES 8   /* eye targets handed over as they are, at most */
 /* Four immutable GPU snapshots. One producer; any taken frame owns a slot
  * until release. No CPU pixels, readback, or upload. Vulkan calls (publish,
  * consumer image use, destroy) require the host's shared queue lock. Take and
@@ -65,7 +70,8 @@ void ch_vk_gpu_mailbox_set_queue(ChVkGpuMailbox *,unsigned depth);
  * VK_NOT_READY means all slots are held: keep the previously displayed frame. */
 VkResult ch_vk_gpu_mailbox_publish(void *,const Nv2aSurface *,ChVkTarget *);
 /* An immersive frame: eyes, HUD and lens picture (NULL: none; as info->lens)
- * into a slot's shared buffer (bridge mode; FEATURE_NOT_PRESENT otherwise).
+ * into a slot's shared buffer (bridge mode; FEATURE_NOT_PRESENT otherwise);
+ * exportable eyes handed over as they are instead (eyes_shared).
  * A lens picture that does not fit the slot is left out (imm.lens 0).
  * VK_NOT_READY as for publish. */
 VkResult ch_vk_gpu_mailbox_publish_immersive(ChVkGpuMailbox *,const Nv2aSurface *,ChVkTarget *eyes,
@@ -80,6 +86,27 @@ VkResult ch_vk_gpu_mailbox_take_ready(ChVkGpuMailbox *,ChVkGpuFrame *);
 uint64_t ch_vk_gpu_mailbox_gpu_late_count(void);
 /* Finish consumer GPU use before release. Frames are move-only values. */
 void ch_vk_gpu_frame_release(ChVkGpuFrame *);
+/* Zero copy (eyes_shared), the headset's side of a taken frame. The game
+ * renders into the eye target again once no frame holds its eyes: each one
+ * holds them until released, or until eyes_done after its read; one not
+ * being read gives them up after the game waited 100 ms (the headset not
+ * taking or reading frames). begin: 1 while it holds them, with the eye
+ * target's share (0..CH_VK_GPU_MAILBOX_SHARES-1, the same target's each
+ * frame) and id (changed: a new target there; import again); 0: none to
+ * read. memory: the share's memory for the import (vk_xr_bridge.h; a new
+ * fd, the caller's), 0: none. reading, just before the read is recorded
+ * and submitted: its fence (device's, unsignalled until the read is done,
+ * and not reset before eyes_done), which the game waits for (and sees done
+ * without waiting for eyes_done); 0: not to be read after all (given up
+ * meanwhile). done: the read complete. The read acquires the image from
+ * VK_QUEUE_FAMILY_EXTERNAL and releases it back to it, as
+ * TRANSFER_SRC_OPTIMAL. */
+int ch_vk_gpu_frame_eyes_begin(const ChVkGpuFrame *,unsigned *share,uint64_t *id);
+int ch_vk_gpu_frame_eyes_memory(const ChVkGpuFrame *,ChVkTargetExport *);
+int ch_vk_gpu_frame_eyes_reading(const ChVkGpuFrame *,VkDevice device,VkFence fence);
+void ch_vk_gpu_frame_eyes_done(const ChVkGpuFrame *);
+/* The headset cannot import the eye targets: their eyes copied from now on. */
+void ch_vk_gpu_mailbox_copy_eyes(ChVkGpuMailbox *);
 /* Stop/join users first. Returns VK_NOT_READY while taken frames remain;
  * leaves mailbox intact for later release and retry. */
 VkResult ch_vk_gpu_mailbox_destroy(ChVkGpuMailbox *);

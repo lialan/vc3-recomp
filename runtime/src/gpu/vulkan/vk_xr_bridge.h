@@ -28,5 +28,11 @@ VkResult ch_vk_xr_bridge_create(VkPhysicalDevice physical, VkDevice xr, VkDevice
                                 VkDeviceSize capacity, ChVkXrBridge *out);
 /* The shared images (after create); on failure none, the buffers kept. */
 VkResult ch_vk_xr_bridge_create_images(ChVkXrBridge *b, VkPhysicalDevice physical, uint32_t width, uint32_t height);
+/* Zero copy: an image of the game's device (ch_vk_target_export: its eye
+ * target's) on the headset's -- made as the game made it, its memory
+ * imported; the fd consumed either way. */
+struct ChVkTargetExport;
+VkResult ch_vk_xr_bridge_import_image(ChVkXrBridge *b, const struct ChVkTargetExport *memory,
+                                      VkImage *image, VkDeviceMemory *imported);
 void ch_vk_xr_bridge_destroy(ChVkXrBridge *b);
 #endif

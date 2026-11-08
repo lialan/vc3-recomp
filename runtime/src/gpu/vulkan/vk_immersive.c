@@ -176,7 +176,16 @@ static VkResult eyes(ChVkImmersive *m,struct ImmSurface *f) {
     uint32_t w=m->config.eye_width*2/f->div,h=m->config.eye_height/f->div;
     size_t bytes=(size_t)w*h*4;
     f->pixels=malloc(bytes); if(!f->pixels) return VK_ERROR_OUT_OF_HOST_MEMORY;
-    VkResult r=ch_vk_target_create_depth(m->config.physical,m->config.device,m->config.queue,m->config.family,
+    VkResult r=VK_ERROR_FEATURE_NOT_PRESENT;
+    if(m->config.share_eyes && f->div==1) {   /* the ones the headset gets: shared with its device (zero copy) */
+        r=ch_vk_target_create_exportable(m->config.physical,m->config.device,m->config.queue,m->config.family,
+            w,h,VK_FORMAT_D24_UNORM_S8_UINT,&f->eyes);
+        if(r==VK_ERROR_FORMAT_NOT_SUPPORTED) r=ch_vk_target_create_exportable(m->config.physical,m->config.device,
+            m->config.queue,m->config.family,w,h,VK_FORMAT_D32_SFLOAT_S8_UINT,&f->eyes);
+        static int logged;
+        if(r!=VK_SUCCESS && !logged++) fprintf(stderr,"[immersive] eyes not shareable (%d): copied to the headset\n",(int)r);
+    }
+    if(r!=VK_SUCCESS) r=ch_vk_target_create_depth(m->config.physical,m->config.device,m->config.queue,m->config.family,
         w,h,VK_FORMAT_D24_UNORM_S8_UINT,&f->eyes);
     if(r==VK_ERROR_FORMAT_NOT_SUPPORTED) r=ch_vk_target_create(m->config.physical,m->config.device,
         m->config.queue,m->config.family,w,h,&f->eyes);

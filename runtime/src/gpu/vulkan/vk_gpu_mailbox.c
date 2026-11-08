@@ -5,9 +5,15 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <unistd.h>
 struct ChVkGpuMailbox {
     pthread_mutex_t lock;
-    struct { ChVkTexture *image; uint32_t w,h; int held; } slots[CH_VK_GPU_MAILBOX_SLOTS];
+    /* Zero copy: share+1, the share its frame's eyes are counted in until
+     * the headset has done reading them (0: none, or done); read_fence (of
+     * read_device): the headset's read of them, signalled once done
+     * (eyes_reading). */
+    struct { ChVkTexture *image; uint32_t w,h; int held;
+        uint64_t sequence; unsigned share; VkDevice read_device; VkFence read_fence; } slots[CH_VK_GPU_MAILBOX_SLOTS];
     ChVkGpuFrame pending[2]; unsigned waiting,depth;   /* oldest first */
     uint64_t sequence;
     VkBuffer buffers[CH_VK_GPU_MAILBOX_SLOTS]; VkDeviceSize capacity;   /* bridge mode: a buffer per slot */
@@ -22,7 +28,108 @@ struct ChVkGpuMailbox {
     /* CHIHIRO_VULKAN_MAILBOX_TIMING=1 (diagnostic): each copy's GPU time,
      * timestamps before and after it, averaged in the log every 60 frames */
     VkQueryPool timing; float period; double timed_ms; unsigned timed_n;
+    /* Zero copy (exportable eye targets, ch_vk_target_record_release): the
+     * eyes go to the headset as they are, not copied (a 4128x2208 copy:
+     * ~0.9 ms of the Quest's GPU a frame). Each such target by its id, its
+     * memory exported for the headset's import, and refs: the frames
+     * holding its eyes that the headset has not done with. Its claim waits
+     * for none (claim()). stalled: a claim gave up waiting -- the headset
+     * takes no frames -- so the next do not wait until it takes one;
+     * copy_only: the headset cannot import them (copies from then on). */
+    struct {uint64_t id,used;unsigned refs;ChVkTargetExport memory;} shares[CH_VK_GPU_MAILBOX_SHARES];
+    uint64_t share_clock;
+    int stalled,copy_only;unsigned timeouts;
 };
+static uint64_t mono_ns(void);
+/* Slot i's frame done with its eyes (b->lock held). */
+static void unshare(ChVkGpuMailbox *b,unsigned i) {
+    if(!b->slots[i].share) return;
+    b->shares[b->slots[i].share-1].refs--;
+    b->slots[i].share=0;b->slots[i].read_device=VK_NULL_HANDLE;b->slots[i].read_fence=VK_NULL_HANDLE;
+}
+static void slot_free(ChVkGpuMailbox *b,unsigned i) {unshare(b,i);b->slots[i].held=0;}
+/* The share for eyes (b->lock held): its own, else a free one -- or the
+ * least recently used that no frame holds -- given its memory; -1: none
+ * (the eyes are copied). */
+static int share_of(ChVkGpuMailbox *b,const ChVkTarget *eyes) {
+    if(b->copy_only || !ch_vk_target_exportable(eyes)) return -1;
+    const uint64_t id=ch_vk_target_id(eyes);
+    int s=-1;
+    for(int k=0;k<CH_VK_GPU_MAILBOX_SHARES;k++) {
+        if(b->shares[k].id==id) {b->shares[k].used=++b->share_clock;return k;}
+        if(!b->shares[k].refs && (s<0 || b->shares[k].used<b->shares[s].used)) s=k;
+    }
+    ChVkTargetExport memory;
+    if(s<0 || ch_vk_target_export(eyes,&memory)!=VK_SUCCESS) return -1;
+    if(b->shares[s].memory.fd>=0) close(b->shares[s].memory.fd);
+    b->shares[s].id=id;b->shares[s].used=++b->share_clock;b->shares[s].memory=memory;
+    static int logged;
+    if(!logged++) fprintf(stderr,"[mailbox] eyes %ux%u handed to the headset as they are (zero copy)\n",memory.width,memory.height);
+    return s;
+}
+/* Waiting frame k dropped unshown (b->lock held). */
+static void drop_pending(ChVkGpuMailbox *b,unsigned k) {
+    slot_free(b,b->pending[k].slot);
+    for(unsigned j=k+1;j<b->waiting;j++) b->pending[j-1]=b->pending[j];
+    memset(&b->pending[--b->waiting],0,sizeof b->pending[0]);
+}
+/* No frame to hold share s's eyes any more (b->lock held): waiting frames
+ * dropped unshown; taken ones not being read -- or with force, any -- give
+ * them up (the headset skips them: eyes_begin/eyes_reading 0). */
+static void give_up(ChVkGpuMailbox *b,unsigned s,int force) {
+    for(unsigned k=0;k<b->waiting;) {
+        if(b->slots[b->pending[k].slot].share!=s+1) {k++;continue;}
+        drop_pending(b,k);
+    }
+    for(unsigned i=0;i<CH_VK_GPU_MAILBOX_SLOTS;i++)
+        if(b->slots[i].share==s+1 && (force || !b->slots[i].read_fence)) unshare(b,i);
+}
+/* An eye target handed over wants its image back (ch_vk_target_record_release,
+ * the game's thread): returns once no frame holds its eyes -- each released
+ * or dropped, or the headset done reading them: eyes_done, or the fence of
+ * its read seen here (no wait for the headset's next loop to say so). The
+ * oldest of a full queue goes as make_room would drop it at the publish
+ * that follows (a newer frame finished): waiting for the headset to take
+ * it instead kept the queue full -- the game's thread then waited ~12 ms a
+ * frame for each take, two frames queued, after a single late take. The
+ * headset not taking frames (its session paused, the headset off) or
+ * stalled before it reads them: after 100 ms the frames it is not reading
+ * give the eyes up, and until it takes one again the next claims do not
+ * wait; a read submitted -- a copy, ~1 ms of GPU -- is waited for, up to a
+ * second. */
+#define CLAIM_WAIT_NS 100000000ull
+#define CLAIM_READ_NS 1000000000ull
+static void claim(void *context,const ChVkTarget *t) {
+    ChVkGpuMailbox *b=context;
+    const uint64_t id=ch_vk_target_id(t),start=mono_ns();
+    pthread_mutex_lock(&b->lock);
+    unsigned s=0;while(s<CH_VK_GPU_MAILBOX_SHARES && b->shares[s].id!=id) s++;
+    int timed_out=0;
+    while(s<CH_VK_GPU_MAILBOX_SHARES && b->shares[s].refs) {
+        for(unsigned i=0;i<CH_VK_GPU_MAILBOX_SLOTS;i++)
+            if(b->slots[i].share==s+1 && b->slots[i].read_fence &&
+               vkGetFenceStatus(b->slots[i].read_device,b->slots[i].read_fence)==VK_SUCCESS) unshare(b,i);
+        if(!b->shares[s].refs) break;
+        if(b->waiting>=b->depth && b->slots[b->pending[0].slot].share==s+1) {
+            int ready[2]={1,1};
+            for(unsigned k=0;k<b->waiting && k<2;k++)
+                ready[k]=!b->pending[k].ready || vkGetFenceStatus(b->pending[k].ready_device,b->pending[k].ready)==VK_SUCCESS;
+            if(ch_vk_mailbox_full_action(b->waiting,b->depth,ready)==CH_VK_MAILBOX_DROP_OLDEST) {drop_pending(b,0);continue;}
+        }
+        const uint64_t waited=mono_ns()-start;
+        if(b->stalled || waited>=CLAIM_WAIT_NS) {
+            if(!b->stalled && !timed_out && (++b->timeouts<=3 || b->timeouts%100==0))
+                fprintf(stderr,"[mailbox] the headset held an eye target %.0f ms: taken back (%u times)\n",waited/1e6,b->timeouts);
+            timed_out=b->stalled=1;
+            give_up(b,s,waited>=CLAIM_READ_NS);
+            if(!b->shares[s].refs) break;
+        }
+        pthread_mutex_unlock(&b->lock);
+        nanosleep(&(struct timespec){0,250000},NULL);
+        pthread_mutex_lock(&b->lock);
+    }
+    pthread_mutex_unlock(&b->lock);
+}
 static int timing_on(void) {
     static int on=-1;
     if(on<0) {const char *e=getenv("CHIHIRO_VULKAN_MAILBOX_TIMING");on=e && atoi(e)!=0;}
@@ -50,9 +157,10 @@ VkResult ch_vk_gpu_frame_wait(const ChVkGpuFrame *f) {
 }
 /* Records copies of n targets (the first required) into slot i's command
  * buffer, each at its offset -- the first into first_image instead when
- * given -- and submits it; the caller holds the slot. */
+ * given, or handed over as it is with release (zero copy) -- and submits
+ * it; the caller holds the slot. */
 static VkResult async_copy(ChVkGpuMailbox *b,unsigned i,unsigned n,ChVkTarget *const *targets,const VkDeviceSize *offsets,
-    VkImage first_image) {
+    VkImage first_image,int release) {
     ChVkTarget *first=targets[0];
     VkDevice device=ch_vk_target_device(first);VkResult r;
     if(!b->pool) {
@@ -91,7 +199,8 @@ static VkResult async_copy(ChVkGpuMailbox *b,unsigned i,unsigned n,ChVkTarget *c
         vkCmdWriteTimestamp(c,VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,b->timing,2*i);
     }
     for(unsigned k=0;k<n && r==VK_SUCCESS;k++)
-        if(targets[k]) r=k==0 && first_image?ch_vk_target_record_copy_to_image(targets[k],c,first_image):
+        if(targets[k]) r=k==0 && release?ch_vk_target_record_release(targets[k],c,claim,b):
+            k==0 && first_image?ch_vk_target_record_copy_to_image(targets[k],c,first_image):
             ch_vk_target_record_copy_to_buffer(targets[k],c,b->buffers[i],offsets[k],b->capacity);
     if(b->timing) vkCmdWriteTimestamp(c,VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,b->timing,2*i+1);
     VkResult e=vkEndCommandBuffer(c);if(r==VK_SUCCESS) r=e;
@@ -121,6 +230,7 @@ VkResult ch_vk_gpu_mailbox_create(ChVkGpuMailbox **out) {
     ChVkGpuMailbox *b=calloc(1,sizeof *b);
     if(!b) return VK_ERROR_OUT_OF_HOST_MEMORY;
     if(pthread_mutex_init(&b->lock,NULL)) {free(b);return VK_ERROR_INITIALIZATION_FAILED;}
+    for(unsigned k=0;k<CH_VK_GPU_MAILBOX_SHARES;k++) b->shares[k].memory.fd=-1;
     b->depth=1;*out=b;return VK_SUCCESS;
 }
 /* Room for one more waiting frame (b->lock held; it may be dropped and
@@ -143,7 +253,7 @@ static void make_room(ChVkGpuMailbox *b) {
             if(w==VK_SUCCESS) continue;
             if(b->waiting<b->depth) return;
         }
-        b->slots[b->pending[0].slot].held=0;
+        slot_free(b,b->pending[0].slot);
         for(unsigned k=1;k<b->waiting;k++) b->pending[k-1]=b->pending[k];
         b->waiting--;
         return;
@@ -160,7 +270,7 @@ VkResult ch_vk_gpu_mailbox_publish(void *context,const Nv2aSurface *surface,ChVk
     b->slots[i].held=1;
     pthread_mutex_unlock(&b->lock);
     VkResult r;
-    if(b->buffers[i]) r=async_copy(b,i,1,&target,(const VkDeviceSize[]){0},VK_NULL_HANDLE);
+    if(b->buffers[i]) r=async_copy(b,i,1,&target,(const VkDeviceSize[]){0},VK_NULL_HANDLE,0);
     else {
         if(b->slots[i].w!=w || b->slots[i].h!=h) {
             ch_vk_texture_destroy(b->slots[i].image);b->slots[i].image=NULL;
@@ -187,7 +297,7 @@ VkResult ch_vk_gpu_mailbox_take(ChVkGpuMailbox *b,ChVkGpuFrame *out) {
     if(b->waiting) {
         *out=b->pending[0];
         for(unsigned k=1;k<b->waiting;k++) b->pending[k-1]=b->pending[k];
-        memset(&b->pending[--b->waiting],0,sizeof b->pending[0]);r=VK_SUCCESS;
+        memset(&b->pending[--b->waiting],0,sizeof b->pending[0]);r=VK_SUCCESS;b->stalled=0;
     }
     pthread_mutex_unlock(&b->lock);return r;
 }
@@ -208,7 +318,7 @@ VkResult ch_vk_gpu_mailbox_take_ready(ChVkGpuMailbox *b,ChVkGpuFrame *out) {
             for(unsigned k=1;k<b->waiting;k++) b->pending[k-1]=b->pending[k];
             memset(&b->pending[--b->waiting],0,sizeof b->pending[0]);r=VK_SUCCESS;
             if(out->gpu_late) __atomic_add_fetch(&s_gpu_late,1,__ATOMIC_RELAXED);
-            b->last_take_ns=mono_ns();
+            b->last_take_ns=mono_ns();b->stalled=0;   /* the headset takes frames again */
         } else if(b->pending[0].due_ns || (b->last_take_ns && mono_ns()-b->last_take_ns>=LATE_AFTER_NS))
             b->pending[0].gpu_late=1;   /* due, the GPU not done: the headset shows the last frame again */
     }
@@ -217,8 +327,54 @@ VkResult ch_vk_gpu_mailbox_take_ready(ChVkGpuMailbox *b,ChVkGpuFrame *out) {
 void ch_vk_gpu_frame_release(ChVkGpuFrame *f) {
     if(!f || !f->owner) return;
     ChVkGpuMailbox *b=f->owner;
-    pthread_mutex_lock(&b->lock);b->slots[f->slot].held=0;pthread_mutex_unlock(&b->lock);
+    pthread_mutex_lock(&b->lock);slot_free(b,f->slot);pthread_mutex_unlock(&b->lock);
     memset(f,0,sizeof *f);
+}
+/* The taken frame's slot, while it still holds its eyes (b->lock held) */
+static int holds_eyes(const ChVkGpuMailbox *b,const ChVkGpuFrame *f) {
+    return f->slot<CH_VK_GPU_MAILBOX_SLOTS && b->slots[f->slot].held && b->slots[f->slot].sequence==f->sequence &&
+        b->slots[f->slot].share;
+}
+int ch_vk_gpu_frame_eyes_begin(const ChVkGpuFrame *f,unsigned *share,uint64_t *id) {
+    if(!f || !f->owner || !f->eyes_shared || !share || !id) return 0;
+    ChVkGpuMailbox *b=f->owner;
+    pthread_mutex_lock(&b->lock);
+    const int ok=holds_eyes(b,f);
+    if(ok) {*share=b->slots[f->slot].share-1;*id=b->shares[*share].id;}
+    pthread_mutex_unlock(&b->lock);
+    return ok;
+}
+int ch_vk_gpu_frame_eyes_memory(const ChVkGpuFrame *f,ChVkTargetExport *out) {
+    if(!f || !f->owner || !out) return 0;
+    ChVkGpuMailbox *b=f->owner;
+    pthread_mutex_lock(&b->lock);
+    int ok=holds_eyes(b,f);
+    if(ok) {
+        *out=b->shares[b->slots[f->slot].share-1].memory;
+        out->fd=out->fd>=0?dup(out->fd):-1;ok=out->fd>=0;
+    }
+    pthread_mutex_unlock(&b->lock);
+    return ok;
+}
+int ch_vk_gpu_frame_eyes_reading(const ChVkGpuFrame *f,VkDevice device,VkFence fence) {
+    if(!f || !f->owner || !fence) return 0;
+    ChVkGpuMailbox *b=f->owner;
+    pthread_mutex_lock(&b->lock);
+    const int ok=holds_eyes(b,f);
+    if(ok) {b->slots[f->slot].read_device=device;b->slots[f->slot].read_fence=fence;}
+    pthread_mutex_unlock(&b->lock);
+    return ok;
+}
+void ch_vk_gpu_frame_eyes_done(const ChVkGpuFrame *f) {
+    if(!f || !f->owner) return;
+    ChVkGpuMailbox *b=f->owner;
+    pthread_mutex_lock(&b->lock);
+    if(holds_eyes(b,f)) unshare(b,f->slot);
+    pthread_mutex_unlock(&b->lock);
+}
+void ch_vk_gpu_mailbox_copy_eyes(ChVkGpuMailbox *b) {
+    if(!b) return;
+    pthread_mutex_lock(&b->lock);b->copy_only=1;pthread_mutex_unlock(&b->lock);
 }
 VkResult ch_vk_gpu_mailbox_destroy(ChVkGpuMailbox *b) {
     if(!b) return VK_SUCCESS;
@@ -236,6 +392,7 @@ VkResult ch_vk_gpu_mailbox_destroy(ChVkGpuMailbox *b) {
         vkDestroyCommandPool(b->device,b->pool,NULL);
         if(b->timing) vkDestroyQueryPool(b->device,b->timing,NULL);
     }
+    for(unsigned k=0;k<CH_VK_GPU_MAILBOX_SHARES;k++) if(b->shares[k].memory.fd>=0) close(b->shares[k].memory.fd);
     pthread_mutex_destroy(&b->lock);free(b);return VK_SUCCESS;
 }
 VkResult ch_vk_gpu_mailbox_publish_immersive(ChVkGpuMailbox *b,const Nv2aSurface *surface,ChVkTarget *eyes,
@@ -253,19 +410,22 @@ VkResult ch_vk_gpu_mailbox_publish_immersive(ChVkGpuMailbox *b,const Nv2aSurface
     unsigned i=0;for(;i<CH_VK_GPU_MAILBOX_SLOTS && b->slots[i].held;i++);
     if(i==CH_VK_GPU_MAILBOX_SLOTS || b->sequence==UINT64_MAX) {pthread_mutex_unlock(&b->lock);return i==CH_VK_GPU_MAILBOX_SLOTS?VK_NOT_READY:VK_ERROR_TOO_MANY_OBJECTS;}
     b->slots[i].held=1;
+    const int share=share_of(b,eyes);   /* zero copy: the eye target's own image */
     pthread_mutex_unlock(&b->lock);
     ChVkTarget *const targets[3]={eyes,hud,lens};
-    /* the eyes into the slot's shared image when there is one of their size */
-    const VkImage eyes_image=b->images[i] && w==b->image_w && h==b->image_h?b->images[i]:VK_NULL_HANDLE;
-    VkResult r=async_copy(b,i,3,targets,(const VkDeviceSize[]){0,hud_offset,lens_offset},eyes_image);
+    /* else the eyes into the slot's shared image when there is one of their size */
+    const VkImage eyes_image=share<0 && b->images[i] && w==b->image_w && h==b->image_h?b->images[i]:VK_NULL_HANDLE;
+    VkResult r=async_copy(b,i,3,targets,(const VkDeviceSize[]){0,hud_offset,lens_offset},eyes_image,share>=0);
     pthread_mutex_lock(&b->lock);
     if(r==VK_SUCCESS) {
         make_room(b);
         ChVkGpuFrame frame={.surface=*surface,.sequence=++b->sequence,.owner=b,.slot=i,
             .immersive=1,.imm=*info,.hud_offset=hud_offset,.ready_device=b->device,.ready=b->copy[i].fence,
             .due_ns=b->due?b->due():0};
-        frame.imm.hud=hud!=NULL;frame.eyes_image=eyes_image!=VK_NULL_HANDLE;
+        frame.imm.hud=hud!=NULL;frame.eyes_image=eyes_image!=VK_NULL_HANDLE;frame.eyes_shared=share>=0;
         frame.imm.lens=lens!=NULL;frame.imm.lens_w=lens?lw:0;frame.imm.lens_h=lens?lh:0;frame.imm.lens_offset=lens?lens_offset:0;
+        b->slots[i].sequence=frame.sequence;
+        if(share>=0) {b->slots[i].share=(unsigned)share+1;b->shares[share].refs++;}
         b->pending[b->waiting++]=frame;
     } else b->slots[i].held=0;
     pthread_mutex_unlock(&b->lock);

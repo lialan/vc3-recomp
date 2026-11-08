@@ -91,6 +91,39 @@ VkResult ch_vk_target_create_input_depth(VkPhysicalDevice,VkDevice,VkQueue,
 VkResult ch_vk_target_create_depth(VkPhysicalDevice physical, VkDevice device,
     VkQueue queue, uint32_t family, uint32_t width, uint32_t height,
     VkFormat depth_format, ChVkTarget **out);
+/* Zero copy: as create_depth, the colour image's memory exportable as an
+ * opaque fd that another device of the same GPU imports (the headset's:
+ * vk_xr_bridge.h); FEATURE_NOT_PRESENT where the driver offers none. */
+VkResult ch_vk_target_create_exportable(VkPhysicalDevice,VkDevice,VkQueue,uint32_t family,
+    uint32_t width,uint32_t height,VkFormat depth_format,ChVkTarget **out);
+int ch_vk_target_exportable(const ChVkTarget *);
+/* Unique to the target (never reused, unlike its address). */
+uint64_t ch_vk_target_id(const ChVkTarget *);
+/* The colour image's memory: fd a new opaque fd (the caller's), and what
+ * the importing image is made with -- R8G8B8A8_UNORM, optimal tiling, one
+ * level and layer, usage -- and its memory allocated with (size, the
+ * memory type, dedicated to the image). */
+typedef struct ChVkTargetExport {
+    int fd; VkDeviceSize size; uint32_t memory_type; int dedicated;
+    VkImageUsageFlags usage; uint32_t width,height;
+} ChVkTargetExport;
+VkResult ch_vk_target_export(const ChVkTarget *,ChVkTargetExport *);
+/* Zero copy: the colour image handed to the other device as it is,
+ * instead of copied -- the target's work submitted first, unwaited, then
+ * a release to VK_QUEUE_FAMILY_EXTERNAL (TRANSFER_SRC_OPTIMAL) recorded
+ * into command, which the caller submits next on the target's queue;
+ * nothing recorded while it is still handed over (a repeated flip). The
+ * other device acquires it from and releases it back to EXTERNAL, as
+ * TRANSFER_SRC_OPTIMAL. The target takes it back (an acquire, contents
+ * kept) before its next use of the image -- in its next batch, or a
+ * submission of its own for a copy, snapshot or another target sampling
+ * it -- and calls claim(context, t) first, just before that submission:
+ * claim returns once the other device is done reading it. (Only what eye
+ * targets do takes it back: batches, synchronous draws/clears/reads,
+ * snapshots, lending and the record_copy_to_* copies -- not the colour of
+ * depth transfers, imports or export_image.) */
+VkResult ch_vk_target_record_release(ChVkTarget *,VkCommandBuffer command,
+    void (*claim)(void *,const ChVkTarget *),void *context);
 VkResult ch_vk_target_clear_read(ChVkTarget *target, const float rgba[4],
                                  void *pixels, VkDeviceSize bytes);
 void ch_vk_target_destroy(ChVkTarget *target);

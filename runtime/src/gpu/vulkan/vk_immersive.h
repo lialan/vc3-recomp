@@ -74,6 +74,7 @@ typedef struct {
     int scene_hud;          /* 2D on a surface composited onto the shown one is HUD too */
     int world_behind;       /* 3D behind the game's camera drawn too (its clip w > 0 and near plane off) */
     int eye_clear_black;    /* the eyes' colour clears are black, not the game's colour */
+    int share_eyes;         /* full-size eyes exportable (ch_vk_target_create_exportable): handed to the headset as they are */
 } ChVkImmersiveConfig;
 VkResult ch_vk_immersive_create(const ChVkImmersiveConfig *,ChVkImmersive **);
 void ch_vk_immersive_destroy(ChVkImmersive *);

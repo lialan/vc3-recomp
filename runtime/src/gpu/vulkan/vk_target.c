@@ -219,6 +219,16 @@ struct ChVkTarget {
     struct ChVkTarget *live_reader;
     struct {struct ChVkTarget *source;int recorded;} live[8]; unsigned live_count;
     struct {uint32_t key[12];ChVkTexture *texture;} lent[8]; unsigned lent_count;
+    /* Zero copy (ch_vk_target_create_exportable): the colour image's memory
+     * as exported, and the image handed to the other device as it is
+     * (external, ch_vk_target_record_release) until a submission takes it
+     * back: record_acquire, after claim says the other device is done.
+     * acquire_recorded: the open batch's command buffer begins with it. */
+    uint64_t id;
+    int exportable,export_dedicated;uint32_t export_type;VkDeviceSize export_size;VkImageUsageFlags export_usage;
+    int external,acquire_recorded;
+    void (*claim)(void *,const ChVkTarget *);void *claim_context;
+    VkCommandBuffer acquire_command;VkFence acquire_fence;   /* reclaim_now's */
 };
 static VkResult finish_batch_named(ChVkTarget *,int,const char *);
 static void close_draw(ChVkTarget *);
@@ -446,6 +456,9 @@ void ch_vk_target_destroy(ChVkTarget *t) {
     if(!t) return;
     live_release(t);
     (void)wait_copy_source(t);(void)retire_copy_out(t);
+    /* handed over: the release's submission (the caller's) may still name
+     * the image; the other device's import keeps the memory itself */
+    if(t->external) vkQueueWaitIdle(t->queue);
     if(t->color_readback_active) (void)ch_vk_target_read_color_end(t);
     if(t->readback_active) (void)ch_vk_target_read_depth_end(t);
     /* Finish deferred work before destroying anything it references. */
@@ -485,6 +498,10 @@ void ch_vk_target_destroy(ChVkTarget *t) {
     if(t->queries) vkDestroyQueryPool(t->device,t->queries,NULL);
     if(t->timing) vkDestroyQueryPool(t->device,t->timing,NULL);
     if(t->upload_fence) vkDestroyFence(t->device,t->upload_fence,NULL);
+    if(t->acquire_fence) {
+        (void)vkWaitForFences(t->device,1,&t->acquire_fence,VK_TRUE,5000000000ULL);
+        vkDestroyFence(t->device,t->acquire_fence,NULL);
+    }
     if(t->fence) vkDestroyFence(t->device,t->fence,NULL);
     if(t->pool) vkDestroyCommandPool(t->device,t->pool,NULL);
     ch_vk_depth_quant_destroy(t->depth_quant_draw);
@@ -511,10 +528,14 @@ void ch_vk_target_destroy(ChVkTarget *t) {
     if(t->image_mem) vkFreeMemory(t->device,t->image_mem,NULL);
     free(t);
 }
-static VkResult create_depth(VkPhysicalDevice,VkDevice,VkQueue,uint32_t,uint32_t,uint32_t,VkFormat,int,ChVkTarget **);
+static VkResult create_depth(VkPhysicalDevice,VkDevice,VkQueue,uint32_t,uint32_t,uint32_t,VkFormat,int,int,ChVkTarget **);
 VkResult ch_vk_target_create_input_depth(VkPhysicalDevice physical,VkDevice device,VkQueue queue,
     uint32_t family,uint32_t width,uint32_t height,ChVkTarget **out) {
-    return create_depth(physical,device,queue,family,width,height,VK_FORMAT_D32_SFLOAT_S8_UINT,1,out);
+    return create_depth(physical,device,queue,family,width,height,VK_FORMAT_D32_SFLOAT_S8_UINT,1,0,out);
+}
+VkResult ch_vk_target_create_exportable(VkPhysicalDevice physical,VkDevice device,VkQueue queue,
+    uint32_t family,uint32_t width,uint32_t height,VkFormat depth_format,ChVkTarget **out) {
+    return create_depth(physical,device,queue,family,width,height,depth_format,0,1,out);
 }
 VkResult ch_vk_target_create(VkPhysicalDevice physical, VkDevice device,
                             VkQueue queue, uint32_t family,
@@ -525,10 +546,10 @@ VkResult ch_vk_target_create(VkPhysicalDevice physical, VkDevice device,
 VkResult ch_vk_target_create_depth(VkPhysicalDevice physical, VkDevice device,
     VkQueue queue, uint32_t family, uint32_t width, uint32_t height,
     VkFormat depth_format, ChVkTarget **out) {
-    return create_depth(physical,device,queue,family,width,height,depth_format,0,out);
+    return create_depth(physical,device,queue,family,width,height,depth_format,0,0,out);
 }
 static VkResult create_depth(VkPhysicalDevice physical,VkDevice device,VkQueue queue,
-    uint32_t family,uint32_t width,uint32_t height,VkFormat depth_format,int input_depth,ChVkTarget **out) {
+    uint32_t family,uint32_t width,uint32_t height,VkFormat depth_format,int input_depth,int exportable,ChVkTarget **out) {
     if(!out) return VK_ERROR_INITIALIZATION_FAILED;
     *out=NULL;
     if(depth_format!=VK_FORMAT_D32_SFLOAT_S8_UINT && depth_format!=VK_FORMAT_D24_UNORM_S8_UINT)
@@ -546,6 +567,7 @@ static VkResult create_depth(VkPhysicalDevice physical,VkDevice device,VkQueue q
     vkGetPhysicalDeviceProperties(physical,&device_properties);
     t->noncoherent_atom=device_properties.limits.nonCoherentAtomSize;
     t->family=family; t->physical=physical; t->device=device; t->queue=queue; t->width=width; t->height=height;
+    {static atomic_uint_fast64_t ids;t->id=atomic_fetch_add(&ids,1)+1;}
     ch_vk_vertex_program_loop_init(physical);
     const char *reuse=getenv("CHIHIRO_VULKAN_REUSE_RESOURCES");
     t->reuse_resources=!reuse || strcmp(reuse,"0");
@@ -587,16 +609,45 @@ static VkResult create_depth(VkPhysicalDevice physical,VkDevice device,VkQueue q
                 ((uint64_t)width*height+63)/64<=device_properties.limits.maxComputeWorkGroupCount[0];
         }
     }
+    /* Zero copy: the colour image, as made here, exported as an opaque fd
+     * that another device of this GPU imports (ch_vk_target_export) --
+     * dedicated where the driver allows nothing else (the Quest's). */
+    VkExternalMemoryImageCreateInfo external={.sType=VK_STRUCTURE_TYPE_EXTERNAL_MEMORY_IMAGE_CREATE_INFO,
+        .handleTypes=VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT};
+    if(exportable) {
+        VkPhysicalDeviceExternalImageFormatInfo ext_query={.sType=VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTERNAL_IMAGE_FORMAT_INFO,
+            .handleType=VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT};
+        VkPhysicalDeviceImageFormatInfo2 query={.sType=VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_IMAGE_FORMAT_INFO_2,
+            .pNext=&ext_query,.format=image.format,.type=image.imageType,.tiling=image.tiling,.usage=image.usage};
+        VkExternalImageFormatProperties ext_props={.sType=VK_STRUCTURE_TYPE_EXTERNAL_IMAGE_FORMAT_PROPERTIES};
+        VkImageFormatProperties2 props={.sType=VK_STRUCTURE_TYPE_IMAGE_FORMAT_PROPERTIES_2,.pNext=&ext_props};
+        const VkExternalMemoryFeatureFlags need=VK_EXTERNAL_MEMORY_FEATURE_EXPORTABLE_BIT|VK_EXTERNAL_MEMORY_FEATURE_IMPORTABLE_BIT;
+        if(!vkGetDeviceProcAddr(device,"vkGetMemoryFdKHR") ||
+           vkGetPhysicalDeviceImageFormatProperties2(physical,&query,&props)!=VK_SUCCESS ||
+           (ext_props.externalMemoryProperties.externalMemoryFeatures&need)!=need) {
+            result=VK_ERROR_FEATURE_NOT_PRESENT;goto fail;
+        }
+        t->export_dedicated=!!(ext_props.externalMemoryProperties.externalMemoryFeatures&VK_EXTERNAL_MEMORY_FEATURE_DEDICATED_ONLY_BIT);
+        image.pNext=&external;
+    }
     TRY(vkCreateImage(device,&image,NULL,&t->image));
+    image.pNext=NULL;
     VkMemoryRequirements req;
     vkGetImageMemoryRequirements(device,t->image,&req);
+    VkMemoryDedicatedAllocateInfo dedicated={.sType=VK_STRUCTURE_TYPE_MEMORY_DEDICATED_ALLOCATE_INFO,.image=t->image};
+    VkExportMemoryAllocateInfo export={.sType=VK_STRUCTURE_TYPE_EXPORT_MEMORY_ALLOCATE_INFO,
+        .pNext=t->export_dedicated?&dedicated:NULL,.handleTypes=VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT};
     VkMemoryAllocateInfo mem={.sType=VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
-        .allocationSize=req.size};
+        .pNext=exportable?&export:NULL,.allocationSize=req.size};
     if(!memory_type(physical,req.memoryTypeBits,0,&mem.memoryTypeIndex)) {
         result=VK_ERROR_FEATURE_NOT_PRESENT; goto fail;
     }
     TRY(vkAllocateMemory(device,&mem,NULL,&t->image_mem));
+    mem.pNext=NULL;
     TRY(vkBindImageMemory(device,t->image,t->image_mem,0));
+    if(exportable) {
+        t->exportable=1;t->export_type=mem.memoryTypeIndex;t->export_size=mem.allocationSize;t->export_usage=image.usage;
+    }
     VkFormatProperties depth_properties;
     vkGetPhysicalDeviceFormatProperties(physical,depth_format,&depth_properties);
     if(!(depth_properties.optimalTilingFeatures & VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT)) {
@@ -1076,6 +1127,51 @@ static void live_release(ChVkTarget *source) {
     /* No batch was recorded after all: the barrier never reached the queue. */
     if(source->live_reader==reader) {live_forget(reader,source);source->live_reader=NULL;}
 }
+/* The colour image back from the device it was handed to as it is
+ * (ch_vk_target_record_release): TRANSFER_SRC_OPTIMAL, as both sides left
+ * it, so its contents stay (a game's eyes need not be cleared each frame). */
+static void record_acquire(ChVkTarget *t,VkCommandBuffer command) {
+    VkImageMemoryBarrier b={.sType=VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+        .dstAccessMask=VK_ACCESS_MEMORY_READ_BIT|VK_ACCESS_MEMORY_WRITE_BIT,
+        .oldLayout=VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,.newLayout=VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+        .srcQueueFamilyIndex=VK_QUEUE_FAMILY_EXTERNAL,.dstQueueFamilyIndex=t->family,
+        .image=t->image,.subresourceRange={VK_IMAGE_ASPECT_COLOR_BIT,0,1,0,1}};
+    vkCmdPipelineBarrier(command,VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,0,0,NULL,0,NULL,1,&b);
+}
+/* Just before the submission holding record_acquire: the other device done
+ * with the image (claim waits). Waited for here, not when the batch begins:
+ * a game drawing its eyes again two flips on records the whole frame while
+ * the headset still copies the one before. */
+static void claim_image(ChVkTarget *t) {
+    if(t->claim) t->claim(t->claim_context,t);
+    t->external=0;t->acquire_recorded=0;
+}
+/* The image taken back in a submission of its own, for what reads it
+ * outside this target's batches (a copy or snapshot of it, another target
+ * sampling it); ordered before that on the queue. */
+static VkResult reclaim_now(ChVkTarget *t) {
+    if(!t->external) return VK_SUCCESS;
+    VkResult result;
+    if(!t->acquire_command) {
+        VkCommandBufferAllocateInfo ai={.sType=VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,.commandPool=t->pool,
+            .level=VK_COMMAND_BUFFER_LEVEL_PRIMARY,.commandBufferCount=1};
+        VkFenceCreateInfo fi={.sType=VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,.flags=VK_FENCE_CREATE_SIGNALED_BIT};
+        TRY(vkAllocateCommandBuffers(t->device,&ai,&t->acquire_command));
+        TRY(vkCreateFence(t->device,&fi,NULL,&t->acquire_fence));
+    }
+    TRY(vkWaitForFences(t->device,1,&t->acquire_fence,VK_TRUE,5000000000ULL));   /* the last one's: long done */
+    TRY(vkResetFences(t->device,1,&t->acquire_fence));
+    TRY(vkResetCommandBuffer(t->acquire_command,0));
+    VkCommandBufferBeginInfo begin={.sType=VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,.flags=VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT};
+    TRY(vkBeginCommandBuffer(t->acquire_command,&begin));
+    record_acquire(t,t->acquire_command);
+    TRY(vkEndCommandBuffer(t->acquire_command));
+    claim_image(t);
+    VkSubmitInfo submit={.sType=VK_STRUCTURE_TYPE_SUBMIT_INFO,.commandBufferCount=1,.pCommandBuffers=&t->acquire_command};
+    TRY(vkQueueSubmit(t->queue,1,&submit,t->acquire_fence));
+    return VK_SUCCESS;
+fail:t->failed=1;return result;
+}
 static VkResult finish_batch_with_copy(ChVkTarget *t,int readback,const char *caller,ChVkTarget *depth_destination,ChVkTexture *texture_destination,int defer_wait) {
     if(!t || t->failed) return VK_ERROR_INITIALIZATION_FAILED;
     VkResult result;
@@ -1111,6 +1207,7 @@ static VkResult finish_batch_with_copy(ChVkTarget *t,int readback,const char *ca
     if(t->timing) vkCmdWriteTimestamp(t->command,VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,t->timing,1);
     TRY(vkEndCommandBuffer(t->command));
     VkSubmitInfo submit={.sType=VK_STRUCTURE_TYPE_SUBMIT_INFO,.commandBufferCount=1,.pCommandBuffers=&t->command};
+    if(t->acquire_recorded) claim_image(t);
     uint64_t submit_start=t->timing?time_ns():0;
     TRY(vkQueueSubmit(t->queue,1,&submit,t->fence));
     uint64_t wait_start=t->timing?time_ns():0;
@@ -1254,6 +1351,8 @@ static VkResult begin_batch_clear(ChVkTarget *t,uint32_t aspects,const VkClearVa
         VkCommandBufferBeginInfo begin={.sType=VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,.flags=VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT};
         TRY(vkBeginCommandBuffer(t->command,&begin));
         color_staging_reuse(t);
+        t->acquire_recorded=t->external;   /* handed over: back first (claimed as the batch goes) */
+        if(t->external) record_acquire(t,t->command);
         for(unsigned i=0;i<t->live_count;i++) if(!t->live[i].recorded) {
             live_barrier(t->command,t->live[i].source,1);t->live[i].recorded=1;
         }
@@ -1381,6 +1480,8 @@ static VkResult render_read(ChVkTarget *t, const float rgba[4], uint32_t clear_f
         .flags=VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT};
     TRY(vkBeginCommandBuffer(t->command,&begin));
     color_staging_reuse(t);
+    const int acquire=t->external;   /* handed over: back first */
+    if(acquire) record_acquire(t,t->command);
     if(t->timing) {
         vkCmdResetQueryPool(t->command,t->timing,0,3);t->tail_stamped=0;
         vkCmdWriteTimestamp(t->command,VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,t->timing,0);
@@ -1476,6 +1577,7 @@ static VkResult render_read(ChVkTarget *t, const float rgba[4], uint32_t clear_f
     TRY(vkEndCommandBuffer(t->command));
     VkSubmitInfo submit={.sType=VK_STRUCTURE_TYPE_SUBMIT_INFO,
         .commandBufferCount=1,.pCommandBuffers=&t->command};
+    if(acquire) claim_image(t);
     TRY(vkQueueSubmit(t->queue,1,&submit,t->fence));
     TRY(vkWaitForFences(t->device,1,&t->fence,VK_TRUE,5000000000ULL));
     if(t->timing) {
@@ -1594,6 +1696,7 @@ VkResult ch_vk_target_snapshot_texture(ChVkTarget *t,uint32_t levels,ChVkTexture
     VkResult result=finish_batch_named(t,0,__func__);
     if(result!=VK_SUCCESS) return result;
     if(t->layout!=VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL) return VK_ERROR_INITIALIZATION_FAILED;
+    result=reclaim_now(t);if(result!=VK_SUCCESS) return result;
     return ch_vk_texture_copy_image(t->physical,t->device,t->queue,t->family,t->width,t->height,t->image,levels,out);
 }
 VkResult ch_vk_target_lend_texture(ChVkTarget *t,ChVkTarget *reader,int alpha_one,
@@ -1617,6 +1720,7 @@ VkResult ch_vk_target_lend_texture(ChVkTarget *t,ChVkTarget *reader,int alpha_on
         VkResult r=retire_copy_out(t);if(r!=VK_SUCCESS) return r;
         r=submit_as(t,"lent_by_source");if(r!=VK_SUCCESS) return r;   /* the image's writes reach the queue first */
         if(t->layout!=VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL) return VK_NOT_READY;
+        r=reclaim_now(t);if(r!=VK_SUCCESS) return r;   /* handed over: back before the reader's barrier */
         /* The acquire barrier goes before the reader's next render pass --
          * before this batch's own when it has not begun (an opening clear
          * alone: VC3's presented surfaces and glow buffers, cleared, then
@@ -1643,6 +1747,7 @@ VkResult ch_vk_target_refresh_texture(ChVkTarget *t,ChVkTexture *texture) {
     VkResult r=finish_batch_named(t,0,__func__);
     if(r!=VK_SUCCESS) return r;
     if(t->layout!=VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL) return VK_ERROR_INITIALIZATION_FAILED;
+    r=reclaim_now(t);if(r!=VK_SUCCESS) return r;
     return ch_vk_texture_copy_from_image(texture,t->device,t->image,t->width,t->height);
 }
 VkResult ch_vk_target_clear_read(ChVkTarget *t, const float rgba[4],
@@ -2967,6 +3072,7 @@ VkResult ch_vk_target_record_copy_to_buffer(ChVkTarget *t,VkCommandBuffer comman
      * the copy is ordered after it on the same queue by the barrier. */
     live_release(t);
     VkResult r=ch_vk_target_submit(t);
+    if(r==VK_SUCCESS) r=reclaim_now(t);   /* handed over before (zero copy): back first */
     if(r!=VK_SUCCESS) return r;
     if(t->layout!=VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL) return VK_ERROR_FEATURE_NOT_PRESENT;
     VkMemoryBarrier ready={.sType=VK_STRUCTURE_TYPE_MEMORY_BARRIER,
@@ -3023,6 +3129,7 @@ VkResult ch_vk_target_record_copy_to_image(ChVkTarget *t,VkCommandBuffer command
     /* as the copy to a buffer: this target's recorded work first, unwaited */
     live_release(t);
     VkResult r=ch_vk_target_submit(t);
+    if(r==VK_SUCCESS) r=reclaim_now(t);
     if(r!=VK_SUCCESS) return r;
     if(t->layout!=VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL) return VK_ERROR_FEATURE_NOT_PRESENT;
     VkMemoryBarrier ready={.sType=VK_STRUCTURE_TYPE_MEMORY_BARRIER,
@@ -3045,6 +3152,41 @@ VkResult ch_vk_target_record_copy_to_image(ChVkTarget *t,VkCommandBuffer command
     dst.srcQueueFamilyIndex=t->family;dst.dstQueueFamilyIndex=VK_QUEUE_FAMILY_EXTERNAL;
     vkCmdPipelineBarrier(command,VK_PIPELINE_STAGE_TRANSFER_BIT,VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,0,0,NULL,0,NULL,1,&dst);
     return VK_SUCCESS;
+}
+VkResult ch_vk_target_record_release(ChVkTarget *t,VkCommandBuffer command,
+    void (*claim)(void *,const ChVkTarget *),void *context) {
+    if(!t || t->failed || !t->initialized || !command || !t->exportable || !claim) return VK_ERROR_INITIALIZATION_FAILED;
+    /* as the copy to a buffer: this target's recorded work first, unwaited */
+    live_release(t);
+    VkResult r=ch_vk_target_submit(t);
+    if(r!=VK_SUCCESS) return r;
+    if(t->layout!=VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL) return VK_ERROR_FEATURE_NOT_PRESENT;
+    t->claim=claim;t->claim_context=context;
+    if(t->external) return VK_SUCCESS;   /* still handed over: a flip repeating the last picture */
+    VkImageMemoryBarrier b={.sType=VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+        .srcAccessMask=VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT|VK_ACCESS_TRANSFER_WRITE_BIT,
+        .oldLayout=VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,.newLayout=VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+        .srcQueueFamilyIndex=t->family,.dstQueueFamilyIndex=VK_QUEUE_FAMILY_EXTERNAL,
+        .image=t->image,.subresourceRange={VK_IMAGE_ASPECT_COLOR_BIT,0,1,0,1}};
+    vkCmdPipelineBarrier(command,VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,0,0,NULL,0,NULL,1,&b);
+    t->external=1;
+    return VK_SUCCESS;
+}
+int ch_vk_target_exportable(const ChVkTarget *t) {return t && t->exportable;}
+uint64_t ch_vk_target_id(const ChVkTarget *t) {return t?t->id:0;}
+VkResult ch_vk_target_export(const ChVkTarget *t,ChVkTargetExport *out) {
+    if(!out) return VK_ERROR_INITIALIZATION_FAILED;
+    out->fd=-1;
+    if(!t || !t->exportable) return VK_ERROR_FEATURE_NOT_PRESENT;
+    PFN_vkGetMemoryFdKHR get_fd=(PFN_vkGetMemoryFdKHR)vkGetDeviceProcAddr(t->device,"vkGetMemoryFdKHR");
+    if(!get_fd) return VK_ERROR_EXTENSION_NOT_PRESENT;
+    *out=(ChVkTargetExport){.fd=-1,.size=t->export_size,.memory_type=t->export_type,.dedicated=t->export_dedicated,
+        .usage=t->export_usage,.width=t->width,.height=t->height};
+    VkMemoryGetFdInfoKHR info={.sType=VK_STRUCTURE_TYPE_MEMORY_GET_FD_INFO_KHR,.memory=t->image_mem,
+        .handleType=VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT};
+    VkResult r=get_fd(t->device,&info,&out->fd);
+    if(r!=VK_SUCCESS) out->fd=-1;
+    return r;
 }
 static int ring_inflight(const ChVkTarget *t) {
     if(t->ring) for(unsigned k=0;k<RING_SLOTS;k++) if(t->slots[k].inflight) return 1;
