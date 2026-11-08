@@ -122,6 +122,10 @@ static const ChihiroProfile k_hotd3 = {
          * (0x80001000) before it is copied onto the screen */
         .scene_hud = 1,
         .aim_screen = hotd3_vr_aim_set,
+        /* the shotgun aims where its laser meets the world: the game's
+         * shot from its camera goes through that point (no parallax
+         * between the hand and the camera) */
+        .aim_world = 1,
         .cull = hotd3_vr_cull_set,
         /* its stage parts are drawn whole, all round the camera (vr_cull.c):
          * turning the head shows them, but for the room behind a door the

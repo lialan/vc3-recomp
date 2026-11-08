@@ -63,6 +63,7 @@ struct ChVkImmersive {
     /* The rifle's shot through the eyes (shot_probe) */
     VkCommandPool shot_pool; struct ShotProbe *shot; int shot_state;   /* 0: not made; 1: made; -1: failed */
     float aim_hit; uint64_t aim_hit_frame; int shot_log;
+    VkDeviceSize shot_bytes;   /* each probe's buffer: a box, or the gun's ray's segments (shot_probe_ray) */
 };
 /* Dynamic resolution levels (fraction of each eye's width and height). A
  * scene heavier than the GPU's 16.7 ms (VC3's later areas at native 2160 on
@@ -252,14 +253,21 @@ static VkResult lens_copy(ChVkImmersive *m,const Nv2aSurface *s) {
  * handed over with each frame (ChVkImmFrame.aim_hit) is the newest walked,
  * a frame or two old. Nothing waits for the GPU: with all SHOT_PROBES in
  * flight a frame has none. The aim is the one the frame's lens picture was
- * drawn with -- the game's, so its shot's -- and only the rifle's (follow):
- * a game with no lens picture (VC3) never makes a probe.
+ * drawn with -- the game's, so its shot's -- and only the rifle's (follow);
+ * or the gun's laser the view carries (Vc3VrView.ray), from its muzzle. A
+ * game with neither (VC3) never makes a probe.
  * CHIHIRO_VULKAN_SHOT_LOG=1: every probe, its walk and what it met. */
 #define SHOT_PROBES 3
+/* A view's ray instead (Vc3VrView.ray, the gun's laser: the profile's
+ * vr.aim_world): its segments' boxes (vr_shot_plan_ray) in the left eye;
+ * with CHIHIRO_VULKAN_SHOT_BOTH=1 (a check, eyes at full size) in the
+ * right eye too, its walk logged beside the left's. */
+#define SHOT_RAY_EYE_BYTES ((VkDeviceSize)VR_SHOT_SEGS*VR_SHOT_SEG_BYTES)
 struct ShotProbe {
     VkBuffer buffer; VkDeviceMemory memory; const void *texels;
     VkCommandBuffer command; VkFence fence;
     int busy,d24; uint64_t frame; ChVkTarget *eyes; VrShotPlan plan; float yaw,pitch;
+    int ray,ray_eyes; VrShotRay rays[2]; float ray_o[3],ray_d[3],ray_vp[2][16],ray_k;
 };
 static void shot_free(ChVkImmersive *m) {
     VkDevice d=m->config.device;
@@ -273,9 +281,10 @@ static void shot_free(ChVkImmersive *m) {
     if(m->shot_pool) vkDestroyCommandPool(d,m->shot_pool,NULL);
     free(m->shot);m->shot=NULL;m->shot_pool=VK_NULL_HANDLE;
 }
-static int shot_init(ChVkImmersive *m) {
+static int shot_init(ChVkImmersive *m,int ray) {
     if(m->shot_state) return m->shot_state>0;
     m->shot_state=-1;
+    m->shot_bytes=ray?2*SHOT_RAY_EYE_BYTES:(VkDeviceSize)VR_SHOT_BOX*VR_SHOT_BOX*4;
     VkDevice d=m->config.device;
     m->shot=calloc(SHOT_PROBES,sizeof *m->shot);
     const VkCommandPoolCreateInfo pool={.sType=VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
@@ -285,7 +294,7 @@ static int shot_init(ChVkImmersive *m) {
     for(int i=0;r==VK_SUCCESS && i<SHOT_PROBES;i++) {
         struct ShotProbe *p=&m->shot[i];
         const VkBufferCreateInfo bi={.sType=VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
-            .size=(VkDeviceSize)VR_SHOT_BOX*VR_SHOT_BOX*4,.usage=VK_BUFFER_USAGE_TRANSFER_DST_BIT};
+            .size=m->shot_bytes,.usage=VK_BUFFER_USAGE_TRANSFER_DST_BIT};
         r=vkCreateBuffer(d,&bi,NULL,&p->buffer);
         if(r!=VK_SUCCESS) break;
         /* host-visible and coherent (read without an invalidate), cached if it can be */
@@ -318,6 +327,42 @@ static int shot_init(ChVkImmersive *m) {
     m->shot_log=e?atoi(e):0;
     m->shot_state=1;return 1;
 }
+/* A finished probe of the gun's ray: its walk in the left eye the hit; the
+ * log (CHIHIRO_VULKAN_SHOT_LOG=1) has the right eye's too, when probed, and
+ * where the hit is in each eye's picture (the side-by-side target's
+ * texels) and how deep. */
+static void shot_collect_ray(ChVkImmersive *m,const struct ShotProbe *p) {
+    float t[2]={0,0};
+    for(int e=0;e<p->ray_eyes;e++)
+        t[e]=vr_shot_march_ray(&p->rays[e],(const char *)p->texels+e*SHOT_RAY_EYE_BYTES,p->d24);
+    /* hidden by a picture over the world (a shot's flash): the last answer stands */
+    if(p->frame>=m->aim_hit_frame) {if(t[0]>=0) m->aim_hit=t[0];m->aim_hit_frame=p->frame;}
+    if(!m->shot_log) return;
+    /* the hit (the left eye's) in each eye: its texel, its depth there, and
+     * the eye's own depth at that texel when the walk read it (-1: not) */
+    char at[2][128]={"",""};
+    for(int e=0;e<2 && t[0]>0;e++) {
+        float c[4];
+        const float q[3]={p->ray_o[0]+p->ray_d[0]*t[0],p->ray_o[1]+p->ray_d[1]*t[0],p->ray_o[2]+p->ray_d[2]*t[0]};
+        for(int i=0;i<4;i++) c[i]=p->ray_vp[e][i]*q[0]+p->ray_vp[e][4+i]*q[1]+p->ray_vp[e][8+i]*q[2]+p->ray_vp[e][12+i];
+        if(!(c[3]>0)) continue;
+        const float x=(c[0]/c[3]+1)*.5f*p->ray_k*m->config.eye_width,y=(1-c[1]/c[3])*.5f*p->ray_k*m->config.eye_height;
+        double seen=-1;
+        for(uint32_t j=0;e<p->ray_eyes && j<p->rays[e].segs && seen<0;j++) {
+            const long bx=(long)floorf(x)-p->rays[e].box[j].x0,by=(long)floorf(y)-p->rays[e].box[j].y0;
+            if(bx>=0 && by>=0 && bx<(long)p->rays[e].box[j].w && by<(long)p->rays[e].box[j].h)
+                seen=vr_shot_texel((const char *)p->texels+e*SHOT_RAY_EYE_BYTES+j*VR_SHOT_SEG_BYTES,
+                    (size_t)by*p->rays[e].box[j].w+(size_t)bx,p->d24);
+        }
+        snprintf(at[e],sizeof at[e]," %s eye texel %.1f,%.1f depth %.6f, the eye's there %.6f",e?"right":"left",
+            x+(e?(2-p->ray_k)*m->config.eye_width:0),y,.5f*c[2]/c[3]+.5f,seen);
+    }
+    fprintf(stderr,"[immersive shot] frame %llu ray from %.3f %.3f %.3f along %.4f %.4f %.4f: left %u segments %u steps -> %s %.4f",
+        (unsigned long long)p->frame,p->ray_o[0],p->ray_o[1],p->ray_o[2],p->ray_d[0],p->ray_d[1],p->ray_d[2],
+        p->rays[0].segs,p->rays[0].line.steps,t[0]>0?"hit at":t[0]<0?"hidden by a picture, kept":"nothing met",t[0]<0?m->aim_hit:t[0]);
+    if(p->ray_eyes>1) fprintf(stderr,"; right %u segments -> %s %.4f",p->rays[1].segs,t[1]>0?"hit at":t[1]<0?"hidden by a picture":"nothing met",t[1]);
+    fprintf(stderr,";%s%s (at frame %llu)\n",at[0],at[1],(unsigned long long)m->frames);
+}
 /* The probes the GPU has finished, oldest first (one queue: they finish in
  * order): each one's walk, the newest frame's the hit. */
 static void shot_collect(ChVkImmersive *m) {
@@ -326,6 +371,7 @@ static void shot_collect(ChVkImmersive *m) {
         for(int i=0;i<SHOT_PROBES;i++) if(m->shot[i].busy && (!p || m->shot[i].frame<p->frame)) p=&m->shot[i];
         if(!p || vkGetFenceStatus(m->config.device,p->fence)!=VK_SUCCESS) return;
         p->busy=0;
+        if(p->ray) {shot_collect_ray(m,p);continue;}
         const float t=vr_shot_march(&p->plan,p->texels,p->d24);
         if(p->frame>=m->aim_hit_frame) {m->aim_hit=t;m->aim_hit_frame=p->frame;}
         if(m->shot_log) fprintf(stderr,"[immersive shot] frame %llu aim yaw %.3f pitch %.3f deg: box %ux%u at %d,%d, %u steps,"
@@ -360,11 +406,64 @@ static void shot_forget(ChVkImmersive *m,const ChVkTarget *eyes) {
 /* At a flip handing a frame over: the probes done so far, then this
  * frame's (f: the surface whose eyes hold its scene; aim: its lens
  * picture's, NULL: none). */
+/* This frame's probe of the gun's ray (m->view: the pose and the ray it was
+ * drawn with). Out of the left eye's view: nothing met. */
+static void shot_probe_ray(ChVkImmersive *m,struct ImmSurface *f,struct ShotProbe *p) {
+    static int both=-1;
+    if(both<0) {const char *e=getenv("CHIHIRO_VULKAN_SHOT_BOTH");both=e && atoi(e)>0;}
+    const float k=k_levels[m->level];
+    ChVkDepthBox boxes[2*VR_SHOT_SEGS];
+    uint32_t n=0;
+    int eyes=0;
+    for(int e=0;e<(both && k==1.f?2:1);e++) {
+        if(!vr_shot_plan_ray(m->view.vp[e],k,m->config.eye_width,m->config.eye_height,m->view.ray_o,m->view.ray_d,&p->rays[e])) {
+            if(!e) {
+                m->aim_hit=0;m->aim_hit_frame=m->frames;
+                if(m->shot_log) fprintf(stderr,"[immersive shot] frame %llu ray from %.3f %.3f %.3f along %.4f %.4f %.4f: out of the eye's view\n",
+                    (unsigned long long)m->frames,m->view.ray_o[0],m->view.ray_o[1],m->view.ray_o[2],
+                    m->view.ray_d[0],m->view.ray_d[1],m->view.ray_d[2]);
+                return;
+            }
+            break;
+        }
+        for(uint32_t j=0;j<p->rays[e].segs;j++)   /* the right eye's picture: the target's right half (at full size) */
+            boxes[n++]=(ChVkDepthBox){.offset=e*SHOT_RAY_EYE_BYTES+j*VR_SHOT_SEG_BYTES,
+                .x=(uint32_t)p->rays[e].box[j].x0+(e?m->config.eye_width:0),.y=(uint32_t)p->rays[e].box[j].y0,
+                .w=p->rays[e].box[j].w,.h=p->rays[e].box[j].h};
+        eyes=e+1;
+    }
+    const VkCommandBufferBeginInfo begin={.sType=VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+        .flags=VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT};
+    int d24=0;
+    VkResult r=vkResetFences(m->config.device,1,&p->fence);
+    if(r==VK_SUCCESS) r=vkBeginCommandBuffer(p->command,&begin);
+    if(r==VK_SUCCESS) {
+        const VkResult recorded=ch_vk_target_record_depth_boxes(f->eyes,p->command,p->buffer,boxes,n,&d24);
+        r=vkEndCommandBuffer(p->command);
+        if(r==VK_SUCCESS) r=recorded;
+    }
+    if(r==VK_SUCCESS) {
+        const VkSubmitInfo submit={.sType=VK_STRUCTURE_TYPE_SUBMIT_INFO,.commandBufferCount=1,.pCommandBuffers=&p->command};
+        r=vkQueueSubmit(m->config.queue,1,&submit,p->fence);
+    }
+    if(r!=VK_SUCCESS) {
+        static unsigned logged;
+        if(logged++<4) fprintf(stderr,"[immersive] the gun ray's probe, frame %llu: VkResult %d\n",(unsigned long long)m->frames,r);
+        return;
+    }
+    p->busy=1;p->ray=1;p->ray_eyes=eyes;p->d24=d24;p->frame=m->frames;p->eyes=f->eyes;p->ray_k=k;
+    memcpy(p->ray_o,m->view.ray_o,sizeof p->ray_o);memcpy(p->ray_d,m->view.ray_d,sizeof p->ray_d);
+    memcpy(p->ray_vp,m->view.vp,sizeof p->ray_vp);
+}
 static void shot_probe(ChVkImmersive *m,struct ImmSurface *f,const VrLensAim *aim) {
     const int rifle=aim && aim->follow;
-    if(!m->shot_state && !rifle) return;   /* none made before the rifle first aims */
-    if(!shot_init(m)) return;
+    if(!m->shot_state && !rifle && !m->view.ray) return;   /* none made before the rifle first aims, or a gun's ray */
+    if(!shot_init(m,m->view.ray && !rifle)) return;
     shot_collect(m);
+    if(m->view.ray && !rifle && f && f->eyes && m->shot_bytes>=2*SHOT_RAY_EYE_BYTES) {
+        for(int i=0;i<SHOT_PROBES;i++) if(!m->shot[i].busy) {shot_probe_ray(m,f,&m->shot[i]);break;}
+        return;
+    }
     if(!rifle || !f || !f->eyes) return;
     struct ShotProbe *p=NULL;
     for(int i=0;i<SHOT_PROBES && !p;i++) if(!m->shot[i].busy) p=&m->shot[i];
@@ -396,7 +495,7 @@ static void shot_probe(ChVkImmersive *m,struct ImmSurface *f,const VrLensAim *ai
         if(logged++<4) fprintf(stderr,"[immersive] the shot's probe, frame %llu: VkResult %d\n",(unsigned long long)m->frames,r);
         return;
     }
-    p->busy=1;p->d24=d24;p->frame=m->frames;p->eyes=f->eyes;p->plan=plan;p->yaw=aim->yaw;p->pitch=aim->pitch;
+    p->busy=1;p->ray=0;p->d24=d24;p->frame=m->frames;p->eyes=f->eyes;p->plan=plan;p->yaw=aim->yaw;p->pitch=aim->pitch;
 }
 VkResult ch_vk_immersive_create(const ChVkImmersiveConfig *config,ChVkImmersive **out) {
     if(!out) return VK_ERROR_INITIALIZATION_FAILED;

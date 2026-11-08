@@ -35,6 +35,13 @@ typedef struct {
                                  surfaces drawn exactly this big per eye,
                                  the rest at the same (non-integer) scale */
     uint64_t id;              /* which head pose (for the log) */
+    /* The gun's laser as the pose was taken (the profile's vr.aim_world):
+     * from the muzzle along the barrel, GL view space of the game camera
+     * (game units; ray_d unit). The renderer walks it through the frame's
+     * eyes (vr_shot.h) for Vc3VrFrame.aim_hit. 0: none (the rifle's aim is
+     * the lens picture's). */
+    int ray;
+    float ray_o[3], ray_d[3];
 } Vc3VrView;
 
 /* Host: the newest head pose as a view to draw a frame with. 0 when the
@@ -80,7 +87,14 @@ typedef struct {
     int gw, gh;               /* the game's screen, guest pixels */
     float aim_hit;            /* where the rifle's shot meets the scene: game units
                                  along the aim from the game camera (vr_shot.h,
-                                 a frame or two old); 0: nothing met, not known */
+                                 a frame or two old) -- with a view's ray
+                                 (view.ray), along that ray from its origin;
+                                 0: nothing met, not known */
 } Vc3VrFrame;
+
+/* Desktop (vr_view_desktop.c): each immersive test frame as the headset
+ * would get it (the Vulkan renderer's stand-in, vk_runtime.c), for its test
+ * gun (<PREFIX>_GUN_TEST) to aim from. */
+void vc3_vr_desktop_frame(const Vc3VrFrame *f);
 
 #endif

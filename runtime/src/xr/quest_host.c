@@ -97,6 +97,7 @@
 #include "quest_menu.h"
 #include "quest_overlay.h"
 #include "retail_pad.h"
+#include "vr_gun.h"
 #include "vr_math.h"
 #include "vr_view.h"
 #include "chihiro/ch_env.h"
@@ -1594,7 +1595,7 @@ static void recentre(void)
  * degrees either side, 43 up and down); beyond, the gun is off the screen
  * (a pull reloads). The game's own reading stops at the screen's edge; the
  * point beyond goes to the game directly (the profile's vr.aim_screen). */
-#define AIM_WIDE 1.5
+#define AIM_WIDE VR_GUN_WIDE
 static pthread_mutex_t s_view_lock = PTHREAD_MUTEX_INITIALIZER;
 static XrView s_pub_views[2];
 static int s_pub_ok;
@@ -1602,6 +1603,22 @@ static float s_pub_anchor_p[3], s_pub_anchor_yaw;
 static uint64_t s_pub_id;
 static XrFovf s_pub_fov;                /* the left eye's, for vc3_vr_screen_px */
 static int s_pub_fov_ok;
+/* The gun's laser (the profile's vr.aim_world), LOCAL: from its muzzle
+ * along the barrel, as the headset loop last located it (gun_frame); the
+ * renderer walks it through each frame's eyes (Vc3VrView.ray) */
+static int s_pub_ray_ok;
+static float s_pub_ray_o[3], s_pub_ray_d[3];
+
+static void ray_publish(int ok, const float o[3], const float d[3])
+{
+    pthread_mutex_lock(&s_view_lock);
+    s_pub_ray_ok = ok;
+    if (ok) {
+        memcpy(s_pub_ray_o, o, sizeof s_pub_ray_o);
+        memcpy(s_pub_ray_d, d, sizeof s_pub_ray_d);
+    }
+    pthread_mutex_unlock(&s_view_lock);
+}
 
 static float imm_units(void)
 {
@@ -1647,16 +1664,19 @@ static void imm_cull(int on)
 int vc3_vr_view_latch(Vc3VrView *v)
 {
     XrView views[2];
-    float ap[3], ay, qa_inv[4];
-    int ok, e, k;
+    float ap[3], ay, qa_inv[4], ro[3], rd[3];
+    int ok, e, k, ray;
 
     pthread_mutex_lock(&s_view_lock);
     ok = s_pub_ok;
+    ray = s_pub_ray_ok;
     if (ok) {
         memcpy(views, s_pub_views, sizeof views);
         memcpy(ap, s_pub_anchor_p, sizeof ap);
         ay = s_pub_anchor_yaw;
         v->id = s_pub_id;
+        memcpy(ro, s_pub_ray_o, sizeof ro);
+        memcpy(rd, s_pub_ray_d, sizeof rd);
     }
     pthread_mutex_unlock(&s_view_lock);
     imm_cull(ok);
@@ -1686,6 +1706,17 @@ int vc3_vr_view_latch(Vc3VrView *v)
     v->scale = s_vr.imm_scale;
     v->eye_w = (int)s_native_w;
     v->eye_h = (int)s_native_h;
+    /* the gun's laser into the game camera's GL view space, game units */
+    v->ray = ray;
+    if (ray) {
+        float rel[3];
+        for (k = 0; k < 3; k++)
+            rel[k] = ro[k] - ap[k];
+        yaw_rot(-ay, rel, v->ray_o);
+        yaw_rot(-ay, rd, v->ray_d);
+        for (k = 0; k < 3; k++)
+            v->ray_o[k] *= imm_units();
+    }
     return v->on = 1;
 }
 
@@ -2511,6 +2542,10 @@ static void rifle_release(void)
         chihiro_profile()->vr.rifle(&r);
 }
 
+/* The laser into the world (vr.aim_world) with nothing met: this far, as
+ * the rifle's (metres from the muzzle; eye_viewproj's far plane 2000) */
+#define GUN_LASER_LEN RIFLE_LASER_LEN
+
 static void gun_frame(XrTime t, const Frame *f)
 {
     static int was[2][5], was_menu, was_start;
@@ -2522,9 +2557,10 @@ static void gun_frame(XrTime t, const Frame *f)
     double ux = -1, uy = -1;
     int aim_on = 0, aim_x = 0, aim_y = 0;   /* immersive: the game's aim, pixels from its centre, y up */
     int buttons = 0, h, off, now[2][5], menu_btn, start, coin, on_screen = 0;
-    float o[3], d[3];
-    int located = 0;
+    float o[3], d[3], muzzle[3] = { 0, 0, 0 }, laser_hit = 0.0f;
+    int located = 0, world_laser = 0;
     const int rifle = is_rifle();
+    const int world = !rifle && chihiro_profile()->vr.aim_world;   /* aimed where the laser meets the world */
 
     static int fake_gun = -1;   /* VC3_XR_FAKE_GUN=1: test runs, nobody holding anything */
     if (fake_gun < 0)
@@ -2641,8 +2677,20 @@ static void gun_frame(XrTime t, const Frame *f)
             s_qo.gun_p[2] = loc.pose.position.z;
             for (i = 0; i < 3; i++)
                 s_qo.end[i] = o[i] + d[i] * 5.0f;
+            {   /* the laser: from the muzzle (with no gun drawn, the controller) along the barrel */
+                float m[3] = { 0, 0, 0 }, mw[3];
+                if (s_vr.show_gun)
+                    qo_muzzle(m);
+                qrot(loc.pose.orientation, m, mw);
+                muzzle[0] = loc.pose.position.x + mw[0];
+                muzzle[1] = loc.pose.position.y + mw[1];
+                muzzle[2] = loc.pose.position.z + mw[2];
+            }
         }
     }
+    /* the renderer walks the laser through the eyes (the profile's
+     * vr.aim_world, immersive; not while the panel takes the aim) */
+    ray_publish(world && located && !s_menu.open, muzzle, d);
     if (located && f) {
         /* into the anchor's frame, where the screen lies at z = -s_dist */
         float rel[3] = { o[0] - s_anchor_p[0], o[1] - s_anchor_p[1], o[2] - s_anchor_p[2] };
@@ -2663,7 +2711,41 @@ static void gun_frame(XrTime t, const Frame *f)
             }
         }
     }
-    if (located && f && f->vr.imm) {
+    if (located && f && f->vr.imm && world) {
+        /* Immersive, the profile's vr.aim_world: the laser runs from the
+         * muzzle along the barrel to where it meets the world -- the
+         * frame's aim_hit, walked through its eyes along the ray it was
+         * drawn with, a frame or two old; here along this display frame's
+         * ray -- and the game is aimed at that point (vr_gun.h): its shot
+         * from its camera goes through it. Nothing met: the laser to its
+         * far end, the aim along it. */
+        const Vc3VrFrame *vf = &f->vr;
+        const VrGameProj g = { vf->gp[0], vf->gp[1], vf->gp[2], vf->gp[3], vf->gp[4] };
+        const float u = imm_units(), hit = vf->aim_hit > 0.0f && isfinite(vf->aim_hit) ? vf->aim_hit : 0.0f;
+        float rel[3] = { muzzle[0] - s_anchor_p[0], muzzle[1] - s_anchor_p[1], muzzle[2] - s_anchor_p[2] };
+        float lo[3], ld[3], len = hit > 0.0f ? hit / u : GUN_LASER_LEN;
+        VrGunAim a;
+        int i;
+        s_hit_u = s_hit_v = -1;
+        yaw_rot(-s_anchor_yaw, rel, lo);
+        yaw_rot(-s_anchor_yaw, d, ld);
+        for (i = 0; i < 3; i++)
+            lo[i] *= u;
+        if (vr_gun_aim(&g, vf->gw, vf->gh, lo, ld, hit, AIM_WIDE, &a) && vf->gp_ok) {
+            ux = a.ux;
+            uy = a.uy;
+            on_screen = 1;
+            aim_on = 1;
+            aim_x = a.x;
+            aim_y = a.y;
+        }
+        if (len > GUN_LASER_LEN)
+            len = GUN_LASER_LEN;
+        for (i = 0; i < 3; i++)
+            s_qo.end[i] = muzzle[i] + d[i] * len;
+        world_laser = 1;
+        laser_hit = hit;
+    } else if (located && f && f->vr.imm) {
         /* Immersive: the gun's ray meets the HUD panel's plane (the game's
          * view at HUD_DIST); the game shoots from its camera through that
          * point, so its screen position is the point through the game's
@@ -2712,6 +2794,18 @@ static void gun_frame(XrTime t, const Frame *f)
      * (the optic's own reticle shows where the shot goes) */
     s_qo.dot = on_screen && (s_vr.laser == LASER_ON
                              || (s_vr.laser == LASER_DOT && s_vr.sight == QO_SIGHT_IRON));
+    s_qo.beam_far = 0;
+    if (!rifle)
+        s_qo.shot_dot = 0;
+    if (world_laser) {
+        /* into the world: the beam stays seen to its far end, and the dot
+         * -- as the rifle's, its size at any distance -- is on what it
+         * meets, the screen or not (Dot only: the dot without the beam,
+         * with the iron sight; an optic's reticle points at it too) */
+        s_qo.beam_far = s_qo.beam;
+        s_qo.shot_dot = s_vr.laser == LASER_ON || (s_vr.laser == LASER_DOT && s_vr.sight == QO_SIGHT_IRON);
+        s_qo.dot = 0;
+    }
     s_qo.sight = s_vr.sight;
     s_qo.show_gun = s_vr.show_gun;
     if (rifle)                  /* the lens is its sight; its laser and dot: rifle_frame */
@@ -2730,6 +2824,7 @@ static void gun_frame(XrTime t, const Frame *f)
             memcpy(s_qo.end, hit, sizeof hit);
         s_qo.beam = 1;
         s_qo.dot = on;
+        s_qo.beam_far = s_qo.shot_dot = 0;
         if (now[s_gun][0] && !was[s_gun][0] && s_menu.page && row == ctrl_rows() - 1) {
             s_menu.page = 0;            /* Back */
             s_menu.hover = -1;
@@ -2744,10 +2839,7 @@ static void gun_frame(XrTime t, const Frame *f)
         ux = uy = -1;
     } else if (!rifle) {
         /* Trigger: a shot; with the gun off the screen, a reload. Grip too. */
-        if (now[s_gun][0])
-            buttons |= ux < 0 ? VC3_VR_RELOAD : VC3_VR_FIRE;
-        if (now[s_gun][4])
-            buttons |= VC3_VR_RELOAD;
+        buttons |= vr_gun_buttons(now[s_gun][0], now[s_gun][4], ux >= 0);
         if (now[s_gun][1] || now[off][4])       /* the foot pedal */
             buttons |= VC3_VR_PEDAL;
         if (now[s_gun][2])
@@ -2804,8 +2896,9 @@ static void gun_frame(XrTime t, const Frame *f)
         if (aim_log < 0)
             aim_log = ch_env("AIM_LOG") && atoi(ch_env("AIM_LOG")) > 0;
         if (aim_log && ++n % 120 == 0)
-            fprintf(stderr, "[aim host] located %d imm %d aim %d %d,%d ux %.3f uy %.3f\n", located,
-                    f && f->vr.imm, aim_on, aim_x, aim_y, ux, uy);
+            fprintf(stderr, "[aim host] located %d imm %d aim %d %d,%d ux %.3f uy %.3f laser %s %.3f\n", located,
+                    f && f->vr.imm, aim_on, aim_x, aim_y, ux, uy,
+                    world_laser ? laser_hit > 0 ? "met at" : "nothing met" : "screen", laser_hit);
     }
     if (rifle)
         rifle_frame(t, f, located ? d : NULL, now, was);
@@ -3422,6 +3515,7 @@ static void xr_frame(void)
         gun_frame(fs.predictedDisplayTime, f);
     else {
         s_qo.gun_valid = 0;
+        ray_publish(0, NULL, NULL);
         if (is_rifle())
             rifle_release();
     }

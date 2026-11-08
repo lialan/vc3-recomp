@@ -14,6 +14,10 @@
 #define VC3_VR_CHANGE 0x40
 #define VC3_VR_SERVICE 0x80
 void vc3_input_vr(double ux, double uy, int buttons);
+/* The scripted keys (<PREFIX>_AUTOKEYS): their clock in seconds (-1 before
+ * the first poll), and whether one is held now (desktop: the test gun). */
+double vc3_input_script_s(void);
+int vc3_input_auto_held(const char *key);
 
 /* Keyboard bindings (the Controls menu): actions, their keys, learning a
  * new key from the next press. Saved as key_<action>= in the settings. */

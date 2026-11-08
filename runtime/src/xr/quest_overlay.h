@@ -29,8 +29,11 @@ typedef struct {
     float scope_2d;             /* the rifle's 2D scope (show_gun 0): the lens's picture on a disc
                                    this many radians in radius round the aim (end - gun_p); 0: none */
     int   shot_dot;             /* the rifle's dot where its shot lands, at end: red, the same size
-                                   at any distance, in a dark rim; depth tested (vk_overlay.c) */
+                                   at any distance, in a dark rim; depth tested (vk_overlay.c) --
+                                   the handgun's or shotgun's too, its laser into the world */
     float pump;                 /* the shotgun's pump (its fore-end), 0..1 of its stroke back */
+    int   beam_far;             /* the beam into the world (vr.aim_world), out to its far end at
+                                   least about a pixel wide, as the rifle's always is */
 } QoFrame;
 
 int  qo_init(void);

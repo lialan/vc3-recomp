@@ -54,23 +54,20 @@ static inline void vr_shot_dir(float yaw, float pitch, float d[3])
     d[2] = -cosf(yaw) * cosf(pitch);
 }
 
-/* The walk for eye 0 of a frame: vp its matrix (Vc3VrView.vp[0]); its
- * picture k (the dynamic resolution's share) of eye_w x eye_h from the
- * top-left of the side-by-side target (immersive.glsl); the aim yaw, pitch.
- * 0: the ray's line has no texel in the eye's picture (the aim out of the
- * eye's view, or behind it) -- nothing to read, nothing met. */
-static inline int vr_shot_plan(const float vp[16], float k, uint32_t eye_w, uint32_t eye_h, float yaw, float pitch,
-                               VrShotPlan *p)
+/* The line of the ray from o along d (GL view space, game units; o NULL:
+ * the game camera) in eye 0's picture -- vp its matrix, the picture k of
+ * eye_w x eye_h from the target's top-left: p's v, c, aw, bw, and the part
+ * of the walk in the picture, g from *g_hi down to *g_lo; hi: the
+ * picture's last texel coordinates. 0: no texel of it there. */
+static inline int vr_shot_line(const float vp[16], float k, uint32_t eye_w, uint32_t eye_h, const float o[3],
+                               const float d[3], VrShotPlan *p, double *g_hi_out, double *g_lo_out, double hi[2])
 {
-    float d[3], a[4], b[4], V[3], C[3];
-    double g_hi, g_lo, lo[2], hi[2], x[2], y[2], len;
+    float a[4], b[4], V[3], C[3];
+    double g_hi, g_lo, lo[2];
     int i;
-    if (!(k > 0.0f) || k > 1.0f || !eye_w || !eye_h || !isfinite(yaw) || !isfinite(pitch))
-        return 0;
-    vr_shot_dir(yaw, pitch, d);
     for (i = 0; i < 4; i++) {
         a[i] = vp[i] * d[0] + vp[4 + i] * d[1] + vp[8 + i] * d[2];
-        b[i] = vp[12 + i];
+        b[i] = o ? vp[i] * o[0] + vp[4 + i] * o[1] + vp[8 + i] * o[2] + vp[12 + i] : vp[12 + i];
     }
     if (!(a[3] > 1e-6f))
         return 0;                       /* aimed away from the eye's forward half: no vanishing point */
@@ -121,15 +118,21 @@ static inline int vr_shot_plan(const float vp[16], float k, uint32_t eye_w, uint
     }
     if (!(g_lo <= g_hi))
         return 0;
-    /* at most VR_SHOT_SPAN texels, from the far end */
-    len = hypot(p->c[0], p->c[1]);
-    if (len * (g_hi - g_lo) > VR_SHOT_SPAN)
-        g_hi = g_lo + VR_SHOT_SPAN / len;
-    p->g_hi = (float)g_hi;
-    p->g_lo = (float)g_lo;
+    *g_hi_out = g_hi;
+    *g_lo_out = g_lo;
+    return 1;
+}
+
+/* The box of the line's texels from g_a to g_b, clamped to the picture
+ * (hi: its last texel coordinates); 0 if more than box texels either way. */
+static inline int vr_shot_box(const VrShotPlan *p, double g_a, double g_b, const double hi[2], double box,
+                              int32_t *bx, int32_t *by, uint32_t *bw, uint32_t *bh)
+{
+    double x[2], y[2];
+    int i;
     for (i = 0; i < 2; i++) {
-        x[i] = p->v[0] + p->c[0] * (i ? g_hi : g_lo);
-        y[i] = p->v[1] + p->c[1] * (i ? g_hi : g_lo);
+        x[i] = p->v[0] + p->c[0] * (i ? g_b : g_a);
+        y[i] = p->v[1] + p->c[1] * (i ? g_b : g_a);
     }
     {
         double x0 = floor(x[0] < x[1] ? x[0] : x[1]), x1 = floor(x[0] < x[1] ? x[1] : x[0]);
@@ -138,15 +141,73 @@ static inline int vr_shot_plan(const float vp[16], float k, uint32_t eye_w, uint
         if (y0 < 0) y0 = 0;
         if (x1 > hi[0]) x1 = floor(hi[0]);
         if (y1 > hi[1]) y1 = floor(hi[1]);
-        if (x1 < x0 || y1 < y0 || x1 - x0 + 1 > VR_SHOT_BOX || y1 - y0 + 1 > VR_SHOT_BOX)
+        if (x1 < x0 || y1 < y0 || x1 - x0 + 1 > box || y1 - y0 + 1 > box)
             return 0;
-        p->x0 = (int32_t)x0;
-        p->y0 = (int32_t)y0;
-        p->w = (uint32_t)(x1 - x0) + 1;
-        p->h = (uint32_t)(y1 - y0) + 1;
+        *bx = (int32_t)x0;
+        *by = (int32_t)y0;
+        *bw = (uint32_t)(x1 - x0) + 1;
+        *bh = (uint32_t)(y1 - y0) + 1;
     }
+    return 1;
+}
+
+/* The walk for eye 0 of a frame: vp its matrix (Vc3VrView.vp[0]); its
+ * picture k (the dynamic resolution's share) of eye_w x eye_h from the
+ * top-left of the side-by-side target (immersive.glsl); the aim yaw, pitch.
+ * 0: the ray's line has no texel in the eye's picture (the aim out of the
+ * eye's view, or behind it) -- nothing to read, nothing met. */
+static inline int vr_shot_plan(const float vp[16], float k, uint32_t eye_w, uint32_t eye_h, float yaw, float pitch,
+                               VrShotPlan *p)
+{
+    float d[3];
+    double g_hi, g_lo, hi[2], len;
+    if (!(k > 0.0f) || k > 1.0f || !eye_w || !eye_h || !isfinite(yaw) || !isfinite(pitch))
+        return 0;
+    vr_shot_dir(yaw, pitch, d);
+    if (!vr_shot_line(vp, k, eye_w, eye_h, NULL, d, p, &g_hi, &g_lo, hi))
+        return 0;
+    /* at most VR_SHOT_SPAN texels, from the far end */
+    len = hypot(p->c[0], p->c[1]);
+    if (len * (g_hi - g_lo) > VR_SHOT_SPAN)
+        g_hi = g_lo + VR_SHOT_SPAN / len;
+    p->g_hi = (float)g_hi;
+    p->g_lo = (float)g_lo;
+    if (!vr_shot_box(p, g_lo, g_hi, hi, VR_SHOT_BOX, &p->x0, &p->y0, &p->w, &p->h))
+        return 0;
     p->steps = (uint32_t)ceil(len * (g_hi - g_lo)) + 2;
     return 1;
+}
+
+/* One step of a walk (step i at g, the scene's depth there, last: the
+ * step before's g): 1 when the walk ends there, *t its result (0: nothing
+ * met); 0 to go on. */
+static inline int vr_shot_step(const VrShotPlan *p, uint32_t i, double g, double scene, double *last, float *t)
+{
+    const double ray = 0.5 * (p->v[2] + p->c[2] * g) + 0.5;
+    if (ray >= scene) {
+        double gz = (2.0 * scene - 1.0 - p->v[2]) / p->c[2], tt;
+        if (i == 0 && gz > p->g_hi) {
+            if (!(gz <= 1.0 / VR_SHOT_NEAR)) {
+                *t = 0.0f;
+                return 1;
+            }
+        } else if (!(gz <= *last)) {
+            gz = *last;
+        }
+        if (!(gz >= g))
+            gz = g;
+        tt = (1.0 / gz - p->bw) / p->aw;
+        *t = tt > 0.0 && isfinite(tt) ? (float)tt : 0.0f;
+        return 1;
+    }
+    *last = g;
+    return 0;
+}
+
+/* A texel of a box (row-major, w wide, 4 bytes each) as 0..1 depth */
+static inline double vr_shot_texel(const void *texels, size_t at, int d24)
+{
+    return d24 ? (((const uint32_t *)texels)[at] & 0xFFFFFFu) / 16777215.0 : (double)((const float *)texels)[at];
 }
 
 /* The walk over the box's texels (row-major, w x h, 4 bytes each: D24 in
@@ -160,38 +221,140 @@ static inline int vr_shot_plan(const float vp[16], float k, uint32_t eye_w, uint
  * full-screen layer at the near plane): nothing met. */
 static inline float vr_shot_march(const VrShotPlan *p, const void *texels, int d24)
 {
-    const uint32_t *word = (const uint32_t *)texels;
-    const float *depth = (const float *)texels;
     double last = p->g_hi;
+    float t;
     uint32_t i;
     if (!p->w || !p->h || p->steps < 2 || !(p->aw > 0.0f))
         return 0.0f;
     for (i = 0; i < p->steps; i++) {
         const double g = p->g_hi + ((double)p->g_lo - p->g_hi) * i / (p->steps - 1);
         long x = (long)floor(p->v[0] + p->c[0] * g) - p->x0, y = (long)floor(p->v[1] + p->c[1] * g) - p->y0;
-        size_t at;
-        double scene, ray;
         x = x < 0 ? 0 : x >= (long)p->w ? (long)p->w - 1 : x;
         y = y < 0 ? 0 : y >= (long)p->h ? (long)p->h - 1 : y;
-        at = (size_t)y * p->w + (size_t)x;
-        scene = d24 ? (word[at] & 0xFFFFFFu) / 16777215.0 : (double)depth[at];
-        ray = 0.5 * (p->v[2] + p->c[2] * g) + 0.5;
-        if (ray >= scene) {
-            double gz = (2.0 * scene - 1.0 - p->v[2]) / p->c[2], t;
-            if (i == 0 && gz > p->g_hi) {
-                if (!(gz <= 1.0 / VR_SHOT_NEAR))
-                    return 0.0f;
-            } else if (!(gz <= last)) {
-                gz = last;
-            }
-            if (!(gz >= g))
-                gz = g;
-            t = (1.0 / gz - p->bw) / p->aw;
-            return t > 0.0 && isfinite(t) ? (float)t : 0.0f;
-        }
-        last = g;
+        if (vr_shot_step(p, i, g, vr_shot_texel(texels, (size_t)y * p->w + (size_t)x, d24), &last, &t))
+            return t;
     }
     return 0.0f;
+}
+
+/* A ray from anywhere -- the gun's muzzle (the profile's vr.aim_world),
+ * not the game camera: an eye half a metre off it sees the ray's line run
+ * ~500 texels at a metre out (the Quest's ~1100 a radian). The walk reads
+ * up to VR_SHOT_RAY_SPAN texels of it, toward the vanishing point as the
+ * rifle's, in segments of VR_SHOT_SEG steps, each its own small box --
+ * VR_SHOT_SEG_BYTES of the buffer apiece, segment j at j times that --
+ * rather than one box round a long diagonal. */
+#define VR_SHOT_SEG 32
+#define VR_SHOT_SEGS 32
+#define VR_SHOT_SEG_BOX (VR_SHOT_SEG + 2)
+#define VR_SHOT_SEG_BYTES ((size_t)VR_SHOT_SEG_BOX * VR_SHOT_SEG_BOX * 4)
+#define VR_SHOT_RAY_SPAN (VR_SHOT_SEG * VR_SHOT_SEGS - 2)
+
+typedef struct {
+    VrShotPlan line;            /* the line and the walk (v, c, aw, bw, g_hi, g_lo, steps; its box: the first segment's) */
+    uint32_t segs;              /* steps j * VR_SHOT_SEG on are read from box[j] */
+    struct { int32_t x0, y0; uint32_t w, h; } box[VR_SHOT_SEGS];
+} VrShotRay;
+
+/* The walk of the ray from o along d (GL view space of the game camera,
+ * game units; d need not be unit -- the walk's distances are along it
+ * normalised) through eye 0 of a frame, as vr_shot_plan's (vp, k, eye_w,
+ * eye_h). 0: none (no texel of the ray in the eye's picture). */
+static inline int vr_shot_plan_ray(const float vp[16], float k, uint32_t eye_w, uint32_t eye_h, const float o[3],
+                                   const float d[3], VrShotRay *r)
+{
+    VrShotPlan *p = &r->line;
+    float u[3];
+    double g_hi, g_lo, hi[2], len, n;
+    uint32_t j;
+    int i;
+    if (!(k > 0.0f) || k > 1.0f || !eye_w || !eye_h)
+        return 0;
+    for (i = 0; i < 3; i++)
+        if (!isfinite(o[i]) || !isfinite(d[i]))
+            return 0;
+    n = sqrt((double)d[0] * d[0] + (double)d[1] * d[1] + (double)d[2] * d[2]);
+    if (!(n > 1e-9))
+        return 0;
+    for (i = 0; i < 3; i++)
+        u[i] = (float)(d[i] / n);
+    if (!vr_shot_line(vp, k, eye_w, eye_h, o, u, p, &g_hi, &g_lo, hi))
+        return 0;
+    len = hypot(p->c[0], p->c[1]);
+    if (len * (g_hi - g_lo) > VR_SHOT_RAY_SPAN)
+        g_hi = g_lo + VR_SHOT_RAY_SPAN / len;
+    p->g_hi = (float)g_hi;
+    p->g_lo = (float)g_lo;
+    p->steps = (uint32_t)ceil(len * (g_hi - g_lo)) + 2;
+    r->segs = (p->steps + VR_SHOT_SEG - 1) / VR_SHOT_SEG;
+    for (j = 0; j < r->segs; j++) {     /* each segment's box: its steps' texels, as the walk finds them */
+        const uint32_t i0 = j * VR_SHOT_SEG, i1 = i0 + VR_SHOT_SEG - 1 < p->steps - 1 ? i0 + VR_SHOT_SEG - 1 : p->steps - 1;
+        const double ga = p->g_hi + ((double)p->g_lo - p->g_hi) * i0 / (p->steps - 1);
+        const double gb = p->g_hi + ((double)p->g_lo - p->g_hi) * i1 / (p->steps - 1);
+        if (!vr_shot_box(p, ga, gb, hi, VR_SHOT_SEG_BOX, &r->box[j].x0, &r->box[j].y0, &r->box[j].w, &r->box[j].h))
+            return 0;
+    }
+    p->x0 = r->box[0].x0;
+    p->y0 = r->box[0].y0;
+    p->w = r->box[0].w;
+    p->h = r->box[0].h;
+    return 1;
+}
+
+/* Seen from an eye well off the ray, something drawn in front of it -- a
+ * zombie's arm, an effect near the camera -- hides the ray's way on behind
+ * it without the ray touching it: where the ray first goes behind a
+ * surface more than VR_SHOT_THICK (metres, eye depth) in front of where
+ * the ray was a step before, it passes behind it, and the walk goes on. */
+#define VR_SHOT_THICK 0.3
+
+/* The ray's walk over its segments' boxes (texels: segment j's box at j *
+ * VR_SHOT_SEG_BYTES, as vr_shot_march's): the distance along it from o
+ * where it first meets what was drawn, game units -- the first texel and
+ * the meeting placed as vr_shot_march's -- passing behind what lies more
+ * than VR_SHOT_THICK in front of it, and seeing through what was drawn
+ * nearer than VR_SHOT_NEAR to the eye (the walk never starts nearer: a
+ * picture over the world, not the world -- House of the Dead III draws its
+ * shots' flashes into the eyes at 27 cm). Hidden to the walk's end (it met
+ * something behind what hides it): where it first went out of sight. 0:
+ * nothing met; -1: nothing met where the eye sees the world, but such a
+ * picture hid part of the ray (a shot's flash over where the laser ends):
+ * not known -- the last frame's answer stands. */
+static inline float vr_shot_march_ray(const VrShotRay *r, const void *texels, int d24)
+{
+    const VrShotPlan *p = &r->line;
+    double last = p->g_hi;
+    float t, hidden = 0.0f;
+    int behind = 0, covered = 0;
+    uint32_t i;
+    if (!r->segs || r->segs > VR_SHOT_SEGS || p->steps < 2 || !(p->aw > 0.0f))
+        return 0.0f;
+    for (i = 0; i < p->steps; i++) {
+        const uint32_t j = i / VR_SHOT_SEG;
+        const double g = p->g_hi + ((double)p->g_lo - p->g_hi) * i / (p->steps - 1);
+        long x = (long)floor(p->v[0] + p->c[0] * g) - r->box[j].x0, y = (long)floor(p->v[1] + p->c[1] * g) - r->box[j].y0;
+        double scene, gz;
+        x = x < 0 ? 0 : x >= (long)r->box[j].w ? (long)r->box[j].w - 1 : x;
+        y = y < 0 ? 0 : y >= (long)r->box[j].h ? (long)r->box[j].h - 1 : y;
+        scene = vr_shot_texel((const char *)texels + j * VR_SHOT_SEG_BYTES, (size_t)y * r->box[j].w + (size_t)x, d24);
+        gz = (2.0 * scene - 1.0 - p->v[2]) / p->c[2];   /* 1 / the surface's eye depth there */
+        if (gz > 1.0 / VR_SHOT_NEAR) {      /* a picture over the world */
+            last = g;
+            covered = 1;
+            continue;
+        }
+        if (i > 0 && 0.5 * (p->v[2] + p->c[2] * g) + 0.5 >= scene && gz > 0.0 && 1.0 / gz < 1.0 / last - VR_SHOT_THICK) {
+            if (!behind) {      /* out of sight: where, should it stay so */
+                double l = last;
+                behind = vr_shot_step(p, i, g, scene, &l, &hidden);
+            }
+            last = g;
+            continue;
+        }
+        if (vr_shot_step(p, i, g, scene, &last, &t))
+            return t;
+    }
+    return behind ? hidden : covered ? -1.0f : 0.0f;
 }
 
 #endif

@@ -372,6 +372,16 @@ static VkResult imm_test_present(void *unused,const Nv2aSurface *surface,ChVkTar
             f.imm.lens?"fresh":"0",f.imm.lens_w,f.imm.lens_h,(unsigned long long)f.imm.lens_offset,
             f.imm.aim_hit>0?"at":"nowhere",f.imm.aim_hit);
     }
+#if !defined(__ANDROID__) && !defined(CHIHIRO_XR_DESKTOP)
+    if(r==VK_SUCCESS && f.immersive) {   /* as the headset gets it (quest_host.c take_frame): the test gun's */
+        Vc3VrFrame vf;memset(&vf,0,sizeof vf);
+        const VrGameProj *g=&f.imm.projection;
+        vf.imm=1;vf.view=f.imm.view;
+        vf.gp[0]=g->kx;vf.gp[1]=g->ky;vf.gp[2]=g->cx;vf.gp[3]=g->cy;vf.gp[4]=g->inv_pz;vf.gp_ok=f.imm.projection_ok;
+        vf.gw=(int)f.imm.guest_width;vf.gh=(int)f.imm.guest_height;vf.aim_hit=f.imm.aim_hit;
+        vc3_vr_desktop_frame(&vf);
+    }
+#endif
     ch_vk_gpu_frame_release(&f);
     if(r!=VK_SUCCESS) return r;
     frame_completed(surface);

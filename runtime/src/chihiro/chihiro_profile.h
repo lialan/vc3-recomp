@@ -198,6 +198,14 @@ typedef struct ChihiroProfile {
         struct { float x0, y0, x1, y1; signed char dx, dy; } hud_tiles[10];
         int hud_tile_count;
         void (*aim_screen)(int on, int x, int y);   /* the gun's point beyond the screen's edge (NULL: none) */
+        /* Immersive, the handgun's or shotgun's aim is where its laser --
+         * from the muzzle along the barrel -- meets the world (the eyes'
+         * depth, host/vr_shot.h), not a ray through a screen ahead: the
+         * laser ends there with its red dot, and the game's camera is aimed
+         * at that point (host/vr_gun.h, through aim_screen), so its shot
+         * lands where the laser does; nothing met, along the laser. 0: the
+         * screen's (VC3) */
+        int aim_world;
         void (*cull)(float half_angle_rad);         /* widen the CPU culling to this half angle; 0: the game's own */
         void (*rifle)(const ChVrRifle *r);          /* the rifle's pose and zoom, each frame (NULL: none) */
         /* What the lens picture handed over now was drawn with (vr_view.h),

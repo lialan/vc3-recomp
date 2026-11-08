@@ -23,13 +23,13 @@ static int fails;
 /* The scene, in the game camera's GL view space (game units): a wall at
  * z = -wall (0: none); a post in front of it at z = -post covering x >=
  * post_x (post 0: none). Returns the nearest t > 0 along o + t d, or 0. */
-typedef struct { double wall, post, post_x, layer; } Scene;   /* layer: every texel at this depth (a picture over the world) */
+typedef struct { double wall, post, post_x, layer, post_w; } Scene;   /* layer: every texel at this depth (a picture over the world); post_w: the post only that wide (0: on for good) */
 static double scene_hit(const Scene *s, const double o[3], const double d[3])
 {
     double best = 0;
     if (s->post > 0 && d[2] < 0) {
         const double t = (-s->post - o[2]) / d[2];
-        if (t > 0 && o[0] + t * d[0] >= s->post_x)
+        if (t > 0 && o[0] + t * d[0] >= s->post_x && (s->post_w <= 0 || o[0] + t * d[0] <= s->post_x + s->post_w))
             best = t;
     }
     if (s->wall > 0 && d[2] < 0) {
@@ -231,8 +231,193 @@ static void wall_before_walk(void)
     NEAR(got, want, want * 0.002);
 }
 
+/* ── A ray from anywhere: the gun's muzzle (vr_shot_plan_ray) ─────────── */
+
+/* Each segment's box as the eye drew the scene, at its offset. */
+static void draw_ray(const Eye *e, const Scene *s, const VrShotRay *r, float k, int d24, unsigned char *out)
+{
+    for (uint32_t j = 0; j < r->segs; j++) {
+        VrShotPlan b = r->line;
+        b.x0 = r->box[j].x0;
+        b.y0 = r->box[j].y0;
+        b.w = r->box[j].w;
+        b.h = r->box[j].h;
+        CHECK(b.w >= 1 && b.h >= 1 && b.w <= VR_SHOT_SEG_BOX && b.h <= VR_SHOT_SEG_BOX);
+        CHECK(b.x0 >= 0 && b.y0 >= 0 && b.x0 + b.w <= (uint32_t)ceil(k * EYE) && b.y0 + b.h <= (uint32_t)ceil(k * EYE));
+        draw_box(e, s, &b, k, d24, out + j * VR_SHOT_SEG_BYTES);
+    }
+}
+
+/* The ray o + t d (game units) through the eye's depth: the march's t
+ * against the scene's own along it; -2: no walk. */
+static double ray(const Eye *e, const Scene *s, float k, int d24, const float o[3], const float d[3], double *want,
+                  VrShotRay *out)
+{
+    static unsigned char buf[VR_SHOT_SEGS * VR_SHOT_SEG_BYTES];
+    VrShotRay r;
+    double od[3], dd[3], n = 0;
+    for (int i = 0; i < 3; i++) { od[i] = o[i]; dd[i] = d[i]; n += dd[i] * dd[i]; }
+    for (int i = 0; i < 3; i++) dd[i] /= sqrt(n);
+    *want = scene_hit(s, od, dd);
+    if (!vr_shot_plan_ray(e->vp, k, EYE, EYE, o, d, &r))
+        return -2;
+    CHECK(r.segs >= 1 && r.segs <= VR_SHOT_SEGS && r.line.steps <= VR_SHOT_SEG * VR_SHOT_SEGS);
+    draw_ray(e, s, &r, k, d24, buf);
+    if (out)
+        *out = r;
+    return vr_shot_march_ray(&r, buf, d24);
+}
+
+/* HOTD3's scale (7.5 units a metre): the muzzle 30 cm right of and 35 cm
+ * below the eye, 60 cm ahead, its ray to a wall 3 m out -- and from the
+ * game camera (o 0) as the rifle's walk finds it */
+static void ray_from_muzzle(void)
+{
+    const float u = 7.5f, p[3] = { 0.032f, 0, 0 };
+    const float o[3] = { 0.3f * u, -0.35f * u, -0.6f * u }, d[3] = { -0.08f, 0.1f, -1.0f };
+    const float cam[3] = { 0, 0, 0 };
+    const Scene s = { 3.0 * u, 0, 0, 0 };
+    Eye e;
+    double want, got;
+    eye_make(&e, ident, p, u);
+    for (int d24 = 0; d24 < 2; d24++) {
+        got = ray(&e, &s, 1.0f, d24, o, d, &want, NULL);
+        CHECK(want > 0);
+        NEAR(got, want, want * 0.003);
+        got = ray(&e, &s, 0.8f, d24, o, d, &want, NULL);
+        NEAR(got, want, want * 0.004);
+        got = ray(&e, &s, 1.0f, d24, cam, d, &want, NULL);
+        NEAR(got, want, want * 0.002);
+    }
+}
+
+/* The muzzle half a metre off the eye: the ray's line hundreds of texels
+ * long, read in many segments -- a zombie 1.4 m out (a post across the
+ * view) met where the rifle's span-limited walk would only guess it */
+static void ray_long_line(void)
+{
+    const float u = 7.5f, p[3] = { -0.032f, 0, 0 };
+    const float o[3] = { 0.45f * u, -0.3f * u, -0.5f * u }, d[3] = { -0.25f, 0.18f, -1.0f };
+    const Scene s = { 6.0 * u, 1.4 * u, -100.0, 0 };
+    Eye e;
+    VrShotRay r;
+    double want, got;
+    eye_make(&e, ident, p, u);
+    got = ray(&e, &s, 1.0f, 1, o, d, &want, &r);
+    CHECK(r.segs >= 6);
+    NEAR(want, (1.4 * u - 0.5 * u) / (1.0 / sqrt(0.25 * 0.25 + 0.18 * 0.18 + 1)), 1e-4);
+    NEAR(got, want, want * 0.005);
+}
+
+/* The post's edge (x 0, 3 m out; the wall at 8 m) from a muzzle 30 cm to
+ * the left: its ray crossing the post's plane 5 cm left of the edge meets
+ * the wall, 5 cm right of it the post -- the walk follows the muzzle's ray,
+ * whose meeting the eye sees from where it is */
+static void ray_post_edge(void)
+{
+    const float u = 7.5f, p[3] = { 0.032f, 0, 0 };
+    const float o[3] = { -0.3f * u, -0.2f * u, -0.4f * u };
+    const Scene s = { 8.0 * u, 3.0 * u, 0.0, 0 };
+    Eye e;
+    double want, got;
+    eye_make(&e, ident, p, u);
+    {   /* left of the edge and on, to the wall 0.5 m left of it */
+        const float d[3] = { (-0.5f * u - o[0]) / (8.0f * u + o[2]), 0, -1 };
+        got = ray(&e, &s, 1.0f, 0, o, d, &want, NULL);
+        CHECK(want > 3.5 * u);      /* the wall */
+        NEAR(got, want, want * 0.003);
+    }
+    {
+        const float d[3] = { (0.05f * u - o[0]) / (3.0f * u + o[2]), 0, -1 };
+        got = ray(&e, &s, 1.0f, 0, o, d, &want, NULL);
+        CHECK(want < 3.5 * u);      /* the post */
+        NEAR(got, want, want * 0.006);
+    }
+}
+
+/* A zombie's arm (a strip 8 cm wide, 1.2 m out) the ray passes beside but,
+ * as the eye sees it, behind: the walk goes on to the wall it does meet
+ * (5 m out); the rifle's walk -- from the camera, no such parallax -- would
+ * stop at the arm. A ray that passes beside the post (x 0 on, 3 m out)
+ * and then goes behind it for good (the wall it meets hidden by it): met
+ * where it went out of sight, at the post's edge as the eye sees it. */
+static void ray_behind_arm(void)
+{
+    const float u = 7.5f, p[3] = { 0.032f, 0, 0 };
+    const float o[3] = { 0.3f * u, -0.35f * u, -0.5f * u };
+    const float d[3] = { (-0.4f - 0.3f) * u, (0.3f + 0.35f) * u, (-5.0f + 0.5f) * u };
+    const Scene arm = { 5.0 * u, 1.2 * u, 0.02 * u, 0, 0.08 * u };
+    Eye e;
+    double want, got;
+    eye_make(&e, ident, p, u);
+    for (int d24 = 0; d24 < 2; d24++) {
+        got = ray(&e, &arm, 1.0f, d24, o, d, &want, NULL);
+        CHECK(want > 4.0 * u);      /* it meets the wall */
+        NEAR(got, want, want * 0.003);
+    }
+    {   /* across the post's plane 5 cm left of its edge */
+        const float m[3] = { -0.3f * u, -0.2f * u, -0.4f * u }, s = 0.25f / 2.6f, h[3] = { s, 0, -1 };
+        const Scene post = { 8.0 * u, 3.0 * u, 0.0, 0, 0 };
+        got = ray(&e, &post, 1.0f, 0, m, h, &want, NULL);
+        CHECK(want > 3.5 * u);      /* the wall, out of the eye's sight */
+        CHECK(got > 0 && got < want);
+        {   /* the point beyond the post (out of sight a step on), at its edge as the eye sees it */
+            const double n = sqrt(s * s + 1.0), q[3] = { m[0] + got * s / n, m[1], m[2] - got / n };
+            CHECK(-q[2] > 3.0 * u + VR_SHOT_THICK * u);
+            NEAR((q[0] - p[0] * u) / -q[2], (0.0 - p[0] * u) / (3.0 * u), 0.003);
+        }
+    }
+}
+
+/* A picture over the world 27 cm from the eye (House of the Dead III's
+ * shot flashes, drawn into the eyes) across the near part of the ray's
+ * line, within VR_SHOT_THICK of the walk's start: seen through -- the wall
+ * beyond is met; over the whole line: not known (-1) */
+static void ray_near_picture(void)
+{
+    const float u = 7.5f, p[3] = { 0.032f, 0, 0 };
+    const float o[3] = { 0.3f * u, -0.35f * u, -0.5f * u };
+    const float d[3] = { (-0.4f - 0.3f) * u, (0.3f + 0.35f) * u, (-5.0f + 0.5f) * u };
+    const Scene flash = { 5.0 * u, 0.27 * u, 0.15 * u, 0, 0.2 * u }, cover = { 5.0 * u, 0, 0, 0.0035, 0 };
+    Eye e;
+    double want, got;
+    eye_make(&e, ident, p, u);
+    for (int d24 = 0; d24 < 2; d24++) {
+        got = ray(&e, &flash, 1.0f, d24, o, d, &want, NULL);
+        CHECK(want > 4.0 * u);
+        NEAR(got, want, want * 0.003);
+    }
+    got = ray(&e, &cover, 1.0f, 1, o, d, &want, NULL);
+    NEAR(got, -1, 0);           /* not known: the last answer stands */
+}
+
+/* the sky (nothing drawn): nothing met; a ray behind the eye, or with no
+ * direction or a NaN: no walk */
+static void ray_nothing(void)
+{
+    const float u = 7.5f, p[3] = { 0.032f, 0, 0 }, o[3] = { 0.2f * u, -0.3f * u, -0.5f * u };
+    const float ahead[3] = { 0, 0.05f, -1 }, back[3] = { 0, 0, 1 }, none[3] = { 0, 0, 0 }, bad[3] = { NAN, 0, -1 };
+    const Scene sky = { 0, 0, 0, 0 };
+    Eye e;
+    VrShotRay r;
+    double want, got;
+    eye_make(&e, ident, p, u);
+    got = ray(&e, &sky, 1.0f, 1, o, ahead, &want, NULL);
+    CHECK(want == 0);
+    NEAR(got, 0, 0);
+    CHECK(!vr_shot_plan_ray(e.vp, 1.0f, EYE, EYE, o, back, &r));
+    CHECK(!vr_shot_plan_ray(e.vp, 1.0f, EYE, EYE, o, none, &r));
+    CHECK(!vr_shot_plan_ray(e.vp, 1.0f, EYE, EYE, o, bad, &r));
+}
+
 int main(void)
 {
+    ray_from_muzzle();
+    ray_long_line();
+    ray_post_edge();
+    ray_nothing();
+    ray_behind_arm();
+    ray_near_picture();
     wall_ahead();
     quest_scale();
     post_edge();

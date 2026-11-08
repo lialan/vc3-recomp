@@ -3123,6 +3123,48 @@ VkResult ch_vk_target_record_depth_box(ChVkTarget *t,VkCommandBuffer command,VkB
     if(d24) *d24=t->depth_format==VK_FORMAT_D24_UNORM_S8_UINT;
     return VK_SUCCESS;
 }
+VkResult ch_vk_target_record_depth_boxes(ChVkTarget *t,VkCommandBuffer command,VkBuffer destination,
+    const ChVkDepthBox *boxes,uint32_t count,int *d24) {
+    enum {MAX=64};
+    VkBufferImageCopy copy[MAX];
+    VkBufferMemoryBarrier host[MAX];
+    if(!t || t->failed || !t->initialized || !command || !destination || !boxes || !count || count>MAX)
+        return VK_ERROR_INITIALIZATION_FAILED;
+    for(uint32_t i=0;i<count;i++) {
+        const ChVkDepthBox *b=&boxes[i];
+        if((b->offset&3) || !b->w || !b->h || b->x>=t->width || b->y>=t->height || b->w>t->width-b->x || b->h>t->height-b->y)
+            return VK_ERROR_INITIALIZATION_FAILED;
+        copy[i]=(VkBufferImageCopy){.bufferOffset=b->offset,.imageSubresource={VK_IMAGE_ASPECT_DEPTH_BIT,0,0,1},
+            .imageOffset={(int32_t)b->x,(int32_t)b->y,0},.imageExtent={b->w,b->h,1}};
+        host[i]=(VkBufferMemoryBarrier){.sType=VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
+            .srcAccessMask=VK_ACCESS_TRANSFER_WRITE_BIT,.dstAccessMask=VK_ACCESS_HOST_READ_BIT,
+            .srcQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED,.dstQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED,
+            .buffer=destination,.offset=b->offset,.size=(VkDeviceSize)b->w*b->h*4};
+    }
+    /* as one box's: this target's recorded work first, unwaited; the depth
+     * to a transfer source and back once for them all */
+    live_release(t);
+    VkResult r=ch_vk_target_submit(t);
+    if(r!=VK_SUCCESS) return r;
+    VkImageMemoryBarrier b={.sType=VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+        .srcAccessMask=VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT|VK_ACCESS_TRANSFER_WRITE_BIT,
+        .dstAccessMask=VK_ACCESS_TRANSFER_READ_BIT,
+        .oldLayout=VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,.newLayout=VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+        .srcQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED,.dstQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED,
+        .image=t->depth,.subresourceRange={VK_IMAGE_ASPECT_DEPTH_BIT|VK_IMAGE_ASPECT_STENCIL_BIT,0,1,0,1}};
+    const VkPipelineStageFlags depth_stages=VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT|
+        VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT|VK_PIPELINE_STAGE_TRANSFER_BIT;
+    vkCmdPipelineBarrier(command,depth_stages,VK_PIPELINE_STAGE_TRANSFER_BIT,0,0,NULL,0,NULL,1,&b);
+    vkCmdCopyImageToBuffer(command,t->depth,VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,destination,count,copy);
+    b.srcAccessMask=0;
+    b.dstAccessMask=VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT|VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT|
+        VK_ACCESS_TRANSFER_READ_BIT|VK_ACCESS_TRANSFER_WRITE_BIT;
+    b.oldLayout=VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;b.newLayout=VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+    vkCmdPipelineBarrier(command,VK_PIPELINE_STAGE_TRANSFER_BIT,depth_stages,0,0,NULL,0,NULL,1,&b);
+    vkCmdPipelineBarrier(command,VK_PIPELINE_STAGE_TRANSFER_BIT,VK_PIPELINE_STAGE_HOST_BIT,0,0,NULL,count,host,0,NULL);
+    if(d24) *d24=t->depth_format==VK_FORMAT_D24_UNORM_S8_UINT;
+    return VK_SUCCESS;
+}
 VkResult ch_vk_target_record_copy_to_image(ChVkTarget *t,VkCommandBuffer command,VkImage destination) {
     if(!t || t->failed || !t->initialized || !command || !destination || destination==t->image)
         return VK_ERROR_INITIALIZATION_FAILED;

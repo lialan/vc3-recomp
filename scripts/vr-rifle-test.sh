@@ -19,3 +19,4 @@ run tests/vr_rifle_test.c runtime/src/host/vr_rifle.c runtime/src/gpu/vulkan/vk_
 run tests/retail_pad_test.c runtime/src/host/retail_pad.c
 run tests/vr_shot_test.c
 run tests/vk_mailbox_policy_test.c
+run tests/vr_gun_test.c

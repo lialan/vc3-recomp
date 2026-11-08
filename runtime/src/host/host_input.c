@@ -138,6 +138,23 @@ static int auto_held(const char *key, uint32_t t)
     return 0;
 }
 
+/* The scripted keys' clock (VC3_AUTOKEYS: seconds since the first poll, or
+ * AUTOKEYS_CLOCK=flips), -1 before that poll; and whether a scripted key
+ * is held now, for host code playing a part of the input itself -- the
+ * desktop's test gun (vr_view_desktop.c: "trigger", "grip"). */
+double vc3_input_script_s(void)
+{
+    if (s_nauto < 0)
+        return -1.0;
+    return s_auto_flip_clock ? (double)(nv2a_backend_flip_count() - s_flip0) / 60.0 : (double)(now_ms() - s_t0) / 1000.0;
+}
+
+int vc3_input_auto_held(const char *key)
+{
+    const double s = vc3_input_script_s();
+    return s >= 0.0 && auto_held(key, (uint32_t)(s * 1000.0));
+}
+
 /* Input state, kept from the SDL events themselves (SDL_AddEventWatch), so
  * whatever enters SDL's queue -- the OS's events or VC3_INPUT_SELFTEST's --
  * reaches the board the same way. Written on the thread that pumps events,

@@ -21,6 +21,9 @@
  * (state [0x276708] 5, 8 or 0xB), unless the gun is off the screen (+0x11
  * clear: its SCREEN-IN switch off, JVS push 2, which a reload holds with
  * GRIP, push 3 -- the press HOTD3 reloads by, gun +0x18; game.c).
+ * With the profile's vr.aim_world (the host's vr_gun.h) the host's point is
+ * where the shotgun's laser meets the world, through the frame's
+ * projection: the shot from the camera goes through the laser's end.
  * The shot's lens is not the world's: the player update (sub_00093790) sets
  * the camera's FOVY to 45 degrees (0x938A5) for the shot, the bullet holes
  * and the HUD, and puts the camera's back after (0x939EE) -- in chapter 1's

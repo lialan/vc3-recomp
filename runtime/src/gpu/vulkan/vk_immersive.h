@@ -43,7 +43,9 @@ typedef struct {
     /* Where the rifle's shot meets the scene (vr_shot.h): game units along
      * the aim from the game camera, the newest a frame's eyes have given
      * (a probe of the left eye's depth, read once the GPU is done with it:
-     * a frame or two before this one); 0: nothing met, or not known. */
+     * a frame or two before this one) -- for a view with the gun's ray
+     * (Vc3VrView.ray), along that ray from its origin; 0: nothing met, or
+     * not known. */
     float aim_hit;
 } ChVkImmFrame;
 typedef struct {

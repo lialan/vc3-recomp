@@ -234,6 +234,11 @@ VkResult ch_vk_target_record_copy_to_image(ChVkTarget *,VkCommandBuffer command,
  * host's to read once command has completed. */
 VkResult ch_vk_target_record_depth_box(ChVkTarget *,VkCommandBuffer command,VkBuffer destination,
     VkDeviceSize offset,uint32_t x,uint32_t y,uint32_t w,uint32_t h,int *d24);
+/* Up to 64 such boxes in one copy (the depth to a transfer source and back
+ * once): each at its own offset of the buffer. */
+typedef struct { VkDeviceSize offset; uint32_t x,y,w,h; } ChVkDepthBox;
+VkResult ch_vk_target_record_depth_boxes(ChVkTarget *,VkCommandBuffer command,VkBuffer destination,
+    const ChVkDepthBox *boxes,uint32_t count,int *d24);
 VkResult ch_vk_target_copy_to_buffer_at(ChVkTarget *,VkBuffer,VkDeviceSize offset,VkDeviceSize capacity);
 VkResult ch_vk_target_copy_to_buffer(ChVkTarget *target, VkBuffer destination, VkDeviceSize capacity);
 /* Copy initialized target to an externally acquired, same-device RGBA8 image
