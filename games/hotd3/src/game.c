@@ -98,6 +98,13 @@ static const ChihiroProfile k_hotd3 = {
          * handgun's controls, its sights the shotgun's own (the overlay's) */
         .weapon = CH_VR_SHOTGUN,
         .lens_k = 625.2f,       /* its world's projection, as the renderer reads it */
+        /* Quest GPU (headset A/Bs, scripted chapter 1): the gun layer at 0.6
+         * of the eye costs 41-47 ms of GPU a second against 70 at 0.75 (0.5:
+         * 33-40, the panel's text softer); full-rate shading within 22
+         * degrees, 2x1 to 35, 2x2 to 50, 4x4 beyond: 70-72% GPU against 74%
+         * at 30, 45, 60 (18, 30, 45 no better) */
+        .overlay_scale = 0.6f,
+        .foveation = { 22.0f, 35.0f, 50.0f },
         /* All its program batches are one program, D3D's pass-through for
          * pre-transformed vertices: the HUD (rhw 10), text and sprites at or
          * in front of the near plane (w 168, 560.5), full-screen copies (1)

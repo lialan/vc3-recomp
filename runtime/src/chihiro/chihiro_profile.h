@@ -154,6 +154,15 @@ typedef struct ChihiroProfile {
         int weapon;                 /* CH_VR_HANDGUN, CH_VR_RIFLE or CH_VR_SHOTGUN */
         float lens_k;               /* the main view's focal length, pixels at 640 wide (0: 772.5) */
         float render_scale;         /* immersive eyes fixed at this share of native (1: native); 0: automatic */
+        /* The overlay's size (the gun, its laser and dot, the settings
+         * panel), a share of the eye's: it is drawn at the display rate, so
+         * its pixels cost every display frame (0: 0.75; the env variable
+         * <PREFIX>_OVERLAY_SCALE wins) */
+        float overlay_scale;
+        /* Foveated shading on the immersive eyes: full rate within [0]
+         * degrees of each eye's axis, 2x1 out to [1], 2x2 out to [2], 4x4
+         * beyond (0: 30, 45, 60; the env variable <PREFIX>_XR_FOVEATION wins) */
+        float foveation[3];
         /* The main view's projection for a game that draws its 3D with vertex
          * programs only (no fixed-function batch to read one from), as the
          * immersive view recovers it (vr_math.h VrGameProj): screen = (k e.xy

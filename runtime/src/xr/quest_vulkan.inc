@@ -204,6 +204,8 @@ static void vk_split_init(VkDevice *device,VkQueue *queue)
         .pipelineFragmentShadingRate=VK_TRUE,.attachmentFragmentShadingRate=VK_TRUE};
     float fov_inner=30,fov_outer=45,fov_far=60;uint32_t fov_tw=0,fov_th=0;
     {
+        const float *pf=chihiro_profile()->vr.foveation;   /* the game's own zones, else the defaults */
+        if(pf[0]>0 && pf[1]>=pf[0] && pf[2]>=pf[1]) {fov_inner=pf[0];fov_outer=pf[1];fov_far=pf[2];}
         const char *fv=ch_env("XR_FOVEATION");
         if(fv && sscanf(fv,"%f,%f,%f",&fov_inner,&fov_outer,&fov_far)<1) fov_inner=0;
         if(fv && atof(fv)<=0) fov_inner=0;
@@ -368,7 +370,8 @@ static int vk_overlay_init(void)
          * is a quad of its own); SteamVR blends it over the whole view at
          * 120 Hz, and 0.75 showed 93% of game frames exactly twice with the
          * headset on against 89% at full size. */
-        float scale=sc && atof(sc)>.2 && atof(sc)<=1 ? (float)atof(sc) : vk_hud_in_overlay()?1:.75f;
+        const float ps=chihiro_profile()->vr.overlay_scale;   /* the game's own size, else 0.75 */
+        float scale=sc && atof(sc)>.2 && atof(sc)<=1 ? (float)atof(sc) : vk_hud_in_overlay()?1:ps>.2f && ps<=1?ps:.75f;
         unsigned width=(unsigned)((s_native_w?s_native_w:views[e].recommendedImageRectWidth)*scale);
         unsigned height=(unsigned)((s_native_h?s_native_h:views[e].recommendedImageRectHeight)*scale);
         s_vk_eye[e].w=width;s_vk_eye[e].h=height;
