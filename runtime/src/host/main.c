@@ -566,6 +566,10 @@ int main(int argc, char **argv)
      * it, VC3 starts the APU itself and mixes music and effects (measured:
      * RMS 1-3.4k from the attract onwards, RECOMP_AUDIO_WAV capture). */
     setenv("RECOMP_AC97_READY", "1", 0);
+    /* The game's choice of a discard-free shader for draws without the
+     * alpha test (ChihiroProfile.gpu.split_alpha); a set variable wins. */
+    if (gp->gpu.split_alpha)
+        setenv("CHIHIRO_VULKAN_NOAT", "1", 0);
 
     if (gp->platform == CHIHIRO_PLATFORM_CHIHIRO) {
         /* The boot-time memory probe (VC3: 0x34F60) allocates and frees

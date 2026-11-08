@@ -85,6 +85,10 @@ static const ChihiroProfile k_hotd3 = {
          * zombie on it ~12.7 tall (eye-space boxes of chapter 1's batches):
          * ~7.5 a metre */
         .units_per_m = 7.5f,
+        /* its eyes are fragment-bound on the Quest and ~46% of their draws
+         * alpha-test: the rest get a discard-free shader (5-9% less GPU
+         * work in headset A/Bs, the same frame rate) */
+        .split_alpha = 1,
     },
     .vr = {
         .app_name = "House of the Dead III VR",

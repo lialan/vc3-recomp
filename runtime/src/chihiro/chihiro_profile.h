@@ -137,6 +137,12 @@ typedef struct ChihiroProfile {
          * surfaces of effect_min_px pixels an eye or more (0: 2000000). */
         int effect_scale, effect_min_layers;
         long effect_min_px;
+        /* Vulkan: draws without the alpha test get a fragment shader with
+         * no discard, so the GPU may test depth before shading them
+         * (CHIHIRO_VULKAN_NOAT, vk_target.c; the variable wins). 0: one
+         * shader with the test for every draw, as before. HOTD3's eyes,
+         * fragment-bound on the Quest: ~5-9% less GPU work. */
+        int split_alpha;
     } gpu;
 
     /* The headset (src/android) */
