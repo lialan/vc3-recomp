@@ -119,11 +119,13 @@ if [ "${CHIHIRO_VULKAN_SPIRV_OPT_DIR+x}" != x ]; then
     CHIHIRO_VULKAN_SPIRV_OPT_DIR=$SPV
 fi
 PIPELINE_ARGS+=("-DCHIHIRO_VULKAN_SPIRV_OPT_DIR=$CHIHIRO_VULKAN_SPIRV_OPT_DIR")
-# CHIHIRO_RENDERER, else the game's RENDERER (game.conf), else the build's default
-R=${CHIHIRO_RENDERER:-${RENDERER:-}}
-if [ -n "$R" ]; then
-    PIPELINE_ARGS+=("-DCHIHIRO_RENDERER=$R")
-fi
+# CHIHIRO_RENDERER, else the game's RENDERER (game.conf), else OpenGL: the
+# Quest's renderer (Qualcomm's GL driver manages the tiled GPU's passes; the
+# Vulkan renderer is the Steam Frame's, steamframe/README.md). Always passed,
+# so a build tree configured for the other one earlier does not keep it.
+R=${CHIHIRO_RENDERER:-${RENDERER:-opengl}}
+PIPELINE_ARGS+=("-DCHIHIRO_RENDERER=$R")
+echo "renderer: $R"
 
 # one game per build tree (its libmain.so); vc3's is build-quest
 if [ "$GAME" = vc3 ]; then B=$ROOT/build-quest; else B=$ROOT/build-quest-$GAME; fi

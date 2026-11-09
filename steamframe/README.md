@@ -5,6 +5,10 @@ cmake, ninja, glslc, SDL2 and the Vulkan and OpenXR headers), Vulkan on
 Turnip, VR through SteamVR's OpenXR runtime with the Quest's host
 (`runtime/src/xr/quest_host.c`, `CHIHIRO_XR_DESKTOP`).
 
+The Frame uses the Vulkan renderer; the Quest build (`quest/build.sh`) uses
+OpenGL, which runs VC3 at ~60 fps there where Vulkan's render-pass breaks
+hold the Quest's tiled GPU to 24-35 fps. Both renderers are maintained.
+
 ## Build (on the Frame)
 
 ```sh
